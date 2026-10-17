@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode } from "react";
+import { WorkspaceLink } from "./workspace";
 import { Lexer, type MarkedToken, type Token } from "marked";
 
 /**
@@ -47,9 +48,9 @@ function inlineToken(token: Token): ReactNode {
     case "link": {
       const href = safeHref(token.href);
       return href ? (
-        <a href={href} target="_blank" rel="noreferrer noopener" className="underline decoration-[var(--wb-disabled)] underline-offset-2 hover:decoration-current">
+        <WorkspaceLink href={href}>
           {inline(token.tokens)}
-        </a>
+        </WorkspaceLink>
       ) : inline(token.tokens);
     }
     case "image":

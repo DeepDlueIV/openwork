@@ -125,6 +125,10 @@
       "description": "Scheduled Automations, their runs, and desktop runner presence."
     },
     {
+      "name": "Documents",
+      "description": "Connected Drive documents, inline editing and file-bound temporary Office sessions."
+    },
+    {
       "name": "Workbot",
       "description": "The signed-in member's single Workbot conversation."
     },
@@ -2442,6 +2446,8 @@
               "slackAssistant",
               "slackWorkbotReplies",
               "workbot",
+              "workbotDocuments",
+              "workbotWorkspaceAssistant",
               "automationCalendar",
               "permissions",
               "teamRoles",
@@ -2678,6 +2684,12 @@
                     "workbot": {
                       "type": "boolean"
                     },
+                    "workbotDocuments": {
+                      "type": "boolean"
+                    },
+                    "workbotWorkspaceAssistant": {
+                      "type": "boolean"
+                    },
                     "automationCalendar": {
                       "type": "boolean"
                     },
@@ -2744,6 +2756,8 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
+                    "workbotDocuments",
+                    "workbotWorkspaceAssistant",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -3660,6 +3674,118 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotDocuments": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "workbotWorkspaceAssistant": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "automationCalendar": {
                       "type": "object",
                       "properties": {
@@ -4462,6 +4588,8 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
+                    "workbotDocuments",
+                    "workbotWorkspaceAssistant",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -4893,6 +5021,12 @@
                     "workbot": {
                       "type": "boolean"
                     },
+                    "workbotDocuments": {
+                      "type": "boolean"
+                    },
+                    "workbotWorkspaceAssistant": {
+                      "type": "boolean"
+                    },
                     "automationCalendar": {
                       "type": "boolean"
                     },
@@ -4959,6 +5093,8 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
+                    "workbotDocuments",
+                    "workbotWorkspaceAssistant",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -5875,6 +6011,118 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotDocuments": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "workbotWorkspaceAssistant": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "automationCalendar": {
                       "type": "object",
                       "properties": {
@@ -6677,6 +6925,8 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
+                    "workbotDocuments",
+                    "workbotWorkspaceAssistant",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -28172,6 +28422,12 @@
           "calendar": {
             "type": "boolean"
           },
+          "documents": {
+            "type": "boolean"
+          },
+          "workspaceAssistant": {
+            "type": "boolean"
+          },
           "sideChats": {
             "type": "boolean"
           },
@@ -30700,6 +30956,12 @@
                         "workbot": {
                           "type": "boolean"
                         },
+                        "workbotDocuments": {
+                          "type": "boolean"
+                        },
+                        "workbotWorkspaceAssistant": {
+                          "type": "boolean"
+                        },
                         "automationCalendar": {
                           "type": "boolean"
                         },
@@ -30766,6 +31028,8 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
+                        "workbotDocuments",
+                        "workbotWorkspaceAssistant",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -31682,6 +31946,118 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotDocuments": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "workbotWorkspaceAssistant": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "automationCalendar": {
                           "type": "object",
                           "properties": {
@@ -32484,6 +32860,8 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
+                        "workbotDocuments",
+                        "workbotWorkspaceAssistant",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -32664,6 +33042,12 @@
                         "workbot": {
                           "type": "boolean"
                         },
+                        "workbotDocuments": {
+                          "type": "boolean"
+                        },
+                        "workbotWorkspaceAssistant": {
+                          "type": "boolean"
+                        },
                         "automationCalendar": {
                           "type": "boolean"
                         },
@@ -32730,6 +33114,8 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
+                        "workbotDocuments",
+                        "workbotWorkspaceAssistant",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -33646,6 +34032,118 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotDocuments": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "workbotWorkspaceAssistant": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "automationCalendar": {
                           "type": "object",
                           "properties": {
@@ -34448,6 +34946,8 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
+                        "workbotDocuments",
+                        "workbotWorkspaceAssistant",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -80805,6 +81305,1744 @@
         ]
       }
     },
+    "/v1/documents/google-drive/files/{fileId}/metadata": {
+      "get": {
+        "operationId": "getGoogleDriveDocumentMetadata",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "summary": "Resolve an authorized Drive document link without downloading content",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.",
+        "responses": {
+          "200": {
+            "description": "Document result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string"
+                    },
+                    "modifiedTime": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "size": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "openUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "mimeType",
+                    "modifiedTime",
+                    "size",
+                    "openUrl"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reconnect or reload the changed file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/google-drive/files/{fileId}/editor": {
+      "get": {
+        "operationId": "openGoogleDriveDocumentEditor",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "summary": "Open a Drive document in the inline editor",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.",
+        "responses": {
+          "200": {
+            "description": "Document result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "connectionId": {
+                          "type": "string"
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "string"
+                        },
+                        "canEdit": {
+                          "type": "boolean"
+                        },
+                        "notice": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "spreadsheet"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "google",
+                            "xlsx"
+                          ]
+                        },
+                        "sheets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "rows": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "columns": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "rows",
+                              "columns"
+                            ]
+                          }
+                        },
+                        "activeSheetId": {
+                          "type": "string"
+                        },
+                        "startRow": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "endRow": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "cells": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "row": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                              },
+                              "column": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "formula": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "row",
+                              "column",
+                              "text"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "connectionId",
+                        "fileId",
+                        "name",
+                        "revision",
+                        "canEdit",
+                        "kind",
+                        "source",
+                        "sheets",
+                        "activeSheetId",
+                        "startRow",
+                        "endRow",
+                        "cells"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "connectionId": {
+                          "type": "string"
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "string"
+                        },
+                        "canEdit": {
+                          "type": "boolean"
+                        },
+                        "notice": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "document"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "google",
+                            "docx"
+                          ]
+                        },
+                        "sections": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "paragraphs": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "heading": {
+                                      "type": "boolean"
+                                    },
+                                    "runs": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "text": {
+                                            "type": "string"
+                                          },
+                                          "bold": {
+                                            "type": "boolean"
+                                          },
+                                          "italic": {
+                                            "type": "boolean"
+                                          },
+                                          "underline": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "text"
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "runs"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "paragraphs"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "connectionId",
+                        "fileId",
+                        "name",
+                        "revision",
+                        "canEdit",
+                        "kind",
+                        "source",
+                        "sections"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "connectionId": {
+                          "type": "string"
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "string"
+                        },
+                        "canEdit": {
+                          "type": "boolean"
+                        },
+                        "notice": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "text"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "connectionId",
+                        "fileId",
+                        "name",
+                        "revision",
+                        "canEdit",
+                        "kind",
+                        "text"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "connectionId": {
+                          "type": "string"
+                        },
+                        "fileId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "string"
+                        },
+                        "canEdit": {
+                          "type": "boolean"
+                        },
+                        "notice": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "preview"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "connectionId",
+                        "fileId",
+                        "name",
+                        "revision",
+                        "canEdit",
+                        "kind",
+                        "mimeType"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reconnect or reload the changed file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "sheetId",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "startRow",
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1048526
+            }
+          },
+          {
+            "in": "query",
+            "name": "connectionId",
+            "schema": {
+              "type": "string",
+              "pattern": "^(google-workspace|emc_[A-Za-z0-9]+)$"
+            }
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "saveGoogleDriveDocumentEdits",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "summary": "Save explicit inline edits to the same Drive file",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.",
+        "responses": {
+          "200": {
+            "description": "Document result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reconnect or reload the changed file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "spreadsheet"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^(google-workspace|emc_[A-Za-z0-9]+)$"
+                      },
+                      "revision": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "sheetId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "changes": {
+                        "minItems": 1,
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "row": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 1048576
+                            },
+                            "column": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 16384
+                            },
+                            "value": {
+                              "type": "string",
+                              "maxLength": 32767
+                            },
+                            "formula": {
+                              "default": false,
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "row",
+                            "column",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "connectionId",
+                      "revision",
+                      "sheetId",
+                      "changes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "document"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^(google-workspace|emc_[A-Za-z0-9]+)$"
+                      },
+                      "revision": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "changes": {
+                        "minItems": 1,
+                        "maxItems": 500,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "sectionId": {
+                              "type": "string",
+                              "maxLength": 200
+                            },
+                            "runId": {
+                              "type": "string",
+                              "maxLength": 200
+                            },
+                            "value": {
+                              "type": "string",
+                              "maxLength": 32767
+                            }
+                          },
+                          "required": [
+                            "sectionId",
+                            "runId",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "connectionId",
+                      "revision",
+                      "changes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^(google-workspace|emc_[A-Za-z0-9]+)$"
+                      },
+                      "revision": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 1000000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "connectionId",
+                      "revision",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/google-drive/files/{fileId}/content": {
+      "get": {
+        "operationId": "readGoogleDriveDocumentContent",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "summary": "Preview a Drive PDF or image",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.",
+        "responses": {
+          "200": {
+            "description": "Document result.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reconnect or reload the changed file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "connectionId",
+            "schema": {
+              "type": "string",
+              "pattern": "^(google-workspace|emc_[A-Za-z0-9]+)$"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/google-drive/files/{fileId}/office": {
+      "post": {
+        "operationId": "openGoogleDriveOfficeEditor",
+        "summary": "Open a document, spreadsheet or presentation editor",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "serverUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "editorUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "saveAsCopy": {
+                      "type": "boolean"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "fileType": {
+                      "type": "string",
+                      "enum": [
+                        "docx",
+                        "xlsx",
+                        "pptx",
+                        "odt",
+                        "ods",
+                        "odp"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "serverUrl",
+                    "editorUrl",
+                    "accessToken",
+                    "expiresAt",
+                    "saveAsCopy",
+                    "canEdit",
+                    "fileType"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/google-drive/files/{fileId}/office/{sessionId}": {
+      "get": {
+        "operationId": "getGoogleDriveOfficeEditorStatus",
+        "summary": "Check whether an Office save is ready",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "draftVersion": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "saveRequestId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "savedFileId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "expiresAt",
+                    "draftVersion"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "sessionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/save": {
+      "post": {
+        "operationId": "saveGoogleDriveOfficeEditor",
+        "summary": "Save an Office snapshot to Drive",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fileId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    }
+                  },
+                  "required": [
+                    "fileId"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "sessionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "draftVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "draftVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/close": {
+      "post": {
+        "operationId": "closeGoogleDriveOfficeEditor",
+        "summary": "Discard the temporary Office session without changing Drive",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "sessionId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/wopi/files/{sessionId}": {
+      "get": {
+        "operationId": "getOfficeFileInfo",
+        "summary": "Read metadata for one temporary editor session",
+        "description": "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ]
+      },
+      "post": {
+        "operationId": "lockOfficeFile",
+        "summary": "Manage a temporary editor session lock",
+        "description": "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/documents/wopi/files/{sessionId}/contents": {
+      "get": {
+        "operationId": "getOfficeFileContents",
+        "summary": "Read one temporary editor file",
+        "description": "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ]
+      },
+      "post": {
+        "operationId": "putOfficeFileContents",
+        "summary": "Stage editor changes without writing to Drive",
+        "description": "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "LastModifiedTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "LastModifiedTime"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ]
+      }
+    },
     "/v1/capabilities/google-workspace/gmail-draft/{draftId}/send": {
       "post": {
         "operationId": "sendGmailDraft",
@@ -87209,6 +89447,29 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 2048
+            }
+          },
+          {
+            "in": "query",
+            "name": "orderBy",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "folder,name_natural",
+                "recency desc",
+                "modifiedTime desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "filesOnly",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
             }
           },
           {

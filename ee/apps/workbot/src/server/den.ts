@@ -28,6 +28,8 @@ export const denSessionSchema = z.object({
   canSchedule: z.boolean(),
   /** Workbot's Calendar tab is on (while Workbot is on). Older Dens omit it: off. */
   calendar: z.boolean().optional(),
+  documents: z.boolean().default(false),
+  workspaceAssistant: z.boolean().default(false),
   /** Side chats are on for this person. A Den from before side chats doesn't say: off. */
   sideChats: z.boolean().default(false),
   /** The organization's default model for Workbot's turns. Null, or a Den from before it, means the runner's default. */
@@ -177,6 +179,15 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
      */
     async calendar(accessToken: string, input: { method: "GET" | "POST" | "PATCH"; path: string; body?: unknown }) {
       return authorized(input.method, `/v1/workbot/calendar${input.path}`, accessToken, input.body)
+    },
+    /** Documents reads and explicit editor actions; Den enforces the feature and exact route allowlist. */
+    async documents(accessToken: string, path: string, method: "GET" | "POST" = "GET", body?: unknown) {
+      return authorized(method, `/v1/workbot/documents${path}`, accessToken, body)
+    },
+    async documentContent(accessToken: string, path: string) {
+      const response = await fetch(`${options.apiUrl}/v1/workbot/documents${path}`, { headers: { authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS) })
+      if (response.status === 401) throw new DenSignedOutError()
+      return response
     },
     /** Den's web app, from its sign-in issuer, for links back to OpenWork and app logos. */
     async webUrl() {

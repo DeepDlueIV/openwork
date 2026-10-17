@@ -24,7 +24,7 @@ mock_provider "google" {
   }
 }
 
-mock_provider "random" {}
+provider "random" {} # Local-only; mock providers do not support ephemeral resources.
 
 variables {
   project_id       = "test-project"
@@ -126,6 +126,23 @@ run "migration_job_runs_bootstrap" {
   assert {
     condition     = google_cloud_run_v2_job.migrate.template[0].template[0].containers[0].image == google_cloud_run_v2_service.api.template[0].containers[0].image
     error_message = "Migrations must use the den-api image."
+  }
+}
+
+run "two_api_replicas_do_not_add_migrators" {
+  command = apply
+  variables { den_api = { min_instances = 2, max_instances = 2 } }
+  assert {
+    condition     = google_cloud_run_v2_service.api.template[0].scaling[0].min_instance_count == 2 && length(google_cloud_run_v2_service.api.template[0].containers) == 1 && google_cloud_run_v2_service.api.template[0].containers[0].command == null && google_cloud_run_v2_service.api.template[0].containers[0].args == null
+    error_message = "API scale must not add a migration/init container or override the API image command."
+  }
+  assert {
+    condition     = google_cloud_run_v2_job.migrate.template[0].task_count == 1 && google_cloud_run_v2_job.migrate.template[0].template[0].max_retries == 0
+    error_message = "Exactly one migration task and no hidden retry per deployment."
+  }
+  assert {
+    condition     = google_cloud_run_v2_service.api.template[0].containers[0].resources[0].limits["cpu"] == "1" && google_cloud_run_v2_service.api.template[0].containers[0].resources[0].limits["memory"] == "2Gi" && google_cloud_run_v2_service.web.template[0].containers[0].resources[0].limits["memory"] == "1Gi"
+    error_message = "Measured baseline sizing must remain 1 CPU/2 GiB API and 1 CPU/1 GiB web."
   }
 }
 
@@ -281,6 +298,21 @@ run "unpinned_published_images_are_refused" {
   }
 
   expect_failures = [google_cloud_run_v2_job.migrate]
+}
+
+run "plain_secret_override_is_refused" {
+  command = plan
+  variables { extra_environment = { BETTER_AUTH_SECRET = "not-a-real-secret" } }
+  expect_failures = [var.extra_environment]
+}
+
+run "custom_secret_plain_duplicate_is_refused" {
+  command = plan
+  variables {
+    extra_secrets     = { CUSTOM_CREDENTIAL = "existing-secret" }
+    extra_environment = { CUSTOM_CREDENTIAL = "not-a-real-secret" }
+  }
+  expect_failures = [var.extra_environment]
 }
 
 run "mutable_tags_need_explicit_opt_in" {

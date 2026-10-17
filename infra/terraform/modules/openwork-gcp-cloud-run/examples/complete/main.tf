@@ -10,11 +10,11 @@
 # For production, pass your own network, domain and deletion protection.
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.11, < 2.0"
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = ">= 8.0.0"
+      version = "~> 8.7"
     }
   }
 }

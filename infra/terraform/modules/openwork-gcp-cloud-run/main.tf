@@ -86,14 +86,23 @@ locals {
 
   secret_values = {
     DATABASE_URL                     = local.database_url
-    BETTER_AUTH_SECRET               = random_password.better_auth.result
-    DEN_DB_ENCRYPTION_KEY            = random_password.db_encryption.result
+    BETTER_AUTH_SECRET               = var.write_only_secrets ? null : random_password.better_auth[0].result
+    DEN_DB_ENCRYPTION_KEY            = var.write_only_secrets ? null : random_password.db_encryption[0].result
     DEN_INITIAL_ADMIN_BOOTSTRAP_CODE = local.bootstrap_code
     SMTP_PASS                        = var.smtp.password
     RESEND_API_KEY                   = var.resend_api_key
   }
 
-  bootstrap_code = var.initial_admin_bootstrap_code != "" ? var.initial_admin_bootstrap_code : random_password.bootstrap_code.result
+  bootstrap_code = var.write_only_secrets ? null : (var.initial_admin_bootstrap_code != "" ? var.initial_admin_bootstrap_code : random_password.bootstrap_code[0].result)
+
+  secret_values_wo = var.write_only_secrets ? merge({
+    DATABASE_URL                     = local.database_url_wo
+    BETTER_AUTH_SECRET               = ephemeral.random_password.app["BETTER_AUTH_SECRET"].result
+    DEN_DB_ENCRYPTION_KEY            = ephemeral.random_password.app["DEN_DB_ENCRYPTION_KEY"].result
+    DEN_INITIAL_ADMIN_BOOTSTRAP_CODE = var.initial_admin_bootstrap_code != "" ? var.initial_admin_bootstrap_code : ephemeral.random_password.app["DEN_INITIAL_ADMIN_BOOTSTRAP_CODE"].result
+    SMTP_PASS                        = var.smtp.password
+    RESEND_API_KEY                   = var.resend_api_key
+  }, var.preserved_secrets_wo) : {}
 
   # env var name => { secret, version } for every container.
   secret_refs = merge(
@@ -104,17 +113,48 @@ locals {
   service_account_email = var.service_account_email != "" ? var.service_account_email : google_service_account.run[0].email
 }
 
+# Preserve the legacy resource addresses and values during an ordinary upgrade.
+moved {
+  from = random_password.better_auth
+  to   = random_password.better_auth[0]
+}
+moved {
+  from = random_password.db_encryption
+  to   = random_password.db_encryption[0]
+}
+moved {
+  from = random_password.bootstrap_code
+  to   = random_password.bootstrap_code[0]
+}
+
+# These values may be regenerated during evaluation, but stable write-only
+# version counters prevent remote changes on a subsequent apply/image upgrade.
+# Never bump those counters without an explicit secret-rotation procedure.
+ephemeral "random_password" "app" {
+  for_each = var.write_only_secrets ? {
+    DATABASE_PASSWORD                = 32
+    BETTER_AUTH_SECRET               = 48
+    DEN_DB_ENCRYPTION_KEY            = 48
+    DEN_INITIAL_ADMIN_BOOTSTRAP_CODE = 24
+  } : {}
+  length  = each.value
+  special = false
+}
+
 resource "random_password" "better_auth" {
+  count   = var.write_only_secrets ? 0 : 1
   length  = 48
   special = false
 }
 
 resource "random_password" "db_encryption" {
+  count   = var.write_only_secrets ? 0 : 1
   length  = 48
   special = false
 }
 
 resource "random_password" "bootstrap_code" {
+  count   = var.write_only_secrets ? 0 : 1
   length  = 24
   special = false
 }
@@ -136,8 +176,10 @@ resource "google_secret_manager_secret" "app" {
 resource "google_secret_manager_secret_version" "app" {
   for_each = local.secret_keys
 
-  secret      = google_secret_manager_secret.app[each.key].id
-  secret_data = local.secret_values[each.key]
+  secret                 = google_secret_manager_secret.app[each.key].id
+  secret_data            = var.write_only_secrets ? null : local.secret_values[each.key]
+  secret_data_wo         = var.write_only_secrets ? local.secret_values_wo[each.key] : null
+  secret_data_wo_version = var.write_only_secrets ? tostring(lookup(var.secret_data_wo_version, each.key, 1)) : null
 }
 
 # Runtime identity -----------------------------------------------------------

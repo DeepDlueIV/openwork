@@ -14,8 +14,8 @@ output "setup_url" {
 }
 
 output "bootstrap_code" {
-  description = "Code to enter at /setup with an owner email."
-  value       = local.bootstrap_code
+  description = "Code to enter at /setup in legacy mode. Null in write-only mode: retrieve the setup-code secret directly from Secret Manager."
+  value       = var.write_only_secrets ? null : local.bootstrap_code
   sensitive   = true
 }
 
@@ -42,6 +42,16 @@ output "migration_job_name" {
 output "database_instance_name" {
   description = "Cloud SQL instance name. Null with an existing database."
   value       = one(google_sql_database_instance.this[*].name)
+}
+
+output "database_identifier" {
+  description = "Common database identifier: managed Cloud SQL instance ID; existing Cloud SQL connection name when supplied; empty for an external non-Cloud-SQL database. Existing database_instance_name/cloud_sql_connection_name outputs remain available."
+  value       = var.create_database ? google_sql_database_instance.this[0].id : local.cloud_sql_connection_name
+}
+
+output "migration_step_identifier" {
+  description = "Common migration step identifier: the full Cloud Run job resource ID. migration_job_name remains available."
+  value       = google_cloud_run_v2_job.migrate.id
 }
 
 output "cloud_sql_connection_name" {

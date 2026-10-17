@@ -12,6 +12,8 @@ export const meSchema = z.object({
   enabled: z.boolean(),
   /** Workbot's Calendar tab (on while Workbot is on); older servers omit it. */
   calendar: z.boolean().default(false),
+  documents: z.boolean().default(false),
+  workspaceAssistant: z.boolean().default(false),
   /** The organization runs Automations in the cloud, so the Calendar can create them. */
   canSchedule: z.boolean().default(false),
   /** Side chats are on for this person (while Workbot is on). */
@@ -62,6 +64,8 @@ export function createHost(me: Me): WorkbotHost {
     appIcons: (name) => appIconCandidates(name, me.denUrl),
     homeHref: me.denUrl ? `${me.denUrl}/dashboard` : "/",
     calendar: me.calendar,
+    documents: me.documents,
+    workspaceAssistant: me.workspaceAssistant,
     canSchedule: me.canSchedule,
     connectionsHref: me.denUrl ? `${me.denUrl}/dashboard/your-connections` : null,
     sideChats: me.sideChats,

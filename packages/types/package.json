@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./workbot-context": {
+      "types": {
+        "openwork-build": "./dist/types/src/workbot-context.d.ts",
+        "default": "./src/workbot-context.ts"
+      },
+      "development": "./src/workbot-context.ts",
+      "default": "./src/workbot-context.ts"
+    },
     "./google-drive-upload": {
       "types": {
         "openwork-build": "./dist/types/src/google-drive-upload.d.ts",

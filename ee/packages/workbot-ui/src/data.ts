@@ -3,6 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { workbotViewContextSchema, type WorkbotViewContext } from "@openwork/types/workbot-context";
 import { errorMessage as getErrorMessage, hostFetch, workbotHost } from "./host";
 
 const requestJson = (path: string, init?: RequestInit, timeoutMs?: number) => workbotHost().requestJson(path, init, timeoutMs);
@@ -59,6 +60,7 @@ export type WorkbotTask = z.infer<typeof taskSchema>;
 const turnSchema = z.object({
   id: z.string(),
   text: z.string(),
+  context: workbotViewContextSchema.optional(),
   sentAt: z.number().nullable(),
   finishedAt: z.number().nullable(),
   status: z.enum(["queued", "working", "done", "failed", "stopped"]),
@@ -270,7 +272,7 @@ export function useSendWorkbotMessage() {
   const queryClient = useQueryClient();
   const chat = useWorkbotChat();
   return useMutation({
-    mutationFn: async (input: { id: string; text: string; attachments?: string[] }) => {
+    mutationFn: async (input: { id: string; text: string; attachments?: string[]; context?: WorkbotViewContext }) => {
       if (input.text.length > MAX_MESSAGE_CHARS) throw new WorkbotSendError("That's too long for one message. Send it as a file instead.", 400);
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const { response, payload } = await requestJson(inChat("/v1/workbot/messages", chat), {
@@ -429,7 +431,7 @@ export function useEditWorkbotMessage() {
   const queryClient = useQueryClient();
   const chat = useWorkbotChat();
   return useMutation({
-    mutationFn: async (input: { id: string; newId: string; text: string; attachments?: string[] }) => {
+    mutationFn: async (input: { id: string; newId: string; text: string; attachments?: string[]; context?: WorkbotViewContext }) => {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const { id, ...body } = input;
       const { response, payload } = await requestJson(

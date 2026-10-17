@@ -11,6 +11,7 @@
  * network and never throw (a throwing transform disables the plugin).
  */
 import { createHash } from "node:crypto"
+import { createDesktopProviderPlugin } from "./desktop.ts"
 import {
   INTEGRATION_ID,
   INTEGRATION_NAME,
@@ -160,7 +161,8 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
     id: PLUGIN_ID,
     async setup(ctx: PluginContext): Promise<Cleanup> {
       if (ctx.options.desktopSession !== undefined) {
-        const { createDesktopProviderPlugin } = await import("./desktop.ts")
+        // Keep provider-only setup in the entry graph; its credential broker is
+        // additionally shared through native require across Location-scoped graphs.
         return (await createDesktopProviderPlugin({ fetch: fetcher, now, retryMs: deps.retryMs }).setup(ctx)) ?? (() => {})
       }
       if (typeof ctx.integration?.transform !== "function"
@@ -184,6 +186,8 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
       let refreshController = new AbortController()
       let stream: AbortController | null = null
       let streamKey = ""
+      let revokedIdentity = ""
+      let unauthorizedIdentity = ""
       const stopStream = () => {
         stream?.abort()
         stream = null
@@ -297,8 +301,22 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
         stream = controller
         void subscribeSharedInventory({
           identity: session,
+          revoked: () => {
+            if (controller.signal.aborted || disposed) return
+            revokedIdentity = key
+            generation++
+            retry.reset()
+            refreshController.abort()
+            refreshController = new AbortController()
+            queued = false
+            forceQueued = false
+            // Retain this stream and identity for same-session membership regrant.
+            void ctx.storage.remove(INVENTORY_KEY).catch(() => {})
+            void publish(EMPTY).catch(() => {})
+          },
           unauthorized: () => {
             if (controller.signal.aborted || disposed) return
+            unauthorizedIdentity = key
             generation++
             retry.reset()
             refreshController.abort()
@@ -322,7 +340,11 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
             // do not hide a revoked session behind a failed feature discovery.
             return controller.signal.aborted ? null : next
           },
-          changed: () => { void refresh(true) },
+          changed: () => {
+            if (controller.signal.aborted || disposed) return
+            if (revokedIdentity === key) revokedIdentity = ""
+            void refresh(true)
+          },
         }).finally(() => {
           if (stream === controller) { stream = null; streamKey = "" }
         })
@@ -361,6 +383,24 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
 
         const metadata = readCredentialMetadata(credential, options.apiBaseUrl)
         const session: DenSession = { apiBaseUrl: metadata.apiBaseUrl, token: credential.access, orgId: metadata.orgId }
+        const identity = fingerprint(session)
+        // A timer/credential event must not resurrect authority from the same
+        // denied session. Membership regrant is acknowledged by a successful
+        // stream reconnect; session denial requires an actually changed token.
+        if (identity === unauthorizedIdentity) {
+          await publish(EMPTY)
+          return
+        }
+        if (identity === revokedIdentity) {
+          // Any credential event can abort the old subscription even when
+          // OpenWork's token is unchanged. Keep the denial fence, but restore
+          // its retry-only rail so a real same-session regrant can recover.
+          syncStream(session, true)
+          await publish(EMPTY)
+          return
+        }
+        if (revokedIdentity !== identity) revokedIdentity = ""
+        if (unauthorizedIdentity !== identity) unauthorizedIdentity = ""
         const key = `${connectionKey(connection, credential.access)}:${hash(`${session.apiBaseUrl}:${session.orgId}`)}`
         if (connection.type === "credential") {
           await reconcileSessions({ id: connection.id, token: credential.access, apiBaseUrl: metadata.apiBaseUrl })

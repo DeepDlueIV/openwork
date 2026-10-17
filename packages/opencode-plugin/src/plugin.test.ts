@@ -343,7 +343,7 @@ function liveDen() {
   const fetcher: Fetch = async (url, init) => {
     if (url.endsWith("/v1/org")) return Response.json({ features: { liveProviderSync: enabled } })
     if (url.endsWith("/inventory/events")) {
-      if (!enabled) return Response.json({ code: "feature_disabled" }, { status: 404 })
+      if (!enabled) return Response.json({ error: "feature_disabled", feature: "liveProviderSync" }, { status: 404 })
       return new Response(new ReadableStream<Uint8Array>({ start(controller) { streams.push(controller) }, cancel() { cancelled++ } }), { headers: { "content-type": "text/event-stream" } })
     }
     if (url.includes("inference-providers?")) {
@@ -666,7 +666,8 @@ for (const desktop of [false, true]) {
     await cleanup?.()
   })
 
-  test(`${desktop ? "desktop" : "standalone"} stream 403 fences a late inventory and clears all shared Locations`, async () => {
+  for (const status of [403, 404]) {
+  test(`${desktop ? "desktop" : "standalone"} stream ${status} organization denial fences late inventory, clears Locations, and recovers same-session regrant`, async () => {
     const den = liveDen()
     const endpoint = "http://127.0.0.1:1234/session"
     const hosts = Array.from({ length: 2 }, () => createHost(desktop ? { desktopSession: endpoint, liveProviderSync: true } : { apiBaseUrl: API }))
@@ -677,7 +678,7 @@ for (const desktop of [false, true]) {
     const waiting = new Promise<void>(resolve => { release = resolve })
     const fetcher: Fetch = async (url, init) => {
       if (url === endpoint) return Response.json({ apiBaseUrl: API, token: SESSION_TOKEN, orgId: ORG_ID })
-      if (denied && url.endsWith("/inventory/events")) return Response.json({ error: "membership_revoked" }, { status: 403 })
+      if (denied && url.endsWith("/inventory/events")) return Response.json({ error: "organization_not_found" }, { status })
       if (block && url.includes("inference-providers?")) await waiting
       return den.fetch(url, init)
     }
@@ -698,8 +699,21 @@ for (const desktop of [false, true]) {
     assert.ok(hosts.every(host => host.providers().size === 0), "late old-authority fetch cannot republish")
     assert.ok(hosts.every(host => !host.storage.has(desktop ? "desktop/provider-inventory" : "inventory")))
     assert.ok(hosts.every(host => host.credentials.size === 1))
+    if (!desktop) {
+      // Another provider's credential event does not replace this OpenWork
+      // token or restore denied authority. It must not lose the recovery rail.
+      for (const host of hosts) host.emitCredentialEvent()
+      await settle()
+      assert.ok(hosts.every(host => host.providers().size === 0), "unrelated credential events cannot clear the denial fence")
+    }
+    denied = false
+    block = false
+    for (let i = 0; i < 350 && hosts.some(host => !host.providers().size); i++) await delay(10)
+    assert.ok(hosts.every(host => host.providers().size === 1), "same-token/org regrant recovered without an engine restart or credential event")
+    assert.equal(den.streams.length, 2, "one shared subscription reconnected after regrant")
     for (const cleanup of cleanups) await cleanup?.()
   })
+  }
 }
 
 test("desktop rollout off does not register providers, MCP, integration or make requests", async () => {

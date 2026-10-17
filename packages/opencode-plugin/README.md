@@ -151,12 +151,19 @@ one provider owner for the engine's entire lifetime; do not start the legacy
 writer alongside a running plugin when the rollout is killed. Restarting the
 engine can choose the legacy owner again.
 
-The child process receives `OPENWORK_PROVIDER_SESSION_TOKEN`, a random loopback
-capability, through its environment, never through plugin options/config. The
-plugin sends it as a bearer to `desktopSession`; that endpoint must return the
-current `{apiBaseUrl, token, orgId}` or JSON `null` while signed out. Only literal
-HTTP loopback addresses are accepted, and redirects are refused. The endpoint
-must continue reporting the current session after a rollout kill.
+The managed child receives a one-shot anonymous pipe on fd 3 containing JSON
+`{endpoint, token}`. Only a nonsecret fd marker (`OPENWORK_PROVIDER_SESSION_FD=3`)
+is in its environment: the capability is never in initial process environment,
+arguments, files, plugin options, or config. The trusted plugin entrypoint consumes
+and closes the pipe before setup, including flag-off boot. A frozen native CJS
+broker shares the capability across Location-scoped ESM/source graphs and reloads,
+with the credential retained only in its module closure; it signs requests only to
+the bound endpoint. `OPENWORK_PROVIDER_SESSION_BROKER` contains only the absolute
+path to that credential-free broker code (not a credential/config file). Thus late rollout activation needs no still-open credential descriptor.
+The plugin sends the capability as a bearer to `desktopSession`; that endpoint
+must return the current `{apiBaseUrl, token, orgId}` or JSON `null` while signed
+out. Only literal HTTP loopback addresses are accepted, and redirects are refused.
+The endpoint must continue reporting the current session after a rollout kill.
 
 This mode registers only providers: no MCP, standalone login, remote sessions,
 or Den sign-out. It checks the local handoff every second and fetches Den

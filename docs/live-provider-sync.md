@@ -26,23 +26,27 @@ service. Heartbeats and a bounded reconnect loop detect broken streams.
 
 ### Revision dependency check
 
-The revision is a member/org-scoped HMAC over batched persisted dependencies
-in a repeatable-read, read-only transaction: providers, complete model config,
-model groups and links, credential sets, access grants, the member's live team
-memberships, relevant organization/member credentials, and the member's
-gateway keys. Credential expiry and AWS client expiry add readiness booleans,
-not the wall clock, so time-only loss of readiness also invalidates inventory.
-The stream rechecks the current auth session, membership and uncached registry
-rollout on every read. Only the opaque revision leaves Den.
+The revision is a member/org-scoped HMAC over the caller-visible projection
+of batched persisted dependencies in a repeatable-read, read-only transaction.
+Live team memberships and grants resolve effective access first; only granted
+providers, allowed models and links, visible groups/credential sets, relevant
+organization/member credentials, and the caller's gateway keys are hashed.
+Unrelated grants, other members' credentials, inaccessible models/providers,
+and incidental provider touch timestamps cannot change this member's revision.
+Credential expiry and AWS client expiry add readiness booleans, not the wall
+clock, so time-only loss of readiness also invalidates inventory. The stream
+rechecks the current auth session, membership and uncached registry rollout on
+every read. Only the opaque revision leaves Den.
 
 This deliberately favors complete dependency coverage over `MAX(updated_at)`
 or a stored provider counter: those miss indirect grant/team writes, deletions,
 key rotations and config-only changes. It avoids per-provider summary/connect
 calls, upstream requests and gateway-key issuance during revision checks.
-Organization-indexed batches are cheaper than rebuilding every provider's
-member summary, but still scale with the organization's stored catalog, and
-unrelated provider edits can conservatively trigger a harmless refetch. This
-is not a claim of constant-time revision checking.
+Organization-indexed batches avoid rebuilding every provider's member summary,
+but still scale with the organization's stored access data. This is not a
+claim of constant-time revision checking. Scoping the projection is also an
+isolation requirement: an opaque revision must not signal activity on
+inaccessible resources.
 
 The old server materialization/push/confirm and app refresh triggers remain
 in place for the flag-off path and OpenCode v1. Local/legacy providers keep
@@ -59,13 +63,23 @@ engine lifetime.
 
 Desktop uses its existing Den session, not a second device login. A private
 loopback bridge exposes the current session only to the managed engine,
-authenticated by a per-engine random capability passed in the child process
-environment. The dormant bridge returns no session until live ownership is
-selected, which permits late sign-in without giving a flag-off engine Den
-credentials. No Den session token is written into `opencode.json`, plugin
-options, a URL, or a command line. The capability is a credential too: never
-log it. A loopback listener without authentication is not an acceptable
-substitute.
+authenticated by a per-engine random capability delivered over a one-shot
+anonymous pipe. Neither the initial process environment nor a config file,
+argument, URL or named socket contains that capability. A trusted inert
+consumer loads even on flag-off boot and closes the descriptor before native
+tools can run; it makes no Den/session requests until live ownership starts.
+This permits late sign-in without exposing an unread pipe to tool subprocesses.
+
+OpenCode isolates ESM graphs across Locations. A credential-free CJS broker
+loaded through a canonical native `createRequire` filename shares one frozen
+request API through the process-wide native module cache. Its private closure
+owns the credential, bound to one bridge endpoint. Broker code on disk contains
+no credential, and there is no global credential getter. This is necessary:
+independent ESM closures would leave later workspaces permanently empty after
+the first graph consumed the pipe. The bridge returns no session until live
+ownership is selected. No Den session token is written into `opencode.json`,
+plugin options, a URL, or a command line. A loopback listener without
+authentication is not an acceptable substitute.
 
 The provider cache contains a gateway snapshot, including the gateway key,
 just as the standalone plugin's private storage does. It must be account- and

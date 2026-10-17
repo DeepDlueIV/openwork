@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { fetchDesktopSession } from "./desktop-credential-channel.ts"
 import { DenAuthError, isAllowedApiBaseUrl, isRecord, normalizeBaseUrl, type DenSession, type Fetch } from "./den.ts"
 import { subscribeSharedInventory } from "./inventory-events.ts"
 import { inventoryRetry } from "./inventory-retry.ts"
@@ -26,6 +27,11 @@ export async function readDesktopSession(fetcher: Fetch, endpoint: string, capab
     redirect: "error",
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(1500)]) : AbortSignal.timeout(1500),
   })
+  return parseDesktopSession(response)
+}
+
+async function parseDesktopSession(response: Response | null): Promise<DenSession | null> {
+  if (!response) return null
   if (!response.ok) throw new Error("Desktop session unavailable")
   const value: unknown = await response.json()
   if (value === null) return null
@@ -46,8 +52,8 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
       // The server supplies the resolved registry value, not a new environment flag.
       if (ctx.options.liveProviderSync !== true) return
       const endpoint = ctx.options.desktopSession
-      const capability = (deps.capability ?? (() => process.env.OPENWORK_PROVIDER_SESSION_TOKEN))()
-      if (!isDesktopSessionEndpoint(endpoint) || !capability) return
+      const capability = deps.capability?.()
+      if (!isDesktopSessionEndpoint(endpoint)) return
       if (typeof ctx.provider?.transform !== "function" || typeof ctx.provider?.reload !== "function" || typeof ctx.storage?.get !== "function") {
         throw new Error("OpenWork provider sync needs OpenCode V2 provider and storage APIs")
       }
@@ -77,6 +83,17 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
         if (providers === next) applied = fingerprint // Failed/stale reloads remain retryable.
       }
       const records = (value: Inventory | null) => snapshotFrom(value, options, { type: "env", name: "openwork-desktop" }).providers
+      const revoked = () => {
+        epoch++
+        retry.reset()
+        refreshController.abort()
+        refreshController = new AbortController()
+        inventory = null
+        queued = false
+        // Keep the session/stream: membership can return without a new token.
+        void ctx.storage.remove(CACHE_KEY).catch(() => {})
+        void publish([]).catch(() => {})
+      }
       const unauthorized = () => {
         epoch++
         retry.reset()
@@ -132,7 +149,9 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
         polling = true
         try {
           // This local-only check detects sign-out/account/org/token changes without polling Den inventory.
-          const next = await readDesktopSession(fetcher, endpoint, capability, lifetime.signal).catch(() => null)
+          const next = await (capability
+            ? readDesktopSession(fetcher, endpoint, capability, lifetime.signal)
+            : fetchDesktopSession(fetcher, endpoint, lifetime.signal).then(parseDesktopSession)).catch(() => null)
           if (lifetime.signal.aborted) return
           const nextKey = next ? digest(next) : ""
           if (nextKey === key) {
@@ -167,6 +186,7 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
           void subscribeSharedInventory({
             identity: next,
             unauthorized,
+            revoked,
             fetch: fetcher,
             signal: AbortSignal.any([lifetime.signal, controller.signal]),
             session: async () => {

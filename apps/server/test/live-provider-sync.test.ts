@@ -30,6 +30,17 @@ test("flag off keeps Gateway config and never registers the provider sync plugin
   assert.ok(!JSON.stringify(rendered).includes("/plugins/live"));
 });
 
+test("flag-off managed boot consumes the private channel before tools without activating live ownership", () => {
+  const rendered = renderOpencodeV2Config({ providers: [gateway], skills: [], providerSyncPluginDirectory: "/plugins/live",
+    providerSessionEndpoint: "http://127.0.0.1:1234/session" });
+  const serialized = JSON.stringify(rendered);
+  assert.ok(serialized.includes('"liveProviderSync":false'));
+  assert.ok(serialized.includes('"desktopSession":"http://127.0.0.1:1234/session"'));
+  assert.ok(serialized.includes("gateway-test-secret"), "flag-off boot retains the legacy owner");
+  assert.ok(!serialized.includes("den-test-secret"));
+  assert.ok(!serialized.includes("OPENWORK_PROVIDER_SESSION_TOKEN"));
+});
+
 test("live owner strips the entire Gateway config row while retaining local/legacy rows and filters", () => {
   const rendered = renderOpencodeV2Config({ providers: [gateway, legacy], skills: [], providerSyncPluginDirectory: "/plugins/live",
     providerFiltersPluginDirectory: "/plugins/filters", desktopSession: "http://127.0.0.1:1234/session" });

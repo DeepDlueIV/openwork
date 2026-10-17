@@ -13,6 +13,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { appendEngineOutputTail, createEngineStartupLineReader } from "./engine-output.js";
 import { acquireEngineHistoryLease } from "./opencode-v2-history-lock.js";
+import { providerCredentialBrokerSource } from "./opencode-v2-provider-channel.js";
 
 export { installOpencodeV2Binary } from "./opencode-v2-binary.js";
 
@@ -57,7 +58,7 @@ export interface ManagedOpencodeV2ServerOptions {
   env?: Record<string, string>;
   bootTimeoutMs?: number;
   contextTools?: { url: string; token: string; browser?: { url: string; token: string } };
-  /** Session capability stays in the child environment, not the generated config. */
+  /** Session capability travels once over an inherited pipe, never environment or config. */
   providerSession?: { url: string; token: string; enabled: () => boolean };
   permissions?: () => Promise<EnginePermissionRule[]>;
   /** Extra absolute skill directories registered before boot, so no later config write reloads the catalog. */
@@ -214,6 +215,8 @@ export function renderOpencodeV2Config(input: {
   gatewayQuotaPluginDirectory?: string;
   providerSyncPluginDirectory?: string;
   desktopSession?: string;
+  /** Load the channel consumer even before the live-provider rollout activates. */
+  providerSessionEndpoint?: string;
   /** Catalog-only rules survive removal of live-owned providers from config. */
   providerFilters?: OpencodeV2ProviderFilters;
   providerFiltersPluginDirectory?: string;
@@ -286,14 +289,14 @@ export function renderOpencodeV2Config(input: {
   // disconnected OpenCode Zen disappears here too and returns once re-enabled.
   for (const id of disabled) filters[id] = { whitelist: [] };
   const plugins = [
-    ...(input.desktopSession && input.providerSyncPluginDirectory ? [{
+    ...((input.desktopSession || input.providerSessionEndpoint) && input.providerSyncPluginDirectory ? [{
       package: pathToFileURL(input.providerSyncPluginDirectory).href,
-      options: { desktopSession: input.desktopSession, liveProviderSync: true },
+      options: { desktopSession: input.desktopSession ?? input.providerSessionEndpoint, liveProviderSync: Boolean(input.desktopSession) },
     }] : []),
     ...(input.contextTools && input.contextPluginDirectory ? [{ package: pathToFileURL(input.contextPluginDirectory).href, options: input.contextTools }] : []),
-    ...(Object.keys(gatewayProviders).length && input.gatewayQuotaPluginDirectory ? [{
+    ...((Object.keys(gatewayProviders).length || input.desktopSession) && input.gatewayQuotaPluginDirectory ? [{
       package: pathToFileURL(input.gatewayQuotaPluginDirectory).href,
-      options: { providers: gatewayProviders },
+      options: { providers: gatewayProviders, ...(input.desktopSession ? { liveProviders: true } : {}) },
     }] : []),
     ...(Object.keys(filters).length && input.providerFiltersPluginDirectory ? [{
       package: pathToFileURL(input.providerFiltersPluginDirectory).href,
@@ -327,6 +330,7 @@ export async function createManagedOpencodeV2Server(
   const instanceRoot = options.instanceId ? join(options.rootDir, "instances", options.instanceId) : options.rootDir;
   const configDir = join(instanceRoot, "config");
   const providerSyncPluginDirectory = join(instanceRoot, "provider-sync-plugin");
+  const providerCredentialBrokerPath = join(providerSyncPluginDirectory, "credential-broker.cjs");
   const gatewayQuotaPluginDirectory = join(instanceRoot, "gateway-quota-plugin");
   const providerFiltersPluginDirectory = join(instanceRoot, "provider-filters-plugin");
   const mcpResultsPluginDirectory = join(instanceRoot, "mcp-results-plugin");
@@ -368,6 +372,7 @@ export async function createManagedOpencodeV2Server(
   await chmod(configDir, 0o700);
   if (options.providerSession) {
     await mkdir(providerSyncPluginDirectory, { recursive: true, mode: 0o700 });
+    await writeFile(providerCredentialBrokerPath, providerCredentialBrokerSource, { mode: 0o600 });
     await writeFile(join(providerSyncPluginDirectory, "package.json"), JSON.stringify({ type: "module" }), { mode: 0o600 });
     await writeFile(join(providerSyncPluginDirectory, "server.js"),
       `export { default } from ${JSON.stringify(pathToFileURL(openworkProviderSyncV2PluginPath()).href)};\n`, { mode: 0o600 });
@@ -405,14 +410,27 @@ export async function createManagedOpencodeV2Server(
     env: {
       ...inherited,
       ...(options.env?.OPENCODE_DISABLE_MODELS_FETCH ? { OPENCODE_DISABLE_MODELS_FETCH: options.env.OPENCODE_DISABLE_MODELS_FETCH } : {}),
-      ...(options.providerSession ? { OPENWORK_PROVIDER_SESSION_TOKEN: options.providerSession.token } : {}),
+      ...(options.providerSession ? { OPENWORK_PROVIDER_SESSION_FD: "3", OPENWORK_PROVIDER_SESSION_BROKER: providerCredentialBrokerPath } : {}),
       OPENCODE_PASSWORD: password,
       OPENCODE_DB: join(options.rootDir, "opencode.db"),
       OPENCODE_CONFIG_DIR: configDir,
       ...(opencodeModelsUrl === undefined ? {} : { OPENCODE_MODELS_URL: opencodeModelsUrl }),
     },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", options.providerSession ? "pipe" : "ignore"],
   });
+  if (options.providerSession) {
+    const channel = child.stdio[3];
+    if (!channel || !("end" in channel)) {
+      child.kill();
+      await historyLease.release();
+      throw new Error("OpenCode v2 credential channel unavailable");
+    }
+    // A private, anonymous pipe: no named socket, file, argument, or environment
+    // contains this credential. The trusted plugin consumes and closes it before
+    // setup, even on flag-off boot, and retains it only in its module closure.
+    channel.on("error", () => { child.kill(); });
+    channel.end(JSON.stringify({ endpoint: options.providerSession.url, token: options.providerSession.token }));
+  }
 
   let stdout = "";
   let stderr = "";
@@ -429,12 +447,12 @@ export async function createManagedOpencodeV2Server(
     lines.stop();
     void historyLease.release();
   });
-  child.stdout.on("data", (chunk) => {
+  child.stdout?.on("data", (chunk) => {
     const text = String(chunk);
     stdout = appendEngineOutputTail(stdout, text);
     lines.write(text);
   });
-  child.stderr.on("data", (chunk) => {
+  child.stderr?.on("data", (chunk) => {
     stderr = appendEngineOutputTail(stderr, String(chunk));
   });
   child.on("error", (error) => {
@@ -490,7 +508,8 @@ export async function createManagedOpencodeV2Server(
       providers: [...providers.values()],
       disabledProviderIds,
       gatewayQuotaPluginDirectory,
-      ...(options.providerSession?.enabled() ? { providerSyncPluginDirectory, desktopSession: options.providerSession.url } : {}),
+      ...(options.providerSession ? { providerSyncPluginDirectory, providerSessionEndpoint: options.providerSession.url } : {}),
+      ...(options.providerSession?.enabled() ? { desktopSession: options.providerSession.url } : {}),
       providerFiltersPluginDirectory,
       providerFilters,
       mcpResultsPluginDirectory,

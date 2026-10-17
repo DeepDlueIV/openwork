@@ -966,6 +966,18 @@ export class CloudProviderSync {
       session,
       reason,
     };
+    // A routing transition changes the provider owner even when the Den
+    // identity is unchanged. Joining an already-running live pass can lose
+    // v1's only restoration request; always reconcile the latest owner after
+    // that pass finishes. Ordinary same-context refreshes still coalesce.
+    if (reason === "engine_routing_changed" && this.activeRun) {
+      if (this.trailingRun) {
+        this.trailingRun.contextKey = request.contextKey;
+        this.trailingRun.request = request;
+        return this.trailingRun.promise;
+      }
+      return this.createTrailingRun(request);
+    }
     if (this.activeRun?.contextKey === request.contextKey) {
       const trailing = this.trailingRun;
       if (trailing && trailing.contextKey !== request.contextKey) {

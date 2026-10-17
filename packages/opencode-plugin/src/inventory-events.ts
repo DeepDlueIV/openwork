@@ -1,6 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises"
 import { createHash } from "node:crypto"
-import { isAllowedApiBaseUrl, normalizeBaseUrl, type DenSession, type Fetch } from "./den.ts"
+import { isAllowedApiBaseUrl, isRecord, normalizeBaseUrl, type DenSession, type Fetch } from "./den.ts"
 
 export const INVENTORY_EVENTS_PATH = "/v1/inference-providers/inventory/events"
 
@@ -12,6 +12,7 @@ interface SharedSubscription {
   readonly controller: AbortController
   readonly listeners: Map<symbol, SubscriptionOptions>
   received: boolean
+  denied: "session" | "organization" | null
 }
 
 // OpenCode creates one plugin instance per Location. Share across all copies of
@@ -28,7 +29,7 @@ export function subscribeSharedInventory(options: SubscriptionOptions & { identi
   let entry = shared.get(key)
   const first = !entry
   if (!entry) {
-    entry = { controller: new AbortController(), listeners: new Map(), received: false }
+    entry = { controller: new AbortController(), listeners: new Map(), received: false, denied: null }
     shared.set(key, entry)
   }
   const current = entry
@@ -63,11 +64,21 @@ export function subscribeSharedInventory(options: SubscriptionOptions & { identi
         return null
       },
       unauthorized: () => {
+        current.received = false
+        current.denied = "session"
         for (const listener of current.listeners.values()) {
           if (!listener.signal.aborted) { try { listener.unauthorized?.() } catch {} }
         }
       },
+      revoked: () => {
+        current.received = false
+        current.denied = "organization"
+        for (const listener of current.listeners.values()) {
+          if (!listener.signal.aborted) { try { (listener.revoked ?? listener.unauthorized)?.() } catch {} }
+        }
+      },
       changed: () => {
+        current.denied = null
         current.received = true
         for (const listener of current.listeners.values()) {
           if (!listener.signal.aborted) { try { listener.changed() } catch {} }
@@ -76,8 +87,15 @@ export function subscribeSharedInventory(options: SubscriptionOptions & { identi
     })
     // Keep a terminal (feature-disabled) subscription until its last consumer
     // leaves. New Locations must not reopen the killed stream for this session.
-  } else if (current.received) {
-    queueMicrotask(() => { if (!options.signal.aborted) options.changed() })
+  } else {
+    queueMicrotask(() => {
+      if (options.signal.aborted) return
+      // A Location joining during revocation must not reuse cached authority or
+      // reopen the shared connection to bypass its retry backoff.
+      if (current.denied === "organization") (options.revoked ?? options.unauthorized)?.()
+      else if (current.denied === "session") options.unauthorized?.()
+      else if (current.received) options.changed()
+    })
   }
   return result
 }
@@ -123,10 +141,44 @@ interface SubscriptionOptions {
   fetch: Fetch
   session: () => Promise<DenSession | null>
   changed: () => void
+  /** Invalid session: terminal until the credential changes. */
   unauthorized?: () => void
+  /** Organization access lost: fence/cache-clear, but retain identity and stream for regrant. */
+  revoked?: () => void
   signal: AbortSignal
   heartbeatMs?: number
   retryMs?: number
+}
+
+/** Read Den's actual JSON error contract, without trusting unbounded error bodies. */
+async function organizationNotFound(response: Response, signal: AbortSignal): Promise<boolean> {
+  if (!response.body) return false
+  const reader = response.body.getReader()
+  const cancel = () => { void reader.cancel().catch(() => {}) }
+  signal.addEventListener("abort", cancel, { once: true })
+  try {
+    const decoder = new TextDecoder()
+    let text = ""
+    let size = 0
+    while (!signal.aborted) {
+      const chunk = await reader.read()
+      if (chunk.done) {
+        text += decoder.decode()
+        const value: unknown = JSON.parse(text)
+        return isRecord(value) && value.error === "organization_not_found"
+      }
+      size += chunk.value.byteLength
+      if (size > 16 * 1024) return false
+      text += decoder.decode(chunk.value, { stream: true })
+    }
+    return false
+  } catch {
+    return false
+  } finally {
+    signal.removeEventListener("abort", cancel)
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
 }
 
 /** One owned subscription. Resolves credentials anew before every reconnect. */
@@ -156,13 +208,27 @@ export function subscribeInventory(options: SubscriptionOptions): Promise<void> 
           redirect: "error",
           signal,
         })
-        // A killed/unsupported rollout is terminal for this session; do not hammer Den.
-        // A new account/session (or a restarted engine) owns a new subscription.
-        if (response.status === 404) { await response.body?.cancel().catch(() => {}); return }
-        if (response.status === 401 || response.status === 403) {
+        // Membership middleware runs before the feature guard and also returns
+        // 404. Only its explicit JSON contract revokes authority; feature_disabled
+        // and unknown/unsupported 404s retain the snapshot and stay terminal.
+        if (response.status === 404) {
+          if (!await organizationNotFound(response, signal)) return
+          if (signal.aborted) return
+          const revoked = options.revoked ?? options.unauthorized
+          revoked?.()
+          throw new Error("Inventory organization access revoked")
+        }
+        if (response.status === 401) {
           await response.body?.cancel().catch(() => {})
-          options.unauthorized?.()
+          if (!signal.aborted) options.unauthorized?.()
           return
+        }
+        if (response.status === 403) {
+          await response.body?.cancel().catch(() => {})
+          if (signal.aborted) return
+          const revoked = options.revoked ?? options.unauthorized
+          revoked?.()
+          throw new Error("Inventory organization access revoked")
         }
         if (!response.ok || !response.body || !response.headers.get("content-type")?.includes("text/event-stream")) {
           await response.body?.cancel()

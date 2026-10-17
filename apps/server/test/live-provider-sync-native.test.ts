@@ -9,6 +9,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { SseParser } from "../../../packages/opencode-plugin/src/inventory-events.ts";
+import { providerCredentialBrokerSource } from "../src/opencode-v2-provider-channel.ts";
 
 // This is deliberately a binary integration test, not a mock of the provider fold.
 // OPENWORK_TEST_OPENCODE2 may point at the same pinned binary on Linux/CI.
@@ -55,7 +56,7 @@ function gateway(id: string, models: { id: string; name: string }[], name = "Nat
   };
 }
 
-test("pinned V2 replays desktop inventory and real model filters through native provider/model events", { timeout: 90_000 }, async t => {
+test("pinned V2 replays desktop inventory and real model filters through native provider/model events", { timeout: 180_000 }, async t => {
   try { await access(binary); } catch {
     t.skip(`needs: pinned OpenCode 2.0.26 binary (${binary}); set OPENWORK_TEST_OPENCODE2`);
     return;
@@ -83,6 +84,12 @@ test("pinned V2 replays desktop inventory and real model filters through native 
   let inventoryStatus = 200;
   let inventoryReads = 0;
   let inferenceRequests = 0;
+  let streamStatus = 200;
+  let streamError = "feature_disabled";
+  let streamAttempts = 0;
+  let holdNextInventory = false;
+  let heldInventory: { response: ServerResponse; body: string } | undefined;
+  const credentials: { token: string | undefined; org: string | string[] | undefined }[] = [];
   const subscriptions = new Set<ServerResponse>();
   const mock = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -92,9 +99,16 @@ test("pinned V2 replays desktop inventory and real model filters through native 
       res.end(JSON.stringify(session));
       return;
     }
+    credentials.push({ token: req.headers.authorization, org: req.headers["x-openwork-org-id"] });
     assert.equal(req.headers.authorization, `Bearer ${session?.token}`);
     assert.equal(req.headers["x-openwork-org-id"], session?.orgId);
     if (url.pathname.endsWith("/inventory/events")) {
+      streamAttempts++;
+      if (streamStatus !== 200) {
+        res.writeHead(streamStatus, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: streamError }));
+        return;
+      }
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
       res.write(": connected\n\n");
       subscriptions.add(res);
@@ -106,12 +120,18 @@ test("pinned V2 replays desktop inventory and real model filters through native 
     if (inventoryStatus !== 200) { res.end("{}"); return; }
     if (url.pathname === "/v1/inference-providers") {
       inventoryReads++;
-      res.end(JSON.stringify({ inferenceProviders: providers }));
+      const body = JSON.stringify({ inferenceProviders: providers });
+      if (holdNextInventory) {
+        holdNextInventory = false;
+        heldInventory = { response: res, body };
+        return;
+      }
+      res.end(body);
       return;
     }
     const provider = providers.find(item => url.pathname === `/v1/inference-providers/${item.id}/connect`);
     if (provider) {
-      res.end(JSON.stringify({ inferenceProvider: { ...provider, apiKey: "ow_gw_native_test_only" } }));
+      res.end(JSON.stringify({ inferenceProvider: { ...provider, apiKey: `ow_gw_${session?.orgId}_${session?.token}` } }));
       return;
     }
     inferenceRequests++;
@@ -136,6 +156,8 @@ test("pinned V2 replays desktop inventory and real model filters through native 
   const pluginDirectory = join(root, "plugin");
   await mkdir(pluginDirectory);
   const bundle = join(pluginDirectory, "server.mjs");
+  const broker = join(pluginDirectory, "credential-broker.cjs");
+  await writeFile(broker, providerCredentialBrokerSource, { mode: 0o600 });
   await writeFile(entry, `
 import desktop from ${JSON.stringify(join(repo, "packages/opencode-plugin/server.ts"))};
 import filters from ${JSON.stringify(join(repo, "apps/server/src/opencode-plugins/openwork-provider-filters-v2.ts"))};
@@ -177,26 +199,38 @@ export default {
   const engineUrl = await listen(reservation);
   await new Promise<void>(resolveClose => reservation.close(() => resolveClose()));
   const port = new URL(engineUrl).port;
-  const child = spawn(binary, ["serve", "--hostname", "127.0.0.1", "--port", port], {
-    cwd: directory,
-    // Do not inherit cloud credentials, user's OpenCode paths, proxy, or config.
-    env: {
-      PATH: process.env.PATH,
-      HOME: home, OPENCODE_TEST_HOME: home,
-      XDG_CONFIG_HOME: join(home, "config"), XDG_DATA_HOME: join(home, "data"),
-      XDG_CACHE_HOME: join(home, "cache"), XDG_STATE_HOME: join(home, "state"),
-      OPENCODE_CONFIG_DIR: join(home, "config", "opencode"),
-      OPENCODE_DB: join(home, "native.db"),
-      OPENCODE_DISABLE_MODELS_FETCH: "true", OPENCODE_DISABLE_FILEWATCHER: "true",
-      OPENCODE_PASSWORD: "native-engine-test-password",
-      OPENWORK_PROVIDER_SESSION_TOKEN: capability,
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const startChild = () => {
+    const engine = spawn(binary, ["serve", "--hostname", "127.0.0.1", "--port", port], {
+      cwd: directory,
+      // Do not inherit cloud credentials, user's OpenCode paths, proxy, or config.
+      env: {
+        PATH: process.env.PATH,
+        HOME: home, OPENCODE_TEST_HOME: home,
+        XDG_CONFIG_HOME: join(home, "config"), XDG_DATA_HOME: join(home, "data"),
+        XDG_CACHE_HOME: join(home, "cache"), XDG_STATE_HOME: join(home, "state"),
+        OPENCODE_CONFIG_DIR: join(home, "config", "opencode"),
+        OPENCODE_DB: join(home, "native.db"),
+        OPENCODE_DISABLE_MODELS_FETCH: "true", OPENCODE_DISABLE_FILEWATCHER: "true",
+        OPENCODE_PASSWORD: "native-engine-test-password",
+        OPENWORK_PROVIDER_SESSION_FD: "3",
+        OPENWORK_PROVIDER_SESSION_BROKER: broker,
+      },
+      stdio: ["ignore", "pipe", "pipe", "pipe"],
+    });
+    // Keep the fixture's transport in one place, matching the managed child path.
+    const channel = engine.stdio[3];
+    assert.ok(channel && "end" in channel);
+    channel.end(JSON.stringify({ endpoint: `${mockUrl}/session`, token: capability }));
+    return engine;
+  };
+  let child = startChild();
   let logs = "";
-  child.stdout.on("data", chunk => { logs += String(chunk); });
-  child.stderr.on("data", chunk => { logs += String(chunk); });
-  cleanups.push(async () => {
+  const captureLogs = () => {
+    child.stdout.on("data", chunk => { logs += String(chunk); });
+    child.stderr.on("data", chunk => { logs += String(chunk); });
+  };
+  captureLogs();
+  const stopChild = async () => {
     child.kill("SIGTERM");
     if (child.exitCode === null && child.signalCode === null) {
       await Promise.race([once(child, "exit"), delay(3000, undefined, { ref: false })]);
@@ -205,7 +239,15 @@ export default {
         await once(child, "exit");
       }
     }
-  });
+  };
+  cleanups.push(stopChild);
+  const restart = async () => {
+    await stopChild();
+    logs = "";
+    child = startChild();
+    captureLogs();
+    await until(() => request("/api/provider"), () => true, "native engine restart");
+  };
   const headers = { authorization: `Basic ${Buffer.from("opencode:native-engine-test-password").toString("base64")}` };
   const request = async (path: string): Promise<unknown> => {
     if (child.exitCode !== null) throw new Error(`Engine exited ${child.exitCode}: ${logs}`);
@@ -271,21 +313,171 @@ export default {
   assert.equal(events.slice(boundary).some(event => event.type === "location.shutdown" || event.type === "config.updated"), false,
     "inventory reload does not rebuild the location or update configuration");
 
-  // A reconnect must reconcile even if no inventory.changed event was delivered.
-  providers = [gateway(providerID, [{ id: "gwm_keep", name: "Reconnected" }, { id: "gwm_unlisted", name: "Still filtered" }])];
-  for (const response of subscriptions) response.end();
-  await until(models, value => value.length === 1 && value[0]?.name === "Reconnected", "Den reconnect reconciles inventory");
+  const scenario = async (name: string, run: () => Promise<void>) => {
+    await run();
+    t.diagnostic(`Passed native scenario ${name}`);
+  };
+  await scenario("10: disconnect, mutate offline, reconnect fully replaces the native snapshot", async () => {
+    streamStatus = 503;
+    for (const response of subscriptions) response.end();
+    await until(async () => subscriptions.size, size => size === 0, "stream disconnected");
+    providers = [gateway(providerID, [{ id: "gwm_keep", name: "Reconnected" }, { id: "gwm_unlisted", name: "Still filtered" }])];
+    // No changed event is delivered while the stream is down.
+    streamStatus = 200;
+    await until(models, value => value.length === 1 && value[0]?.name === "Reconnected", "Den reconnect reconciles complete inventory");
+    await until(async () => subscriptions.size, size => size > 0, "stream recovered");
+  });
 
-  // An authoritative denial clears inventory rather than replaying the cached key.
-  inventoryStatus = 401;
-  changed();
-  await until(models, value => value.length === 0, "authorization revocation removes live providers");
-  inventoryStatus = 200;
-  session = { apiBaseUrl: mockUrl, token: "native-session-two", orgId: "org_native_two" };
-  providers = [gateway(providerID, [{ id: "gwm_added", name: "Second account" }])];
-  await until(models, value => value.length === 1 && value[0]?.name === "Second account", "account switch replaces inventory");
-  session = null;
-  await until(models, value => value.length === 0, "sign-out clears inventory");
+  await scenario("10: duplicate notifications are idempotent; held old fetch cannot win a burst", async () => {
+    // Drain the reconnect's initial reconciliation before establishing the event boundary.
+    await delay(250);
+    const duplicateBoundary = events.length;
+    const reads = inventoryReads;
+    for (let i = 0; i < 20; i++) changed();
+    await until(async () => inventoryReads, value => value > reads, "duplicate events reached actual inventory reader");
+    await delay(400);
+    assert.deepEqual((await models()).map(model => model.name), ["Reconnected"]);
+    assert.equal(events.slice(duplicateBoundary).some(event => event.type === "provider.updated" || event.type === "model.updated"), false,
+      "equal snapshots do not reload the native provider/model fold");
+
+    holdNextInventory = true;
+    changed();
+    await until(async () => heldInventory, Boolean, "old inventory response held on localhost");
+    providers = [gateway(providerID, [{ id: "gwm_keep", name: "Newest burst wins" }])];
+    for (let i = 0; i < 30; i++) changed();
+    assert.ok(heldInventory);
+    heldInventory.response.end(heldInventory.body);
+    heldInventory = undefined;
+    await until(models, value => value.length === 1 && value[0]?.name === "Newest burst wins", "queued reconciliation re-reads latest inventory");
+    await delay(300);
+    assert.deepEqual((await models()).map(model => model.name), ["Newest burst wins"]);
+    assert.equal(await readFile(configPath, "utf8"), config);
+    assert.deepEqual(await request("/api/config"), initialConfig);
+  });
+
+  await scenario("14: transient Den failure preserves usable inventory and retries without another event", async () => {
+    inventoryStatus = 503;
+    changed();
+    await delay(300);
+    assert.deepEqual((await models()).map(model => model.name), ["Newest burst wins"]);
+    providers = [gateway(providerID, [{ id: "gwm_keep", name: "Recovered by retry" }])];
+    inventoryStatus = 200;
+    await until(models, value => value[0]?.name === "Recovered by retry", "transient retry recovery");
+  });
+
+  await scenario("11: warm engine restart reads persistent cache while Den is unavailable, then reconciles", async () => {
+    inventoryStatus = 503;
+    await restart();
+    await until(models, value => value.length === 1 && value[0]?.name === "Recovered by retry", "real V2 storage restores matching cache");
+    providers = [gateway(providerID, [{ id: "gwm_added", name: "Fresh after restart" }])];
+    inventoryStatus = 200;
+    await until(models, value => value.length === 1 && value[0]?.name === "Fresh after restart", "restart retry replaces cached model");
+  });
+
+  await scenario("11/14: connected 401 revokes cache and cannot reopen the rejected identity", async () => {
+    await until(async () => subscriptions.size, size => size > 0, "stream after restart");
+    inventoryStatus = 401;
+    changed();
+    await until(models, value => value.length === 0, "authorization revocation removes live providers");
+    inventoryStatus = 200;
+    const reads = inventoryReads;
+    await delay(1300);
+    assert.equal(inventoryReads, reads, "same rejected identity is not silently reauthorized");
+    assert.deepEqual(await models(), []);
+  });
+
+  await scenario("13: token rotation, org/account replacement, sign-out never retain old native models", async () => {
+    session = { apiBaseUrl: mockUrl, token: "native-session-two", orgId: "org_native_one" };
+    providers = [gateway(providerID, [{ id: "gwm_keep", name: "Rotated token" }])];
+    await until(models, value => value.length === 1 && value[0]?.name === "Rotated token", "fresh token authorizes new snapshot");
+    const rotatedProviders = JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`));
+    assert.ok(rotatedProviders.includes("ow_gw_org_native_one_native-session-two"), "native provider uses rotated Gateway credential");
+    assert.ok(!rotatedProviders.includes("ow_gw_org_native_one_native-session-one"));
+    await until(async () => subscriptions.size, size => size > 0, "rotated-token subscription");
+    holdNextInventory = true;
+    changed();
+    await until(async () => heldInventory, Boolean, "old account fetch held during org switch");
+    const credentialBoundary = credentials.length;
+    session = { apiBaseUrl: mockUrl, token: "native-session-three", orgId: "org_native_two" };
+    providers = [gateway(providerID, [{ id: "gwm_added", name: "Second account" }])];
+    await until(models, value => value.length === 1 && value[0]?.name === "Second account", "account switch replaces inventory");
+    assert.ok(heldInventory);
+    heldInventory.response.end(heldInventory.body);
+    heldInventory = undefined;
+    await delay(250);
+    assert.deepEqual((await models()).map(model => model.name), ["Second account"], "late old-account fetch cannot overwrite the new fold");
+    const switchedProviders = JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`));
+    assert.ok(switchedProviders.includes("ow_gw_org_native_two_native-session-three"));
+    assert.ok(!switchedProviders.includes("ow_gw_org_native_one_native-session-two"), "native provider retains no old account Gateway key");
+    assert.ok(credentials.slice(credentialBoundary).some(item => item.token === "Bearer native-session-three" && item.org === "org_native_two"));
+    // Every request is also checked against the currently selected identity by the fake Den.
+    session = null;
+    await until(models, value => value.length === 0, "sign-out clears inventory");
+    await until(async () => [...subscriptions].map(response => ({
+      destroyed: response.destroyed, closed: response.closed,
+      writableEnded: response.writableEnded, writableFinished: response.writableFinished,
+    })), responses => responses.length === 0, "sign-out closes old subscription");
+    assert.ok(!JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`)).includes("ow_gw_org_native_two_native-session-three"), "sign-out removes the actual native Gateway credential");
+    const signedOutReads = inventoryReads;
+    await delay(1100);
+    assert.equal(inventoryReads, signedOutReads, "signed out engine never fetches old account inventory");
+  });
+
+  await scenario("11/14: cold restart after sign-out cannot recover another account's cache", async () => {
+    inventoryStatus = 503;
+    session = { apiBaseUrl: mockUrl, token: "native-session-four", orgId: "org_native_three" };
+    await restart();
+    await delay(350);
+    assert.deepEqual(await models(), [], "cache from prior account was removed on sign-out");
+    providers = [gateway(providerID, [{ id: "gwm_keep", name: "Third account" }])];
+    inventoryStatus = 200;
+    await until(models, value => value.length === 1 && value[0]?.name === "Third account", "cold account recovers when Den returns");
+    // Whole-list 403 is authoritative, unlike temporary 5xx.
+    inventoryStatus = 403;
+    await until(async () => subscriptions.size, size => size > 0, "third account subscription");
+    changed();
+    await until(models, value => value.length === 0, "whole-list 403 removes providers");
+  });
+  await scenario("13/14: membership 404 and 403 clear inventory, same identity regrant resnapshots", async () => {
+    inventoryStatus = 200;
+    session = { apiBaseUrl: mockUrl, token: "native-membership-session", orgId: "org_native_membership" };
+    providers = [gateway(providerID, [{ id: "gwm_keep", name: "Before membership removal" }])];
+    await until(models, rows => rows[0]?.name === "Before membership removal", "membership baseline");
+    for (const status of [404, 403]) {
+      await until(async () => subscriptions.size, size => size > 0, "membership stream live");
+      streamStatus = status;
+      streamError = "organization_not_found";
+      const attempts = streamAttempts;
+      for (const response of subscriptions) response.end();
+      await until(models, rows => rows.length === 0, `${status} membership revocation clears actual native fold`);
+      await until(async () => streamAttempts, count => count > attempts, "membership response actually received");
+      await delay(1100);
+      assert.deepEqual(await models(), [], "revoked membership cannot replay the cache during reconnect backoff");
+      providers = [gateway(providerID, [{ id: "gwm_added", name: `Regranted after ${status}` }])];
+      streamStatus = 200;
+      await until(models, rows => rows.length === 1 && rows[0]?.name === `Regranted after ${status}`, "same token/org stream reconnect performs full fresh snapshot");
+      assert.equal(session.token, "native-membership-session", "regrant does not depend on local identity rotation");
+    }
+  });
+
+  await scenario("12/14: explicit rollout kill 404 keeps snapshot but never reopens killed stream", async () => {
+    await until(async () => subscriptions.size, size => size > 0, "kill baseline subscription");
+    streamStatus = 404;
+    streamError = "feature_disabled";
+    const attempts = streamAttempts;
+    for (const response of subscriptions) response.end();
+    await until(async () => streamAttempts, count => count > attempts, "kill response read");
+    const snapshot = await models();
+    assert.equal(snapshot.length, 1);
+    assert.equal(snapshot[0]?.name, "Regranted after 403");
+    const killedAttempts = streamAttempts;
+    providers = [gateway(providerID, [{ id: "gwm_keep", name: "Must not appear while killed" }])];
+    streamStatus = 200;
+    await delay(1300);
+    assert.deepEqual(await models(), snapshot, "kill does not erase offline usable known inventory");
+    assert.equal(streamAttempts, killedAttempts, "feature kill is terminal for this plugin lifetime");
+    // The managed-engine fixture separately proves the next OFF boot selects legacy.
+  });
   assert.equal(await readFile(configPath, "utf8"), config, "live inventory never materializes providers/models into config");
   assert.deepEqual(await request("/api/config"), initialConfig, "all native config sources remain unchanged");
   assert.equal(inferenceRequests, 0, "no external or synthetic inference request is needed");

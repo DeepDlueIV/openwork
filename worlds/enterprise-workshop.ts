@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { bootAcmeWeb } from "./acme-web.ts";
+import { assertAcmeConnections } from "./lib/acme-runtime.ts";
 import { record } from "./lib/acme-gateway.ts";
 import { connectDemoServer, startDemoScript } from "./lib/demo-workspace.ts";
 import { denFetch } from "../evals/packages/behaviors/src/den.ts";
@@ -55,6 +56,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     url: new URL("../evals/packages/labs/src/demo-microsoft365.mjs", import.meta.url), label: "demo-microsoft365", daytonaPort: 3988,
   });
   await connectDemoServer(world.den, "microsoft365", "Microsoft 365 (demo)", `${microsoft.baseUrl}/mcp`);
+  await assertAcmeConnections(world.den, [world.demo.baseUrl, world.atlassian.baseUrl, microsoft.baseUrl]);
   const serviceUi = await startDemoScript(stack, world.den, {
     url: new URL("../evals/packages/labs/src/demo-workplace-ui.mjs", import.meta.url), label: "demo-workplace-ui", daytonaPort: 3987, localPort: uiPort,
   }, { ATLASSIAN_BASE_URL: world.atlassian.baseUrl });
@@ -75,6 +77,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     outlook: output(`${microsoft.baseUrl}/outlook`, { group: "Workday" }),
     oneDrive: output(`${microsoft.baseUrl}/onedrive`, { group: "Workday" }),
     denWeb: output(world.den.ref.webUrl, { group: "Accounts" }),
+    denApi: output(world.den.ref.apiUrl, { group: "Technical" }),
     model: output(modelName, { group: "Model", note: "Live paid inference; synthetic service data only" }),
     modelId: output(paid.modelId, { group: "Model" }),
     providerId: output(paid.providerId, { group: "Model" }),

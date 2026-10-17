@@ -36,6 +36,8 @@ The service pages are demo interfaces, not hosted Microsoft or Atlassian product
 
 ## Isolation and reset
 
+The seeded runtime uses a fresh temporary workspace **outside the checkout**, a separate home directory, and isolated OpenCode/OpenWork config, data, cache and credential stores. Only executable-path environment variables are forwarded; developer tokens, inline config, plugins and provider credentials are not inherited. Den/sandbox reuse overrides are refused. Startup verifies that every registered Den connection points to this world's owned mocks, issues a disposable MCP token through Den, reconciles the supported `openwork-cloud` endpoint and waits for the runtime configuration to show only that world's Den origin. No paid prompt is sent automatically.
+
 One world per attendee or rehearsal keeps edits separate. The current setup is one signed-in demo person per world, not production multi-user authorization. Mock endpoints use synthetic authentication; they are trusted loopback test infrastructure, not publicly exposed services. Stop/restart the exact world to reset all service and workspace state.
 
 ```sh
@@ -52,3 +54,18 @@ node --test evals/packages/labs/src/demo-workplace-ui.test.mjs
 ```
 
 For parity against the real `mcp-atlassian`, set `DEMO_ATLASSIAN_PARITY=1` for the first command (requires `uvx`). No production service data is needed.
+
+Isolation regressions:
+
+```sh
+node --test worlds/lib/acme-runtime.test.ts
+```
+
+Explicit paid connected rehearsal (creates one DOC ticket, OneDrive text file and Outlook draft; never sends mail):
+
+```sh
+node worlds/lib/enterprise-workshop-probe.ts \
+  evals/results/.worlds/scripts/enterprise-workshop--rehearsal.json
+```
+
+The receipt is private local runtime state, not an evidence artifact. Do not commit or transfer it. The probe checks MCP origin isolation before prompting the default agent and reads mock backend state afterward. Browser visibility must additionally be checked against the same world; service unit/browser tests alone do not prove a real-model run.

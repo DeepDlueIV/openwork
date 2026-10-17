@@ -7874,6 +7874,9 @@
           "connectEnabled": {
             "type": "boolean"
           },
+          "liveProviderSync": {
+            "type": "boolean"
+          },
           "onboardingPrompts": {
             "minItems": 2,
             "maxItems": 3,
@@ -63556,6 +63559,170 @@
             "description": "Den TypeID with 'lpa_' prefix and a 26-character base32 suffix."
           }
         ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/inference-providers/inventory/revision": {
+      "get": {
+        "operationId": "getV1InferenceProvidersInventoryRevision",
+        "tags": [
+          "Inference Providers"
+        ],
+        "summary": "Read the caller's inference inventory revision",
+        "description": "Opaque revision covering the usable-provider list and connect payloads, including model configuration, access, team membership, credential readiness and the caller's gateway key. Read-only. Requires liveProviderSync and a signed-in user session.",
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Current inventory revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or liveProviderSync disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Inventory unavailable; reconnect with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/inference-providers/inventory/events": {
+      "get": {
+        "operationId": "getV1InferenceProvidersInventoryEvents",
+        "tags": [
+          "Inference Providers"
+        ],
+        "summary": "Watch the caller's inference inventory",
+        "description": "SSE inventory.changed events with JSON {revision}, immediately on connect and whenever persisted inventory changes. Checks the shared database every two seconds and sends heartbeat comments. Session expiry, membership removal, rollout revocation or failed checks close the stream. Requires liveProviderSync and a signed-in user session; never sends credentials or inventory data.",
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Inventory revision event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or liveProviderSync disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "At most four inventory streams per member per replica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Inventory unavailable; reconnect with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
         "security": [
           {
             "denApiKey": []

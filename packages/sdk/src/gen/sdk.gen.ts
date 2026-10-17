@@ -364,6 +364,11 @@ import type {
   GetV1InferenceProvidersByInferenceProviderIdOauthStartResponses,
   GetV1InferenceProvidersByInferenceProviderIdResponses,
   GetV1InferenceProvidersErrors,
+  GetV1InferenceProvidersInventoryEventsErrors,
+  GetV1InferenceProvidersInventoryEventsResponse,
+  GetV1InferenceProvidersInventoryEventsResponses,
+  GetV1InferenceProvidersInventoryRevisionErrors,
+  GetV1InferenceProvidersInventoryRevisionResponses,
   GetV1InferenceProvidersMemberConnectionsErrors,
   GetV1InferenceProvidersMemberConnectionsResponses,
   GetV1InferenceProvidersModelManagementErrors,
@@ -6698,6 +6703,36 @@ export class DenClient extends HeyApiClient {
       ...options,
       ...params,
     });
+  }
+
+  /**
+   * Read the caller's inference inventory revision
+   *
+   * Opaque revision covering the usable-provider list and connect payloads, including model configuration, access, team membership, credential readiness and the caller's gateway key. Read-only. Requires liveProviderSync and a signed-in user session.
+   */
+  public getV1InferenceProvidersInventoryRevision<ThrowOnError extends boolean = false>(
+    options?: Options<never, ThrowOnError>,
+  ) {
+    return (options?.client ?? this.client).get<
+      GetV1InferenceProvidersInventoryRevisionResponses,
+      GetV1InferenceProvidersInventoryRevisionErrors,
+      ThrowOnError
+    >({ url: "/v1/inference-providers/inventory/revision", ...options });
+  }
+
+  /**
+   * Watch the caller's inference inventory
+   *
+   * SSE inventory.changed events with JSON {revision}, immediately on connect and whenever persisted inventory changes. Checks the shared database every two seconds and sends heartbeat comments. Session expiry, membership removal, rollout revocation or failed checks close the stream. Requires liveProviderSync and a signed-in user session; never sends credentials or inventory data.
+   */
+  public getV1InferenceProvidersInventoryEvents<ThrowOnError extends boolean = false>(
+    options?: Options<never, ThrowOnError, GetV1InferenceProvidersInventoryEventsResponse>,
+  ) {
+    return (options?.client ?? this.client).sse.get<
+      GetV1InferenceProvidersInventoryEventsResponses,
+      GetV1InferenceProvidersInventoryEventsErrors,
+      ThrowOnError
+    >({ url: "/v1/inference-providers/inventory/events", ...options });
   }
 
   /**

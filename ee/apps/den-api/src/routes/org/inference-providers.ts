@@ -42,6 +42,7 @@ import { hasPermission, idParamSchema, orgAccessFailureStatus, permissionDeniedM
 import type { OrgRouteVariables } from "./shared.js"
 import { registerOrgGatewayUsageRoutes } from "./gateway-usage.js"
 import { registerOrgGatewayUsageLimitRoutes } from "./gateway-usage-limits.js"
+import { registerOrgProviderInventoryRoutes } from "./provider-inventory.js"
 import { credentialPromptSchema } from "@openwork/types/den/credential-prompt"
 import { credentialPromptResponseFields, gatewayCredentialShape, gatewayProviderCredentialPrompt, gatewayUpstreamDestination } from "../../credential-prompt.js"
 import { organizationFeatureEnabled } from "../../features.js"
@@ -407,6 +408,7 @@ function awsSsoWriteError(error: unknown): unknown {
 }
 
 export function registerOrgInferenceProviderRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
+  registerOrgProviderInventoryRoutes(app)
   registerOrgGatewayUsageRoutes(app)
   registerOrgGatewayUsageLimitRoutes(app)
   // Agent-facing management reads never refresh or change the catalog. The existing provider summaries do.

@@ -10,7 +10,7 @@ import { AutoAccessFooter } from "@/react-app/domains/cloud/auto-access-ui";
 import { ModelPickerList } from "./model-picker-list";
 import { isAutoModel, type ModelPickerCatalogState, type RetainedModelSelection } from "./model-catalog";
 
-const chordClass = "hidden shrink-0 rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-sans text-[10px] leading-none text-muted-foreground sm:inline-flex";
+const chordClass = "hidden shrink-0 rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-sans text-xs leading-none text-muted-foreground sm:inline-flex";
 
 /** The picker's settings for the current model and its way out, under one hairline. */
 export function ModelPickerFooter({ effortButtonRef, effortLabel, effortShortcut, canChangeEffort, onOpenEffort, fast, onConnectProvider }: {

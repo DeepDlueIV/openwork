@@ -3,7 +3,7 @@ import { agentPermissionEngineV2Rules, type AgentPermissionRule, type EngineV2Pe
 import type { OrganizationMcpServers } from "./organization-mcp-names.js";
 import { nativeModelVariants } from "@openwork/types/cloud-model-fast";
 import { gatewayBase } from "./gateway-quota.js";
-import { openworkAgentPermissionsV2PluginPath, openworkContextV2PluginPath, openworkGatewayQuotaV2PluginPath, openworkMcpResultsV2PluginPath, openworkMcpReadinessV2PluginPath, openworkProviderFiltersV2PluginPath } from "./openwork-extensions-plugin-path.js";
+import { openworkAgentPermissionsV2PluginPath, openworkContextV2PluginPath, openworkGatewayQuotaV2PluginPath, openworkMcpResultsV2PluginPath, openworkMcpReadinessV2PluginPath, openworkProviderFiltersV2PluginPath, openworkProviderSyncV2PluginPath } from "./openwork-extensions-plugin-path.js";
 import { pathToFileURL } from "node:url";
 // Parallel v2 lane prototype: provider injection is a watched-config write. This module
 // deliberately has no reload/dispose call, unlike managed-opencode.ts and server.ts reloadOpencodeEngine.
@@ -23,6 +23,8 @@ export interface OpencodeV2ModelSpec {
   name: string;
   config?: Record<string, unknown>;
 }
+
+export type OpencodeV2ProviderFilters = Record<string, { whitelist?: string[]; blacklist?: string[] }>;
 
 export interface OpencodeV2ProviderSpec {
   id: string;
@@ -55,6 +57,8 @@ export interface ManagedOpencodeV2ServerOptions {
   env?: Record<string, string>;
   bootTimeoutMs?: number;
   contextTools?: { url: string; token: string; browser?: { url: string; token: string } };
+  /** Session capability stays in the child environment, not the generated config. */
+  providerSession?: { url: string; token: string; enabled: () => boolean };
   permissions?: () => Promise<EnginePermissionRule[]>;
   /** Extra absolute skill directories registered before boot, so no later config write reloads the catalog. */
   skills?: string[];
@@ -109,7 +113,7 @@ export interface ManagedOpencodeV2Server extends OpencodeV2Connection {
    * providers (including built-ins such as OpenCode Zen) from the native
    * catalog, matching v1 `disabled_providers`.
    */
-  setProviders(specs: OpencodeV2ProviderSpec[], disabledProviderIds?: string[]): Promise<void>;
+  setProviders(specs: OpencodeV2ProviderSpec[], disabledProviderIds?: string[], providerFilters?: OpencodeV2ProviderFilters): Promise<void>;
   /** Extra absolute skill directories registered through native config `skills`. */
   setSkills(directories: string[]): Promise<void>;
   /** Rewrites the config when what it is read from changed, e.g. the organization MCP servers OpenWork registers. */
@@ -208,6 +212,10 @@ export function renderOpencodeV2Config(input: {
   permissions?: EnginePermissionRule[];
   skills: string[];
   gatewayQuotaPluginDirectory?: string;
+  providerSyncPluginDirectory?: string;
+  desktopSession?: string;
+  /** Catalog-only rules survive removal of live-owned providers from config. */
+  providerFilters?: OpencodeV2ProviderFilters;
   providerFiltersPluginDirectory?: string;
   /** Preserves OpenWork Cloud connection reports from Code Mode calls for the chat. */
   mcpResultsPluginDirectory?: string;
@@ -219,7 +227,8 @@ export function renderOpencodeV2Config(input: {
   agentPermissionsPluginDirectory?: string;
 }): Record<string, unknown> {
   const disabled = new Set(input.disabledProviderIds ?? []);
-  const enabledProviders = input.providers.filter((provider) => !disabled.has(provider.id));
+  const enabledProviders = input.providers.filter((provider) => !disabled.has(provider.id)
+    && (!input.desktopSession || !/^ipr_/i.test(provider.id)));
   const providerConfig: Record<string, unknown> = {};
   for (const provider of enabledProviders) {
     const providerPackage = provider.package?.replace(/^@opencode-ai\/ai\//, "@opencode/ai/") ?? "@opencode/ai/providers/openai-compatible";
@@ -268,14 +277,19 @@ export function renderOpencodeV2Config(input: {
     return base ? [[provider.id, base.href]] : [];
   }));
   const filters: Record<string, { whitelist?: string[]; blacklist?: string[] }> = Object.fromEntries(
-    enabledProviders.filter(provider => provider.whitelist !== undefined || provider.blacklist !== undefined)
+    input.providers.filter(provider => provider.whitelist !== undefined || provider.blacklist !== undefined)
       .map(provider => [provider.id, { whitelist: provider.whitelist, blacklist: provider.blacklist }]),
   );
+  Object.assign(filters, input.providerFilters);
   // v2 config has no `disabled_providers`. An empty whitelist removes every
   // model of a provider from the native catalog, built-in ones included, so a
   // disconnected OpenCode Zen disappears here too and returns once re-enabled.
   for (const id of disabled) filters[id] = { whitelist: [] };
   const plugins = [
+    ...(input.desktopSession && input.providerSyncPluginDirectory ? [{
+      package: pathToFileURL(input.providerSyncPluginDirectory).href,
+      options: { desktopSession: input.desktopSession, liveProviderSync: true },
+    }] : []),
     ...(input.contextTools && input.contextPluginDirectory ? [{ package: pathToFileURL(input.contextPluginDirectory).href, options: input.contextTools }] : []),
     ...(Object.keys(gatewayProviders).length && input.gatewayQuotaPluginDirectory ? [{
       package: pathToFileURL(input.gatewayQuotaPluginDirectory).href,
@@ -312,6 +326,7 @@ export async function createManagedOpencodeV2Server(
   const bootTimeoutMs = options.bootTimeoutMs ?? 60_000;
   const instanceRoot = options.instanceId ? join(options.rootDir, "instances", options.instanceId) : options.rootDir;
   const configDir = join(instanceRoot, "config");
+  const providerSyncPluginDirectory = join(instanceRoot, "provider-sync-plugin");
   const gatewayQuotaPluginDirectory = join(instanceRoot, "gateway-quota-plugin");
   const providerFiltersPluginDirectory = join(instanceRoot, "provider-filters-plugin");
   const mcpResultsPluginDirectory = join(instanceRoot, "mcp-results-plugin");
@@ -324,6 +339,7 @@ export async function createManagedOpencodeV2Server(
   const providers = new Map<string, OpencodeV2ProviderSpec>();
   let skills: string[] = [...(options.skills ?? [])];
   let disabledProviderIds: string[] = [];
+  let providerFilters: OpencodeV2ProviderFilters = {};
   let writes: Promise<void> = Promise.resolve();
   // Declared before the boot config write, which reads it when the member
   // already has stored agent permissions.
@@ -350,6 +366,12 @@ export async function createManagedOpencodeV2Server(
   await chmod(options.rootDir, 0o700);
   await mkdir(configDir, { recursive: true, mode: 0o700 });
   await chmod(configDir, 0o700);
+  if (options.providerSession) {
+    await mkdir(providerSyncPluginDirectory, { recursive: true, mode: 0o700 });
+    await writeFile(join(providerSyncPluginDirectory, "package.json"), JSON.stringify({ type: "module" }), { mode: 0o600 });
+    await writeFile(join(providerSyncPluginDirectory, "server.js"),
+      `export { default } from ${JSON.stringify(pathToFileURL(openworkProviderSyncV2PluginPath()).href)};\n`, { mode: 0o600 });
+  }
   await mkdir(gatewayQuotaPluginDirectory, { recursive: true, mode: 0o700 });
   await writeFile(join(gatewayQuotaPluginDirectory, "package.json"), JSON.stringify({ type: "module" }), { mode: 0o600 });
   await writeFile(join(gatewayQuotaPluginDirectory, "server.js"),
@@ -383,6 +405,7 @@ export async function createManagedOpencodeV2Server(
     env: {
       ...inherited,
       ...(options.env?.OPENCODE_DISABLE_MODELS_FETCH ? { OPENCODE_DISABLE_MODELS_FETCH: options.env.OPENCODE_DISABLE_MODELS_FETCH } : {}),
+      ...(options.providerSession ? { OPENWORK_PROVIDER_SESSION_TOKEN: options.providerSession.token } : {}),
       OPENCODE_PASSWORD: password,
       OPENCODE_DB: join(options.rootDir, "opencode.db"),
       OPENCODE_CONFIG_DIR: configDir,
@@ -467,7 +490,9 @@ export async function createManagedOpencodeV2Server(
       providers: [...providers.values()],
       disabledProviderIds,
       gatewayQuotaPluginDirectory,
+      ...(options.providerSession?.enabled() ? { providerSyncPluginDirectory, desktopSession: options.providerSession.url } : {}),
       providerFiltersPluginDirectory,
+      providerFilters,
       mcpResultsPluginDirectory,
       mcpReadinessPluginDirectory,
       contextPluginDirectory,
@@ -523,7 +548,8 @@ export async function createManagedOpencodeV2Server(
       providers.set(spec.id, spec);
       await writeConfig();
     },
-    async setProviders(specs, disabled = []) {
+    async setProviders(specs, disabled = [], filters = {}) {
+      providerFilters = filters;
       providers.clear();
       for (const spec of specs) {
         providers.set(spec.id, spec);

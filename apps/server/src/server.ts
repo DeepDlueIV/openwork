@@ -161,7 +161,7 @@ import { buildOpenworkRuntimeConfigObject, openworkRuntimeConfigFilePath, writeO
 import { findManagedEngineWorkspace, managedEngineRootWorkspace } from "./workspaces.js";
 import { startThreadApprovalReplayer, type ThreadApprovalReplayer } from "./thread-approvals.js";
 import { CloudProviderSync, parseCloudProviderDenSession } from "./cloud-provider-sync.js";
-import { createEngineV2Preview, type EngineV2Preview } from "./engine-v2-preview.js";
+import { createEngineV2Preview, shouldSyncLiveProviderOwnerTransition, type EngineV2Preview } from "./engine-v2-preview.js";
 import pkg from "../package.json" with { type: "json" };
 import constants from "../../../constants.json" with { type: "json" };
 
@@ -814,7 +814,15 @@ export async function startServer(
     logger,
   });
   setEngineInstanceReaperForConfig(config, engineInstanceReaper);
+  let resolvedLiveProviderSync = false;
+  const resolveLiveProviderSync = async () => {
+    resolvedLiveProviderSync = false;
+    resolvedLiveProviderSync = (await managedDesktopPolicy(config).current())?.liveProviderSync === true;
+    return resolvedLiveProviderSync;
+  };
   const engineV2Preview = createEngineV2Preview({ config, env, deferStart: true,
+    resolveLiveProviderSync,
+    providerSession: () => cloudProviderSync.currentSession(),
     hostReadRequest: async (path, init) => {
       // Internal dispatch retains the host credential in this process. The
       // native plugin receives only the context bridge's restricted token.
@@ -829,6 +837,12 @@ export async function startServer(
   const cloudProviderSync = new CloudProviderSync({
     config,
     env,
+    liveProviderSync: async () => {
+      // The same signed-in desktop-config hydration as orgDefaultModel. A
+      // missing field/older Den is off; never infer this from org metadata.
+      await engineV2Preview.setLiveProviderSync(await resolveLiveProviderSync());
+      return engineV2Preview.status().liveProviderSync;
+    },
     reloadEngine: async () => {
       if (engineV2Preview.status().chatRouting) {
         await engineV2Preview.refreshProviders();
@@ -869,6 +883,7 @@ export async function startServer(
     engineV2Preview,
     () => managedEngineReady,
     anonymousInference,
+    () => resolvedLiveProviderSync,
   );
 
   const serverOptions: {
@@ -2668,6 +2683,7 @@ function createRoutes(
   engineV2Preview: EngineV2Preview,
   isReady: () => boolean,
   anonymousInference: AnonymousInferenceService,
+  liveProviderSyncAvailable: () => boolean,
 ): Route[] {
   const routes: Route[] = [];
   addRoute(routes, "GET", "/anonymous-inference/status", "client", async () =>
@@ -3255,7 +3271,13 @@ function createRoutes(
     const session = parseCloudProviderDenSession(await readJsonBody(ctx.request));
     if (!session) throw new ApiError(400, "invalid_payload", "baseUrl, token, and orgId are required");
     anonymousInference.setMemberSession(session);
-    await managedDesktopPolicy(config).setSession(session);
+    // Revoke the old bridge identity synchronously, before policy/network work.
+    const suspended = cloudProviderSync.suspendForSession(session);
+    try {
+      await managedDesktopPolicy(config).setSession(session);
+    } finally {
+      await suspended;
+    }
     await cloudProviderSync.setSession(session);
     return new Response(null, { status: 204 });
   });
@@ -3263,8 +3285,12 @@ function createRoutes(
   addRoute(routes, "DELETE", "/den-session", "host-token", async () => {
     ensureWritable(config);
     anonymousInference.setMemberSession(null);
-    await managedDesktopPolicy(config).clearSession();
-    await cloudProviderSync.clearSession();
+    const clearing = cloudProviderSync.clearSession();
+    try {
+      await managedDesktopPolicy(config).clearSession();
+    } finally {
+      await clearing;
+    }
     await anonymousInference.initialize(config.port);
     return new Response(null, { status: 204 });
   });
@@ -3369,10 +3395,14 @@ function createRoutes(
     // Check before starting the v2 process, so a refused switch changes nothing.
     if (body.chatRouting === true) await engineV2Preview.requireV1HistoryCopied();
     let status = engineV2Preview.status();
+    const previouslyLiveProviderSync = status.liveProviderSync;
     // Stop routing before stopping the v2 process; enable the process before routing to it.
     if (body.chatRouting === false) status = await engineV2Preview.setChatRouting(false);
     if (typeof body.enabled === "boolean") status = await engineV2Preview.setEnabled(body.enabled);
     if (body.chatRouting === true) status = await engineV2Preview.setChatRouting(true);
+    if (shouldSyncLiveProviderOwnerTransition(previouslyLiveProviderSync, status.liveProviderSync, liveProviderSyncAvailable())) {
+      void cloudProviderSync.run("engine_routing_changed");
+    }
     return jsonResponse(status);
   });
 

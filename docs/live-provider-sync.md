@@ -93,8 +93,11 @@ streams to end on their next authorization/feature check. It does not cancel
 an in-flight model request or delete chat history. The engine's selected
 catalog owner must remain consistent for its lifetime: do not enable the old
 writer alongside a still-loaded live plugin. At minimum, the next engine
-start resolves the rollout again and restores the complete legacy path when
-off. A running engine may retain its last snapshot until that restart;
+start resolves the rollout again from fresh desktop-config hydration and
+restores the complete legacy path when off. If Den cannot be verified, this
+feature defaults off for the new engine while existing offline model-access
+and permission policies are retained. A running engine may retain its last
+snapshot until that restart;
 revoked gateway access is still rejected by Den. Restart the engine to finish
 a rollback immediately.
 
@@ -126,6 +129,27 @@ Upstream source: [provider state](https://github.com/anomalyco/opencode/blob/9b4
 [model state](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/packages/core/src/model.ts),
 [config providers](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/packages/core/src/config/plugin/provider.ts),
 [policy](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/packages/core/src/config/plugin/policy.ts).
+
+## Verification
+
+- `ee/apps/den-api/test/provider-inventory.test.ts`: dependency revisions,
+  time-only readiness, SSE framing, heartbeats, cancellation and authorization
+  failure.
+- `packages/opencode-plugin/src/*.test.ts`: subscriptions shared by Locations,
+  reconnects, retry convergence, idempotency and account/authentication fences;
+  standalone sign-in and MCP regression coverage.
+- `apps/server/test/live-provider-sync.test.ts`: on/off ownership, legacy
+  polling isolation, generated-config filtering and the credential boundary.
+- `apps/server/test/live-provider-sync-native.test.ts`: actual bundled plugin
+  and filters on pinned v2, native events, unchanged config, reconnects,
+  revocation, account replacement and sign-out. Run on both Bun and desktop
+  Electron Node; absent engine binaries explicitly skip.
+- `apps/app/tests/live-provider-sync*.test.ts` and
+  `provider-catalog-live-events.test.ts`: effective-owner gating, session
+  delivery and event invalidation without changing the flag-off path.
+- `evals/proofs/live-provider-sync.proof.test.ts`: real Den administrator
+  model enable/disable writes reaching the already-open v2 model picker,
+  without navigation or periodic provider sync, with a five-second deadline.
 
 ## Compatibility
 

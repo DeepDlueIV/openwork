@@ -134,10 +134,49 @@ The runner advertises only the directory where this plugin instance is loaded, w
 
 The published package bundles the shared remote-session core and has no runtime dependencies. Git source installs need both sparse-checkout directories shown above for remote sessions. An older sparse checkout still supports sign-in, models, and MCP while remote sessions are off; an opt-in missing the shared package reports an unavailable status in plugin storage at `remoteSessions/status` and logs recovery instructions without disabling those ordinary features.
 
+## Desktop-managed providers (internal host integration)
+
+The desktop server can load the same `server.ts` source entry (or the built
+`dist/server.js`, keeping its adjacent chunks) with these plugin options:
+
+```json
+{
+  "desktopSession": "http://127.0.0.1:1234/provider-session",
+  "liveProviderSync": true
+}
+```
+
+`liveProviderSync` must be the server's resolved registry feature value. Choose
+one provider owner for the engine's entire lifetime; do not start the legacy
+writer alongside a running plugin when the rollout is killed. Restarting the
+engine can choose the legacy owner again.
+
+The child process receives `OPENWORK_PROVIDER_SESSION_TOKEN`, a random loopback
+capability, through its environment, never through plugin options/config. The
+plugin sends it as a bearer to `desktopSession`; that endpoint must return the
+current `{apiBaseUrl, token, orgId}` or JSON `null` while signed out. Only literal
+HTTP loopback addresses are accepted, and redirects are refused. The endpoint
+must continue reporting the current session after a rollout kill.
+
+This mode registers only providers: no MCP, standalone login, remote sessions,
+or Den sign-out. It checks the local handoff every second and fetches Den
+inventory on session changes, stream connection/reconnection, and
+`inventory.changed` events. Account/org/token changes cancel and fence old
+requests. Startup cache is scoped by a hash of the API URL, org, and session;
+only gateway inventory/key material is cached, never the Den session token or
+loopback capability. A feature-disabled stream `404` stops reconnection for that
+session while preserving its last snapshot. Heartbeat stalls and transient
+failures reconnect with bounded backoff. Locations in one engine share a single
+session-scoped stream with reference-counted fanout; unloading one Location never
+aborts the others. Failed inventory reconciliations retry with bounded backoff
+until they converge, then stop (no inventory polling). Stream 401/403 and whole
+inventory-list 403 clear that session's providers/cache and fence late requests;
+an individual provider's connect 403 first refetches the inventory.
+
 ## How it works
 
 - Sign-in uses OpenWork's device authorization. OpenCode stores the session in its own credential store (`~/.local/share/opencode/opencode.db`).
-- On start, the plugin publishes the last known models and servers straight away, then refreshes from OpenWork in the background and every five minutes.
+- On start, the plugin publishes the same account's last known models and servers, then refreshes from OpenWork in the background and every five minutes. When `GET /v1/org` resolves `features.liveProviderSync` true, it also subscribes to authenticated inventory events; each event/reconnect bypasses the 30-second shared cache. The rollout defaults off; standalone sign-in and periodic MCP refresh remain unchanged.
 - AI Gateway models talk to `gateway.openworklabs.com` with your personal gateway key. MCP servers talk to OpenWork's MCP gateway (`/mcp/agent`) with a 7-day token that is renewed automatically.
 
 Built for OpenCode 2 (`@opencode/plugin` 2.0.26).

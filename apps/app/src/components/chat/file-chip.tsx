@@ -44,8 +44,10 @@ export function FileChip({ path, className }: FileChipProps) {
           }
         } },
       ]}
+      // Override the menu trigger's select-none: the file name is chat text a
+      // person can select and copy along with the rest of its row.
       className={cn(
-        "group/chip inline-flex items-center overflow-hidden rounded-md bg-gray-2/70 align-middle",
+        "group/chip inline-flex select-text items-center overflow-hidden rounded-md bg-gray-2/70 align-middle",
         className,
       )}
     >
@@ -53,7 +55,7 @@ export function FileChip({ path, className }: FileChipProps) {
         type="button"
         onClick={() => openArtifactPath(path)}
         title={path}
-        className="flex min-w-0 cursor-pointer items-center px-1.5 py-0.5 transition-colors hover:bg-gray-3/80"
+        className="flex min-w-0 cursor-pointer select-text items-center px-1.5 py-0.5 transition-colors hover:bg-gray-3/80"
       >
         <span className="min-w-0 truncate font-mono text-[11px] leading-4 text-foreground">
           {name}

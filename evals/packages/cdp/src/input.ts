@@ -566,6 +566,8 @@ export async function typeText(surface: Surface, text: string): Promise<void> {
 const EDITING_COMMANDS: Record<string, string[]> = {
   "Meta+A": ["selectAll"],
   "Control+A": ["selectAll"],
+  "Meta+C": ["copy"],
+  "Control+C": ["copy"],
   "Meta+V": ["paste"],
   "Control+V": ["paste"],
   "Meta+ArrowDown": ["moveToEndOfDocument"],
@@ -598,6 +600,30 @@ export async function pressKey(surface: Surface, key: string): Promise<void> {
     : descriptor.key.length === 1 && descriptor.modifiers === 0 ? descriptor.key : undefined;
   await surface.client.send("Input.dispatchKeyEvent", { type: "keyDown", ...params, ...(text === undefined ? {} : { text }), ...(commands ? { commands } : {}) });
   await surface.client.send("Input.dispatchKeyEvent", { type: "keyUp", ...params });
+}
+
+/**
+ * Select a target's text the way a person does: press on its first line and
+ * drag to the end of its last line. Both points sit just inside the target's
+ * box, where the browser snaps them to the nearest text position.
+ */
+export async function dragSelectTarget(surface: Surface, target: Target, options: { timeoutMs?: number } = {}): Promise<Located> {
+  const found = await waitForLocated(surface, target, { timeoutMs: options.timeoutMs });
+  const { x, y, width, height } = found.rect;
+  const inset = Math.min(height / 2, 8);
+  const start = { x: x + 2, y: y + inset };
+  const end = { x: x + width - 2, y: y + height - inset };
+  await surface.client.send("Page.bringToFront").catch((cause: unknown) => {
+    if (!String(cause).includes("only be executed on top-level targets")) throw cause;
+  });
+  await surface.client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: start.x, y: start.y, button: "none" });
+  await surface.client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: start.x, y: start.y, button: "left", buttons: 1, clickCount: 1 });
+  for (let step = 1; step <= 8; step += 1) {
+    const point = { x: start.x + ((end.x - start.x) * step) / 8, y: start.y + ((end.y - start.y) * step) / 8 };
+    await surface.client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "left", buttons: 1 });
+  }
+  await surface.client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: end.x, y: end.y, button: "left", buttons: 0, clickCount: 1 });
+  return found;
 }
 
 export async function hoverAt(surface: Surface, point: Point): Promise<void> {

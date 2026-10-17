@@ -70,6 +70,7 @@ import {
   DescriptiveButtonIcon,
   DescriptiveButtonTitle,
 } from "@/components/descriptive-button"
+import { copyMarkdownToClipboard } from "@/components/markdown/clipboard"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -524,9 +525,11 @@ function FileMessage({ part, tone }: FileMessageProps) {
 
 interface CopyMessageButtonProps {
   messages: UIMessage[]
+  /** Replies are Markdown: also copy them as the rich text the chat shows. */
+  markdown?: boolean
 }
 
-function CopyMessageButton({ messages }: CopyMessageButtonProps) {
+function CopyMessageButton({ messages, markdown = false }: CopyMessageButtonProps) {
   const [copied, setCopied] = React.useState(false)
   const text = React.useMemo(() => getMessagesText(messages), [messages])
 
@@ -536,13 +539,14 @@ function CopyMessageButton({ messages }: CopyMessageButtonProps) {
     }
 
     try {
-      await navigator.clipboard.writeText(text)
+      if (markdown) await copyMarkdownToClipboard(text)
+      else await navigator.clipboard.writeText(text)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
     } catch {
       // ignore clipboard failures
     }
-  }, [text])
+  }, [markdown, text])
 
   if (!text) {
     return null
@@ -1582,7 +1586,7 @@ function MessageGroup({
       {lastTextMessage && !isStreaming && (
         <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100 md:px-8", forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0")}>
           <MessageActions className="flex gap-0">
-            <CopyMessageButton messages={renderableItems.map((item) => item.message)} />
+            <CopyMessageButton markdown messages={renderableItems.map((item) => item.message)} />
             {lastRealItem ? (
               <>
                 <MessageAction tooltip={forkingMessageId === lastRealItem.message.id ? "Branching..." : "Branch in new chat"}>

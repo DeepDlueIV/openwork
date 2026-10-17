@@ -25,6 +25,7 @@ import {
   type MarkdownBlockHtml,
 } from "./markdown-primitive";
 import { LinkActionMenu } from "./link-action-menu";
+import { clipboardContentFromSelection } from "./clipboard";
 import { useMermaidEnhancer } from "./mermaid";
 import { useSelectionStableValue } from "./selection-stability";
 import { enhanceNearViewport } from "./near-viewport";
@@ -390,6 +391,17 @@ function MarkdownBlockInner({
       setLinkMenu({ target, rect: link.getBoundingClientRect() });
     };
 
+    // A selection copies the same clean document as the Copy button, not the
+    // chat's display styles or the code block buttons' hidden labels.
+    const handleCopy = (event: ClipboardEvent) => {
+      if (!event.clipboardData) return;
+      const copied = clipboardContentFromSelection(root, root.ownerDocument.getSelection());
+      if (!copied) return;
+      event.preventDefault();
+      event.clipboardData.setData("text/plain", copied.plain);
+      event.clipboardData.setData("text/html", copied.html);
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       if (!(event.target instanceof HTMLElement) || !event.target.matches("[data-openwork-inline-code-path]")) return;
@@ -405,6 +417,7 @@ function MarkdownBlockInner({
     root.addEventListener("mousedown", handleMouseDown);
     root.addEventListener("contextmenu", handleContextMenu);
     root.addEventListener("keydown", handleKeyDown);
+    root.addEventListener("copy", handleCopy);
 
     if (globalThis.ResizeObserver === undefined) {
       return () => {
@@ -414,6 +427,7 @@ function MarkdownBlockInner({
         root.removeEventListener("mousedown", handleMouseDown);
         root.removeEventListener("contextmenu", handleContextMenu);
         root.removeEventListener("keydown", handleKeyDown);
+        root.removeEventListener("copy", handleCopy);
       };
     }
 
@@ -428,6 +442,7 @@ function MarkdownBlockInner({
       root.removeEventListener("mousedown", handleMouseDown);
       root.removeEventListener("contextmenu", handleContextMenu);
       root.removeEventListener("keydown", handleKeyDown);
+      root.removeEventListener("copy", handleCopy);
     };
   }, [handleCodeBlockCopy, onOpenTarget, openArtifactPath, openTargets, workspaceRoot, rendered, references, resolveReference, sessionReferences]);
 

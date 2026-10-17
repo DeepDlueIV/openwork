@@ -21,6 +21,7 @@ import {
   addInitScript,
   callFunction, connect, debuggerUrlFor, listTargets,
   clickTarget,
+  dragSelectTarget,
   dumpScreenState,
   evaluateOnSurface,
   hoverAt,
@@ -875,6 +876,14 @@ export class UserChannel implements User {
   press(key: string): Promise<void> {
     const surface = requireSurface(this.#surface);
     return this.#runtime.call("user", "press", `press(${key})`, surface, () => pressKey(surface, key));
+  }
+
+  select(target: Target): Promise<void> {
+    const surface = requireSurface(this.#surface);
+    return this.#runtime.call("user", "select", `select(${targetDetail(target)})`, surface, async () => {
+      const selected = await dragSelectTarget(surface, target);
+      this.#runtime.emit({ stage: this.#runtime.stage, channel: "user", verb: "target", detail: targetDetail(target), surface: surfaceName(surface), ok: true, target: selected.rect });
+    });
   }
 
   hover(target: Target): Promise<void> {

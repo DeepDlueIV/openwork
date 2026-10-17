@@ -395,7 +395,10 @@ function createMarkedOptions(profile: MarkdownProfile, presentation: MarkdownPre
   const inline = (tokens: Token[], render: () => string) => containsInlineHtml(tokens) ? withoutReferences(render) : render();
   return {
     async: isAsync,
-    breaks: false,
+    // Chat keeps the line breaks a reply was written with (sign-offs,
+    // addresses, short lines), as sent messages already do. File previews
+    // follow CommonMark, where a single newline is a space.
+    breaks: presentation === "chat",
     gfm: true,
     pedantic: false,
     silent: true,

@@ -6,8 +6,9 @@ import { execFile } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
-import { seedSemanticHash, type SceneEvidence } from "./workshop-narrative-contract.ts";
+import { seedSemanticHash, observedWorkshopCalls, type SceneEvidence } from "./workshop-narrative-contract.ts";
 import { workshopRunBudget } from "./workshop-run-budget.ts";
+import { workshopRunIdentity } from "./workshop-run-identity.ts";
 import { inspectWorkshopPptx, verifyWorkshopPptxPrerequisite } from "./workshop-pptx.ts";
 import type { NativeWorkflowObservation } from "./workshop-narrative-witnesses.ts";
 import { addInitScript, allocateFreePort, browserScript, connect, evaluateOnSurface, listTargets, navigate, type Surface } from "@openwork/cdp";
@@ -39,6 +40,7 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
   const rows: NarrativeRow[] = [];
   const reportDir = process.env.OPENWORK_WORKSHOP_REPORT_DIR ?? join(REPO, "evals/results/workshop-narrative", profile);
   await mkdir(reportDir, { recursive: true });
+  const identity = await workshopRunIdentity();
   const startedAt = Date.now();
   let setupStage = "exact inference preflight";
   let subjectMetadata: Record<string, unknown> = { profile };
@@ -49,7 +51,7 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     profile, ready: false as const, blockedReason: reason, model, app: null, recipientApp: null,
     reportDir, rows, fixedNow: FIXED_NOW,
     recordRow: (row: NarrativeRow) => rows.push(row),
-    async finish() { await writeFile(join(reportDir, "matrix.json"), JSON.stringify({ verdict: "INCOMPLETE", profile, model, fixedNow: FIXED_NOW, durationMs: Date.now() - startedAt, rows }, null, 2) + "\n"); },
+    async finish() { await writeFile(join(reportDir, "matrix.json"), JSON.stringify({ ...identity, verdict: "INCOMPLETE", profile, model, fixedNow: FIXED_NOW, durationMs: Date.now() - startedAt, rows }, null, 2) + "\n"); },
     async [Symbol.asyncDispose]() { await resources.disposeAsync(); },
   });
   try {
@@ -218,13 +220,21 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
         return { ...current, atlassian: await stateJson(`${atlassian.baseUrl}/state`), microsoft: await stateJson(`${microsoft.baseUrl}/state`), news: await stateJson(`${news.baseUrl}/state`), workflows: workflows.body, inference: inference.observations(), identity, actorEmail: actor.email };
       },
       assertIsolation,
-      async retainSceneEvidence(scene: SceneEvidence) {
+      async retainSceneEvidence(scene: SceneEvidence, native: { before: NativeWorkflowObservation; after: NativeWorkflowObservation }, recipientMessages?: unknown) {
         // Only owned synthetic business-state/audit readbacks, never runtime,
         // auth configuration, raw requests, or whole conversation snapshots.
         const business = (snapshot: SceneEvidence["before"]) => ({ atlassian: snapshot.atlassian, microsoft: snapshot.microsoft, news: snapshot.news, workflows: snapshot.workflows });
         const directory = join(reportDir, "private-observer");
         await mkdir(directory, { recursive: true });
-        let json = JSON.stringify({ id: scene.id, expected: scene.expected, before: business(scene.before), after: business(scene.after), serviceCalls: scene.serviceCalls, artifact: scene.artifact, workflow: scene.workflow, sharing: scene.sharing, schedule: scene.schedule }, null, 2);
+        const operations = new Set([scene.after.atlassian, scene.after.microsoft, scene.after.news].flatMap((state) => record(state) && Array.isArray(state.audit) ? state.audit.flatMap((entry) => record(entry) && typeof entry.name === "string" ? [entry.name] : []) : []));
+        const provenance = (messages: unknown) => Array.isArray(messages) ? messages.flatMap((message) => {
+          if (!record(message) || !record(message.info) || message.info.role !== "assistant") return [];
+          const info = message.info;
+          return [Object.fromEntries(["id", "role", "providerID", "modelID", "sessionID", "agent", "finish", "time"].map((key) => [key, info[key]]))];
+        }) : [];
+        const actorProvenance = { owner: provenance(scene.after.messages), recipient: provenance(recipientMessages) };
+        const businessToolCalls = observedWorkshopCalls(scene).filter((call) => [...operations].some((operation) => call.name === operation || call.name.endsWith(`_${operation}`) || call.name.endsWith(`:${operation}`) || call.name.endsWith(`.${operation}`)));
+        let json = JSON.stringify({ id: scene.id, expected: scene.expected, before: business(scene.before), after: business(scene.after), registration: scene.scheduleRegistration ? business(scene.scheduleRegistration) : undefined, businessToolCalls, actorProvenance, native, serviceCalls: scene.serviceCalls, artifact: scene.artifact, workflow: scene.workflow, sharing: scene.sharing, schedule: scene.schedule }, null, 2);
         for (const secret of [operatorKey, ...redactions, owner.manifest.token, owner.manifest.hostToken, recipient.manifest.token, recipient.manifest.hostToken]) if (secret) json = json.replaceAll(secret, "[credential-redacted]");
         await writeFile(join(directory, `${scene.id}.json`), json + "\n", { mode: 0o600 });
       },
@@ -252,7 +262,8 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
         const observations = inference.observations();
         const durationMs = Date.now() - startedAt;
         const aggregate = workshopRunBudget(rows, durationMs, observations);
-        const report = { verdict: rows.every((row) => row.status === "PASS") && aggregate.reasons.length === 0 ? "PASS" : "INCOMPLETE", aggregate, docshotDirectory, profile, model: inference.metadata, fixedNow: FIXED_NOW, seedDigest, durationMs, rows, inference: observations };
+        if ((await workshopRunIdentity()).sourceDigest !== identity.sourceDigest) aggregate.reasons.push("Workshop source changed during the paid run");
+        const report = { ...identity, verdict: rows.every((row) => row.status === "PASS") && aggregate.reasons.length === 0 ? "PASS" : "INCOMPLETE", aggregate, docshotDirectory, profile, model: inference.metadata, fixedNow: FIXED_NOW, seedDigest, durationMs, rows, inference: observations };
         await writeFile(join(reportDir, "matrix.json"), JSON.stringify(report, null, 2) + "\n");
         if (aggregate.reasons.length) throw new Error(`Workshop aggregate verification failed: ${aggregate.reasons.join("; ")}`);
       },

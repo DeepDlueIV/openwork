@@ -15,7 +15,7 @@ const scene = (id: SceneId, title: string, prompt: string): WorkshopScene => Obj
 export const WORKSHOP_SCENES: readonly WorkshopScene[] = Object.freeze([
   scene("T10", "09:00 news digest", "Register a daily 09:00 America/Los_Angeles job using the connected isolated news scheduler. Its model-authored saved instructions must produce a digest from the fictional news corpus covering France, United States, Germany and Japan, with titles, summaries, outlet, country and links. The job must save the digest into a OneDrive Morning news folder and create an unsent Outlook draft. Do NOT generate or deliver the digest before 09:00. The operator will advance the isolated clock and dispatch your saved job instructions to this real paid agent when due. Label this an isolated simulated schedule, not a production Automation. Verify the registered job; never use external news services."),
   scene("T01", "Grounded customer comparison", "Find and read the complete latest customer-related Inbox message in Outlook, including internal staff correspondence about the customer; do not require a customer-authored sender. Search Confluence for the Atlas 2 and Atlas Lift datasheets, then read both full pages, not search excerpts. Compare the products against every material requirement in that customer-related message with page citations. Include a compact table with separate Atlas 2 and Atlas Lift columns and payload, top speed and runtime rows; distinguish verified product facts from the customer's unconfirmed safety and site requirements. Save a comparison in OneDrive and create an unsent threaded Outlook reply linking it. Verify the saved document and draft."),
-  scene("T02", "Save and rerun a native Workflow", "Turn the customer comparison into a saved native OpenWork Workflow named Acme product comparison with a customerRequest input. Test it using 'Compare Atlas 2 and Atlas Lift for warehouse picking', retain the successful test receipt, and save its version. Rerun that same saved version with the different input 'Compare Atlas Lift for cold-storage pallet moves'. Verify the persisted Workflow, both execution receipts and the different inputs. A chat answer, local script or skill is not a saved native Workflow."),
+  scene("T02", "Save and rerun a native Workflow", "Turn the customer comparison into a saved native OpenWork Workflow named Acme product comparison with a customerRequest input. The Workflow must evaluate customerRequest against documented use cases and limits, not just echo it or copy raw datasheets. Support different documented use cases beyond the two test inputs; matching must handle case, punctuation and hyphenation, and distinguish a documented use-case match from still-unconfirmed site requirements. Test it using 'Compare Atlas 2 and Atlas Lift for warehouse picking', retain the successful test receipt, and save its version. Rerun that same saved version with the different input 'Compare Atlas Lift for cold-storage pallet moves'. Verify the persisted Workflow, both execution receipts and the different inputs. Leave and verify the cold-storage rerun as the Workflow's latest saved result, rather than executing the warehouse-picking example again afterward. A chat answer, local script or skill is not a saved native Workflow."),
   scene("T03", "Recipient execution of a shared Workflow", "Share the saved Acme product comparison Workflow with the fictional Acme teammate Nora Patel (nora@acme.test) as a viewer allowed to execute, not an owner. Have that recipient execute the saved version with 'Compare Atlas 2 for line-side replenishment'. Verify the actual grant and recipient execution provenance. Do not substitute an owner run; if recipient execution is unavailable report that blocker."),
   scene("T04", "Account intelligence", "Read the full existing Confluence account plans for Northwind Logistics and Blue Harbor Foods. Compare annual recurring revenue, number and value of orders in the last 12 months, relationship strength, growth potential and churn risk. Preserve exact financial values and distinguish ARR from order revenue. Cite each account plan and ground the relationship, growth and churn assessment in the pages. Save this grounded report as 'Acme account analysis.md' in OneDrive and read it back to verify its actual content."),
   scene("T05", "Generate a real account-analysis PowerPoint", "Read the preceding report 'Acme account analysis.md' from OneDrive and both full original Confluence account plans for Northwind Logistics and Blue Harbor Foods. Turn that report into an actual PowerPoint with at least three slides preserving the exact ARR, order counts and values, relationship, growth potential, churn risk and account-plan citations. Save the generated PPTX bytes as 'Acme account analysis.pptx' in OneDrive and report its file ID or path. A product-only comparison, renamed text file, slide outline or seed deck is not enough. The observer will independently open the actual downloaded bytes with python-pptx and inspect the ZIP and slide content; this is not an Office UI rendering claim."),
@@ -101,14 +101,18 @@ function messages(snapshot: ObserverSnapshot) { return arr(snapshot.messages).ma
 function assistants(snapshot: ObserverSnapshot) { return messages(snapshot).filter((m) => obj(m.info).role === "assistant"); }
 function toolParts(snapshot: ObserverSnapshot) { return assistants(snapshot).flatMap((m) => arr(m.parts).map(obj).filter((p) => p.type === "tool")); }
 const forbiddenSource = /(?:execute_capability_script|\bexecute_script\b|(?:^|[._-])(?:execute|shell|bash|python|javascript|eval)$)/i;
-function observedCalls(evidence: SceneEvidence): Call[] {
+export function observedWorkshopCalls(evidence: SceneEvidence): Call[] {
   const completed = toolParts(evidence.after).filter((p) => obj(p.state).status === "completed");
   const direct = completed.flatMap((p): Call[] => {
     const state = obj(p.state); const input = obj(state.input);
     // Code strings and their stdout are never evidence of a downstream source read.
-    const name = typeof input.name === "string" ? input.name : str(p.tool);
+    // Only the generic dispatcher stores operation identity in input.name.
+    // Direct provider tools may use name for an ordinary business field (e.g.
+    // the schedule title); that must neither hide nor forge a tool operation.
+    const dispatched = /(?:^|[_:.])execute_capability$/.test(str(p.tool));
+    const name = dispatched && typeof input.name === "string" ? input.name : str(p.tool);
     if (forbiddenSource.test(name) || typeof input.code === "string" || /search_capabilities/.test(name)) return [];
-    return [{ callId: str(p.callID), name, input: input.body ?? input.arguments ?? input, output: state.output }];
+    return [{ callId: str(p.callID), name, input: dispatched ? input.body ?? input.arguments ?? input : input, output: state.output }];
   });
   const witnessed = (evidence.serviceCalls ?? []).filter((c) => c.status === "completed" && c.callId.length > 0 && completed.some((p) => p.callID === c.callId));
   return [...direct, ...witnessed];
@@ -218,7 +222,7 @@ export function verifyWorkshopScene(evidence: SceneEvidence): SceneVerdict {
   const failures: string[] = []; const blockers: string[] = [];
   const need = (condition: unknown, reason: string) => { if (!condition) failures.push(reason); };
   const block = (condition: unknown, reason: string) => { if (!condition) blockers.push(reason); };
-  const before = evidence.before; const after = evidence.after; const calls = observedCalls(evidence);
+  const before = evidence.before; const after = evidence.after; const calls = observedWorkshopCalls(evidence);
   const assistant = assistants(after); const last = assistant.at(-1); const info = obj(last?.info);
   need(assistant.length > 0 && assistant.every((m) => {
     const i = obj(m.info);

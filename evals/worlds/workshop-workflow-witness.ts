@@ -142,11 +142,23 @@ function sourcePages(row: JsonRecord, actor: WorkflowActorEvidence | undefined):
 /** Check source facts and input-specific use cases, not just successful execution or an echoed request. */
 export function workflowComparisonSemantics(value: unknown, request: "test" | "rerun" | "recipient", pages: JsonRecord[]): boolean {
   const output = typeof value === "string" ? value : JSON.stringify(value) ?? "";
-  if (!pages.every((page) => output.includes(str(page.id))) || !/Atlas\s*2/i.test(output) || !/Atlas\s*Lift/i.test(output)) return false;
-  if (!/\b300\s*(?:kg|kilogram)/i.test(output) || !/\b1[,. ]?200\s*(?:kg|kilogram)/i.test(output)) return false;
-  if (request === "test") return /warehouse|goods.to.person/i.test(output) && /pick/i.test(output);
-  if (request === "recipient") return /line.side/i.test(output) && /replenish/i.test(output);
-  return /cold.storage/i.test(output) && /pallet/i.test(output) && /[-−]25\s*(?:°\s*)?C\b/i.test(output) && /optional|kit/i.test(output);
+  if (!pages.every((page) => output.includes(str(page.id)))) return false;
+  const excluded = new Set(["customerrequest", "request", "input", "sources", "rawsources", "sourcepages", "sourcetext", "datasheets"]);
+  const assessment = (item: unknown): unknown => {
+    const decoded = parse(item);
+    if (Array.isArray(decoded)) return decoded.map(assessment);
+    if (decoded !== null && typeof decoded === "object") return Object.fromEntries(Object.entries(obj(decoded)).filter(([key]) => !excluded.has(key.replace(/[_-]/g, "").toLowerCase())).map(([key, child]) => [key, assessment(child)]));
+    if (typeof decoded !== "string") return decoded;
+    return Object.values(WORKSHOP_WORKFLOW_INPUTS).reduce((text, input) => text.replaceAll(input.customerRequest, ""), decoded);
+  };
+  const compared = JSON.stringify(assessment(value)) ?? "";
+  if (!/Atlas\s*2/i.test(compared) || !/Atlas\s*Lift/i.test(compared) || !/\b300\s*(?:kg|kilogram)/i.test(compared) || !/\b1[,. ]?200\s*(?:kg|kilogram)/i.test(compared)) return false;
+  // These three requests name published use cases. Missing site parameters may
+  // qualify deployment, but cannot erase the documented use-case match.
+  if (/no documented (?:match|use.case)|(?:use.case|line.side).{0,50}not documented/i.test(compared)) return false;
+  if (request === "test") return /warehouse|goods.to.person/i.test(compared) && /pick/i.test(compared);
+  if (request === "recipient") return /(?:Atlas\s*2[^.!?\n]{0,300}line.side[^.!?\n]{0,60}replenish|line.side[^.!?\n]{0,60}replenish[^.!?\n]{0,300}Atlas\s*2)/i.test(compared);
+  return /cold.storage/i.test(compared) && /pallet/i.test(compared) && /[-−]25\s*(?:°\s*)?C\b/i.test(compared) && /optional|kit/i.test(compared);
 }
 function savedRunEvidence(row: JsonRecord, saved: NonNullable<ReturnType<typeof savedWorkflow>>, after: NativeWorkflowObservation, actor: WorkflowActorEvidence | undefined, identity: "owner" | "recipient", request: "rerun" | "recipient") {
   if (row.status !== "succeeded" || row.org_membership_id !== (identity === "owner" ? after.ownerMemberId : after.recipientMemberId) || row.config_object_id !== saved.workflowId || row.config_object_version_id !== saved.versionId || row.plugin_id !== saved.pluginId || row.source !== `plugin:${saved.pluginId}:${saved.workflowId}` || !sameVersion(row, saved.version) || row.script_input_digest !== artifactDigest(WORKSHOP_WORKFLOW_INPUTS[request])) return undefined;
@@ -164,8 +176,10 @@ export function workflowWitness(before: NativeWorkflowObservation, after: Native
   if (!saved || !str(after.ownerMemberId)) return undefined;
   const fresh = freshRuns(before, after);
   const test = fresh.find((row) => row.status === "succeeded" && !row.config_object_id && !row.config_object_version_id && row.source === "adhoc" && sameVersion(row, saved.version) && row.org_membership_id === after.ownerMemberId && row.script_input_digest === artifactDigest(WORKSHOP_WORKFLOW_INPUTS.test));
-  const rerun = fresh.find((row) => savedRunEvidence(row, saved, after, context.owner, "owner", "rerun"));
+  const latest = obj(obj(obj(after.details).script).latestSnapshot);
+  const rerun = fresh.find((row) => row.id === latest.receiptId && savedRunEvidence(row, saved, after, context.owner, "owner", "rerun"));
   if (!test || !rerun || test.id === rerun.id || test.result_digest === rerun.result_digest) return undefined;
+  if (latest.receiptId !== rerun.id || latest.value === undefined || artifactDigest(latest.value) !== rerun.result_digest) return undefined;
   const tool = executionTool(test, context.owner), pages = sourcePages(test, context.owner);
   if (!tool || !pages) return undefined;
   const outputs = records(obj(tool.state).output);
@@ -198,8 +212,10 @@ export function sharingWitness(before: NativeWorkflowObservation, after: NativeW
   // A targeted viewer receipt is insufficient if another grant made the recipient a manager or everyone a viewer.
   if (candidates.some(({ row }) => row.orgWide === true || (row.orgMembershipId === after.recipientMemberId && row.role !== "viewer"))) return undefined;
   const grant = candidates.find(({ row }) => row.orgMembershipId === after.recipientMemberId && row.role === "viewer" && !row.orgWide && !row.teamId && !old.some((prior) => prior.row.id === row.id));
-  const execution = freshRuns(before, after).find((row) => savedRunEvidence(row, saved, after, context.recipient, "recipient", "recipient"));
+  const latest = obj(recipientScript.latestSnapshot);
+  const execution = freshRuns(before, after).find((row) => row.id === latest.receiptId && savedRunEvidence(row, saved, after, context.recipient, "recipient", "recipient"));
   if (!grant || !execution) return undefined;
+  if (latest.receiptId !== execution.id || latest.value === undefined || artifactDigest(latest.value) !== execution.result_digest) return undefined;
   const pages = sourcePages(execution, context.recipient);
   if (!pages) return undefined;
   return { workflowId: saved.workflowId, versionId: saved.versionId, grantId: str(grant.row.id), role: "viewer", recipientEmail: "nora@acme.test", ownerMemberId: after.ownerMemberId, recipientMemberId: after.recipientMemberId, executionMemberId: str(execution.org_membership_id), receiptId: str(execution.id), status: "succeeded", observedViaDenGet: true,

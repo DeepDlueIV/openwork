@@ -33,6 +33,9 @@ function fixture() {
     { id: "recipient-run", status: "succeeded", code_digest: "code", org_membership_id: "recipient", plugin_id: "plugin", config_object_id: "workflow", config_object_version_id: "version", source: "plugin:plugin:workflow", script_input_digest: artifactDigest(recipientInput), result_digest: artifactDigest(comparison(recipientInput.customerRequest)), input_schema_digest: "schema", output_schema_digest: null, tool_calls: toolNames, started_at: 510, finished_at: 590 },
   ];
   after.snapshots = { owner: { items: [{ receiptId: "rerun", configObjectId: "workflow", configObjectVersionId: "version", status: "succeeded", codeDigest: "code", value: comparison(rerunInput.customerRequest) }] }, recipient: { items: [{ receiptId: "recipient-run", configObjectId: "workflow", configObjectVersionId: "version", status: "succeeded", codeDigest: "code", value: comparison(recipientInput.customerRequest) }] } };
+  const ownerScript = Object.fromEntries(Object.entries(after.details ?? {})).script;
+  after.details = { ...Object.fromEntries(Object.entries(after.details ?? {})), script: { ...Object.fromEntries(Object.entries(ownerScript ?? {})), latestSnapshot: { receiptId: "rerun", value: comparison(rerunInput.customerRequest) } } };
+  after.boundary!.recipientDetail!.body = { workflow: { id: "workflow", role: "viewer" }, script: { configObjectId: "workflow", canManage: false, currentVersion: { id: "version" }, latestSnapshot: { receiptId: "recipient-run", value: comparison(recipientInput.customerRequest) } }, views: [] };
   after.grants = { items: [{ id: "grant", orgMembershipId: "recipient", role: "viewer", orgWide: false, teamId: null, removedAt: null }] };
   const message = (member: string, start: number, receiptId: string, value: unknown) => ({ info: { id: `message-${receiptId}`, role: "assistant", sessionID: `${member}-session`, providerID: "paid-provider", modelID: "exact-model", agent: "openwork", finish: "stop", time: { completed: start + 100 } }, parts: [{ type: "tool", callID: `call-${receiptId}`, tool: "openwork-cloud_execute_capability_script", state: { status: "completed", time: { start, end: start + 100 }, output: JSON.stringify({ value, metadata: { receiptId, executionType: receiptId === "test" ? "authoring-test" : "saved-workflow", retention: { available: true, canSaveByReceipt: true } } }) } }] });
   const audit = [150, 350, 550].flatMap((at, index) => pages.map((page, pageIndex) => ({ sequence: index * 2 + pageIndex, at, name: "confluence_get_page", input: { page_id: page.id }, output: { metadata: { id: page.id, content: { value: page.body, format: "storage" } } }, status: "completed" })));
@@ -50,6 +53,7 @@ test("native authoring test is not mislabeled as a second saved execution; exact
   assert.equal(witness?.verification.rerunExecutionType, "saved-version");
 });
 const workflowMutations: [string, (after: NativeWorkflowObservation, context: WorkflowWitnessContext) => void][] = [
+  ["later example run supersedes the required cold-storage rerun", (after) => { after.details = { script: { configObjectId: "workflow", currentVersion: { id: "version", codeDigest: "code", inputSchemaDigest: "schema", outputSchemaDigest: null }, latestSnapshot: { receiptId: "later-example", value: comparison(testInput.customerRequest) } } }; }],
   ["arbitrary distinct digests", (after) => { after.runs[0].script_input_digest = "different-a"; after.runs[1].script_input_digest = "different-b"; }],
   ["wrong exact request", (after) => { after.runs[1].script_input_digest = artifactDigest({ customerRequest: "Compare Atlas Lift" }); }],
   ["extra unrequested inputs", (after) => { after.runs[1].script_input_digest = artifactDigest({ ...rerunInput, ownerFallback: true }); }],
@@ -109,6 +113,7 @@ test("Plugin sharing explicitly records other visible Workflows in that Plugin",
   assert.deepEqual(sharingWitness(before, after, context)?.verification.visibleWorkflowIdsInGrantedPlugin, ["workflow", "other-workflow"]);
 });
 const sharingMutations: [string, (after: NativeWorkflowObservation, context: WorkflowWitnessContext) => void][] = [
+  ["recipient detail shows a different latest result", (after) => { after.boundary!.recipientDetail!.body = { workflow: { id: "workflow", role: "viewer" }, script: { configObjectId: "workflow", canManage: false, currentVersion: { id: "version" }, latestSnapshot: { receiptId: "later-other", value: comparison(testInput.customerRequest) } } }; }],
   ["owner fallback", (after) => { after.runs[2].org_membership_id = "owner"; }],
   ["no second app execution provenance", (_after, context) => { delete context.recipient; }],
   ["recipient token/session confused with owner", (_after, context) => { context.recipient!.expected.sessionId = "owner-session"; }],

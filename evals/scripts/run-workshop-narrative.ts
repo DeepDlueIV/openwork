@@ -1,25 +1,18 @@
 #!/usr/bin/env node
 // Explicit opt-in, local-only paid comparison. This launches the native proof, never performs the workplace tasks.
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WORKSHOP_MODEL_ORDER, WORKSHOP_SCENES, WORKSHOP_LIMITS, verifyWorkshopMatrix } from "../worlds/workshop-narrative-contract.ts";
+import { workshopRunIdentity } from "../worlds/workshop-run-identity.ts";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const directory = join(root, "evals/results/workshop-narrative", stamp);
 await mkdir(directory, { recursive: true });
-const evidenceFiles = ["evals/proofs/workshop-narrative.proof.test.ts", "evals/worlds/workshop-narrative.ts", "evals/worlds/workshop-narrative-inference.ts", "evals/worlds/workshop-narrative-contract.ts", "evals/worlds/workshop-narrative-witnesses.ts", "worlds/lib/workshop-inference.ts", "evals/packages/labs/src/demo-atlassian.mjs", "evals/packages/labs/src/demo-microsoft365.mjs", "evals/packages/labs/src/demo-workshop-news.mjs", "evals/packages/labs/src/demo-workplace-ui.mjs"];
-async function sourceDigest() {
-  const hash = createHash("sha256");
-  for (const path of evidenceFiles) hash.update(path).update(await readFile(join(root, path)));
-  return hash.digest("hex");
-}
-evidenceFiles.push("evals/worlds/workshop-pptx.ts", "evals/worlds/workshop-run-budget.ts", "evals/worlds/workshop-workflow-witness.ts", "evals/worlds/workshop-comparison-semantics.ts", "evals/worlds/workshop-feedback.ts", "evals/docs-shots/shots/workshop.ts", "evals/packages/labs/src/workshop-feedback.mjs", "evals/packages/labs/src/workshop-feedback-preload.mjs");
-const hash = await sourceDigest();
-const promptDigest = createHash("sha256").update(JSON.stringify({ scenes: WORKSHOP_SCENES, limits: WORKSHOP_LIMITS })).digest("hex");
+async function sourceDigest() { return (await workshopRunIdentity()).sourceDigest; }
+const { sourceDigest: hash, promptDigest } = await workshopRunIdentity();
 const phases: Record<string, unknown>[] = [];
 let cleanupRequested = false;
 let active: ReturnType<typeof spawn> | undefined;

@@ -34,7 +34,8 @@ mock_provider "aws" {
     defaults = { arn = "arn:aws:ecs:us-east-1:123456789012:task-definition/openwork:1" }
   }
 }
-mock_provider "random" {}
+mock_provider "random" {
+}
 mock_provider "http" {
   mock_data "http" {
     defaults = { status_code = 200, response_body = "-----BEGIN CERTIFICATE-----test" }
@@ -55,6 +56,14 @@ variables {
 run "strict_default_and_all_db_clients_trust_rds" {
   command = apply
   module { source = "./modules/openwork-aws-ecs" }
+  # Mocked unit apply targets definitions only: no real rollout provisioner.
+  plan_options {
+    target = [aws_ecs_task_definition.api_ca, aws_ecs_task_definition.web_ca, aws_secretsmanager_secret_version.app]
+  }
+  override_data {
+    target = data.http.rds_ca
+    values = { status_code = 200, response_body = "-----BEGIN CERTIFICATE-----test" }
+  }
   assert {
     condition     = var.database.tls_query == "sslaccept=strict"
     error_message = "Managed RDS must verify its certificate by default."
@@ -64,22 +73,34 @@ run "strict_default_and_all_db_clients_trust_rds" {
     error_message = "Fetch the regional public RDS bundle over verified HTTPS."
   }
   assert {
-    condition = alltrue([for container in concat(
-      jsondecode(aws_ecs_task_definition.api.container_definitions),
-      jsondecode(aws_ecs_task_definition.web.container_definitions)
-      ) : container.entryPoint == ["/bin/sh", "-ec"] && startswith(container.command[0], local.tls_setup) &&
-      strcontains(container.command[0], "export NODE_EXTRA_CA_CERTS=/tmp/openwork-db-ca.pem; exec ") &&
-      strcontains(container.command[0], base64encode("-----BEGIN CERTIFICATE-----test"))
+    condition = alltrue([for command in [
+      local.api_containers[0].command[0], local.api_containers[1].command[0], local.web_containers[0].command[0]
+      ] : startswith(command, local.tls_setup) &&
+      strcontains(command, "export NODE_EXTRA_CA_CERTS=/tmp/openwork-db-ca.pem;") &&
+      strcontains(command, "node /tmp/openwork-db-tls-check.cjs; exec ") &&
+      strcontains(command, base64encode("-----BEGIN CERTIFICATE-----test"))
     ])
     error_message = "Migration, API and web must write the CA and export trust before starting Node."
   }
   assert {
     condition = (
-      length(jsondecode(aws_ecs_task_definition.api.container_definitions)) == 2 &&
-      jsondecode(aws_ecs_task_definition.api.container_definitions)[0].name == "migrate" &&
-      jsondecode(aws_ecs_task_definition.api.container_definitions)[1].dependsOn == [{ containerName = "migrate", condition = "SUCCESS" }]
+      length(local.api_containers) == 2 &&
+      local.api_containers[0].name == "migrate" &&
+      local.api_containers[1].dependsOn == [{ containerName = "migrate", condition = "SUCCESS" }]
     )
     error_message = "This exception must not adopt the direct module's migration lifecycle."
+  }
+  assert {
+    condition     = alltrue([for entrypoint in [local.api_containers[0].entryPoint, local.api_containers[1].entryPoint, local.web_containers[0].entryPoint] : entrypoint == ["/bin/sh", "-ec"]])
+    error_message = "Every database client must fail closed on its TLS startup check."
+  }
+  assert {
+    condition = (
+      endswith(local.initial_secret_values.DATABASE_URL, "?sslaccept=accept") &&
+      endswith(local.secret_values.DATABASE_URL, "?sslaccept=strict") &&
+      alltrue([for key, value in local.secret_values : key == "DATABASE_URL" || local.initial_secret_values[key] == value])
+    )
+    error_message = "Initial and strict versions must preserve every key/credential except the TLS query."
   }
 }
 

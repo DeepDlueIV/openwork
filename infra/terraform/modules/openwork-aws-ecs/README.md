@@ -2,7 +2,8 @@
 
 For **direct Terraform users**. The managed AWS installer uses a separate frozen
 pre-contract module, not this implementation; its only adopted security change
-is verified RDS TLS with the public regional CA, not the contract lifecycle.
+is RDS TLS/CA-first ordering and retained API/web revisions, not the direct
+migration or write-only secret lifecycle. See the managed installer README.
 
 ## What it deploys
 

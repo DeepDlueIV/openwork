@@ -212,8 +212,10 @@ OAuth/protocol-handler handoff. Screenshots illustrate results, not decide them.
   certificates externally; core state-free credentials do not cover this path.
 - **AWS managed-installer boundary:** the installer uses a frozen pre-contract
   module with its original AWS/random/archive pins. A TLS-only overlay
-  adds strict certificate verification, public RDS CA trust and the HTTP provider;
-  the runner permits only a known, key-preserving TLS-query SecretVersion update.
+  adds certificate verification/CA trust and the HTTP provider. Managed API/web
+  definitions use new retained addresses; CA-enabled services must settle before
+  strict secret promotion and a forced deployment. No bootstrap IAM widening or
+  deregistration is used; manual legacy RunTask remains outside the guarantee.
   It is not certified by direct-module conformance. No migration lifecycle,
   secret-mode or IAM adoption is included. The prior cross-major compatibility
   exception is removed; the

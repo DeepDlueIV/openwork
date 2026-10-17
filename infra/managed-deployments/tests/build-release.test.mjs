@@ -100,11 +100,21 @@ test("GCP CLI cannot disable registry verification or use unsupported options", 
 });
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
+
+test("second-update fixture only overrides the non-secret revision default", () => {
+  const fixture = readFileSync(resolve(root, "infra/managed-deployments/tests/second-update_override.tf"), "utf8")
+    .split("\n").filter((line) => !line.trim().startsWith("#")).join("\n").trim();
+  assert.match(fixture, /^variable "tls_task_revision"\s*\{\s*default = "second-update"\s*\}$/);
+  const main = readFileSync(resolve(root, "infra/managed-deployments/aws/terraform/main.tf"), "utf8");
+  assert.match(main, /variable "tls_task_revision"\s*\{\s*type\s*=\s*string\s*default\s*=\s*""/);
+  assert.match(main, /tls_task_revision\s*=\s*var\.tls_task_revision/);
+});
 const modulePath = "infra/managed-deployments/aws/terraform/modules/openwork-aws-ecs";
 // Current dev at 8b586b13ab89b78379fbecd8ddb9c7c7caba31f8, including runner updates.
 // Only the TLS overlay may differ from this complete dev snapshot.
 const baselineTree = "561d5b63514a13df471ad7458eae2b620cfc5803";
 const baselineBlobs = {
+  "main.tf": "879a181b41208c2514a0edf3a3a5b8aab92547c1",
   "ecs.tf": "376f3f89bd7220eead002a35ab130e2ee3fa95f6",
   "variables.tf": "311952c9651de29b756815b00ee04ace0c9a049f",
   "versions.tf": "a5b975afb4a825ad41cf4bda2c75d0f6a8085aed",
@@ -135,7 +145,7 @@ function treeHash(directory) {
 
 test("managed AWS differs from its pinned dev snapshot only in the TLS files", () => {
   assert.equal(treeHash(resolve(root, modulePath)).toString("hex"), baselineTree,
-    "Outside ecs.tf, variables.tf, versions.tf and added tls.tf, every byte must match pinned dev");
+    "Outside main.tf, ecs.tf, variables.tf, versions.tf and added tls.tf, every byte must match pinned dev");
   const tls = readFileSync(resolve(root, modulePath, "tls.tf"), "utf8");
   assert.match(tls, /https:\/\/truststore\.pki\.rds\.amazonaws\.com/);
   assert.match(tls, /NODE_EXTRA_CA_CERTS/);
@@ -164,6 +174,8 @@ test("installer archive contains only the frozen operational module, with identi
     assert.deepEqual(names.filter((name) => name.startsWith(modulePath + "/")).sort(), expected);
     assert.equal(names.some((name) => name.startsWith("infra/terraform/modules/openwork-aws-ecs/")), false);
     assert.equal(names.some((name) => name.includes("/examples/") || name.includes("/tests/")), false);
+    assert.equal(names.some((name) => name.endsWith("second-update_override.tf")), false);
+    assert.match(execFileSync("tar", ["-xOf", bundle, "infra/managed-deployments/aws/runner/runner.py"], { encoding: "utf8" }), /def tls_redeploy\(force=True\):/);
     for (const name of expected) {
       const source = readFileSync(resolve(root, name));
       const packaged = execFileSync("tar", ["-xOf", bundle, name]);

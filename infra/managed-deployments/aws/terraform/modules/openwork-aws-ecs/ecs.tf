@@ -122,7 +122,68 @@ locals {
 
 # Task definitions -----------------------------------------------------------
 
-resource "aws_ecs_task_definition" "api" {
+locals {
+  api_containers = [
+    {
+      # Legacy migration sidecar/dependency remains; only TLS startup changes.
+      name        = "migrate"
+      image       = local.den_api_image
+      essential   = false
+      entryPoint  = ["/bin/sh", "-ec"]
+      command     = ["${local.tls_setup}exec node /app/ee/packages/den-db/dist/scripts/bootstrap.js"]
+      environment = local.db_environment_list
+      secrets     = local.api_secrets_list
+      logConfiguration = {
+        logDriver = "awslogs"
+        options   = merge(local.log_options.api, { "awslogs-stream-prefix" = "migrate" })
+      }
+    },
+    {
+      name         = "den-api"
+      image        = local.den_api_image
+      entryPoint   = ["/bin/sh", "-ec"]
+      command      = ["${local.tls_setup}exec node /app/ee/apps/den-api/dist/main.js"]
+      essential    = true
+      portMappings = [{ containerPort = 8788, protocol = "tcp" }]
+      environment  = concat(local.db_environment_list, [{ name = "PORT", value = "8788" }])
+      secrets      = local.api_secrets_list
+      dependsOn    = [{ containerName = "migrate", condition = "SUCCESS" }]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options   = merge(local.log_options.api, { "awslogs-stream-prefix" = "den-api" })
+      }
+    },
+  ]
+  web_containers = [
+    {
+      name         = "den-web"
+      image        = local.den_web_image
+      entryPoint   = ["/bin/sh", "-ec"]
+      command      = ["${local.tls_setup}exec /app/ee/apps/den-web/node_modules/.bin/next start --hostname 0.0.0.0 --port 3005"]
+      essential    = true
+      portMappings = [{ containerPort = 3005, protocol = "tcp" }]
+      environment  = concat(local.db_environment_list, [{ name = "PORT", value = "3005" }])
+      secrets      = local.secrets_list
+      logConfiguration = {
+        logDriver = "awslogs"
+        options   = merge(local.log_options.web, { "awslogs-stream-prefix" = "den-web" })
+      }
+    },
+  ]
+}
+
+removed {
+  from = aws_ecs_task_definition.api
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = aws_ecs_task_definition.web
+  lifecycle { destroy = false }
+}
+
+resource "aws_ecs_task_definition" "api_ca" {
+  skip_destroy             = true
   family                   = "${var.name}-den-api"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
@@ -137,38 +198,7 @@ resource "aws_ecs_task_definition" "api" {
     cpu_architecture        = var.cpu_architecture
   }
 
-  container_definitions = jsonencode([
-    {
-      # Same migration the Helm chart runs as a pre-install/pre-upgrade Job.
-      # It exits when done; den-api starts only if it succeeded.
-      name        = "migrate"
-      image       = local.den_api_image
-      essential   = false
-      entryPoint  = ["/bin/sh", "-ec"]
-      command     = ["${local.tls_setup}exec node /app/ee/packages/den-db/dist/scripts/bootstrap.js"]
-      environment = local.environment_list
-      secrets     = local.api_secrets_list
-      logConfiguration = {
-        logDriver = "awslogs"
-        options   = merge(local.log_options.api, { "awslogs-stream-prefix" = "migrate" })
-      }
-    },
-    {
-      name         = "den-api"
-      image        = local.den_api_image
-      entryPoint   = ["/bin/sh", "-ec"]
-      command      = ["${local.tls_setup}exec node /app/ee/apps/den-api/dist/main.js"]
-      essential    = true
-      portMappings = [{ containerPort = 8788, protocol = "tcp" }]
-      environment  = concat(local.environment_list, [{ name = "PORT", value = "8788" }])
-      secrets      = local.api_secrets_list
-      dependsOn    = [{ containerName = "migrate", condition = "SUCCESS" }]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options   = merge(local.log_options.api, { "awslogs-stream-prefix" = "den-api" })
-      }
-    },
-  ])
+  container_definitions = jsonencode(local.api_containers)
 
   lifecycle {
     precondition {
@@ -182,7 +212,8 @@ resource "aws_ecs_task_definition" "api" {
   }
 }
 
-resource "aws_ecs_task_definition" "web" {
+resource "aws_ecs_task_definition" "web_ca" {
+  skip_destroy             = true
   family                   = "${var.name}-den-web"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
@@ -197,22 +228,7 @@ resource "aws_ecs_task_definition" "web" {
     cpu_architecture        = var.cpu_architecture
   }
 
-  container_definitions = jsonencode([
-    {
-      name         = "den-web"
-      image        = local.den_web_image
-      entryPoint   = ["/bin/sh", "-ec"]
-      command      = ["${local.tls_setup}exec /app/ee/apps/den-web/node_modules/.bin/next start --hostname 0.0.0.0 --port 3005"]
-      essential    = true
-      portMappings = [{ containerPort = 3005, protocol = "tcp" }]
-      environment  = concat(local.environment_list, [{ name = "PORT", value = "3005" }])
-      secrets      = local.secrets_list
-      logConfiguration = {
-        logDriver = "awslogs"
-        options   = merge(local.log_options.web, { "awslogs-stream-prefix" = "den-web" })
-      }
-    },
-  ])
+  container_definitions = jsonencode(local.web_containers)
 }
 
 # Services -------------------------------------------------------------------
@@ -220,10 +236,10 @@ resource "aws_ecs_task_definition" "web" {
 resource "aws_ecs_service" "api" {
   name                  = "${var.service_name_prefix}den-api"
   cluster               = local.cluster_arn
-  task_definition       = aws_ecs_task_definition.api.arn
+  task_definition       = aws_ecs_task_definition.api_ca.arn
   desired_count         = var.den_api.desired_count
   launch_type           = "FARGATE"
-  wait_for_steady_state = var.wait_for_steady_state
+  wait_for_steady_state = true
 
   # Migrations run before den-api listens; allow for a cold start.
   health_check_grace_period_seconds = 300
@@ -267,10 +283,10 @@ resource "aws_ecs_service" "api" {
 resource "aws_ecs_service" "web" {
   name                  = "${var.service_name_prefix}den-web"
   cluster               = local.cluster_arn
-  task_definition       = aws_ecs_task_definition.web.arn
+  task_definition       = aws_ecs_task_definition.web_ca.arn
   desired_count         = var.den_web.desired_count
   launch_type           = "FARGATE"
-  wait_for_steady_state = var.wait_for_steady_state
+  wait_for_steady_state = true
 
   health_check_grace_period_seconds = 120
   propagate_tags                    = "SERVICE"

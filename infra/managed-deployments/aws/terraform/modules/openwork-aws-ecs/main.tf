@@ -162,7 +162,11 @@ resource "aws_secretsmanager_secret" "app" {
   tags                    = var.tags
 }
 
+# Preserve the existing version/keys. Fresh installs also need an initial
+# version before ECS can start; certificate verification flips only after both
+# services have completed their CA-enabled deployment.
 resource "aws_secretsmanager_secret_version" "app" {
   secret_id     = aws_secretsmanager_secret.app.id
-  secret_string = jsonencode(local.secret_values)
+  secret_string = jsonencode(local.initial_secret_values)
+  lifecycle { ignore_changes = [secret_string] }
 }

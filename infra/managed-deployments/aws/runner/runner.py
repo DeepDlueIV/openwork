@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 import urllib.request
 import zipfile
@@ -215,6 +216,11 @@ def tls_only_secret_upgrade(resource):
             or resource.get("type") != "aws_secretsmanager_secret_version"
             or change.get("actions") != ["delete", "create"]):
         return False
+    return tls_secret_values_preserved(change)
+
+
+def tls_secret_values_preserved(change):
+    """Compare known existing/current values with a TLS-only target version."""
     before, after = change.get("before"), change.get("after")
     unknown = change.get("after_unknown", {})
     if not isinstance(before, dict) or not isinstance(after, dict) or not isinstance(unknown, dict):
@@ -245,7 +251,21 @@ def tls_only_secret_upgrade(resource):
 def unsafe_changes(plan):
     """Return data-bearing deletions/replacements, except the exact TLS upgrade."""
     unsafe = []
-    for change in plan.get("resource_changes", []):
+    changes = plan.get("resource_changes", [])
+    for change in changes:
+        if (change.get("address") == "module.platform.aws_secretsmanager_secret_version.tls"
+                and change.get("change", {}).get("actions") == ["create"]):
+            seed = next((item.get("change", {}) for item in changes
+                         if item.get("address") == "module.platform.aws_secretsmanager_secret_version.app"), None)
+            parent = next((item.get("change", {}) for item in changes
+                           if item.get("address") == "module.platform.aws_secretsmanager_secret.app"), None)
+            fresh = (seed is not None and seed.get("before") is None and seed.get("actions") == ["create"]
+                     and parent is not None and parent.get("before") is None and parent.get("actions") == ["create"])
+            target = change["change"]
+            if not fresh and (seed is None or not tls_secret_values_preserved({
+                    "before": seed.get("before"), "after": target.get("after"),
+                    "after_unknown": target.get("after_unknown", {})})):
+                unsafe.append(change["address"])
         if change.get("type") in PROTECTED_TYPES and "delete" in change.get("change", {}).get("actions", []):
             if not tls_only_secret_upgrade(change):
                 unsafe.append(change["address"])
@@ -281,6 +301,62 @@ def apply(root, tf_root):
         raise
     raw = subprocess.check_output([binary, "output", "-json"], cwd=tf_root)
     return {key: value["value"] for key, value in json.loads(raw).items()}
+
+
+def tls_redeploy(force=True):
+    """Complete the strict phase after Terraform has settled both CA services.
+
+    Only existing ECS UpdateService/Describe permissions are used. Never
+    deregister a revision, roll back a secret, or hide a failed waiter.
+    """
+    cluster = os.environ["TLS_CLUSTER"]
+    expected = json.loads(os.environ["TLS_TASK_DEFINITIONS"])
+    if (not isinstance(expected, dict) or len(expected) != 2
+            or not all(isinstance(name, str) and name and isinstance(arn, str)
+                       and arn.startswith("arn:") and ":task-definition/" in arn
+                       for name, arn in expected.items())):
+        raise ValueError("invalid managed TLS deployment targets")
+    names = list(expected)
+
+    class DeploymentPending(ValueError):
+        pass
+
+    def require_completed():
+        status = aws("ecs", "describe-services", "--cluster", cluster, "--services", *names)
+        services = status.get("services", [])
+        if status.get("failures") or len(services) != 2 or {s.get("serviceName") for s in services} != set(names):
+            raise ValueError("managed TLS services unavailable")
+        for service in services:
+            deployments = service.get("deployments", [])
+            primary = [d for d in deployments if d.get("status") == "PRIMARY"]
+            if (service.get("taskDefinition") != expected[service["serviceName"]]
+                    or len(primary) != 1
+                    or primary[0].get("taskDefinition") != expected[service["serviceName"]]
+                    or primary[0].get("rolloutState") == "FAILED"):
+                raise ValueError("managed TLS deployment left its expected CA revision")
+            if (service.get("desiredCount", 0) < 1
+                    or service.get("runningCount") != service["desiredCount"]
+                    or service.get("pendingCount") != 0
+                    or len(deployments) != 1
+                    or primary[0].get("rolloutState") != "COMPLETED"):
+                raise DeploymentPending("managed TLS deployment is not complete")
+
+    if force:
+        require_completed()
+        for name in names:
+            aws("ecs", "update-service", "--cluster", cluster, "--service", name, "--force-new-deployment")
+    # Failed waiters propagate. Also require the completed rollout state, not
+    # merely runningCount==desiredCount while an old rollback target survives.
+    aws("ecs", "wait", "services-stable", "--cluster", cluster, "--services", *names)
+    deadline = time.monotonic() + 120
+    while True:
+        try:
+            require_completed()
+            return
+        except DeploymentPending:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(3)
 
 
 def verify_services(outputs):
@@ -359,4 +435,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["tls-redeploy"]:
+        tls_redeploy()
+    elif sys.argv[1:] == ["tls-ready"]:
+        tls_redeploy(force=False)
+    else:
+        main()

@@ -38,27 +38,79 @@ runner behavior updates, without adopting the direct module's contract lifecycle
 The baseline is the shared module at source commit
 `8b586b13ab89b78379fbecd8ddb9c7c7caba31f8`, Git tree
 `561d5b63514a13df471ad7458eae2b620cfc5803`, including current runner behavior.
-One TLS-only exception changes `ecs.tf` (CA setup before the legacy
-migration, API and web commands), `variables.tf` (strict TLS default/validation),
-`versions.tf` (HTTP provider) and adds `tls.tf` (verified regional RDS CA fetch).
-All other module files remain byte-identical. The release builder packages all
-eleven operational Terraform files under the managed root, excluding
-examples/tests, the direct-user module and macOS metadata sidecars. Regressions
-reconstruct the exact baseline tree outside those four files and compare every
-actual archive member/checksum with its local source. Existing GCP image
-resolution and mandatory registry verification remain independent.
+The TLS/ordering exception changes `main.tf` (preserved initial secret version),
+`ecs.tf` (CA startup, retained definition addresses and steady-state barrier),
+`variables.tf` (strict TLS default/validation), `versions.tf` (Terraform >=1.7
+for removed blocks, plus HTTP provider), and adds `tls.tf` (regional CA trust,
+runtime configuration marker, strict secret promotion and final deployment).
+The other fourteen original module files remain byte-identical. The builder
+packages eleven operational Terraform files plus the existing runner, excluding
+examples/tests, the direct module and metadata sidecars. Regressions reconstruct
+the exact baseline tree outside these five files and compare actual archive
+members/checksums. GCP image/registry verification remains independent.
 
-This is a compatibility boundary, not adoption of the newer module's migration
-or secret lifecycle. The AWS/random/archive provider pins and bootstrap IAM are
-unchanged; only the HTTP provider/lock entry is added for a verified public CA
-fetch. The runner's data-preservation guard permits exactly the existing app
-SecretVersion's `sslaccept=accept` to `sslaccept=strict` replacement, only when
-all other secret JSON values, DB identity/credentials and secret ARN are known
-and unchanged, with the old version carrying only `AWSCURRENT`. Other protected
-replacements still require manual review. The pinned AWS provider skips removing
-that label before putting the new version, using already-granted permissions.
-No secret rotation is intended. Session/data preservation still requires live
-baseline-to-Retry validation; offline tests alone do not certify it.
+The original AWS5.100/random3.7.2/archive2.8.1 pins and bootstrap template/IAM
+are unchanged. HTTP3.6.2 is added for verified public CA retrieval. This does not
+adopt direct-user migration orchestration or write-only secret mode; the legacy
+migration sidecar remains. No authentication/encryption/bootstrap key rotation
+is intended. Strict-version creation for an existing install must pass the same
+known-current-version/key/DB-identity comparison; unknowns or rotated fields fail
+closed. Fresh creation is allowed only when both the parent secret and its initial
+version are new. Protected data-resource deletes/replacements remain guarded.
+
+### One-apply TLS ordering and revision retention
+
+1. Preserve the original `app` SecretVersion. Fresh installs first create that
+   version with the initial accept-mode URL; its secret values are then ignored
+   for changes, rather than rotated or downgraded on later updates.
+2. Forget the old `aws_ecs_task_definition.api` / `.web` addresses using
+   `removed { lifecycle { destroy = false } }`. Create `api_ca` / `web_ca` with
+   `skip_destroy = true` from their first creation. Both services must reach
+   steady state on those CA-enabled revisions before the strict version exists.
+3. `terraform_data.ca_ready` uses existing ECS Describe/wait permissions to
+   confirm a single completed primary deployment on each expected CA revision,
+   not running counts alone. The strict SecretVersion depends on this barrier.
+   Existing keys and DB identity/credentials are unchanged; only URL mode changes.
+4. `terraform_data.strict_redeploy`, triggered by that version ID, calls the
+   packaged runner's `tls-redeploy` command. It uses only existing ECS UpdateService
+   and Describe permissions, forces both services and waits for completed
+   deployments on the expected CA revision. Any failed waiter/rollback/overlap
+   fails apply and the installer run, even if old replicas are still healthy.
+
+The plan graph enforces initial secret -> completed CA services -> strict
+secret -> forced strict deployment. Before promotion, failures leave accept
+mode; after promotion every installer/ECS automatic restart or circuit-breaker
+rollback target is CA-enabled. This is not an atomic multi-service transaction:
+a failed post-step is recorded as failed/tainted and retried, never reported as
+Operational, while all restartable managed service definitions remain CA-safe.
+
+New managed API/web definitions retain revisions on **future** image/version
+updates too, fixing that general deregistration bug, not just this TLS update.
+The installer never deregisters them. **Retained pre-TLS task-definition revisions
+stay ACTIVE because the approved permissions cannot deregister them; don't start
+them manually after the upgrade.** Arbitrary manual legacy RunTask is outside
+the automatic-path guarantee. Independent lab cleanup may deregister owned
+revisions only after services are destroyed; it is not a rollout workaround.
+
+Each migrate/API/web startup validates the actual URI mode and parses the public
+CA without printing credentials, then emits `OPENWORK_MANAGED_DB_TLS` with
+`mode=bootstrap-accept ca=validated` or `mode=strict ca=validated`. This is a
+configuration witness, not a pre-connection handshake claim. Only final strict
+markers, actual new tasks and DB/readiness/session witnesses certify the upgrade.
+
+### Controlled second-update proof input
+
+`tls_task_revision` is an optional non-secret root/module input, empty by default.
+It only changes `OPENWORK_MANAGED_TASK_REVISION` in DB-client container definitions.
+For a lab-only second immutable bundle, copy
+`tests/second-update_override.tf` into `aws/terraform/` under that same name before
+running the ordinary release builder. It sets the default to `second-update`;
+no image/version/database/credential/buildspec/permission override is involved.
+Record the head, this single fixture delta and new artifact checksums, obtain the
+normal run approval, and use the ordinary runner. Never ship the fixture in a
+production release or use an administrator ECS mutation as the second-update proof.
+Live preservation, second-update and cleanup results remain separate from offline
+mocked/targeted tests.
 
 Do not refresh the snapshot as part of unrelated work. Separate contract
 adoption requires owner review and must handle supporting-file packaging, deployment-scoped

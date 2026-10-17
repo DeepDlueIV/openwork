@@ -25,6 +25,13 @@ variable "size" {
   default = "small"
 }
 
+# Non-secret revision marker for controlled installer update proofs. Production
+# callers leave it empty; it changes task definitions, never database inputs.
+variable "tls_task_revision" {
+  type    = string
+  default = ""
+}
+
 # ---- AWS inputs ----
 variable "region" { type = string }
 variable "account_id" { type = string }
@@ -149,8 +156,9 @@ module "platform" {
   # SMTP and SSO after setup.
   require_email_verification = false
 
-  den_api = local.profile.den_api
-  den_web = local.profile.den_web
+  den_api           = local.profile.den_api
+  den_web           = local.profile.den_web
+  tls_task_revision = var.tls_task_revision
   database = merge(local.profile.database, {
     backup_retention_days = 7
     deletion_protection   = !var.test_disposable

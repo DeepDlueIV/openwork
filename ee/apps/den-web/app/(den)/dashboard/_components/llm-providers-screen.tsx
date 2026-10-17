@@ -13,6 +13,7 @@ import { DenList, DenListRow } from "../../_components/ui/list-row";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenOptionCard } from "../../_components/ui/option-card";
 import { DenSectionHeader } from "../../_components/ui/section-header";
+import { DenSkeleton } from "../../_components/ui/skeleton";
 import {
   getLlmProviderRoute,
   getNewLlmProviderRoute,
@@ -73,16 +74,33 @@ function LlmProviderList({ providers, orgSlug }: { providers: DenLlmProvider[]; 
   );
 }
 
-export function LegacyProvidersSection({ orgId, orgSlug }: { orgId: string; orgSlug: string | null }) {
+export function LegacyProvidersSection({ orgId, orgSlug, comparison = false }: { orgId: string; orgSlug: string | null; comparison?: boolean }) {
   const { llmProviders, busy, error, reloadProviders } = useOrgLlmProviders(orgId);
   const legacyProviders = llmProviders.filter((provider) => provider.source !== "openwork" && provider.organizationId === orgId);
 
   return (
-    <section aria-label="Legacy Providers" data-testid="gateway-legacy-providers" className="mt-10 grid gap-4">
-      <DenSectionHeader
-        title="Legacy Providers"
-        description="Bring Your Own Key (Legacy System) providers send the API key directly to users’ desktop applications. Usage tracking and usage limit policies are not available with this feature. If you want usage tracking and usage limits, use the provider section above."
-      />
+    <section aria-label="Legacy Providers" data-testid="gateway-legacy-providers" className={comparison ? "grid min-w-0 gap-4" : "mt-10 grid gap-4"}>
+      {comparison ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-[16px] font-medium tracking-[-0.02em] text-gray-950">Bring your own key</h2>
+            <DenChip tone="warning">Legacy</DenChip>
+          </div>
+          <details className="group text-[13px] text-gray-500">
+            <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 [&::-webkit-details-marker]:hidden">
+              <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-90" />
+              Key sharing and usage limits
+            </summary>
+            <p className="mt-2 leading-6">Bring Your Own Key (Legacy System) providers send the API key directly to users’ desktop applications. Usage tracking and usage limit policies are not available with this feature. If you want usage tracking and usage limits, use AI Gateway providers.</p>
+          </details>
+          <p className="text-[13px] text-gray-500">Keys sent to desktop apps. No usage tracking or limits.</p>
+        </>
+      ) : (
+        <DenSectionHeader
+          title="Legacy Providers"
+          description="Bring Your Own Key (Legacy System) providers send the API key directly to users’ desktop applications. Usage tracking and usage limit policies are not available with this feature. If you want usage tracking and usage limits, use the provider section above."
+        />
+      )}
       <div>
         <Link
           href={getNewLlmProviderRoute(orgSlug)}
@@ -94,7 +112,7 @@ export function LegacyProvidersSection({ orgId, orgSlug }: { orgId: string; orgS
         </Link>
       </div>
       {busy ? (
-        <p role="status" className="text-sm text-gray-500">Loading legacy providers...</p>
+        comparison ? <div aria-label="Loading legacy providers" aria-busy="true" className="grid gap-3">{Array.from({ length: 3 }, (_, index) => <DenSkeleton key={index} className="h-16 w-full" />)}</div> : <p role="status" className="text-sm text-gray-500">Loading legacy providers...</p>
       ) : error ? (
         <div className="flex flex-col items-start gap-4">
           <DenNotice tone="error" message={`Could not load legacy providers: ${error}`} />
@@ -102,7 +120,7 @@ export function LegacyProvidersSection({ orgId, orgSlug }: { orgId: string; orgS
         </div>
       ) : legacyProviders.length > 0 ? (
         <LlmProviderList providers={legacyProviders} orgSlug={orgSlug} />
-      ) : null}
+      ) : comparison ? <p className="py-6 text-[13px] text-gray-500">No legacy providers yet.</p> : null}
     </section>
   );
 }

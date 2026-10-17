@@ -118,6 +118,7 @@ export function AiGatewayScreen({ providerContent, pageContent, pageTab }: { pro
     : AI_GATEWAY_TABS.find((item) => item.value === searchParams.get("tab"))?.value ?? defaultTab;
   const gatewayTabArea = tab === "openwork-models" ? "any" : GATEWAY_TAB_AREAS[tab];
   const access = useGatewayDashboardAccess(gatewayTabArea);
+  const providerManagementLayout = orgFeatureEnabled(orgContext, "providerManagementLayout");
 
   function setTab(next: AiGatewayTab) {
     const params = new URLSearchParams(searchParams.toString());
@@ -143,13 +144,13 @@ export function AiGatewayScreen({ providerContent, pageContent, pageTab }: { pro
         data-testid={`ai-gateway-panel-${tab}`}
       >
         {nestedContent !== undefined ? nestedContent : (
-          <>
+          <div className={providerManagementLayout && tab === "ai-providers" && memberAccess.canViewAllLlmProviders ? "grid min-w-0 items-start gap-8 xl:grid-cols-2" : undefined} data-testid={tab === "ai-providers" ? "provider-management-layout" : undefined}>
             {tab === "overview" || tab === "ai-providers" || tab === "limits" || tab === "users-and-teams" ? (
               orgError ? <DenNotice tone="error" message={orgError} />
                 : access === "enabled" && orgId && orgContext ? (
                   <>
                     {tab === "overview" ? <AiGatewayOverview key={orgId} orgId={orgId} /> : null}
-                    {tab === "ai-providers" ? <GatewayProvidersSection key={orgId} /> : null}
+                    {tab === "ai-providers" ? <GatewayProvidersSection key={orgId} comparison={providerManagementLayout} /> : null}
                     {tab === "users-and-teams" ? <GatewayUsersTeamsSection key={orgId} orgId={orgId} orgSlug={orgSlug} orgContext={orgContext} /> : null}
                     {tab === "limits" ? (
                       <>
@@ -174,9 +175,9 @@ export function AiGatewayScreen({ providerContent, pageContent, pageTab }: { pro
             ) : null}
             {tab === "openwork-models" ? <InferenceScreen embedded /> : null}
             {tab === "ai-providers" && orgId && !orgError && memberAccess.canViewAllLlmProviders ? (
-              <LegacyProvidersSection key={orgId} orgId={orgId} orgSlug={orgSlug} />
+              <LegacyProvidersSection key={orgId} orgId={orgId} orgSlug={orgSlug} comparison={providerManagementLayout} />
             ) : null}
-          </>
+          </div>
         )}
       </div>
     </DashboardPageTemplate>

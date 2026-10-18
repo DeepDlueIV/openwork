@@ -28,7 +28,9 @@ test("an owner keeps a Google Cloud form through readiness failures and prepares
     await user.see({ role: "textbox", label: "Address" }, { value: "openwork.example.test" });
     await user.notSee({ text: /^feature_disabled$/ });
     const failed = (await world.faults.requestLog()).filter((entry) => entry.method === "POST" && entry.status === 404);
-    evidence.recordAssertionEvidence("a late rollout change has actionable recovery", `actual create refusal=${failed.length}; project and address retained; operator named`, failed.length === 1);
+    const blocked = await probe.dom('[data-testid="create-deployment-dialog"] [data-notice-tone="neutral"]');
+    expect(blocked.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("a late rollout change has actionable recovery", `actual create refusal=${failed.length}; project and address retained; neutral operator lock=${blocked.elements.length}`, failed.length === 1 && blocked.elements.length === 1);
     expect(failed.length).toBe(1);
     await user.screenshot();
   });

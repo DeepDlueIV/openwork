@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { z } from "zod";
 import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenInput } from "../../_components/ui/input";
+import { DenNotice } from "../../_components/ui/notice";
 import { DenOptionCard } from "../../_components/ui/option-card";
 import { DenPageHeader } from "../../_components/ui/page-header";
 import { DenSelect } from "../../_components/ui/select";
@@ -19,7 +20,7 @@ import { getErrorMessage, getRequestError, requestJson } from "../../_lib/den-fl
 import { getOrgAccessFlags, orgFeatureEnabled, permissionLockReason } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { ConfirmDialog } from "./item-list";
-import { deploymentActionError, deploymentStatus, providerName, readinessMessage, type DeploymentTone, type ProviderReadiness } from "./managed-deployments-state";
+import { DeploymentReadinessError, deploymentActionError, deploymentStatus, providerName, readinessMessage, type DeploymentTone, type ProviderReadiness } from "./managed-deployments-state";
 export { deploymentStatus } from "./managed-deployments-state";
 
 type Configuration = z.infer<typeof managedDeploymentConfigurationSchema>;
@@ -114,6 +115,12 @@ function ProviderLock({ entry }: { entry: ProviderReadiness }) {
   );
 }
 
+function DeploymentActionFeedback({ error }: { error: Error | null }) {
+  if (!error) return null;
+  if (error instanceof DeploymentReadinessError) return <DenNotice tone="neutral" presentation="inline" icon={LockKeyhole} message={error.message} />;
+  return <p role="alert" className="text-[13px] text-red-700">{error.message}</p>;
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex min-h-10 flex-col gap-1 border-b border-gray-100 py-2 text-[13px] last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -132,7 +139,7 @@ export function ManagedDeploymentsScreen() {
   const [loading, setLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<Error | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [launch, setLaunch] = useState<Launch | null>(null);
   const [busy, setBusy] = useState(false);
@@ -190,13 +197,13 @@ export function ManagedDeploymentsScreen() {
         const result = await requestJson(`/v1/managed-deployments/${deployment.id}/launch`, { method: "POST", body: JSON.stringify({ kind }) });
         if (!result.response.ok) {
           const recovery = deploymentActionError(result.payload, deployment.provider);
-          throw recovery ? new Error(recovery) : getRequestError(result.payload, result.response, "Couldn't prepare the installer.");
+          throw recovery ? new DeploymentReadinessError(recovery) : getRequestError(result.payload, result.response, "Couldn't prepare the installer.");
         }
         const parsed = managedDeploymentLaunchSchema.parse(result.payload);
         if (generation.current === current) { setLaunch(parsed); replace(parsed.deployment); }
       });
     } catch (failure) {
-      if (generation.current === current) setActionError(failure instanceof Error ? failure.message : "Couldn't prepare the installer.");
+      if (generation.current === current) setActionError(failure instanceof Error ? failure : new Error("Couldn't prepare the installer."));
     } finally {
       if (generation.current === current) setBusy(false);
     }
@@ -260,7 +267,7 @@ export function ManagedDeploymentsScreen() {
             <DeploymentDetail deployment={selected} launch={launch?.deployment.id === selected.id ? launch : null} busy={busy} canManage={access.canManageDeployments}
               copied={copied} actionError={actionError} canPrepare={configuration?.providers.some((entry) => entry.provider === selected.provider && entry.available) ?? false}
               onPrepare={(kind) => { void prepare(selected, kind); }}
-              onCopy={(command) => { void navigator.clipboard.writeText(command).then(() => setCopied(true)).catch(() => setActionError("Couldn't copy. Open Technical details and copy the command.")); }}
+              onCopy={(command) => { void navigator.clipboard.writeText(command).then(() => setCopied(true)).catch(() => setActionError(new Error("Couldn't copy. Open Technical details and copy the command."))); }}
               onRemove={() => { setActionError(null); setDeploymentToRemove(selected); }} />
           ) : null}
         </>
@@ -282,7 +289,7 @@ export function ManagedDeploymentsScreen() {
 
 function DeploymentDetail({ deployment, launch, busy, canManage, canPrepare, copied, actionError, onPrepare, onCopy, onRemove }: {
   deployment: ManagedDeployment; launch: Launch | null; busy: boolean; canManage: boolean; canPrepare: boolean; copied: boolean;
-  actionError: string | null; onPrepare: (kind: Launch["kind"]) => void; onCopy: (command: string) => void; onRemove: () => void;
+  actionError: Error | null; onPrepare: (kind: Launch["kind"]) => void; onCopy: (command: string) => void; onRemove: () => void;
 }) {
   const status = deploymentStatus(deployment);
   const cloud = providerName(deployment.provider);
@@ -364,7 +371,7 @@ function DeploymentDetail({ deployment, launch, busy, canManage, canPrepare, cop
         </section>
       ) : null}
 
-      {actionError ? <p role="alert" className="text-[13px] text-red-700">{actionError}</p> : null}
+      <DeploymentActionFeedback error={actionError} />
 
       <div className="flex flex-wrap items-center gap-2">
         {canManage && !installed && (!run || (run.state === "awaiting_approval" && !run.expired)) ? (
@@ -415,7 +422,7 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
   const [clusterArn, setClusterArn] = useState("");
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -423,25 +430,25 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
       mode: "existing", vpcId: vpcId.trim(), serviceSubnetIds: idList(serviceSubnets), loadBalancerSubnetIds: idList(loadBalancerSubnets),
       ...(clusterArn.trim() ? { ecsClusterArn: clusterArn.trim() } : {}),
     };
-    if (!readiness?.available) { setError("This cloud is not ready. Ask your OpenWork operator to resolve the deployment lock."); return; }
+    if (!readiness?.available) { setError(new DeploymentReadinessError("This cloud is not ready. Ask your OpenWork operator to resolve the deployment lock.")); return; }
     const parsed = managedDeploymentInputSchema.safeParse(provider === "gcp"
       ? { provider, name, domainName, ownerEmail, target: { projectId: projectId.trim(), projectNumber: projectNumber.trim(), region: gcpRegion, dnsZoneName: dnsZoneName.trim() } }
       : { provider, name, domainName, ownerEmail, target: { accountId: accountId.trim(), region, route53ZoneId: zoneId.trim(), network } });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? "Check the deployment details."); return; }
-    if (!consent) { setError("Confirm the cloud account, permissions and costs first."); return; }
+    if (!parsed.success) { setError(new Error(parsed.error.issues[0]?.message ?? "Check the deployment details.")); return; }
+    if (!consent) { setError(new Error("Confirm the cloud account, permissions and costs first.")); return; }
     setBusy(true); setError(null);
     try {
       await runReauthableAction("Create deployment", async () => {
         const result = await requestJson("/v1/managed-deployments", { method: "POST", body: JSON.stringify(parsed.data) });
         if (!result.response.ok) {
           const recovery = deploymentActionError(result.payload, provider);
-          throw recovery ? new Error(recovery) : getRequestError(result.payload, result.response, "Couldn't create the deployment.");
+          throw recovery ? new DeploymentReadinessError(recovery) : getRequestError(result.payload, result.response, "Couldn't create the deployment.");
         }
         onCreated(managedDeploymentSchema.parse(result.payload));
         setConsent(false);
       });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Couldn't create the deployment.");
+      setError(failure instanceof Error ? failure : new Error("Couldn't create the deployment."));
     } finally {
       setBusy(false);
     }
@@ -511,7 +518,7 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
               <input type="checkbox" className="mt-0.5" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
               <span className="min-w-0" data-testid="deployment-cost-consent">{provider === "gcp" ? "I control this Google Cloud project and public DNS zone, with billing enabled. I'll review the installer's permissions and run its command in Google Cloud Shell to approve. Only running the command creates or changes billable Cloud Run, Cloud SQL, load balancer and storage resources in my project. Removing this record does not delete those resources or stop charges. OpenWork receives deployment progress and health checks, never the first-sign-in code." : `I control this AWS account and hosted zone. AWS bills my account for the containers, database and load balancer${networkMode === "dedicated" ? " and NAT gateway (about $100–150 a month at the small size)" : " (about $60–100 a month at the small size, plus my network's own costs)"}. I'll review the installer's permissions in AWS before approving.`}</span>
             </label>
-            {error ? <p role="alert" className="text-[13px] text-red-700">{error}</p> : null}
+            <DeploymentActionFeedback error={error} />
             <DenButton type="submit" data-testid="create-deployment-submit" loading={busy} disabled={!consent || !readiness?.available}>{provider === "gcp" ? "Prepare Google Cloud approval" : "Create deployment"}</DenButton>
           </form>
         </Dialog.Popup>

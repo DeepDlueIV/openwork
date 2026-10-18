@@ -15,6 +15,9 @@ export function providerName(provider: ProviderReadiness["provider"]) {
 /** Configuration values and secrets never belong in readiness copy. */
 export const readinessMessage = managedDeploymentReadinessMessage;
 
+/** A configuration/rollout lock is a blocked state, not a failed cloud installation. */
+export class DeploymentReadinessError extends Error {}
+
 /** Race-safe fallback when a rollout or release changes after the form was opened. */
 export function deploymentActionError(payload: unknown, provider: ProviderReadiness["provider"]): string | null {
   if (typeof payload !== "object" || payload === null || !("error" in payload)) return null;

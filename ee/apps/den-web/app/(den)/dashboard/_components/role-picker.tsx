@@ -59,7 +59,7 @@ export function RolePicker({ value, onChange, options, label, trigger, disabled,
             <Search className="size-3.5 shrink-0 text-gray-500" aria-hidden />
             <Command.Input autoFocus aria-label="Search roles" placeholder="Search roles" value={query} onValueChange={(next) => { setQuery(next); setPage(0); }} className="min-w-0 flex-1 bg-transparent text-[13px] outline-none" />
           </div>
-          <Command.List aria-label={label} className="mt-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          <Command.List label={label} className="mt-1 min-h-0 overflow-y-auto overflow-x-hidden">
             {visible.map((option) => <Command.Item key={option.value} value={option.value} disabled={option.disabled}
               title={option.lockReason ?? option.label} data-testid={`${testId}-option-${option.value}`}
               onSelect={() => { onChange(option.value); if (!footer) changeOpen(false); }}
@@ -70,7 +70,7 @@ export function RolePicker({ value, onChange, options, label, trigger, disabled,
               </span>
               {option.disabled ? <LockKeyhole className="size-3.5 shrink-0 text-gray-500" aria-hidden /> : value === option.value ? <Check className="size-4 shrink-0 text-gray-900" aria-hidden /> : null}
             </Command.Item>)}
-            {matches.length === 0 ? <Command.Empty className="px-3 py-4 text-[12px] text-gray-500">No roles match “{query.trim()}”.</Command.Empty> : null}
+            {matches.length === 0 ? <Command.Empty className="px-3 py-4 text-[12px] text-gray-500">{inventoryState === "ready" ? `No roles match “${query.trim()}”.` : "Role results aren't verified."}</Command.Empty> : null}
           </Command.List>
         </Command>
         <div className="mt-1 flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-2 py-2 text-[12px] text-gray-500" data-testid="role-picker-completeness" role="status">

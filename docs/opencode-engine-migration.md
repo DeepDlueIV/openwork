@@ -29,8 +29,11 @@ fall back on its first failed start only before a v2 database exists; an existin
 v2 database may contain new history and is never silently rerouted on a later
 startup failure. Explicit manual engine choices retain their ownership and
 consent semantics, including when a pending automatic attempt fails after a
-manual choice. Policy updates do not abort a copy or a running task. Failures
-retain the selected engine, durable error and backup receipt. Automatic retries
+manual choice. A manual v2 selection also retires the automatic baseline, so a
+later boot cannot fence startup or restore an older target over its new history.
+An unfinished copy must be resumed before a v2 selection is accepted. Policy
+updates do not abort a copy or a running task. Failures retain the selected
+engine, durable error and backup receipt. Automatic retries
 only run on a later boot with a one-minute-to-one-day bounded exponential
 backoff; policy-off/status refreshes never restart a failed inactive sidecar.
 

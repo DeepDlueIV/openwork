@@ -95,7 +95,8 @@ test("policy off does not restart a failed sidecar, but explicit manual recovery
 
 test("a failed automatic attempt cannot undo a concurrent manual v2 choice", async () => {
   await profile(async (config, dir) => {
-    writeFileSync(join(dir, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: false }));
+    writeFileSync(join(dir, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: false,
+      automaticHistoryCopy: true, automaticHistoryRevision: "completed-automatic-snapshot" }));
     const idle = Promise.withResolvers<boolean>();
     const engine = createEngineV2Preview({ config, autoUpgradeIdle: () => idle.promise });
     try {
@@ -106,7 +107,26 @@ test("a failed automatic attempt cannot undo a concurrent manual v2 choice", asy
       assert.equal(engine.status().chatRouting, true);
       assert.equal(engine.status().engineOrigin, "manual");
       assert.equal(engine.status().engineForced, false);
-      assert.equal(readEngineV2PreviewState(config).chatRouting, true);
+      const saved = readEngineV2PreviewState(config);
+      assert.equal(saved.chatRouting, true);
+      assert.equal(saved.automaticHistoryCopy, undefined, "manual v2 history must not remain fenced on a later boot");
+      assert.equal(saved.automaticHistoryRevision, undefined, "a later attempt must not restore an old target over manual v2 history");
+    } finally { await engine.stop(); }
+  });
+});
+
+test("an unfinished saved copy must be recovered before a manual v2 selection is accepted", async () => {
+  await profile(async (config, dir) => {
+    config.engineAutoUpgrade = false;
+    writeFileSync(join(dir, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: false,
+      automaticHistoryCopy: true, v1HistoryCopyStartedAt: 1,
+      historyCopyResult: { state: "error", error: "Copy paused", imported: 1, skipped: 0, total: 2 },
+    }));
+    const engine = createEngineV2Preview({ config, deferStart: true });
+    try {
+      await assert.rejects(engine.setChatRouting(true), { status: 409, code: "engine_migration_required" });
+      assert.equal(engine.status().chatRouting, false);
+      assert.equal(readEngineV2PreviewState(config).v1HistoryCopyStartedAt, 1);
     } finally { await engine.stop(); }
   });
 });

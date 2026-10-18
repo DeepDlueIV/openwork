@@ -1091,6 +1091,9 @@ export function createEngineV2Preview(options: {
   // before that leaves every such chat unreadable, so it waits for a copy.
   async function requireV1HistoryCopied(): Promise<void> {
     requireNoMigration();
+    if (v1HistoryCopyStartedAt !== undefined) {
+      throw new ApiError(409, "engine_migration_required", "Resume the unfinished chat migration before switching to v2, so every chat stays readable.");
+    }
     if (chatRouting) return;
     let source: string;
     try { source = opencodeV1DatabasePath(); } catch { return; }
@@ -1117,9 +1120,10 @@ export function createEngineV2Preview(options: {
     if (origin === "reverted") enabled = false;
     engineChangedAt = new Date().toISOString();
     engineForced = forceOwned;
-    if (forceOwned) {
-      // One durable write selects v2 and retires the private copy marker. A
-      // crash must not leave routing selected while startup is still fenced.
+    if (nextChatRouting) {
+      // Any accepted v2 selection, including a manual choice, retires the
+      // automatic baseline. It may now serve new history: a later boot must
+      // neither fence startup nor restore an older pre-copy target over it.
       automaticHistoryCopy = false;
       automaticHistoryRevision = undefined;
       autoUpgradeRetry = undefined;

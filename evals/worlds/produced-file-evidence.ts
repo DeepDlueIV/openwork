@@ -34,3 +34,29 @@ export async function producedFileEvidence(seed: Seed) {
     workbookSignature: async () => (await readFile(join(workspacePath, "budget.xlsx"))).subarray(0, 2).toString(),
   };
 }
+
+export const producedFileV2Prompt = "Prepare my summary.";
+export async function producedFileV2Evidence(seed: Seed) {
+  const engine = "v2";
+  const workspacePath = seed.tmpPath("produced-file-evidence-v2");
+  await mkdir(workspacePath, { recursive: true });
+  const mock = seed.mock({ isolatedProcessEnv: true, agentWorkloads: [{
+    promptMarker: producedFileV2Prompt, latestUserTurn: true,
+    finalReply: "Voilà [résumé](summary.md).",
+    steps: [
+      { tool: "shell", arguments: { command: "printf '# Summary\\n\\nThe requested summary.\\n' > summary.md", description: "Prepare the summary" } },
+      { tool: "shell", arguments: { command: "printf 'not-produced.pdf\\n'", description: "Read a reference" } },
+    ],
+  }] });
+  const app = await seed.appWeb({ name: "produced-file-evidence-v2", workspacePath, engine, headless: true, mocks: { agent: mock } });
+  const workspace = await seed.workspace(app, workspacePath);
+  const witness = app.mocks.agent;
+  if (!witness) throw new Error("Native summary model witness did not start");
+  await configureProvider(seed, app, workspace.workspaceId, "summary-proof", "summary", {
+    permission: { "*": "allow" }, provider: { "summary-proof": { npm: "@ai-sdk/openai-compatible", name: "Summary model",
+      options: { baseURL: `${witness.url}/v1`, apiKey: "sk-summary-fixture" }, models: { summary: { name: "Summary model" } },
+    } },
+  }, engine);
+  const session = await seed.session(app, { title: "Summary export" });
+  return { app, workspace, session, summary: () => readFile(join(workspacePath, "summary.md"), "utf8") };
+}

@@ -1,6 +1,10 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { producedFileEvidence, producedFilePrompt } from "../worlds/produced-file-evidence.ts";
+import { producedFileEvidence, producedFilePrompt, producedFileV2Evidence, producedFileV2Prompt } from "../worlds/produced-file-evidence.ts";
+
+const nativeTest = spec.world(producedFileV2Evidence, {
+  timeout: 300_000, resources: { surfaces: ["appWeb"], services: ["mock"] }, needs: { commands: ["bun"] },
+});
 
 const test = spec.world(producedFileEvidence, {
   timeout: 300_000, resources: { surfaces: ["appWeb"], services: ["mock"] }, needs: { commands: ["bun"] },
@@ -33,6 +37,38 @@ test("a person finds a genuine workbook even when the assistant does not mention
     const fileButtons = (await probe.dom('button[aria-label="Files (1)"]')).elements;
     expect(fileButtons).toHaveLength(1);
     evidence.recordAssertionEvidence("Only the genuinely produced file is available", "The reference-only command does not add not-produced.pdf; Files (1) after preview closes", fileButtons.length === 1);
+    await user.screenshot();
+  });
+});
+
+
+nativeTest("a person on the native engine finds a shell-produced summary through its localized file link", async ({ world, user, probe, step, evidence }) => {
+  await user.resizeViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await step("the native engine writes the requested summary and returns a localized link", async () => {
+    await user.type("composer", producedFileV2Prompt);
+    await user.click("Run task");
+    await user.see({ role: "link", label: "résumé" }, { timeoutMs: 120_000 });
+    expect(await world.summary()).toContain("The requested summary.");
+    await user.see({ role: "button", label: "Files (1)" }, { timeoutMs: 30_000 });
+    evidence.recordAssertionEvidence("The localized reference resolves to a real native-engine output", "Native shell wrote summary.md; localized link and Files (1) visible", (await world.summary()).includes("The requested summary."));
+    await user.screenshot();
+  });
+  await step("after: Files opens the summary rather than requiring English file verbs", async () => {
+    await user.click({ role: "button", label: "Files (1)" });
+    await user.see({ text: "The requested summary." }, { timeoutMs: 30_000 });
+    const text = await probe.text();
+    expect(text).toContain("The requested summary.");
+    evidence.recordAssertionEvidence("The native output opens in its normal document preview", "The requested summary is readable in the panel", text.includes("The requested summary."));
+    await user.screenshot();
+    await user.click("Close artifact");
+  });
+  await step("the real output survives reload while a printed filename never becomes a second artifact", async () => {
+    await user.reload();
+    await user.see({ role: "button", label: "Files (1)" }, { timeoutMs: 30_000 });
+    await user.notSee({ role: "button", label: "Files (2)" });
+    const buttons = (await probe.dom("button[aria-label=\"Files (1)\"]")).elements;
+    expect(buttons).toHaveLength(1);
+    evidence.recordAssertionEvidence("Native history keeps the one verified output", "Files (1) after reload; not-produced.pdf was only printed, not created", buttons.length === 1);
     await user.screenshot();
   });
 });

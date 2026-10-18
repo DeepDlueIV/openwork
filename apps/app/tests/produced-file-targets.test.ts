@@ -55,6 +55,11 @@ test("older workers' complete atomic-write receipts remain discoverable without 
   expect(deriveOpenTargets(conversation(completed("spreadsheet_write", { ok: true, path: "bare.xlsx" })))).toEqual([]);
 });
 
+test("explicit localized file links are candidates without English verbs, while plain invented names stay prose", () => {
+  const messages: UIMessage[] = [{ id: "localized", role: "assistant", parts: [{ type: "text", text: "Voilà [résumé](report.pdf). fictional.xlsx" }] }];
+  expect(deriveOpenTargets(messages).map(target => target.value)).toEqual(["report.pdf"]);
+});
+
 test("assistant claims and duplicate routes cannot displace the producing turn's evidence", () => {
   const output = JSON.stringify({ ok: true, producedFiles: [{ path: "report.xlsx", bytes: 42 }] });
   const messages = conversation(completed("spreadsheet_write", output), "I saved report.xlsx.");

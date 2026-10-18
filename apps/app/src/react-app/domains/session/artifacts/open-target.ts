@@ -237,7 +237,7 @@ function scanText(
   text: string,
   confidence: number,
   reason: string,
-  options: { includeFiles: boolean },
+  options: { includeFiles: boolean; includeFileLinks?: boolean },
 ) {
   if (!text) {
     return;
@@ -251,7 +251,7 @@ function scanText(
     if (!href) continue;
     if (/^(?:https?|wss?):\/\//i.test(href)) {
       addTarget(map, targetFromUrl(href, confidence, reason));
-    } else if (options.includeFiles) {
+    } else if (options.includeFiles || options.includeFileLinks) {
       addTarget(map, targetFromFile(href, confidence, reason));
     }
   }
@@ -387,6 +387,9 @@ function extractPartOpenTargets(part: UIMessage["parts"][number], confidence: nu
   if (part.type === "text" && typeof part.text === "string") {
     scanText(targets, part.text, confidence, "message", {
       includeFiles: includeFileMentions || (confidence === 65 && shouldScanAssistantFileMentions(part.text)),
+      // Explicit file links express intent in every language. They remain
+      // lower-confidence candidates and still require filesystem verification.
+      includeFileLinks: confidence === 65,
     });
   } else if (part.type === "file") {
     const path = filePathFromFileUrl(part.url);

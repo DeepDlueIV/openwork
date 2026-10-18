@@ -61,6 +61,7 @@ function RemoteThreadConversation({ entry }: { entry: RemoteThreadEntry }) {
   const transcript = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   const earlierHeight = useRef<number | null>(null)
+  const appliedPage = useRef<RemoteTranscriptPage | null>(null)
 
   useEffect(() => {
     reads.current.mounted = true
@@ -126,10 +127,11 @@ function RemoteThreadConversation({ entry }: { entry: RemoteThreadEntry }) {
   useLayoutEffect(() => {
     const element = transcript.current
     if (!element) return
-    if (earlierHeight.current !== null && page) {
+    if (earlierHeight.current !== null && page && page !== appliedPage.current) {
       element.scrollTop += element.scrollHeight - earlierHeight.current
       earlierHeight.current = null
     } else if (stickToBottom.current) element.scrollTop = element.scrollHeight
+    appliedPage.current = page
   }, [page, entry.followUps, view.status, readPending, readError])
 
   const messages = page?.messages ?? []
@@ -169,7 +171,7 @@ function RemoteThreadConversation({ entry }: { entry: RemoteThreadEntry }) {
       </div>
 
       <RemoteThreadActionRecovery entry={entry} action={entry.stop} />
-      <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto px-3 py-3" data-remote-thread-transcript=""
+      <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 [overflow-anchor:none]" data-remote-thread-transcript=""
         onScroll={(event) => {
           const element = event.currentTarget
           stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48

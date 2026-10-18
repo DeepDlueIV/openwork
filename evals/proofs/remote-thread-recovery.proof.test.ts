@@ -18,6 +18,17 @@ test("a member keeps the next draft and sees the same confirmed remote task stat
     await user.click({ role: "button", label: `${world.title}. Open the task on Project computer` });
     await user.see({ text: "Section 17 checked. The project notes remain available for review." }, { timeoutMs: 45_000 });
     await user.see({ text: /Conversation checked/ });
+    const transcript = (await probe.dom("[data-remote-thread-transcript]")).elements[0];
+    if (!transcript) throw new Error("Missing remote conversation");
+    await user.wheelAt({ x: transcript.rect.left + transcript.rect.width / 2, y: transcript.rect.top + transcript.rect.height / 2, deltaY: -3_000 });
+    await user.see({ role: "button", label: "Show earlier messages" });
+    const anchorBefore = (await probe.dom('[data-remote-thread-message="user"]')).elements.find((element) => element.text === "Review section 3")?.rect.top;
+    if (anchorBefore === undefined) throw new Error("Missing the reader's first visible turn");
+    await user.click({ role: "button", label: "Show earlier messages" });
+    await probe.eventually(async () => (await probe.dom('[data-remote-thread-message="user"]')).elements.some((element) => element.text === "Review section 1"), { within: 15_000, intervalMs: 200, label: "earlier task messages arrive", until: Boolean });
+    const anchorAfter = (await probe.dom('[data-remote-thread-message="user"]')).elements.find((element) => element.text === "Review section 3")?.rect.top;
+    expect(anchorAfter).toBeDefined();
+    expect(Math.abs((anchorAfter ?? 0) - anchorBefore)).toBeLessThan(3);
     const positions: number[] = [];
     await probe.eventually(async () => {
       const line = (await probe.dom("[data-remote-thread-status]")).elements[0];

@@ -16,6 +16,7 @@ import {
   useWorkbotLive,
   useWorkbotThread,
   WorkbotChatProvider,
+  WorkbotReadError,
   workbotFilesKey,
   type LiveText,
   type WorkbotAttachment,
@@ -152,7 +153,8 @@ function ChatScreen({ host, navigation, onDraftsChange }: { host: WorkbotHost; n
   // Messages replaced by an edit leave the page at once; the conversation catches up on its next read.
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const uploads = useUploads();
-  const data = thread.data?.available ? thread.data : null;
+  const accessDenied = thread.error instanceof WorkbotReadError && (thread.error.status === 401 || thread.error.status === 403);
+  const data = !accessDenied && thread.data?.available ? thread.data : null;
   // The open file at its newest version: when Workbot revises it, the preview follows (same id, newer updatedAt).
   const previewFile = useMemo(() => {
     if (!preview || !data) return preview;
@@ -341,6 +343,12 @@ function ChatScreen({ host, navigation, onDraftsChange }: { host: WorkbotHost; n
       </Centered>
     );
   }
+  if (accessDenied) return <Centered>
+    <Lock size={16} strokeWidth={1.5} className="text-[var(--wb-muted)]" aria-hidden />
+    <p className="mt-3 text-[14px] text-[var(--wb-text)]">Your access to this conversation couldn't be verified.</p>
+    <p className="mt-1 text-[13px] text-[var(--wb-muted)]">Sign in again or ask your admin to check your access.</p>
+    <button type="button" onClick={() => void thread.refetch()} className="mt-3 rounded-full px-3 py-1.5 text-[13px] text-[var(--wb-text)] hover:bg-[var(--wb-chip)] focus-visible:shadow-[var(--wb-focus)]">Check again</button>
+  </Centered>;
   if (!data) {
     const notEnabled = thread.data?.available === false && thread.data.reason === "workbot_not_enabled";
     return (

@@ -55,4 +55,12 @@ test("a member sees unverified work, failed stop, and a last-known conversation 
     evidence.recordAssertionEvidence("Recovery only reads the conversation", "No message POST occurred while stopping or reconnecting", world.sends() === 0);
     await user.screenshot();
   });
+  await step("revoked access masks the cached answer instead of calling it last-known", async () => {
+    world.revokeAccess();
+    await user.see({ text: "Your access to this conversation couldn't be verified." });
+    await user.notSee({ text: "The report has three sections." });
+    await user.notSee({ text: "The figures still need verification." });
+    evidence.recordAssertionEvidence("Authorization failures cannot expose the cached conversation", "A forbidden read masks both stored and streamed words", !(await probe.text()).includes("The report has three sections."));
+    await user.screenshot();
+  });
 });

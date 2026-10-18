@@ -11,6 +11,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
   const resources = new AsyncDisposableStack();
   const at = Date.now() - 5000;
   let unavailable = false;
+  let revoked = false;
   let stopAttempts = 0;
   let taskStopAttempts = 0;
   let sends = 0;
@@ -48,6 +49,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
             streams.add(res); res.on("close", () => streams.delete(res)); return;
           }
           if (url.pathname === "/v1/workbot") {
+            if (revoked) return json({ error: "forbidden" }, 403);
             if (unavailable) return json({ error: "unavailable" }, 503);
             const turns = buildWorkbotTurns(snapshot);
             return json({ available: true, name: "Workbot", organizationName: "Example", status: snapshot.status, turns, hasEarlier: false, filesEnabled: false });
@@ -94,6 +96,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
       stopAttempts: () => stopAttempts, taskStopAttempts: () => taskStopAttempts, sends: () => sends, progressStage: () => progressStage, progressUpdatedAt: () => progressUpdatedAt,
       disconnect() { unavailable = true; for (const stream of streams) stream.end(); streams.clear(); },
       restore() { unavailable = false; },
+      revokeAccess() { revoked = true; changed(); },
 
       async [Symbol.asyncDispose]() { await resources.disposeAsync(); },
     };

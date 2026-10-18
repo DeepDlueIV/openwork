@@ -97,6 +97,13 @@ const threadSchema = z.discriminatedUnion("available", [
 ]);
 export type WorkbotThread = z.infer<typeof threadSchema>;
 
+export class WorkbotReadError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "WorkbotReadError";
+  }
+}
+
 export const workbotQueryKey = ["workbot", "thread"] as const;
 
 /**
@@ -109,7 +116,7 @@ export function useWorkbotThread(input: { turns: number; awaiting: boolean; live
     queryKey: [...workbotQueryKey, chat ?? "main", input.turns],
     queryFn: async () => {
       const { response, payload } = await requestJson(inChat(`/v1/workbot?turns=${input.turns}`, chat), { method: "GET" }, 30_000);
-      if (!response.ok) throw new Error(getErrorMessage(payload, "Couldn't load the conversation."));
+      if (!response.ok) throw new WorkbotReadError(getErrorMessage(payload, "Couldn't load the conversation."), response.status);
       return threadSchema.parse(payload);
     },
     placeholderData: keepPreviousData,
@@ -120,7 +127,7 @@ export function useWorkbotThread(input: { turns: number; awaiting: boolean; live
       return busy ? 1_500 : 20_000;
     },
     refetchIntervalInBackground: false,
-    retry: 2,
+    retry: (attempt, error) => !(error instanceof WorkbotReadError && (error.status === 401 || error.status === 403)) && attempt < 2,
   });
 }
 

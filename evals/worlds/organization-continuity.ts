@@ -1,5 +1,5 @@
 import type { Seed } from "@openwork/env";
-import { denForAppWeb, signedInAppWeb } from "./signed-in-app-web.ts";
+import { denForAppWeb } from "./signed-in-app-web.ts";
 import { seededOrganizationId } from "./organization-capabilities.ts";
 import { modelRemovalHttpFixture } from "./model-removal-cdp.ts";
 
@@ -23,9 +23,17 @@ export async function organizationContinuity(seed: Seed) {
       options: { baseURL: "http://127.0.0.1:9/v1" }, models: [{ id: "planning-model", name: "Planning model" }] },
   }) });
   if (!provider.response.ok) throw new Error(`Could not arrange the organization provider: ${provider.response.status}`);
-  const { app, workspace } = await signedInAppWeb(seed, { den, webPort, name: "organization-continuity", engine: "v2", headless: true,
+  const app = await seed.appWeb({ den: den.ref, webPort, name: "organization-continuity", engine: "v2", headless: true,
     workspacePath: seed.tmpPath("organization-continuity"), env: { VITE_DEN_REQUIRE_SIGNIN: "1" } });
+  await seed.signIn(app, den.admin, "admin");
+  // The appWeb runtime already owns a bootstrap workspace. Reuse it instead
+  // of asking the workspace-creation helper to recreate the same folder.
   const session = await seed.session(app, { title: "Saved planning conversation" });
+  const navigation = await app.client.send("Page.getNavigationHistory");
+  if (!isRecord(navigation) || !Array.isArray(navigation.entries) || typeof navigation.currentIndex !== "number") throw new Error("Missing browser destination");
+  const entry = navigation.entries[navigation.currentIndex];
+  if (!isRecord(entry) || typeof entry.url !== "string" || !entry.url.includes(session.sessionId)) throw new Error("The seeded conversation did not open its real destination");
+  const conversationUrl = entry.url;
   let release: (() => void) | undefined;
   let hold: Promise<void> | undefined;
   let pausedReads = 0;
@@ -36,7 +44,7 @@ export async function organizationContinuity(seed: Seed) {
   const resources = setup.move();
   return { app, den, organizationId, otherOrganizationId: other.id,
     onboardingUrl: `${app.webUrl}/onboarding`, accountUrl: `${app.webUrl}/settings/cloud-account`,
-    conversationUrl: `${app.webUrl}/workspace/${workspace.workspaceId}/session/${session.sessionId}`,
+    conversationUrl,
     sessionId: session.sessionId,
     holdSignInChecks() { fixture.check(); hold = new Promise<void>(resolve => { release = resolve; }); },
     releaseSignInChecks() { release?.(); hold = undefined; },

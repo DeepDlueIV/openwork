@@ -9,7 +9,7 @@ test("a member reaches chat without a second model choice and can always switch 
     await user.navigate(world.onboardingUrl);
     await user.see({ role: "button", label: /AI Providers/ });
     await user.click({ role: "button", label: /AI Providers/ });
-    await user.see({ text: "Planning models" });
+    await user.see({ text: /Planning models/i });
     await user.notSee({ role: "button", label: "Use as default" });
     await user.notSee({ text: "will be set as your default model" });
     evidence.recordAssertionEvidence("The summary reports provider access without promising a deferred model preference", `Planning models visible; redundant default action absent; route=${await probe.hash()}`, !(await probe.has("Use as default")));

@@ -28,7 +28,7 @@ export function ShareWorkbot() {
         <Popover.Popup className="workbot max-h-[var(--available-height)] w-72 max-w-[var(--available-width)] overflow-y-auto rounded-xl bg-[var(--wb-surface)] p-4 shadow-[var(--wb-panel-shadow)] outline-none">
           <Popover.Title className="text-[13px] font-medium text-[var(--wb-text)]">Share Workbot</Popover.Title>
           {share.enabled ? <>
-            <p className="mt-3 text-[12px] text-[var(--wb-muted)]">A link doesn't grant access. Ask your team admin to invite coworkers in Den.</p>
+            <p className="mt-3 text-[12px] text-[var(--wb-muted)]">A link doesn't grant access. Ask your team admin to invite coworkers.</p>
             <input aria-label="Workbot link" readOnly value={url} onFocus={event => event.currentTarget.select()} className="mt-3 h-9 w-full min-w-0 rounded-lg bg-[var(--wb-chip)] px-2 text-[12px] text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]" />
             <button type="button" onClick={() => void copy()} className="mt-3 flex min-h-9 items-center gap-2 rounded-lg bg-[var(--wb-ink)] px-3 text-[12px] font-medium text-[var(--wb-on-ink)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]">{state === "copied" ? <Check size={16} strokeWidth={1.5} aria-hidden /> : <Copy size={16} strokeWidth={1.5} aria-hidden />}Copy Workbot link</button>
             <p role="status" className="mt-2 text-[12px] text-[var(--wb-muted)]">{state === "copied" ? "Copied Workbot link" : state === "failed" ? "Couldn't copy. Select the link above and copy it manually." : "Only coworkers with access can open Workbot."}</p>

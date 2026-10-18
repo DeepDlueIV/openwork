@@ -243,7 +243,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         calendar: features.workbot,
         documents: features.workbot && features.workbotDocuments,
         workspaceAssistant: features.workbot && features.workbotWorkspaceAssistant,
-        shareWorkbot: features.workbot ? { enabled: features.workbotInvites } : undefined,
+        shareWorkbot: features.workbot ? { enabled: features.workbotSharing } : undefined,
         sideChats: features.workbot,
         model,
       })

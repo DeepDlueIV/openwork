@@ -14,7 +14,7 @@ test("sharing stays member scoped and never turns a Workbot token into a fresh i
   assert.equal((await den.setFeature(orgId, "workbot", true)).status, 200)
   const get = () => den.request(token, "GET", "/v1/workbot/session")
   assert.deepEqual(field((await get()).body, "shareWorkbot"), { enabled: false })
-  assert.equal((await den.setFeature(orgId, "workbotInvites", true)).status, 200)
+  assert.equal((await den.setFeature(orgId, "workbotSharing", true)).status, 200)
   assert.deepEqual(field((await get()).body, "shareWorkbot"), { enabled: true })
 
   const email = `coworker+${den.stamp}@example.test`
@@ -33,7 +33,7 @@ test("sharing stays member scoped and never turns a Workbot token into a fresh i
   const stale = await den.as(owner, orgId)("POST", "/v1/invitations", body)
   assert.equal(stale.status, 403, summary(stale))
   assert.equal(field(stale.body, "reason"), "fresh_auth_required")
-  assert.equal((await den.setFeature(orgId, "workbotInvites", false)).status, 200)
+  assert.equal((await den.setFeature(orgId, "workbotSharing", false)).status, 200)
   assert.deepEqual(field((await get()).body, "shareWorkbot"), { enabled: false })
   assert.equal((await den.setFeature(orgId, "workbot", false)).status, 200)
   assert.equal(field((await get()).body, "shareWorkbot"), undefined)

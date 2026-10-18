@@ -2449,7 +2449,7 @@
               "slackAssistant",
               "slackWorkbotReplies",
               "workbot",
-              "workbotInvites",
+              "workbotSharing",
               "workbotDocuments",
               "workbotWorkspaceAssistant",
               "automationCalendar",
@@ -2700,7 +2700,7 @@
                     "workbot": {
                       "type": "boolean"
                     },
-                    "workbotInvites": {
+                    "workbotSharing": {
                       "type": "boolean"
                     },
                     "workbotDocuments": {
@@ -2787,7 +2787,7 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
-                    "workbotInvites",
+                    "workbotSharing",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -3877,7 +3877,7 @@
                         "overrideApplies"
                       ]
                     },
-                    "workbotInvites": {
+                    "workbotSharing": {
                       "type": "object",
                       "properties": {
                         "enabled": {
@@ -5018,7 +5018,7 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
-                    "workbotInvites",
+                    "workbotSharing",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -5464,7 +5464,7 @@
                     "workbot": {
                       "type": "boolean"
                     },
-                    "workbotInvites": {
+                    "workbotSharing": {
                       "type": "boolean"
                     },
                     "workbotDocuments": {
@@ -5551,7 +5551,7 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
-                    "workbotInvites",
+                    "workbotSharing",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -6641,7 +6641,7 @@
                         "overrideApplies"
                       ]
                     },
-                    "workbotInvites": {
+                    "workbotSharing": {
                       "type": "object",
                       "properties": {
                         "enabled": {
@@ -7782,7 +7782,7 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
-                    "workbotInvites",
+                    "workbotSharing",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -31862,7 +31862,7 @@
                         "workbot": {
                           "type": "boolean"
                         },
-                        "workbotInvites": {
+                        "workbotSharing": {
                           "type": "boolean"
                         },
                         "workbotDocuments": {
@@ -31949,7 +31949,7 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
-                        "workbotInvites",
+                        "workbotSharing",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -33039,7 +33039,7 @@
                             "overrideApplies"
                           ]
                         },
-                        "workbotInvites": {
+                        "workbotSharing": {
                           "type": "object",
                           "properties": {
                             "enabled": {
@@ -34180,7 +34180,7 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
-                        "workbotInvites",
+                        "workbotSharing",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -34375,7 +34375,7 @@
                         "workbot": {
                           "type": "boolean"
                         },
-                        "workbotInvites": {
+                        "workbotSharing": {
                           "type": "boolean"
                         },
                         "workbotDocuments": {
@@ -34462,7 +34462,7 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
-                        "workbotInvites",
+                        "workbotSharing",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -35552,7 +35552,7 @@
                             "overrideApplies"
                           ]
                         },
-                        "workbotInvites": {
+                        "workbotSharing": {
                           "type": "object",
                           "properties": {
                             "enabled": {
@@ -36693,7 +36693,7 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
-                        "workbotInvites",
+                        "workbotSharing",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",

@@ -186,9 +186,9 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
-  workbotInvites: {
+  workbotSharing: {
     label: "Workbot: share with coworkers",
-    description: "Members can copy a Workbot link for coworkers; access still requires a team invitation from Den.",
+    description: "Members can copy a Workbot link for coworkers; team access still requires an invitation.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

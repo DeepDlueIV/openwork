@@ -1,9 +1,9 @@
 # Share Workbot with coworkers
 
-`workbotInvites` is off by default on cloud and self-hosted deployments. This
+`workbotSharing` is off by default on cloud and self-hosted deployments. This
 initial slice is **copy-only sharing**, not email invitations. A member can
 copy the current Workbot URL, with a visible reminder that the link grants no
-access and a team admin must invite coworkers in Den. Copy success follows the
+access and a team admin must invite coworkers. Copy success follows the
 real clipboard result; browser denial leaves the URL available for manual
 copy. Turning the feature off removes the copy action and shows a lock with
 its owner. No conversation or draft is changed.

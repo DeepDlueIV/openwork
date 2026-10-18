@@ -17,7 +17,7 @@ test("a member shares a Workbot link without granting team access", async ({ wor
     await user.navigate(`${world.url}?sharing=on`);
     await user.type({ role: "textbox", label: "Message Workbot" }, "Keep this draft");
     await user.click({ role: "button", label: "Share Workbot" });
-    await user.see({ text: "A link doesn't grant access. Ask your team admin to invite coworkers in Den." });
+    await user.see({ text: "A link doesn't grant access. Ask your team admin to invite coworkers." });
     await user.see({ role: "textbox", label: "Workbot link" }, { value: `${world.url}?sharing=on` });
     await user.click({ role: "button", label: "Copy Workbot link" });
     await user.see({ text: "Copied Workbot link" });

@@ -208,7 +208,7 @@
               ],
               "description": "Workbot: Members can use Workbot, with side chats, a Calendar tab of its scheduled work and the option to run stopped tasks again, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app. Renders DEN_FEATURE_WORKBOT."
             },
-            "workbotInvites": {
+            "workbotSharing": {
               "enum": [
                 "",
                 "true",
@@ -216,7 +216,7 @@
                 true,
                 false
               ],
-              "description": "Workbot: share with coworkers: Members can copy a Workbot link for coworkers; access still requires a team invitation from Den. Renders DEN_FEATURE_WORKBOT_INVITES."
+              "description": "Workbot: share with coworkers: Members can copy a Workbot link for coworkers; team access still requires an invitation. Renders DEN_FEATURE_WORKBOT_SHARING."
             },
             "workbotDocuments": {
               "enum": [

@@ -751,7 +751,7 @@ export type AdminFeature = {
     | "slackAssistant"
     | "slackWorkbotReplies"
     | "workbot"
-    | "workbotInvites"
+    | "workbotSharing"
     | "workbotDocuments"
     | "workbotWorkspaceAssistant"
     | "automationCalendar"
@@ -828,7 +828,7 @@ export type AdminOrganizationsPageResponse = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
-      workbotInvites: boolean;
+      workbotSharing: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1030,7 +1030,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbotInvites: {
+      workbotSharing: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1292,7 +1292,7 @@ export type AdminOverviewResponse = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
-      workbotInvites: boolean;
+      workbotSharing: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1494,7 +1494,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbotInvites: {
+      workbotSharing: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7830,7 +7830,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
-      workbotInvites: boolean;
+      workbotSharing: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8032,7 +8032,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbotInvites: {
+      workbotSharing: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8282,7 +8282,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
-      workbotInvites: boolean;
+      workbotSharing: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8484,7 +8484,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbotInvites: {
+      workbotSharing: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

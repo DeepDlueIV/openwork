@@ -4,7 +4,7 @@ import { modelProbeFixture, type ProbeFixtureMode } from "../../ee/apps/headless
 /** Real Den, runner and model adapter. Only the outside model provider is a synthetic localhost fixture. */
 export function workbotLunaDefaultWorld(lunaAvailable: boolean, verified = true, completion: ProbeFixtureMode = "answered") {
   return async (seed: Seed) => {
-    const runner = await modelProbeFixture({ lunaAvailable, catalogVerified: verified, mode: completion });
+    const runner = await modelProbeFixture({ lunaAvailable, catalogVerified: verified, mode: completion, protocol: "openai-responses" });
     try {
       const den = await seed.den({
         org: { name: "Model workspace", admin: { name: "Workspace Admin" } },

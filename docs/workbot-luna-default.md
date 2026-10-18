@@ -10,11 +10,15 @@ Slack and Automations retain their existing default policy.
 
 ## Required correction-safety dependency
 
-Integrate [PR #6147](https://github.com/different-ai/openwork/pull/6147) at
-`fc5f230f3ecf8febfab625bd5fb7ae6b7e8eb63a` **before the Luna default rollout**.
-This branch is stacked on that exact head, without replacing its UI, pending,
-context or correction work. Corrections append instead of deleting earlier
-turns. An earlier successful catalog check is not a safety boundary: the next
+Integrate [PR #6147](https://github.com/different-ai/openwork/pull/6147), original
+source head `fc5f230f3ecf8febfab625bd5fb7ae6b7e8eb63a`, **before the Luna default
+rollout**. The dependency is logical: this branch carries its unchanged
+six-commit patch stack/authorship replayed onto dev
+`7433f98aad4ad5bc54a73d58b3e671f730ac329c`. The rebased dependency prefix ends at
+`e5457c2928ed47e97cd7d0eb44602c80c6bed7c2`; the original source SHA is no longer
+an ancestor of this refreshed branch. No competing correction implementation
+or changes to its UI, pending or context work were introduced. Corrections
+append instead of deleting earlier turns. An earlier successful catalog check is not a safety boundary: the next
 lookup inside `modelFor` can fail. Append-only corrections keep the original
 history and failed correction recoverable even in that race. There is no
 second delete-preflight workaround.
@@ -33,8 +37,8 @@ caches turn reads for one minute and bypasses its cache for an admin check.
 Catalog availability is an authenticated model-access check, not a completion,
 quota, balance, or provider-uptime guarantee. `/health` remains liveness. The
 separate **Test default model** action reports **Answered** only after the
-configured runner model adapter returns a nonempty completion without tool
-calls. Merely listing a model never sets that result. A listed model can still
+configured runner model adapter (Anthropic, OpenAI Chat Completions or OpenAI
+Responses) returns a nonempty completion without tool calls. Merely listing a model never sets that result. A listed model can still
 fail with access refused, payment required, unavailable or timed-out states.
 
 The action sends only a server-owned synthetic prompt, without member content,
@@ -45,8 +49,12 @@ request. Node and Worker hosts use the same probe; Workers do not create or
 enter a conversation cell. No chat or answer text is persisted; the completion
 indicator stays local to the page. Only status, an allowlisted error code and
 requested/provider-reported model IDs are returned; raw provider errors,
-answer text and credentials are discarded.
-The IDs are available under the inline Test details disclosure.
+answer text and credentials are discarded. A reported ID containing the model
+key, or contained within that key (including all-but-one-character fragments),
+is omitted; an actual nonempty reply can still report Answered with no unsafe
+provider identifier. The IDs are available under the inline Test details
+disclosure. Responses checks use the actual stateless adapter with `store: false`;
+normal transcript, tool and continuation compatibility remains upstream code.
 
 The completion has an eight-second deadline, a 32-output-token request cap,
 and a 16 KiB response cap. The existing adapter may make at most three bounded

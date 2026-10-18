@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { Config } from "./config.js"
-import { anthropicModel, ModelError, openAIModel } from "./model.js"
+import { anthropicModel, ModelError, openAIModel, openAIResponsesModel } from "./model.js"
 
 export const MODEL_PROBE_TIMEOUT_MS = 8_000
 export const MODEL_PROBE_OUTPUT_TOKENS = 32
@@ -56,7 +56,7 @@ export function createModelProbe(config: Config, transport: typeof fetch = fetch
         try {
           const envelope = z.object({ model: modelId.optional() }).safeParse(JSON.parse(raw))
           const id = envelope.success ? envelope.data.model : undefined
-          if (id && !id.includes(apiKey) && !/^(?:sk-|ow_|key[-_])/i.test(id)) reportedModel = id
+          if (id && !id.includes(apiKey) && !apiKey.includes(id) && !/^(?:sk-|ow_|key[-_])/i.test(id)) reportedModel = id
         } catch { /* The adapter will reject malformed JSON. */ }
       }
       const headers = new Headers(response.headers)
@@ -66,7 +66,9 @@ export function createModelProbe(config: Config, transport: typeof fetch = fetch
     }
     try {
       const options = { baseUrl: config.model.baseUrl, maxOutputTokens: MODEL_PROBE_OUTPUT_TOKENS, fetch: boundedFetch }
-      const adapter = config.model.protocol === "anthropic" ? anthropicModel(options) : openAIModel(options)
+      const adapter = config.model.protocol === "anthropic" ? anthropicModel(options)
+        : config.model.protocol === "openai-responses" ? openAIResponsesModel(options)
+        : openAIModel(options)
       const answer = await adapter.complete({
         model: requestedModel,
         apiKey,

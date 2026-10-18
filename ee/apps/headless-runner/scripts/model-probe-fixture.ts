@@ -1,10 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import { loadConfig } from "../src/config.js"
+import { loadConfig, type Config } from "../src/config.js"
 import { nodeSqlite } from "../src/node-sqlite.js"
 import { createRuntime } from "../src/runtime.js"
 import { Store } from "../src/store.js"
 
 export type ProbeFixtureMode = "answered" | "unauthorized" | "payment_required" | "unavailable" | "empty" | "timeout"
+export type ProbeFixtureProtocol = Config["model"]["protocol"]
 
 async function listen(handler: (request: IncomingMessage, response: ServerResponse) => Promise<void>) {
   const server = createServer((request, response) => { void handler(request, response).catch(() => { response.writeHead(500).end() }) })
@@ -15,12 +16,14 @@ async function listen(handler: (request: IncomingMessage, response: ServerRespon
 }
 
 /** Real Node runner/runtime/adapter, synthetic localhost provider, memory-only SQLite, no external credentials. */
-export async function modelProbeFixture(options: { mode?: ProbeFixtureMode; lunaAvailable?: boolean; catalogVerified?: boolean; protocol?: "openai" | "anthropic" } = {}) {
+export async function modelProbeFixture(options: { mode?: ProbeFixtureMode; lunaAvailable?: boolean; catalogVerified?: boolean; protocol?: ProbeFixtureProtocol; modelKey?: string; reportedModel?: string } = {}) {
   let mode = options.mode ?? "answered"
+  const modelKey = options.modelKey ?? "fixture-model-key"
+  const reportedModel = options.reportedModel ?? "gpt-6-luna-fixture-snapshot"
   const calls: { path: string; body: unknown; authorized: boolean }[] = []
   const provider = await listen(async (request, response) => {
     let raw = ""; for await (const chunk of request) raw += chunk
-    const authorized = (options.protocol === "anthropic" ? request.headers["x-api-key"] : request.headers.authorization) === (options.protocol === "anthropic" ? "fixture-model-key" : "Bearer fixture-model-key")
+    const authorized = (options.protocol === "anthropic" ? request.headers["x-api-key"] : request.headers.authorization) === (options.protocol === "anthropic" ? modelKey : `Bearer ${modelKey}`)
     response.setHeader("content-type", "application/json")
     if (request.url === "/models") {
       if (!authorized || options.catalogVerified === false) { response.writeHead(401).end(JSON.stringify({ error: "catalog_denied" })); return }
@@ -33,12 +36,14 @@ export async function modelProbeFixture(options: { mode?: ProbeFixtureMode; luna
     if (mode === "timeout") return
     const text = mode === "empty" ? "" : "READY. fixture-answer-must-stay-private"
     response.end(JSON.stringify(options.protocol === "anthropic"
-      ? { model: "gpt-6-luna-fixture-snapshot", content: [{ type: "text", text }], usage: { input_tokens: 1, output_tokens: 1 } }
-      : { model: "gpt-6-luna-fixture-snapshot", choices: [{ message: { role: "assistant", content: text } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }))
+      ? { model: reportedModel, content: [{ type: "text", text }], usage: { input_tokens: 1, output_tokens: 1 } }
+      : options.protocol === "openai-responses"
+        ? { model: reportedModel, status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text }] }], usage: { input_tokens: 1, output_tokens: 1 } }
+        : { model: reportedModel, choices: [{ message: { role: "assistant", content: text } }], usage: { prompt_tokens: 1, completion_tokens: 1 } }))
   })
   const sql = nodeSqlite(":memory:")
   try {
-    const runtime = await createRuntime(loadConfig({ HEADLESS_API_TOKEN: "r".repeat(32), HEADLESS_MODEL_PROTOCOL: options.protocol ?? "openai", HEADLESS_MODEL_BASE_URL: provider.url, HEADLESS_MODEL: "gateway/other", HEADLESS_MODEL_API_KEY: "fixture-model-key" }), new Store(sql))
+    const runtime = await createRuntime(loadConfig({ HEADLESS_API_TOKEN: "r".repeat(32), HEADLESS_MODEL_PROTOCOL: options.protocol ?? "openai", HEADLESS_MODEL_BASE_URL: provider.url, HEADLESS_MODEL: "gateway/other", HEADLESS_MODEL_API_KEY: modelKey }), new Store(sql))
     const runner = await listen(async (request, response) => {
       let body = ""; for await (const chunk of request) body += chunk
       const headers = new Headers()

@@ -10,7 +10,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Real membership, provider setup and auth. Auth faults delay delivery, never fabricate identity. */
 export async function organizationContinuity(seed: Seed) {
   await using setup = new AsyncDisposableStack();
-  const { den, webPort } = await denForAppWeb(seed, { org: { name: "Planning organization" } });
+  const { den, webPort } = await denForAppWeb(seed, { web: false, org: { name: "Planning organization" } });
   const organizationId = await seededOrganizationId(seed, den.admin);
   const created = await seed.api(den.admin, "/v1/org", { method: "POST", body: JSON.stringify({ name: "Other organization" }) });
   const other = isRecord(created.body) && isRecord(created.body.organization) ? created.body.organization : null;
@@ -24,7 +24,9 @@ export async function organizationContinuity(seed: Seed) {
   }) });
   if (!provider.response.ok) throw new Error(`Could not arrange the organization provider: ${provider.response.status}`);
   const app = await seed.appWeb({ den: den.ref, webPort, name: "organization-continuity", engine: "v2", headless: true,
-    workspacePath: seed.tmpPath("organization-continuity"), env: { VITE_DEN_REQUIRE_SIGNIN: "1" } });
+    workspacePath: seed.tmpPath("organization-continuity"), env: { VITE_DEN_REQUIRE_SIGNIN: "1",
+      ...(process.env.OPENWORK_OPENCODE2_BIN ? { OPENWORK_OPENCODE2_BIN: process.env.OPENWORK_OPENCODE2_BIN } : {}),
+    } });
   await seed.signIn(app, den.admin, "admin");
   // The appWeb runtime already owns a bootstrap workspace. Reuse it instead
   // of asking the workspace-creation helper to recreate the same folder.

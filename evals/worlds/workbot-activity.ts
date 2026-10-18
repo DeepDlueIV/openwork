@@ -29,7 +29,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
   resources.defer(() => { for (const timer of timers) clearTimeout(timer); });
   const streams = new Set<ServerResponse>();
   const snapshot: RunnerSnapshot = {
-    turns: [{ messageId: "wb_example", status: "running", error: null, createdAt: at, updatedAt: at + 3000 }, { messageId: "wb_background", kind: "task", parent: "wb_example", title: "Review charts", status: "running", error: null, createdAt: at, updatedAt: at + 3000 }],
+    turns: [{ messageId: "wb_example", status: "running", error: null, createdAt: at, updatedAt: at + 3000 }, { messageId: "wb_example.t1", kind: "task", parent: "wb_example", title: "Review charts", status: "running", error: null, createdAt: at, updatedAt: at + 3000 }],
     messages: [
       { role: "user", messageId: "wb_example", text: "Prepare the report", createdAt: at, attachments: [attachment] },
       { role: "assistant", messageId: "wb_example", text: "The report has three sections.", createdAt: at + 100, toolCalls: [
@@ -73,7 +73,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
             if (snapshot.turns[0]) { snapshot.turns[0].status = "aborted"; snapshot.turns[0].updatedAt = Date.now(); }
             snapshot.status = "idle"; changed(); return json({ stopped: true });
           }
-          if (url.pathname === "/v1/workbot/tasks/background/stop" && req.method === "POST") {
+          if (url.pathname === "/v1/workbot/tasks/example.t1/stop" && req.method === "POST") {
             taskStopAttempts += 1;
             if (taskStopAttempts === 1) return json(boundary.taskStop.payload, boundary.taskStop.status);
             if (snapshot.turns[1]) { snapshot.turns[1].status = "aborted"; snapshot.turns[1].updatedAt = Date.now(); }
@@ -114,7 +114,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
       failAfterRevocation() { revoked = false; transportFailed = true; unavailable = false; disabled = false; changed(); },
       unavailableAfterRevocation() { revoked = false; transportFailed = false; unavailable = true; disabled = false; changed(); },
       disabledAfterRevocation() { revoked = false; transportFailed = false; unavailable = false; disabled = true; changed(); },
-      authorize() { revoked = false; transportFailed = false; unavailable = false; disabled = false; changed(); },
+      authorize() { revoked = false; transportFailed = false; unavailable = false; disabled = false; },
       reads: () => [...reads], boundary: () => boundary,
       interruptAnswer() { if (snapshot.turns[0]) snapshot.turns[0].status = "interrupted"; snapshot.status = "idle"; changed(); },
 

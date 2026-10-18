@@ -1,4 +1,5 @@
 import type { DynamicToolUIPart } from "ai";
+import { parseSkillDeliveryEvidence } from "@openwork/types/skill-delivery";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -111,12 +112,16 @@ export function codeModeToolCalls(part: DynamicToolUIPart): DynamicToolUIPart[] 
     if (!isRecord(call) || typeof call.tool !== "string" || !call.tool.trim()) return [];
     const detail = details[ordinal] ?? null;
     const startedAt = typeof detail?.startedAt === "number" && Number.isFinite(detail.startedAt) ? detail.startedAt : null;
+    const skillDelivery = parseSkillDeliveryEvidence(detail?.skillDelivery);
     const base = {
       // v2 reports calls in their invocation order, including repeated/parallel calls.
       toolCallId: `${part.toolCallId}:call:${ordinal}`,
       toolName: call.tool.replaceAll(".", "_"),
       input: call.input,
-      ...(startedAt === null ? {} : { callProviderMetadata: { openwork: { toolStartedAt: startedAt } } }),
+      ...(startedAt === null && !skillDelivery ? {} : { callProviderMetadata: { openwork: {
+        ...(startedAt === null ? {} : { toolStartedAt: startedAt }),
+        ...(skillDelivery ? { skillDelivery } : {}),
+      } } }),
     };
     if (call.status === "running") return [{ ...base, type: "dynamic-tool", state: "input-streaming" }];
     if (call.status === "completed") return [{ ...base, type: "dynamic-tool", state: "output-available", output: detail?.output }];

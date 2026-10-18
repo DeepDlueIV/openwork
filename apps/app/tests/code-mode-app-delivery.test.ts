@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ToolPart } from "@opencode-ai/sdk/v2/client";
 import { codeModeConnectionParts } from "../src/app/lib/opencode-v2-adapter";
 import plugin, { createMcpResultsCollector } from "../../server/src/opencode-plugins/openwork-mcp-results-v2";
+import { parseDynamicToolUIPart } from "../src/react-app/domains/session/sync/parse-tool-parts";
 
 const event = { messageID: "message", id: "execute" };
 const launch = { appId: "app", title: "Project board", resourceUri: "ui://project-board" };
@@ -13,6 +14,19 @@ function parent(metadata: Record<string, unknown>, status: "running" | "complete
   if (status === "error") return { ...base, state: { status, input: {}, metadata, error: "Later script failure", time: { start: 1, end: 10 } } };
   return { ...base, state: { status, input: {}, metadata, output: "arbitrary script return", title: "execute", time: { start: 1, end: 10 } } };
 }
+
+test("direct MCP calls keep their own result without script projection", () => {
+  const direct: ToolPart = { id: "direct", callID: "direct", messageID: "message", sessionID: "session", type: "tool", tool: "openwork_create_app",
+    state: { status: "completed", input: {}, output: JSON.stringify(result), title: "App", metadata: { openworkMcpResult: { structuredContent: result, _meta: { "openwork/mcpApp": launch } } }, time: { start: 1, end: 2 } } };
+  expect(codeModeConnectionParts(direct)).toEqual([]);
+  expect(parseDynamicToolUIPart(direct)?.callProviderMetadata?.openwork?.mcpResult).toMatchObject({ _meta: { "openwork/mcpApp": launch } });
+});
+
+test("a previously persisted successful inner receipt survives a later script error", () => {
+  const [app] = codeModeConnectionParts(parent({ openworkMcpResults: [{ tool: "openwork_create_app", input: {}, status: "completed", output: result }],
+    toolCalls: [{ tool: "openwork.create_app", input: {}, status: "completed" }] }, "error"));
+  expect(app?.state).toMatchObject({ status: "completed", metadata: { openworkMcpResult: { _meta: { "openwork/mcpApp": launch } } } });
+});
 
 for (const status of ["running", "completed", "error"] as const) {
   test(`a completed App retains its launch while its parent is ${status}`, () => {
@@ -31,6 +45,19 @@ for (const status of ["running", "completed", "error"] as const) {
     if (status === "error") expect(outer.state).toMatchObject({ error: "Later script failure" });
   });
 }
+
+test("the success hook keeps one receipt after the tool wrapper already settled it", () => {
+  const collector = createMcpResultsCollector();
+  collector.before({ ...event, tool: "execute" });
+  const call = { ...event, tool: "openwork.create_app", input: { title: "Project board" } };
+  collector.before(call);
+  collector.settle(event, collector.claim(call)!, { status: "completed", output: result });
+  collector.after({ ...call, status: "completed", result: { output: result } });
+  const outer: Parameters<typeof collector.after>[0] = { ...event, tool: "execute", input: {}, status: "completed", result: { output: "not the App" } };
+  collector.after(outer);
+  expect(outer.result.metadata?.openworkMcpResults).toHaveLength(1);
+  expect(codeModeConnectionParts(parent(outer.result.metadata!, "completed"))[0]?.state.status).toBe("completed");
+});
 
 test("parallel App results keep invocation identity when they finish in reverse order", () => {
   const collector = createMcpResultsCollector();

@@ -121,6 +121,16 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
   // One call is one step: no nested rail, no "1 step", no repeated sentence.
   // The row's details icon opens the script (its source and its error).
   const only = calls.length === 1 && !waiting && !statusUnknown ? calls[0] : undefined;
+  // A successful inner call does not make its parent script successful. Keep
+  // the script's own error separate from the call's result (including Apps).
+  const scriptFailure = failed ? <div className="group/step min-w-0" data-code-mode-script-error>
+    <div className="flex min-h-6 min-w-0 items-center gap-2 text-sm text-muted-foreground">
+      <span className="shrink-0">Script failed</span>
+      {shortReason(part) ? <span className="min-w-0 truncate text-xs" title={shortReason(part) ?? undefined}>{shortReason(part)}</span> : null}
+      {only ? <DetailsToggle open={detailsOpen} onToggle={() => setDetailsOpen(!detailsOpen)} label="Script failed" alwaysVisible /> : null}
+    </div>
+    {only && detailsOpen ? <TechnicalDetailsPanel part={part} /> : null}
+  </div> : null;
   if (only) {
     // The call's own input is the readable one (a Den script's source). Its
     // own captured result wins; otherwise show the script's result.
@@ -131,11 +141,11 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
         <CapabilityCallLine
           part={merged}
           connector={resolveConnectorToolIdentity(only, connectors)}
-          quietFailure
           hideDuration
           shimmer={running}
           statusUnknown={isToolPartInFlight(only) && (!running || !inFlight)}
         />
+        {scriptFailure}
       </div>
     );
   }
@@ -171,7 +181,7 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
       {detailsOpen ? <TechnicalDetailsPanel part={part} /> : null}
       <CollapsibleContent className="h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-180 ease-out data-starting-style:h-0 data-ending-style:h-0 motion-reduce:transition-none [&[hidden]:not([hidden='until-found'])]:hidden">
         <div className="mt-2 flex flex-col gap-1 border-s border-border ps-3">
-          {rows.map(({ call, repeat }) => (
+          {rows.filter(({ call }) => call.state !== "output-error").map(({ call, repeat }) => (
             <CapabilityCallLine
               key={call.toolCallId}
               part={call}
@@ -187,6 +197,8 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
           {calls.length === 0 && running ? <span className="text-xs text-muted-foreground">Starting…</span> : null}
         </div>
       </CollapsibleContent>
+      {failedCalls.map(call => <div key={call.toolCallId} className="mt-1" data-code-mode-failure><CapabilityCallLine part={call} connector={resolveConnectorToolIdentity(call, connectors)} /></div>)}
+      {scriptFailure}
     </Collapsible>
   );
 }

@@ -1,4 +1,5 @@
 import { nativeDiscoveryCode } from "./openwork-codemode-discovery-v2.js";
+import { skillDeliveryEvidence, type SkillDeliveryEvidence } from "@openwork/types/skill-delivery";
 
 type Registration = { dispose(): Promise<void> };
 type CallEvent = { readonly tool: string; readonly messageID: string; readonly id: string };
@@ -102,7 +103,7 @@ export function preservedEntry(rawEvent: ExecuteAfter): PreservedMcpResult | nul
 export type ToolDetail = {
   invocationId: string; ordinal: number; tool: string; input?: unknown;
   status: "running" | "completed" | "error"; startedAt: number; endedAt?: number;
-  output?: unknown; error?: string; truncated?: boolean;
+  output?: unknown; error?: string; truncated?: boolean; skillDelivery?: SkillDeliveryEvidence;
 };
 
 const MAX_EXECUTION_BYTES = 1_024 * 1_024;
@@ -155,6 +156,16 @@ export function createMcpResultsCollector() {
 
   function settle(execution: Execution, detail: ToolDetail, outcome: { status: "completed"; output: unknown } | { status: "error"; error: string }): void {
     if (detail.status !== "running") return;
+    const skill = skillDeliveryEvidence({ tool: detail.tool, input: execution.rawInputs.get(detail),
+      status: outcome.status === "completed" ? "completed" : "error", output: outcome.status === "completed" ? outcome.output : undefined });
+    if (skill) {
+      const bytes = byteLength(skill) + 24;
+      if (bytes <= execution.remaining) {
+        detail.skillDelivery = skill;
+        execution.remaining -= bytes;
+        execution.allowance.set(detail, Math.max(0, (execution.allowance.get(detail) ?? 0) - bytes));
+      }
+    }
     // Keep delivery metadata before the bounded diagnostic preview. The input
     // can exhaust that preview's allowance, but must not discard a real launch.
     const entry = preservedEntry({ tool: detail.tool, messageID: "", id: detail.invocationId,
@@ -217,7 +228,7 @@ export function createMcpResultsCollector() {
         open.delete(key(event));
         if (event.status === "completed" && execution && (execution.connections.length || execution.calls.length || execution.truncated)) {
           event.result.metadata = { ...(event.result.metadata ?? {}),
-            ...(execution.connections.length ? { openworkMcpResults: execution.connections.toSorted((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0)) } : {}),
+            ...(execution.connections.length ? { openworkMcpResults: [...execution.connections].sort((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0)) } : {}),
             ...(execution.calls.length ? { openworkToolDetails: execution.calls } : {}),
             ...(execution.truncated ? { openworkToolDetailsTruncated: true } : {}) };
         }
@@ -273,7 +284,7 @@ export function createMcpResultsCollector() {
       const execution = open.get(key(event));
       return execution ? {
         openworkToolDetails: execution.calls.map(call => ({ ...call })),
-        openworkMcpResults: execution.connections.toSorted((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0)),
+        openworkMcpResults: [...execution.connections].sort((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0)),
         ...(execution.truncated ? { openworkToolDetailsTruncated: true } : {}),
       } : {};
     },

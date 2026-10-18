@@ -17,7 +17,11 @@ function fixture() {
       const path = new URL(String(url)).pathname
       const body: Record<string, unknown> = init?.body ? JSON.parse(String(init.body)) : {}
       calls.push({ method, path, body })
-      if (method === "DELETE") { turns.splice(0); return new Response(null, { status: 204 }) }
+      if (method === "DELETE") {
+        if (!turns.includes(path.split("/").pop() ?? "")) return Response.json({ error: "unknown_message" }, { status: 404 })
+        const removed = turns.splice(0)
+        return Response.json({ removed })
+      }
       if (method === "GET") return Response.json({ turns: turns.map(messageId => ({ messageId, status: "completed", error: null })), messages: [], finalAssistantText: "Earlier answer" })
       if (method === "PUT") return Response.json({ id: path.split("/").pop() })
       if (refuse) return Response.json({ error: "too_many_queued" }, { status: 429 })

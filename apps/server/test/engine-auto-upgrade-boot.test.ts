@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { createEngineV2Preview, readEngineV2PreviewState } from "../src/engine-v2-preview.js";
+import { openHistoryDatabase } from "../src/opencode-v2-history-store.js";
 import type { ServerConfig } from "../src/types.js";
 
 async function profile(run: (config: ServerConfig, dir: string) => Promise<void>): Promise<void> {
@@ -219,6 +220,43 @@ test("manual consent can recover a durable automatic failure with policy off and
     assert.equal(saved.automaticHistoryRevision, undefined);
     assert.equal(saved.autoUpgradeRetry, undefined);
     assert.equal(saved.historyCopyResult?.backupPath, backupPath);
+  });
+});
+
+test("a stale saved automatic copy never restores an older backup over newer v2 history", async () => {
+  await profile(async (config, dir) => {
+    const source = await openHistoryDatabase(join(dir, "v1.db"));
+    source.exec(`CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT, directory TEXT, parent_id TEXT, time_created INTEGER);
+      CREATE TABLE message (id TEXT PRIMARY KEY, data TEXT); CREATE TABLE part (id TEXT PRIMARY KEY, data TEXT);
+      INSERT INTO session VALUES ('v1-current', 'New v1 work', '/', NULL, 0);`);
+    source.close();
+    const target = join(dir, "opencode-v2", "state", "opencode.db");
+    const backupPath = join(dir, "old-baseline.db");
+    mkdirSync(join(dir, "opencode-v2", "state"), { recursive: true });
+    const histories: Array<[string, string]> = [[target, "newer v2 reply"], [backupPath, "before the v2 reply"]];
+    for (const [path, text] of histories) {
+      const db = await openHistoryDatabase(path);
+      db.exec("CREATE TABLE history (text TEXT)");
+      db.prepare("INSERT INTO history VALUES (?)").run(text);
+      db.close();
+    }
+    const before = readFileSync(target);
+    writeFileSync(join(dir, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: false,
+      automaticHistoryCopy: true, automaticHistoryRevision: "older-source-revision", v1HistoryCopiedAt: 1,
+      historyCopyResult: { state: "error", error: "Source advanced", imported: 1, skipped: 0, total: 1,
+        startedAt: new Date(1).toISOString(), backupPath },
+    }));
+    const engine = createEngineV2Preview({ config, autoUpgradeIdle: async () => true });
+    try {
+      const deadline = Date.now() + 10_000;
+      while (readEngineV2PreviewState(config).autoUpgradeRetry === undefined && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.match(engine.status().migration.error ?? "", /v2 history was kept unchanged/);
+      assert.equal(engine.status().chatRouting, false);
+      assert.equal(engine.status().running, false);
+      assert.deepEqual(readFileSync(target), before, "an older backup is not authority to replace newer v2 history");
+      assert.equal(engine.status().migration.backupPath, backupPath, "the backup remains available for explicit recovery");
+      assert.equal(readEngineV2PreviewState(config).historyCopyResult?.startedAt, new Date(1).toISOString());
+    } finally { await engine.stop(); }
   });
 });
 

@@ -1,11 +1,10 @@
 import { withEngineSwitchFence } from "./engine-switch-fence.js";
-import { acquireHistoryCopyLock } from "./opencode-v2-history-lock.js";
-import { engineAutoUpgradeRetry, historyRevision, runEngineAutoUpgrade, waitForEngineIdle, type EngineAutoUpgradeRetry } from "./engine-auto-upgrade.js";
+import { automaticCopyNeedsReview, engineAutoUpgradeRetry, historyRevision, runEngineAutoUpgrade, waitForEngineIdle, type EngineAutoUpgradeRetry } from "./engine-auto-upgrade.js";
 import { createV2ContextBridge } from "./opencode-v2-context-bridge.js";
 import { createV2ProviderSessionBridge } from "./opencode-v2-provider-session.js";
 import type { CloudProviderDenSession } from "./cloud-provider-sync.js";
 import { ApiError } from "./errors.js";
-import { hasV1Chat, hasV1ChatsSince, opencodeV1DatabasePath, readMigrationSessions, runOpencodeV1HistoryMigration, snapshotV1Database, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
+import { hasV1Chat, hasV1ChatsSince, opencodeV1DatabasePath, readMigrationSessions, runOpencodeV1HistoryMigration, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
 import { executionRules } from "./managed-policy-rules.js";
 import { agentPermissionEngineMcpDenial, agentPermissionRulesOf } from "./agent-permission-engine.js";
 import { registeredOrganizationMcpServers } from "./connect-mcp-server-catalog.js";
@@ -1364,25 +1363,18 @@ export function createEngineV2Preview(options: {
           try {
             const revision = await historyRevision(source);
             if (automaticHistoryCopy && automaticHistoryRevision !== undefined && automaticHistoryRevision !== revision
-              && v1HistoryCopyStartedAt === undefined && migration.backupPath) {
-              // A previous automatic copy never served v2, but v1 changed while
-              // it ran. Restore its pre-copy target before taking a fresh snapshot.
-              // Independent v2 chats in that backup survive; v1 is never written.
-              await stopRuntime();
-              const target = join(rootDir, "opencode.db");
-              const temporary = `${target}.auto-restore`;
-              const ownership = await acquireHistoryCopyLock(target);
-              try {
-                await rm(temporary, { force: true });
-                await snapshotV1Database(migration.backupPath, temporary);
-                await rm(`${target}-wal`, { force: true });
-                await rm(`${target}-shm`, { force: true });
-                await rename(temporary, target);
-                v1HistoryCopiedAt = undefined;
-                automaticHistoryRevision = undefined;
-                await persistState();
-                await ownership.complete();
-              } finally { await ownership.release(); }
+              && v1HistoryCopyStartedAt === undefined) {
+              const snapshotStartedAt = Date.parse(migration.startedAt ?? "");
+              if (v1HistoryCopiedAt !== undefined && (!Number.isFinite(snapshotStartedAt) || v1HistoryCopiedAt >= snapshotStartedAt)) {
+                // A saved backup is not proof that v2 has remained unused.
+                // Never restore it over potentially newer history. Keep both
+                // stores and the saved cutoff for an explicit manual decision.
+                attemptedCopy = true;
+                throw new Error("OpenCode v1 changed after the saved copy. Your v2 history was kept unchanged. Review migration manually before switching engines.");
+              }
+              // The previous attempt failed before completing a transfer; a
+              // fresh source snapshot is safe, but existing v2 chats still win.
+              automaticHistoryRevision = revision;
             }
             automaticHistoryCopy = true;
             automaticHistoryRevision ??= revision;
@@ -1393,6 +1385,9 @@ export function createEngineV2Preview(options: {
             runMigration(v1HistoryCopyStartedAt !== undefined, true);
             await migrationJob;
             if (migration.state !== "completed") throw new Error(migration.error ?? "Automatic history copy did not finish.");
+            if (automaticCopyNeedsReview(migration)) {
+              throw new Error("The copy could not verify that every v1 chat is readable in v2. Both histories were kept. Review migration manually before switching engines.");
+            }
             if (automaticHistoryRevision !== await historyRevision(source)) {
               throw new Error("OpenCode v1 changed since the saved history snapshot. Keeping v1 until a later boot.");
             }

@@ -34,7 +34,7 @@ later boot cannot fence startup or restore an older target over its new history.
 An unfinished copy must be resumed before a v2 selection is accepted. Pending
 automatic attempts bind to a manual-choice generation: an explicit later choice
 supersedes their idle reads, cutover and failure receipts. Copy preparation and
-baseline restoration hold the migration fence, and the shared state journal
+transfer hold the migration fence, and the shared state journal
 serializes writes so a late automatic rename cannot win after manual consent.
 Policy updates do not abort a copy or a running task. Failures retain the selected
 engine, durable error and backup receipt. Automatic retries
@@ -59,9 +59,14 @@ Both automatic and manual failure dialogs keep raw errors under **Technical deta
 A verified healthy manual v2 choice retires its obsolete automatic notice without
 opening another error dialog. Engine-selection provenance does not turn a later
 user-requested history copy into an automatic migration.
-Source chat changes during copying or v2 startup
-prevent the switch; a later attempt restores the pre-copy v2 baseline under
-the existing migration ownership lock before copying a fresh v1 snapshot.
+Source chat changes during copying or v2 startup prevent the switch. The host
+never restores an older backup over the current v2 target: a saved backup cannot
+prove that target has remained unused. A completed stale copy stays on v1 for
+manual review; an attempt that failed before a transfer can retry a fresh source.
+Skipped/existing v2 chat IDs also require an explicit manual engine choice, even
+when checkpoints resume successfully, because their history may differ from v1.
+Both stores, backups and resumable checkpoints remain intact; no reverse merge or
+safe rollback of diverged histories is assumed.
 
 Hosted bootstrap sets `OPENWORK_ENGINE_FORCE_POLICY=1` and an explicit
 `OPENWORK_ENGINE_AUTO_UPGRADE=1` or `0`; registered runner inventory and worker

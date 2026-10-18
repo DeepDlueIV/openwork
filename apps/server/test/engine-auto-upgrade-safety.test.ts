@@ -125,7 +125,7 @@ test("chunked history revision detects payload edits past slice boundaries and p
   });
 });
 
-test("stale-copy recovery retains the baseline backup reference across process restarts", async () => {
+test("paused-copy recovery retains its backup receipt across process restarts", async () => {
   await profile(async (directory, config) => {
     const backupPath = join(directory, "opencode-v2", "backups", "baseline.db");
     await writeFile(join(directory, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: false,
@@ -133,6 +133,6 @@ test("stale-copy recovery retains the baseline backup reference across process r
       historyCopyResult: { state: "error", imported: 1, skipped: 0, total: 1, backupPath,
         error: "OpenCode v1 changed since the saved history snapshot" } }));
     assert.equal(readEngineV2PreviewState(config).historyCopyResult?.backupPath, backupPath,
-      "the next boot must restore this pre-copy target before copying a newer v1 revision");
+      "the receipt remains inspectable for explicit recovery, never an automatic target rollback");
   });
 });

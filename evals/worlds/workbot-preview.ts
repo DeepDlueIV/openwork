@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ServerResponse } from "node:http";
 import { createServer } from "vite";
 import type { Place, Seed } from "@openwork/env";
 import { chrome } from "@openwork/hosts";
@@ -21,6 +22,7 @@ export async function workbotPreview(_seed: Seed, { place }: { place: Place }) {
     { id: "slides", name: "Review.pptx", mediaType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", bytes: slides },
   ];
   let denyDownload = false;
+  const streams = new Set<ServerResponse>();
   try {
     const vite = await createServer({
       configFile: fileURLToPath(new URL("../../ee/apps/workbot/vite.config.ts", import.meta.url)),
@@ -31,7 +33,7 @@ export async function workbotPreview(_seed: Seed, { place }: { place: Place }) {
           if (!url.pathname.startsWith("/v1/workbot")) return next();
           const json = (body: unknown, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
           if (url.pathname === "/v1/workbot/me") return json({ name: "Alex", email: "alex@example.test", userId: "user_example", organizationId: "org_example", organizationName: "Example", enabled: true, calendar: false, documents: false, workspaceAssistant: false, sideChats: false, denUrl: "https://example.test" });
-          if (url.pathname === "/v1/workbot/events") { res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.end(": fixture\n\n"); return; }
+          if (url.pathname === "/v1/workbot/events") { res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.write("event: ready\ndata: {}\n\n"); streams.add(res); res.on("close", () => streams.delete(res)); return; }
           if (url.pathname === "/v1/workbot") return json({ available: true, name: "Workbot", organizationName: "Example", status: "idle", turns: [{ id: "example", text: "Prepare the files", status: "done", sentAt: Date.now() - 5000, finishedAt: Date.now() - 1000, attachments: [], outputs: files.map(file => ({ id: file.id, name: file.name, mediaType: file.mediaType, size: file.bytes.byteLength })), parts: [{ kind: "text", text: "Here are the files.", step: 0 }], modelSteps: 1, error: null }], hasEarlier: false, filesEnabled: false });
           if (url.pathname.endsWith("/preview")) return json({ error: "not_found" }, 404);
           const file = files.find(file => url.pathname === `/v1/workbot/files/${file.id}`);
@@ -43,7 +45,7 @@ export async function workbotPreview(_seed: Seed, { place }: { place: Place }) {
         });
       } }],
     });
-    resources.defer(() => vite.close());
+    resources.defer(async () => { for (const stream of streams) stream.end(); await vite.close(); });
     await vite.listen();
     const url = vite.resolvedUrls?.local[0];
     if (!url) throw new Error("Workbot preview proof did not start");

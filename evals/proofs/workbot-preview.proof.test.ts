@@ -8,7 +8,7 @@ test("a member can distinguish attachment excerpts from the complete original do
   await user.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   await step("after: the spreadsheet preview names its row limit", async () => {
     await user.click({ role: "button", label: /Table.csv/ });
-    await user.see({ text: /Showing the first 1,000 of 1,006 rows/ });
+    await user.see({ text: /Showing the first 1,000 of 1,006 rows/ }, { timeoutMs: 5000 });
     await user.notSee({ text: "Row 1005" });
     evidence.recordAssertionEvidence("The grid is a bounded read-only preview", "1,000 of 1,006 rows are shown; the original remains downloadable", (await probe.text()).includes("1,006 rows"));
     await user.screenshot();

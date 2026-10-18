@@ -202,7 +202,7 @@ export const FEATURES = defineFeatures({
   },
   workbotLunaDefault: {
     label: "Workbot: GPT-6 Luna default",
-    description: "Workbot uses GPT-6 Luna when no organization model is chosen, and admins can check whether that default is available without silently switching providers.",
+    description: "Workbot uses GPT-6 Luna when no organization model is chosen. Admins can check availability and test a bounded synthetic completion without silently switching providers.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

@@ -164,6 +164,12 @@ const modelCatalogSchema = z.object({
 })
 export type HeadlessModelCatalog = z.infer<typeof modelCatalogSchema>
 
+const modelProbeSchema = z.discriminatedUnion("status", [
+  z.strictObject({ status: z.literal("answered"), errorCode: z.null(), requestedModel: z.string(), reportedModel: z.string().nullable() }),
+  z.strictObject({ status: z.literal("failed"), errorCode: z.enum(["credentials_unavailable", "authentication_failed", "payment_required", "provider_unavailable", "timed_out", "invalid_response", "busy"]), requestedModel: z.string(), reportedModel: z.null() }),
+])
+export type HeadlessModelProbe = z.infer<typeof modelProbeSchema>
+
 export const runnerSavedFileSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -479,6 +485,14 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
     },
 
     /** The models the runner's Gateway route can serve. Null when unavailable. */
+    /** A bounded synthetic completion, using only the runner's configured model key. Never mints an MCP token. */
+    async testModel(model: string): Promise<HeadlessModelProbe | null> {
+      const { status, payload } = await request(deps, "POST", "/v1/model-probe", { model })
+      const result = modelProbeSchema.safeParse(payload)
+      if (status !== 200 || !result.success || result.data.requestedModel !== model) return null
+      return result.data
+    },
+
     async listModels(): Promise<HeadlessModelCatalog | null> {
       try {
         const { status, payload } = await request(deps, "GET", "/v1/models")

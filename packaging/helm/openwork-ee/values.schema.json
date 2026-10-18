@@ -236,7 +236,7 @@
                 true,
                 false
               ],
-              "description": "Workbot: GPT-6 Luna default: Workbot uses GPT-6 Luna when no organization model is chosen, and admins can check whether that default is available without silently switching providers. Renders DEN_FEATURE_WORKBOT_LUNA_DEFAULT."
+              "description": "Workbot: GPT-6 Luna default: Workbot uses GPT-6 Luna when no organization model is chosen. Admins can check availability and test a bounded synthetic completion without silently switching providers. Renders DEN_FEATURE_WORKBOT_LUNA_DEFAULT."
             },
             "workbotDocuments": {
               "enum": [

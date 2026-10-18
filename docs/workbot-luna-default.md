@@ -19,10 +19,43 @@ the legacy configured fallback (which remains listed for old clients).
 The runner caches a successful gateway catalog for at most five minutes; Den
 caches turn reads for one minute and bypasses its cache for an admin check.
 
-This is an authenticated model-access check, not a paid completion, tool-call,
-quota, balance, or provider-uptime guarantee. `/health` remains liveness, not
-proof that an answer can run. Do not claim a production deployment is ready
-from a localhost fixture or a green health response.
+Catalog availability is an authenticated model-access check, not a completion,
+quota, balance, or provider-uptime guarantee. `/health` remains liveness. The
+separate **Test default model** action reports **Answered** only after the
+configured runner model adapter returns a nonempty completion without tool
+calls. Merely listing a model never sets that result. A listed model can still
+fail with access refused, payment required, unavailable or timed-out states.
+
+The action sends only a server-owned synthetic prompt, without member content,
+runner instructions, tools, MCP credentials, files, memory or a conversation.
+It uses the existing runner service token and configured model key, resolves
+the saved organization default on the server, and accepts only an empty browser
+request. Node and Worker hosts use the same probe; Workers do not create or
+enter a conversation cell. No chat, result or response text is persisted. Only
+status, an allowlisted error code and requested/provider-reported model IDs
+are returned; raw provider errors, answer text and credentials are discarded.
+The IDs are available under the inline Test details disclosure.
+
+The completion has an eight-second deadline, a 32-output-token request cap,
+and a 16 KiB response cap. The existing adapter may make at most three bounded
+attempts within that deadline. One diagnostic runs at a time per runner
+process/isolate. This is a small paid request, not a free ping or a monetary
+budget guarantee. It never runs automatically at startup, on page load, or on
+catalog refresh.
+
+`POST /v1/org/workbot-settings/test-default-model` requires both feature flags,
+a genuine user session and sensitive `inference.manage` (including the existing
+two-hour recent-sign-in check). API keys and synthesized MCP sessions cannot
+satisfy the genuine-user-session guard; the route is also excluded from MCP.
+The UI reuses Den's real reauthentication flow. Before inference, existing
+`checkRateLimit` / `RateLimitTable` durably allow at most three diagnostic actions
+per organization and three per member in a ten-minute inactivity-reset window,
+across replicas and process restarts. Rejected authentication, feature checks
+and untrusted bodies cannot start a probe. The next action after the limit is
+HTTP 429; this diagnostic-only throttle is not a new chat usage budget.
+
+Do not claim a production deployment is ready from a localhost fixture or a
+green health response. No live provider was contacted to verify this change.
 
 Before starting a new answer, Workbot checks the actual runner's verified
 catalog for the explicit model. When it cannot verify that model, it does not
@@ -43,8 +76,8 @@ values or credentials into a PR, log, screenshot, or chat:
 
 - Runner model route and its Luna binding: `HEADLESS_MODEL_PROTOCOL`,
   `HEADLESS_MODEL_BASE_URL`, `HEADLESS_MODEL`, `HEADLESS_MODEL_API_KEY`.
-- Den's runner connection: `DEN_HEADLESS_RUNNER_URL`,
-  `DEN_HEADLESS_RUNNER_TOKEN`.
+- Runner service authentication and Den's connection: `HEADLESS_API_TOKEN`,
+  `DEN_HEADLESS_RUNNER_URL`, `DEN_HEADLESS_RUNNER_TOKEN`.
 - Workbot's runner connection: `WORKBOT_RUNNER_URL`, `WORKBOT_RUNNER_TOKEN`.
 - Workbot's Den connection: `WORKBOT_DEN_API_URL`.
 - Existing cost-exposure controls to review, not change here:
@@ -54,8 +87,8 @@ values or credentials into a PR, log, screenshot, or chat:
 Confirm that Den and Workbot point at the same intended runner and that its
 authorized alias really maps to Luna. Confirm the runner default as well:
 conversation naming uses that configured model independently of answer routing.
-Then the owner can check the actual admin readiness state and run a separately
-approved completion before deciding whether to enable the rollout. A missing
+Then the owner can check the actual admin catalog state and explicitly choose
+Test default model for the intended rollout organization before expanding it. A missing
 or ambiguous Luna alias must remain unavailable; do not substitute a provider
 or turn on the feature to conceal a readiness failure.
 
@@ -101,5 +134,5 @@ Options for the owner:
    limit primitive for member turn admission across replicas. Name it a request
    throttle, not a monetary or token budget; it does not address unlimited steps.
 
-No new schema, migration, provider call, credential lookup or production data
-is needed for this implementation or its deterministic local tests.
+No new schema, migration, live-provider call, credential lookup or production
+data is needed for implementation or its deterministic localhost-provider tests.

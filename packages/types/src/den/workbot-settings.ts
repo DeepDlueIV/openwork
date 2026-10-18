@@ -41,6 +41,13 @@ export const workbotSettingsSchema = z.object({
 })
 export type WorkbotSettings = z.infer<typeof workbotSettingsSchema>
 
+/** A paid, synthetic diagnostic result, never a catalog-derived readiness claim. No answer text or credentials. */
+export const workbotModelTestSchema = z.discriminatedUnion("status", [
+  z.strictObject({ status: z.literal("answered"), errorCode: z.null(), requestedModel: z.string(), reportedModel: z.string().nullable() }),
+  z.strictObject({ status: z.literal("failed"), errorCode: z.enum(["model_unavailable", "runner_unavailable", "credentials_unavailable", "authentication_failed", "payment_required", "provider_unavailable", "timed_out", "invalid_response", "busy"]), requestedModel: z.string(), reportedModel: z.null() }),
+])
+export type WorkbotModelTest = z.infer<typeof workbotModelTestSchema>
+
 export const workbotSettingsInputSchema = z.strictObject({
   /** A model id from `models`, or null for the runner's default. */
   model: z.string().trim().min(1).max(255).nullable(),

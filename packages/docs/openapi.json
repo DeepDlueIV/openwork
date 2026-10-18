@@ -29166,6 +29166,78 @@
           }
         ]
       },
+      "WorkbotModelTest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "answered"
+              },
+              "errorCode": {
+                "type": "null"
+              },
+              "requestedModel": {
+                "type": "string"
+              },
+              "reportedModel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "errorCode",
+              "requestedModel",
+              "reportedModel"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "failed"
+              },
+              "errorCode": {
+                "type": "string",
+                "enum": [
+                  "model_unavailable",
+                  "runner_unavailable",
+                  "credentials_unavailable",
+                  "authentication_failed",
+                  "payment_required",
+                  "provider_unavailable",
+                  "timed_out",
+                  "invalid_response",
+                  "busy"
+                ]
+              },
+              "requestedModel": {
+                "type": "string"
+              },
+              "reportedModel": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "status",
+              "errorCode",
+              "requestedModel",
+              "reportedModel"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "WorkbotSettings": {
         "type": "object",
         "properties": {
@@ -106231,6 +106303,125 @@
             "description": "Den TypeID with 'owo_' prefix and a 26-character base32 suffix."
           }
         ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/org/workbot-settings/test-default-model": {
+      "post": {
+        "operationId": "postV1OrgWorkbotSettingsTestDefaultModel",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Test Workbot's default model",
+        "description": "Runs one bounded synthetic completion on the server-resolved organization default with the runner's configured key. No member content, tools, files, MCP access or conversation is used. May consume paid inference. Returns only status, a safe error code and requested/provider-reported model IDs. Requires a genuine user session, recent sign-in, Manage OpenWork Models, Workbot and workbotLunaDefault. Limited durably to three checks per organization and three per member in a ten-minute inactivity-reset window. Never exposed to MCP.",
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Synthetic completion result; catalog availability alone never means answered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbotModelTest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Only an empty request body is accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A genuine recent user sign-in and Manage OpenWork Models are required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The organization was not found, or Workbot is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "feature_disabled"
+                    },
+                    "feature": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "feature"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The durable diagnostic request limit was reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "rate_limited"
+                    },
+                    "retryAfterSeconds": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "retryAfterSeconds"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "security": [
           {
             "denApiKey": []

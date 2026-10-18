@@ -1,9 +1,11 @@
-import { readWorkbotModel, withWorkbotModel, workbotSettingsInputSchema, workbotSettingsSchema } from "@openwork/types/den/workbot-settings"
+import { readWorkbotModel, withWorkbotModel, workbotModelTestSchema, workbotSettingsInputSchema, workbotSettingsSchema } from "@openwork/types/den/workbot-settings"
 import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { organizationFeatureEnabled, requireFeature } from "../../features.js"
-import { jsonValidator, orgMemberRoute, requireOrgPermission } from "../../middleware/index.js"
+import { jsonValidator, orgMemberRoute, requireOrgPermission, userSessionRoute } from "../../middleware/index.js"
+import { checkRateLimit } from "../../utils/rate-limit.js"
+import { testOrganizationWorkbotModel } from "../../workbot/model-test.js"
 import { forbiddenSchema, invalidRequestSchema, jsonResponse, unauthorizedSchema } from "../../openapi.js"
 import { updateOrganizationMetadata } from "../../organization-metadata.js"
 import {
@@ -38,6 +40,43 @@ const requireWorkbotSettingsRead: ReturnType<typeof requireOrgPermission> = asyn
  * Automations set to the cloud default). Admins choose it from the models the headless runner serves.
  */
 export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
+  app.post(
+    "/v1/org/workbot-settings/test-default-model",
+    describeRoute({
+      tags: ["Organizations"],
+      summary: "Test Workbot's default model",
+      description: "Runs one bounded synthetic completion on the server-resolved organization default with the runner's configured key. No member content, tools, files, MCP access or conversation is used. May consume paid inference. Returns only status, a safe error code and requested/provider-reported model IDs. Requires a genuine user session, recent sign-in, Manage OpenWork Models, Workbot and workbotLunaDefault. Limited durably to three checks per organization and three per member in a ten-minute inactivity-reset window. Never exposed to MCP.",
+      ...{ "x-mcp": false },
+      responses: {
+        200: jsonResponse("Synthetic completion result; catalog availability alone never means answered.", workbotModelTestSchema.meta({ ref: "WorkbotModelTest" })),
+        400: jsonResponse("Only an empty request body is accepted.", invalidRequestSchema),
+        401: jsonResponse("Authentication required.", unauthorizedSchema),
+        403: jsonResponse("A genuine recent user sign-in and Manage OpenWork Models are required.", forbiddenSchema),
+        404: notFound,
+        429: jsonResponse("The durable diagnostic request limit was reached.", z.object({ error: z.literal("rate_limited"), retryAfterSeconds: z.number() })),
+      },
+    }),
+    orgMemberRoute(),
+    requireFeature("workbot"),
+    requireFeature("workbotLunaDefault"),
+    userSessionRoute(),
+    requireOrgPermission("inference.manage"),
+    jsonValidator(z.strictObject({})),
+    async (c) => {
+      c.header("Cache-Control", "no-store")
+      const context = c.get("organizationContext")
+      const windowMs = 10 * 60_000
+      for (const key of [`workbot-model-test:org:${context.organization.id}`, `workbot-model-test:member:${context.currentMember.id}`]) {
+        const retryAfterSeconds = await checkRateLimit(key, 3, windowMs, Date.now())
+        if (retryAfterSeconds !== null) {
+          c.header("Retry-After", String(retryAfterSeconds))
+          return c.json({ error: "rate_limited", retryAfterSeconds }, 429)
+        }
+      }
+      return c.json(await testOrganizationWorkbotModel(context.organization.id))
+    },
+  )
+
   app.get(
     "/v1/org/workbot-settings",
     describeRoute({

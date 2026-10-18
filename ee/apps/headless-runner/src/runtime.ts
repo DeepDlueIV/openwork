@@ -10,6 +10,7 @@ import { FILE_TOOL_NAMES } from "./files.js"
 import { remoteMcpConnector } from "./mcp.js"
 import { anthropicModel, openAIModel, openAIResponsesModel } from "./model.js"
 import { gatewayModelCatalog } from "./model-catalog.js"
+import { createModelProbe } from "./model-probe.js"
 export { gatewayModelCatalog } from "./model-catalog.js"
 import { Runner } from "./runner.js"
 import { workbotTelemetryReporter } from "./workbot-telemetry.js"
@@ -68,6 +69,6 @@ export async function createRuntime(config: Config, store: Store) {
     errors,
     workbotTelemetry: workbotTelemetryReporter(config),
   })
-  const app = createApp({ store, runner, apiToken: config.apiToken, models: gatewayModelCatalog(config), events, files, computer, errors })
+  const app = createApp({ store, runner, apiToken: config.apiToken, models: gatewayModelCatalog(config), modelProbe: createModelProbe(config, modelFetch), events, files, computer, errors })
   return { app, runner, recovered, blobKind: blobs?.kind ?? "off", computer }
 }

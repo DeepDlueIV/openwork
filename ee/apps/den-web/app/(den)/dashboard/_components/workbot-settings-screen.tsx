@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { WORKBOT_DEFAULT_MODEL_NAME, type WorkbotSettings } from "@openwork/types/den/workbot-settings";
+import { WORKBOT_DEFAULT_MODEL_NAME, type WorkbotModelTest, type WorkbotSettings } from "@openwork/types/den/workbot-settings";
 import {
   getBrandAppearanceRoute,
   getOrgAccessFlags,
@@ -18,7 +18,7 @@ import { DenCombobox, type DenComboboxOption } from "../../_components/ui/combob
 import { DenSkeleton } from "../../_components/ui/skeleton";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { providerIconSlug } from "./library-models";
-import { useSaveWorkbotModel, useWorkbotSettings } from "./workbot-settings-data";
+import { useSaveWorkbotModel, useTestWorkbotDefaultModel, useWorkbotSettings } from "./workbot-settings-data";
 
 /** The name Workbot introduces itself with: the organization's brand name, unless it is unset or OpenWork. */
 function workbotName(metadata: string | null): string {
@@ -68,6 +68,23 @@ function defaultLabel(settings: WorkbotSettings): string {
   return settings.defaultModel ? `Default (${defaultModelName(settings)})` : "Default";
 }
 
+function modelTestLabel(result: WorkbotModelTest | null | undefined): string {
+  if (!result) return "Not tested (short paid request)";
+  if (result.status === "answered") return "Answered";
+  const messages = {
+    model_unavailable: "Default unavailable. Choose an available model.",
+    runner_unavailable: "Couldn't reach the runner. Ask your deployment admin.",
+    credentials_unavailable: "Model key missing. Ask your deployment admin.",
+    authentication_failed: "Access refused. Check the runner's model key.",
+    payment_required: "Payment required. Check the model account.",
+    provider_unavailable: "Model didn't answer. Try again later.",
+    timed_out: "Test timed out. Try again later.",
+    invalid_response: "No usable answer. Check the model route.",
+    busy: "Another test is running. Try again shortly.",
+  };
+  return messages[result.errorCode];
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim() ? error.message : fallback;
 }
@@ -92,6 +109,8 @@ export function WorkbotSettingsScreen() {
   const canManage = access.canManageModelsSettings;
   const query = useWorkbotSettings(orgId, Boolean(orgId));
   const save = useSaveWorkbotModel(orgId);
+  const modelTest = useTestWorkbotDefaultModel(orgId);
+  const resetTest = modelTest.reset;
   const labelId = useId();
   const [draft, setDraft] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -102,11 +121,15 @@ export function WorkbotSettingsScreen() {
     setDraft(settings?.model ?? "");
   }, [settings?.model]);
 
+  useEffect(() => {
+    resetTest();
+  }, [orgId, settings?.model, settings?.defaultModel, settings?.defaultReadiness, draft, resetTest]);
+
   const name = workbotName(orgContext?.organization.metadata ?? null);
   const savedModel = settings?.model ?? null;
   const draftModel = draft || null;
   const changed = draftModel !== savedModel;
-  const canChoose = canManage && settings?.runnerReachable === true && settings.defaultReadiness !== "unverified" && !save.isPending;
+  const canChoose = canManage && settings?.runnerReachable === true && settings.defaultReadiness !== "unverified" && !save.isPending && !modelTest.isPending;
 
   async function store(model: string | null, previous: string | null) {
     setSaveError(null);
@@ -207,6 +230,30 @@ export function WorkbotSettingsScreen() {
                     Check availability
                   </DenButton>
                 </SettingsRow>
+              ) : null}
+              {settings?.defaultReadiness ? (
+                <SettingsRow label="Completion check">
+                  <span role="status" className="text-[13px] text-gray-600" data-testid="workbot-model-test-result">
+                    {modelTest.isPending ? "Testing a short paid request"
+                      : modelTest.isError ? errorMessage(modelTest.error, "Couldn't test the model. Try again.")
+                      : modelTestLabel(modelTest.data)}
+                  </span>
+                  <DenButton variant="secondary" size="sm" loading={modelTest.isPending}
+                    disabled={!canManage || changed || save.isPending || modelTest.isPending}
+                    title="Sends a short synthetic prompt and may use paid inference. No chats or connected apps are used."
+                    onClick={() => modelTest.mutate()}>
+                    Test default model
+                  </DenButton>
+                </SettingsRow>
+              ) : null}
+              {modelTest.data && settings?.defaultReadiness ? (
+                <details className="px-6 py-3 text-[13px] text-gray-600">
+                  <summary className="cursor-pointer font-medium">Test details</summary>
+                  <dl className="mt-3 grid gap-2 [overflow-wrap:anywhere]">
+                    <div><dt className="font-medium">Requested model</dt><dd className="font-mono">{modelTest.data.requestedModel}</dd></div>
+                    <div><dt className="font-medium">Provider-reported model</dt><dd className="font-mono">{modelTest.data.reportedModel ?? "Not reported"}</dd></div>
+                  </dl>
+                </details>
               ) : null}
               <SettingsRow label="Name">
                 <span className="text-[13px] text-gray-900" data-testid="workbot-name">{name}</span>

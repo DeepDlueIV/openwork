@@ -10,6 +10,7 @@ import { formatBytes } from "./tool-files.js"
 import { z } from "zod"
 import { normalizePath } from "./files.js"
 import type { Runner } from "./runner.js"
+import { modelProbeResponse, type ModelProbe } from "./model-probe.js"
 import { CONVERSATION_TABLES, sqlRow, type StoredMessage, type Store } from "./store.js"
 import { ACTIVE, repeatLimitsSchema, turnCredentialsSchema, turnStatusSchema, type SessionComputer } from "./types.js"
 
@@ -121,6 +122,8 @@ export function createApp(input: {
   apiToken: string
   /** Models a caller may pick per turn; without it only the default is listed. */
   models?: () => Promise<ModelCatalog>
+  /** Bounded, synthetic completion with the deployment model key; no conversation is created. */
+  modelProbe?: ModelProbe
   /** Live session events; without it the events route is not served. */
   events?: SessionEvents
   /** Saved files; without them the file routes answer `files_not_configured`. */
@@ -154,6 +157,7 @@ export function createApp(input: {
   })
 
   app.get("/v1/models", async (c) => c.json(input.models ? await input.models() : { defaultModel: "", models: [] }))
+  app.post("/v1/model-probe", bodyLimit({ maxSize: 512 }), (c) => modelProbeResponse(c.req.raw, input.modelProbe))
 
   app.post("/v1/sessions", async (c) => {
     const body = createSessionBody.safeParse(await c.req.json().catch(() => ({})))

@@ -2,11 +2,10 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { emptyLibraryScale, singleLibraryScale, smallLibraryScale, largeLibraryScale } from "../worlds/library-scale.ts";
 
-const resources = { surfaces: ["appWeb"], services: [] } satisfies NonNullable<Parameters<typeof spec.world>[1]>["resources"];
-const empty = spec.world(emptyLibraryScale, { timeout: 240_000, resources });
-const single = spec.world(singleLibraryScale, { timeout: 240_000, resources });
-const small = spec.world(smallLibraryScale, { timeout: 240_000, resources });
-const large = spec.world(largeLibraryScale, { timeout: 300_000, resources });
+const empty = spec.world(emptyLibraryScale, { timeout: 240_000, resources: { surfaces: ["appWeb"], services: [] } });
+const single = spec.world(singleLibraryScale, { timeout: 240_000, resources: { surfaces: ["appWeb"], services: [] } });
+const small = spec.world(smallLibraryScale, { timeout: 240_000, resources: { surfaces: ["appWeb"], services: [] } });
+const large = spec.world(largeLibraryScale, { timeout: 300_000, resources: { surfaces: ["appWeb"], services: [] } });
 
 // Timings cover trusted user input through a visible, captured app frame, not source processing.
 empty("a member browses and searches 0 skills in a bounded Library and menu", async ({ world, user, probe, step, evidence }) => {

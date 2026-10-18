@@ -4,7 +4,8 @@ import { configureProvider } from "./chat.ts";
 import type { StreamFeedbackSample } from "./stream-feedback-summary.ts";
 
 export const streamFeedbackPrompt = "Prepare a short progress note. STREAM_FEEDBACK_NOTE";
-export const streamFeedbackReasoning = Array.from({ length: 64 }, (_, i) => `r${String(i).padStart(2, "0")} `);
+// Leave enough real streamed chunks after the collapsed screenshot and trusted disclosure.
+export const streamFeedbackReasoning = Array.from({ length: 96 }, (_, i) => `r${String(i).padStart(2, "0")} `);
 export const streamFeedbackText = Array.from({ length: 24 }, (_, i) => `t${String(i).padStart(2, "0")} `);
 export const streamFeedbackTail = "The progress note is complete.";
 

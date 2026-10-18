@@ -18,11 +18,12 @@ test("a member sees reasoning and an answer grow before the model finishes", asy
     await user.type("composer", streamFeedbackPrompt);
     await user.click("Run task");
     await user.see({ role: "button", label: "Thinking…" }, { timeoutMs: 60_000 });
-    await user.notSee({ text: "r00" });
+    await user.notSee({ text: "r00" }, { timeoutMs: 100 });
     const received = await probe.eventually(() => world.feedback(), {
       within: 15_000, label: "native reasoning delta receipt", until: value => value.excludedCollapsedReasoning > 0,
     });
     expect(received.trustedSendAt).not.toBeNull();
+    expect(received.promptPostAt).not.toBeNull();
     expect(received.firstDeltaAt).not.toBeNull();
     expect(received.disclosureAt).toBeNull();
     evidence.recordAssertionEvidence("Real deltas do not open the reasoning disclosure", JSON.stringify({
@@ -49,12 +50,14 @@ test("a member sees reasoning and an answer grow before the model finishes", asy
     expect(held.deliveredChunks).toBe(0);
     expect(reasoning.every(sample => sample.terminalAtFrame === false)).toBe(true);
     const lastArrival = reasoning.at(-1)?.receivedAt ?? 0;
-    expect(reasoning.filter(sample => sample.frameAt !== null && sample.frameAt < lastArrival).length).toBeGreaterThanOrEqual(20);
+    const incrementalFrames = reasoning.filter(sample => sample.frameAt !== null && sample.frameAt < lastArrival).length;
+    expect(incrementalFrames).toBeGreaterThanOrEqual(20);
     const dom = streamFeedbackDistribution(reasoning.map(sample => (sample.domAt ?? NaN) - sample.receivedAt));
     const frame = streamFeedbackDistribution(reasoning.map(sample => (sample.frameAt ?? NaN) - sample.receivedAt));
     expect(frame.p95Ms).toBeLessThan(frameP95BudgetMs);
     evidence.recordAssertionEvidence("Reasoning reaches visible DOM and frame callbacks before later deltas and completion", JSON.stringify({
-      dom, frame, excludedBeforeDisclosure: feedback.excludedCollapsedReasoning,
+      dom, frame, incrementalFramesBeforeLastReasoningDelta: incrementalFrames,
+      excludedBeforeDisclosure: feedback.excludedCollapsedReasoning,
       submitToFirstNativeDeltaMs: (feedback.firstDeltaAt ?? NaN) - (feedback.trustedSendAt ?? NaN),
       promptPostToFirstNativeDeltaMs: (feedback.firstDeltaAt ?? NaN) - (feedback.promptPostAt ?? NaN),
       preArrivalIncludes: "submission, engine, provider and transport; excluded from app feedback distributions",
@@ -93,7 +96,8 @@ test("a member sees reasoning and an answer grow before the model finishes", asy
   await step("after: only releasing the final sentence lets the model finish", async () => {
     await world.releaseText();
     await user.see({ text: streamFeedbackTail });
-    await user.notSee({ role: "button", label: "Stop" }, { timeoutMs: 30_000 });
+    await user.see({ role: "button", label: "Run task" }, { timeoutMs: 30_000 });
+    await user.notSee({ role: "button", label: "Stop" }, { timeoutMs: 100 });
     const completed = await probe.eventually(() => world.providerState(), {
       within: 15_000, label: "the provider really completed", until: value => value.complete,
     });

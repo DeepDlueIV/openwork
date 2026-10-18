@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, lstat, mkdir, mkdtemp, open, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
@@ -155,6 +155,59 @@ test("a profile in use by another process is preserved after the owning browser 
     const exited = once(holder, "exit");
     holder.kill();
     await exited;
+  }
+});
+
+test("an unreadable descendant with a held file preserves the entire stopped profile", async () => {
+  const { host, handle, profileDir } = await fixture();
+  await host.disposeSurface(handle);
+  const descendant = join(profileDir, "unreadable");
+  await mkdir(descendant);
+  const heldFile = join(descendant, "held-cache");
+  await writeFile(heldFile, "still in use");
+  const snapshot = async (path: string): Promise<string[]> => {
+    const entries = (await readdir(path, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+    const contents: string[] = [];
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        contents.push(`${entry.name}/`, ...(await snapshot(join(path, entry.name))).map(value => `${entry.name}/${value}`));
+      } else {
+        contents.push(`${entry.name}:${(await readFile(join(path, entry.name))).toString("base64")}`);
+      }
+    }
+    return contents;
+  };
+  const before = await snapshot(profileDir);
+  const holder = spawn(process.execPath, ["-e", `require('node:fs').openSync(process.argv[1], 'r'); console.log('ready'); setInterval(() => {}, 1000);`, heldFile], { stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    await once(holder.stdout, "data", { signal: AbortSignal.timeout(5_000) });
+    await chmod(descendant, 0);
+    // Prove that this real filesystem/process probe cannot inspect the subtree.
+    // An exit status alone is not a complete no-open-files witness.
+    await expect(readdir(descendant)).rejects.toMatchObject({ code: "EACCES" });
+    const inspected = await new Promise<{ code: string | number; stdout: string; stderr: string }>(done => {
+      execFile("lsof", ["+w", "+D", profileDir], { encoding: "utf8", timeout: 5_000 }, (error, stdout, stderr) => {
+        done({ code: error?.code ?? 0, stdout, stderr });
+      });
+    });
+    expect(inspected.code).toBe(1);
+    expect(inspected.stdout.trim()).toBe("");
+    expect(inspected.stderr).toMatch(/permission denied|can't (?:stat|open)|cannot (?:access|open)/i);
+    let failure: unknown;
+    try { await removeOwnedSurfaceFiles(handle, { stoppedChrome: true }); } catch (error) { failure = error; }
+    await chmod(descendant, 0o700);
+    // Compare every directory and file, not only the inaccessible held file:
+    // recursive rm can otherwise delete accessible siblings before it fails.
+    expect(await snapshot(profileDir)).toEqual(before);
+    expect(failure).toMatchObject({ message: "Refusing Chrome profile cleanup: open files remain or the open-file check failed." });
+  } finally {
+    try {
+      await chmod(descendant, 0o700);
+    } finally {
+      const exited = once(holder, "exit");
+      holder.kill();
+      await exited;
+    }
   }
 });
 

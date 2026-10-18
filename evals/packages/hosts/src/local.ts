@@ -786,7 +786,9 @@ export async function removeOwnedSurfaceFiles(
       return;
     }
     await new Promise<void>((done, reject) => {
-      execFile("lsof", ["-t", "+D", owned.profileDir], { encoding: "utf8", timeout: 5_000 }, (error, stdout, stderr) => {
+      // -t implicitly suppresses warnings, including unreadable subtrees. Keep
+      // warnings enabled so an incomplete scan cannot masquerade as no open files.
+      execFile("lsof", ["+w", "+D", owned.profileDir], { encoding: "utf8", timeout: 5_000 }, (error, stdout, stderr) => {
         if (isRecord(error) && error.code === 1 && !stdout.trim() && !stderr.trim()) done();
         else reject(new Error("Refusing Chrome profile cleanup: open files remain or the open-file check failed."));
       });

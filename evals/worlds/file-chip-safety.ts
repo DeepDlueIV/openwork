@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveEvalEngine, type Seed } from "@openwork/env";
 import { configureProvider } from "./chat.ts";
@@ -6,8 +6,11 @@ import { configureProvider } from "./chat.ts";
 export const fileChipPrompt = "Read my report.";
 export async function fileChipSafety(seed: Seed) {
   const engine = resolveEvalEngine();
-  const workspacePath = seed.tmpPath("file-chip-safety");
-  await mkdir(workspacePath, { recursive: true });
+  const fixturePath = seed.tmpPath("file-chip-safety");
+  await mkdir(fixturePath, { recursive: true });
+  // macOS /tmp is a symlink. Give the engine the same real workspace path
+  // that its file-permission check uses; do not bypass the permission rail.
+  const workspacePath = await realpath(fixturePath);
   const path = join(workspacePath, "report.md");
   await writeFile(path, "# Report\n\nA preserved local report.\n");
   const mock = seed.mock({ isolatedProcessEnv: true, agentWorkloads: [{

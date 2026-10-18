@@ -30,7 +30,8 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
   const setTeamRole = useSetTeamRole(ready.orgId);
   const setsQuery = usePermissionSets(ready.orgId, true);
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState(false);
+  const [outcomes, setOutcomes] = useState<{ id: string; name: string; status: "pending" | "assigned" | "failed"; error?: string }[]>([]);
   const canManage = ready.access.canManagePermissions;
   const teams = orgContext?.teams ?? [];
   const onRole = new Set(set.teams.map((team) => team.id));
@@ -44,18 +45,30 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
     .map((team) => ({
       id: team.id,
       name: team.name,
-      detail: team.grantsOrganizationAdmin ? "Admin team" : roleByTeam.has(team.id) ? `Now ${roleByTeam.get(team.id)}` : "Now Member",
+      detail: `${roleByTeam.has(team.id) ? `Replaces ${roleByTeam.get(team.id)}` : "Adds this custom role"}${team.grantsOrganizationAdmin ? "; keeps organization Admin access" : ""}`, 
     }));
 
-  async function add(ids: string[]) {
-    setError(null);
+  async function add(ids: string[], retry = false) {
+    if (assigning || !canManage || !setsQuery.isSuccess) return;
+    // Keep submitted names even when successful writes remove them from the picker.
+    const submitted: typeof outcomes = ids.map((id) => ({ id, name: teams.find((team) => team.id === id)?.name ?? "A deleted team", status: "pending" }));
+    setOutcomes((current) => retry ? current.map((entry) => ids.includes(entry.id) ? { ...entry, status: "pending", error: undefined } : entry) : submitted);
+    setAssigning(true);
+    let failed = 0;
     try {
-      for (const teamId of ids) await setTeamRole.mutateAsync({ teamId, permissionSetId: set.id });
-      const names = ids.map((id) => teams.find((team) => team.id === id)?.name ?? "a team");
-      toast({ title: `${set.name} given to ${names.join(", ")}` });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Couldn't give the role.");
-    }
+      for (const entry of submitted) {
+        try {
+          await setTeamRole.mutateAsync({ teamId: entry.id, permissionSetId: set.id });
+          setOutcomes((current) => current.map((result) => result.id === entry.id ? { ...result, status: "assigned", error: undefined } : result));
+        } catch (cause) {
+          failed++;
+          const message = cause instanceof Error ? cause.message : "Couldn't assign the role.";
+          setOutcomes((current) => current.map((result) => result.id === entry.id ? { ...result, status: "failed", error: message } : result));
+        }
+      }
+    } finally { setAssigning(false); }
+    if (failed > 0) throw new Error(`${failed} ${failed === 1 ? "team wasn't" : "teams weren't"} updated. Review the team results and retry only those teams.`);
+    toast({ title: `Assigned ${set.name} to ${submitted.length} ${submitted.length === 1 ? "team" : "teams"}` });
   }
 
   return (
@@ -78,10 +91,14 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
           );
         })}
         <div className="flex px-5 py-3">
-          <AddPicker kind="team" options={addable} disabled={!canManage || setTeamRole.isPending} onAdd={(ids) => void add(ids)} />
+          <AddPicker kind="team" options={addable} disabled={!canManage || assigning || !setsQuery.isSuccess} onAdd={add} triggerLabel="Assign role" actionLabel="Assign role" showConsequences />
         </div>
       </ItemPanel>
-      {error ? <DenNotice tone="error" message={error} /> : null}
+      {setsQuery.isError ? <DenNotice tone="error" message="Couldn't verify the teams' current roles. Assignment is blocked until they are verified." action={<DenButton size="sm" variant="secondary" onClick={() => void setsQuery.refetch()}>Try again</DenButton>} /> : null}
+      {outcomes.length > 0 ? <div className="grid gap-2" aria-label="Role assignment results">
+        <ul className="divide-y divide-gray-100 text-[13px]" aria-live="polite">{outcomes.map((entry) => <li key={entry.id} className="flex min-h-11 flex-wrap items-center justify-between gap-2 py-2" data-testid="role-assignment-result" data-status={entry.status}><span className="min-w-0 break-words font-medium">{entry.name}</span><span className={entry.status === "failed" ? "text-red-700" : "text-gray-500"}>{entry.status === "assigned" ? "Role assigned" : entry.status === "pending" ? "Not confirmed yet" : entry.error}</span></li>)}</ul>
+        {outcomes.some((entry) => entry.status === "failed") ? <DenButton size="sm" variant="secondary" className="w-fit" disabled={assigning || !setsQuery.isSuccess} onClick={() => void add(outcomes.filter((entry) => entry.status === "failed").map((entry) => entry.id), true).catch(() => undefined)}>Retry failed teams</DenButton> : null}
+      </div> : null}
       <RemoveRoleFromTeam
         set={set}
         team={removing}

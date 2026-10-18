@@ -5,7 +5,7 @@ import { getPermissionDefinition, isPermissionKey } from "@openwork/types/den/pe
 import { z } from "zod";
 import { getErrorMessage, getReauthRequiredError, requestJson } from "../../_lib/den-flow";
 import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
-import { orgFeatureEnabled } from "../../_lib/den-org";
+import { getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { permissionsQueryKeys } from "./permissions-query-keys";
 
@@ -292,7 +292,7 @@ export function useRoleGrantLocks(orgId: string | null, sets: readonly Permissio
   return new Map(sets.map((set, index) => {
     const detail = details[index];
     const missing = detail?.data?.permissions.find((entry) => entry.status === "allow" && !permissions.includes(entry.key));
-    const reason = isOwner ? null : !detail?.data ? "Couldn't verify this role's permissions yet." : missing ? "This role grants permissions you don’t have. Ask the organization owner." : null;
+    const reason = isOwner ? null : !detail?.isSuccess || detail.data?.id !== set.id ? "Couldn't verify this role's permissions yet." : missing ? "This role grants permissions you don’t have. Ask the organization owner." : null;
     return [set.id, reason];
   }));
 }
@@ -337,9 +337,11 @@ export function usePermissionKeyStatus(orgId: string | null, key: string) {
 }
 
 export function useMemberPermissions(orgId: string | null, memberId: string, enabled: boolean) {
+  const { orgContext } = useOrgDashboard();
+  const canRead = orgContext?.organization.id === orgId && orgFeatureEnabled(orgContext, "permissions") && (orgContext.currentMember.id === memberId || getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canViewPermissions);
   return useQuery({
     queryKey: permissionsQueryKeys.member(orgId ?? "", memberId),
-    enabled: enabled && Boolean(orgId),
+    enabled: enabled && Boolean(orgId) && canRead,
     retry: false,
     queryFn: async ({ signal }) => required(await permissionsRequest({
       orgId: orgId ?? "",
@@ -466,60 +468,6 @@ export function useCreateRole(orgId: string) {
       } catch (cause) {
         throw new RolePermissionsNotSavedError(cause instanceof Error ? cause.message : "Couldn't save the role's permissions.", teamId);
       }
-    },
-    onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) });
-      await refreshOrgData();
-    },
-  });
-}
-
-export type TeamRoleWrite =
-  | { kind: "set-admin"; value: boolean }
-  | { kind: "create-custom"; keys: string[] }
-  | { kind: "remove-custom"; setId: string };
-
-/**
- * Applies a team role change as the existing calls, in the given order:
- * PATCH /v1/teams/:id (Admin team), POST /v1/permissions/sets and
- * DELETE /v1/permissions/sets/:id. Returns the new set's id when one was made.
- */
-export function useApplyTeamRole(orgId: string, teamId: string) {
-  const queryClient = useQueryClient();
-  const write = useReauthableWrite();
-  const { updateTeam, refreshOrgData } = useOrgDashboard();
-  return useMutation({
-    mutationKey: [...permissionsQueryKeys.sets(orgId), "team-role", teamId],
-    retry: false,
-    mutationFn: async (steps: TeamRoleWrite[]) => {
-      let createdSetId: string | null = null;
-      for (const step of steps) {
-        if (step.kind === "set-admin") {
-          await updateTeam(teamId, { grantsOrganizationAdmin: step.value });
-        } else if (step.kind === "create-custom") {
-          const set = await write("create-team-permissions", async () => required(await permissionsRequest({
-            orgId,
-            path: "/v1/permissions/sets",
-            method: "POST",
-            body: { teamId, permissions: step.keys.map((key) => ({ key, status: "allow" })) },
-            schema: z.object({ set: setDetailSchema }),
-            fallback: "Couldn't create team permissions",
-          })).set);
-          createdSetId = set.id;
-        } else {
-          await write("remove-team-permissions", async () => {
-            await permissionsRequest({
-              orgId,
-              path: `/v1/permissions/sets/${encodeURIComponent(step.setId)}`,
-              method: "DELETE",
-              schema: null,
-              fallback: "Couldn't remove team permissions",
-            });
-            return step.setId;
-          });
-        }
-      }
-      return createdSetId;
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) });

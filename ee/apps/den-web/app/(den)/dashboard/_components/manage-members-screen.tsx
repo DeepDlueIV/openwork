@@ -221,7 +221,7 @@ export function ManageMembersScreen() {
   const memberRoles = memberRoleOptions({ sharedRoles, customRoleTeams, canManageTeams: access.canManageTeams, customRoles: customSets.map((set) => ({ ...set, teams: set.teams.length ? set.teams : set.team ? [set.team] : [] })), lockReasons: roleLocks, adminLockReason: sharedRoles ? !access.canManageRoles ? permissionLockReason("members.update") : grantLocks.get(roleSets.data?.find((set) => set.kind === "admin_default")?.id ?? "") : null });
   const inviteTeamPicker = sharedRoles && access.canManageTeams && (orgContext?.teams.length ?? 0) > 0;
   const [inviteTeamId, setInviteTeamId] = useState("");
-  const [memberRoleTeamId, setMemberRoleTeamId] = useState("");
+
   function chosenRole(value: string, teamId: string) {
     const set = value.startsWith("role:") ? customSets.find((entry) => entry.id === value.slice(5)) : null;
     const teams = set ? roleTeams(set.id) : [];
@@ -230,7 +230,6 @@ export function ManageMembersScreen() {
     return { set, teams, grantable, selected, blocked: value.startsWith("role:") && (!set || !selected || Boolean(roleLocks.get(set.id)) || !access.canManageTeams) };
   }
   const inviteChoice = chosenRole(inviteRole, inviteTeamId);
-  const editChoice = chosenRole(memberRoleDraft, memberRoleTeamId);
   function customTeamChoice(value: string, teamId: string, onChange: (id: string) => void) {
     const choice = chosenRole(value, teamId);
     if (!choice.set) return null;
@@ -301,7 +300,6 @@ export function ManageMembersScreen() {
   function resetMemberEditor() {
     setEditingMemberId(null);
     setMemberRoleDraft("member");
-    setMemberRoleTeamId("");
   }
 
   function resetTeamEditor() {
@@ -505,19 +503,11 @@ export function ManageMembersScreen() {
   async function saveMemberRole(member: DenOrgMember) {
     setPageError(null);
     try {
-      // A custom role grants through a team, never through organization Admin.
-      // Remove direct Admin first: joining before demoting would temporarily
-      // combine the old Admin grant with the new custom permissions.
-      if (editChoice.blocked) return;
-      const choice = parseRoleChoice(memberRoleDraft);
-      const team = editChoice.set ? editChoice.selected : choice.teamId ? orgContext?.teams.find((entry) => entry.id === choice.teamId) : null;
-      const demoteFirst = sharedRoles && choice.role === "member" && assignableOrgRole(member.role) === "admin";
-      if (demoteFirst) await updateMemberRole(member.id, "member");
-      if (team && !team.memberIds.includes(member.id)) {
-        await updateTeam(team.id, { memberIds: [...team.memberIds, member.id] });
-      }
-      if (!demoteFirst && choice.role !== assignableOrgRole(member.role)) {
-        await updateMemberRole(member.id, choice.role);
+      // Organization role and team membership are separate grants. This editor
+      // must never demote someone as an intermediate step of joining a team.
+      if (memberRoleDraft !== "member" && memberRoleDraft !== "admin") return;
+      if (memberRoleDraft !== assignableOrgRole(member.role)) {
+        await updateMemberRole(member.id, memberRoleDraft);
       }
       resetMemberEditor();
     } catch (error) {
@@ -530,11 +520,9 @@ export function ManageMembersScreen() {
       <MemberRoleEditor
         memberName={editingMember.user.name || editingMember.user.email}
         value={memberRoleDraft}
-        onChange={(value) => { setMemberRoleDraft(value); setMemberRoleTeamId(""); }}
+        onChange={setMemberRoleDraft}
         searchable={sharedRoles}
-        teamChoice={customTeamChoice(memberRoleDraft, memberRoleTeamId, setMemberRoleTeamId)}
-        blocked={editChoice.blocked}
-        options={memberRoles}
+        options={memberRoles.filter((option) => option.value === "member" || option.value === "admin")}
         saving={mutationBusy === "update-member-role" || mutationBusy === "update-team"}
         onCancel={resetMemberEditor}
         onSave={() => saveMemberRole(editingMember)}

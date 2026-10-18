@@ -1025,9 +1025,10 @@ export function McpAppFrame({ part, origin, onStateChange }: McpAppRendererObser
 function McpAppFallbackFrame({ part, origin, onStateChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
   const context = useOptionalMessageList()
   const summary = mcpAppSummarySchema.safeParse(preservedResult(part)?.structuredContent?.app)
-  const accessKey = summary.success ? mcpAppAccessKey(origin ?? context?.mcpAppOrigin ?? null, summary.data.resourceUri) : null
-  const accessDenied = useMcpAppAccessDenied(accessKey)
   const fallback = mcpAppTextFallback(part)
+  // A summary for another launch must never clear or poison this App's barrier.
+  const accessKey = fallback !== null && summary.success ? mcpAppAccessKey(origin ?? context?.mcpAppOrigin ?? null, summary.data.resourceUri) : null
+  const accessDenied = useMcpAppAccessDenied(accessKey)
   return <>
     {fallback && !accessDenied ? <McpAppTextFallback text={fallback} /> : null}
     <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} accessKey={accessKey} accessDenied={Boolean(fallback) && accessDenied} />

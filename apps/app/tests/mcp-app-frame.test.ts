@@ -344,6 +344,27 @@ describe("Authored App presentation", () => {
     } finally { await host.dispose() }
   })
 
+  test("an allowed launch for another App cannot clear this App's saved denial", async () => {
+    const host = await startupFixture()
+    const part = authoredPart()
+    const origin = { client: host.client, workspaceId: "mismatched-access", sessionId: "mismatched-chat", readOnly: true, principalScope: "cloud:member:organization" }
+    const uri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
+    const otherUri = mcpAppResourceUri("cob_00000000000000000000000001", "cov_00000000000000000000000000")
+    const key = mcpAppAccessKey(origin, uri)
+    denyMcpAppAccess(key)
+    const version = mcpAppAccessVersion(key)
+    const result = Reflect.get(Object(part.callProviderMetadata?.openwork), "mcpResult")
+    Reflect.set(Reflect.get(result, "_meta"), "openwork/mcpApp", { connectionId: "cob_00000000000000000000000001", toolName: "open_app", resourceUri: otherUri, arguments: {} })
+    const resolve = spyOn(host.client, "resolveMcpApp").mockResolvedValue({ app: fixture({ resourceUri: otherUri }) })
+    try {
+      expect(mcpAppTextFallback(part)).toBeNull()
+      await host.renderElement(createElement(McpAppFrame, { part, origin }))
+      expect(resolve).toHaveBeenCalledTimes(1)
+      expect(mcpAppAccessVersion(key)).toBe(version)
+      expect(host.container.querySelector("[data-mcp-app-fallback]")).toBeNull()
+    } finally { authorizeMcpAppAccess(key, version); resolve.mockRestore(); await host.dispose() }
+  })
+
   test("does not mistake generic tool prose or a mismatched revision for authored fallback", () => {
     const part = authoredPart()
     expect(mcpAppTextFallback(part)).toContain("Review the project checklist")

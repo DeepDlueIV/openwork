@@ -11,9 +11,17 @@ import {
   roleName,
   roleStartKeys,
   permissionSetTeams,
+  selectedRoleVerification,
   teamRole,
   teamRoleLabels,
 } from "./team-roles";
+
+test("ten thousand loaded roles create preflight work for only the selected roles, never for an owner's inventory", () => {
+  const sets = Array.from({ length: 10_000 }, (_, index) => ({ id: `role_${index}` }));
+  assert.deepEqual(selectedRoleVerification(sets, false, ["role_9999", "role_20"]), [sets[20], sets[9999]]);
+  assert.deepEqual(selectedRoleVerification(sets, true, ["role_9999"]), []);
+  assert.deepEqual(selectedRoleVerification(sets, false, []), []);
+});
 
 const member = { admin: false, customSetId: null };
 const admin = { admin: true, customSetId: null };

@@ -8,6 +8,7 @@ import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
 import { getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { clearDeniedRoleReads, permissionsQueryKeys, PERMISSION_READ_STALE_TIME } from "./permissions-query-keys";
+import { selectedRoleVerification } from "./team-roles";
 
 /**
  * Den API Permissions endpoints (ee/apps/den-api/src/routes/org/permissions.ts).
@@ -304,10 +305,12 @@ export function usePermissionSet(orgId: string | null, setId: string, enabled = 
   return { ...query, data: blocked ? undefined : query.data ?? undefined, isSuccess: query.isSuccess && !blocked, isError: query.isError || blocked, error: blocked ? new Error("Couldn't verify access to these permissions. Try again.") : query.error };
 }
 
-export function useRoleGrantLocks(orgId: string | null, sets: readonly PermissionSetSummary[], permissions: readonly string[], isOwner: boolean) {
+export function useRoleGrantLocks(orgId: string | null, sets: readonly PermissionSetSummary[], permissions: readonly string[], isOwner: boolean, selected: readonly string[]) {
   const viewerId = usePermissionReadViewer(orgId);
   const client = useQueryClient();
-  const details = useQueries({ queries: sets.map((set) => ({
+  // Selection is not a grant. Verify only chosen roles, in this viewer's scope.
+  const toVerify = selectedRoleVerification(sets, isOwner, selected);
+  const details = useQueries({ queries: toVerify.map((set) => ({
     queryKey: permissionsQueryKeys.set(orgId ?? "", set.id, viewerId),
     enabled: Boolean(orgId) && Boolean(viewerId) && !isOwner,
     retry: false,
@@ -322,12 +325,13 @@ export function useRoleGrantLocks(orgId: string | null, sets: readonly Permissio
       }
     },
   })) });
-  return new Map(sets.map((set, index) => {
-    const detail = details[index];
+  const locks = new Map(sets.map((set): [string, string | null] => {
+    const detail = details[toVerify.findIndex((entry) => entry.id === set.id)];
     const missing = detail?.data?.permissions.find((entry) => entry.status === "allow" && !permissions.includes(entry.key));
-    const reason = isOwner ? null : !detail?.isSuccess || detail.data?.id !== set.id ? "Couldn't verify this role's permissions yet." : missing ? "This role grants permissions you don’t have. Ask the organization owner." : null;
+    const reason = isOwner || !selected.includes(set.id) ? null : !detail?.isSuccess || detail.data?.id !== set.id ? "Couldn't verify this role's permissions yet." : missing ? "This role grants permissions you don’t have. Ask the organization owner." : null;
     return [set.id, reason];
   }));
+  return { locks, checking: details.some((detail) => detail.isPending), failed: details.some((detail) => detail.isError || detail.data === null), retry: () => Promise.all(details.map((detail) => detail.refetch())) };
 }
 
 const HISTORY_PAGE_SIZE = 50;

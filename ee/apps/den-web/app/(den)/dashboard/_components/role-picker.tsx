@@ -3,6 +3,7 @@
 import { Popover } from "@base-ui/react/popover";
 import { Check, ChevronDown, LockKeyhole, Search } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { DenButton } from "../../_components/ui/button";
 
 export type RolePickerOption = {
   value: string;
@@ -13,10 +14,12 @@ export type RolePickerOption = {
 };
 
 /** One searchable, trigger-width role menu for people and teams. */
-export function RolePicker({ value, onChange, options, label, trigger, disabled, footer, open: controlledOpen, onOpenChange, testId = "member-role" }: {
+export function RolePicker({ value, onChange, options, label, trigger, disabled, footer, open: controlledOpen, onOpenChange, testId = "member-role", inventoryState = "ready", onRetryInventory }: {
   value: string;
   onChange: (value: string) => void;
   options: readonly RolePickerOption[];
+  inventoryState?: "ready" | "loading" | "error" | "limited";
+  onRetryInventory?: () => void;
   label: string;
   trigger?: string;
   disabled?: boolean;
@@ -27,15 +30,19 @@ export function RolePicker({ value, onChange, options, label, trigger, disabled,
 }) {
   const [localOpen, setLocalOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
   const open = controlledOpen ?? localOpen;
   const current = options.find((option) => option.value === value);
   function changeOpen(next: boolean) {
     setLocalOpen(next);
     setQuery("");
+    setPage(0);
     onOpenChange?.(next);
   }
   const needle = query.trim().toLowerCase();
   const matches = options.filter((option) => `${option.label} ${option.caption ?? ""}`.toLowerCase().includes(needle));
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(matches.length / 50) - 1));
+  const visible = matches.slice(currentPage * 50, (currentPage + 1) * 50);
   const row = (option: RolePickerOption) => (
     <button key={option.value} type="button" role="option" aria-selected={value === option.value}
       aria-disabled={option.disabled} disabled={option.disabled} title={option.lockReason ?? option.label}
@@ -59,13 +66,18 @@ export function RolePicker({ value, onChange, options, label, trigger, disabled,
         <Popover.Title className="sr-only">{label}</Popover.Title>
         <label className="flex h-9 shrink-0 items-center gap-2 rounded-lg border border-gray-200 px-3 focus-within:border-gray-400">
           <Search className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
-          <input autoFocus aria-label="Search roles" placeholder="Search roles" value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[13px] outline-none" />
+          <input autoFocus aria-label="Search roles" placeholder="Search roles" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} className="min-w-0 flex-1 bg-transparent text-[13px] outline-none" />
         </label>
         <div className="mt-1 min-h-0 overflow-y-auto overflow-x-hidden" role="listbox" aria-label={label}>
-          {matches.filter((option) => option.value === "member" || option.value === "admin").map(row)}
-          {matches.some((option) => option.value !== "member" && option.value !== "admin") ? <p className="px-3 pb-1 pt-2 text-[12px] font-medium text-gray-500">Custom roles</p> : null}
-          {matches.filter((option) => option.value !== "member" && option.value !== "admin").map(row)}
+          {visible.filter((option) => option.value === "member" || option.value === "admin").map(row)}
+          {visible.some((option) => option.value !== "member" && option.value !== "admin") ? <p className="px-3 pb-1 pt-2 text-[12px] font-medium text-gray-500">Custom roles</p> : null}
+          {visible.filter((option) => option.value !== "member" && option.value !== "admin").map(row)}
           {matches.length === 0 ? <p className="px-3 py-4 text-[12px] text-gray-500">No roles match “{query.trim()}”.</p> : null}
+        </div>
+        <div className="mt-1 flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-2 py-2 text-[12px] text-gray-500" data-testid="role-picker-completeness">
+          <span>{inventoryState === "ready" ? <>{matches.length ? `${currentPage * 50 + 1}–${Math.min((currentPage + 1) * 50, matches.length)} of ${matches.length}` : "0"} roles{needle ? " matching" : ""}; all roles loaded</> : inventoryState === "loading" ? "Checking the complete role list" : inventoryState === "limited" ? "Organization roles only; custom roles need View permissions" : "Couldn't verify the complete role list"}</span>
+          {inventoryState === "error" && onRetryInventory ? <DenButton size="xs" variant="ghost" onClick={onRetryInventory}>Try again</DenButton> : null}
+          {matches.length > 50 ? <span className="flex gap-2"><DenButton size="xs" variant="ghost" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous roles</DenButton><DenButton size="xs" variant="ghost" disabled={(currentPage + 1) * 50 >= matches.length} onClick={() => setPage(currentPage + 1)}>Next roles</DenButton></span> : null}
         </div>
         {footer ? <div className="mt-1 shrink-0 border-t border-gray-100 pt-2">{footer}</div> : null}
       </Popover.Popup>

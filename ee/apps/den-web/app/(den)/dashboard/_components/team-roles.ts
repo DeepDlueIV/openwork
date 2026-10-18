@@ -12,6 +12,13 @@ import { PERMISSION_KEYS, isPermissionKey, permissionDefaultKeys, type Permissio
  */
 export type TeamRole = "member" | "admin" | "custom";
 
+/** A choice is not a grant: only chosen roles need a preflight permission read. */
+export function selectedRoleVerification<T extends { id: string }>(sets: readonly T[], isOwner: boolean, selected: readonly string[]): T[] {
+  if (isOwner) return [];
+  const ids = new Set(selected);
+  return sets.filter((set) => ids.has(set.id));
+}
+
 export type TeamRoleState = {
   /** The team is an Admin team. */
   admin: boolean;

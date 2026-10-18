@@ -43,8 +43,9 @@ export async function appPresentation(seed: Seed) {
     reactSource: `export default function Checklist() { throw new Error("The checklist could not render."); }` });
   const bootstrap = await buildGeneratedMcpApp({ title: "Project checklist", description: null,
     reactSource: `export default function Checklist({ result }) {
+      const [reviewed, setReviewed] = React.useState(false);
       const title = result.structuredContent.app.title;
-      return <main><h2>{title}</h2><p>Launch data received</p></main>;
+      return <main><h2>{reviewed ? "Checklist reviewed" : title}</h2><p>Launch data received</p><button type="button" onClick={() => setReviewed(true)}>Mark reviewed</button></main>;
     }` });
   if (!healthy.ok || !broken.ok || !bootstrap.ok) throw new Error("The representative generated App did not compile");
   const summary = { appId, revisionId, resourceUri: APP_RESOURCE, title: "Project checklist", description: null,

@@ -62,7 +62,7 @@ test("onboarding reports available providers but leaves model choice to chat and
   const providers = Array.from(host.querySelectorAll("button")).find(button => button.textContent?.includes("AI Providers"));
   expect(providers).toBeDefined();
   await act(async () => providers?.click());
-  expect(host.textContent).toContain("Organization models");
+  expect(host.textContent).toMatch(/Organization models/i);
   expect(host.textContent).not.toContain("Use as default");
   const proceed = Array.from(host.querySelectorAll("button")).find(button => button.textContent?.includes("Continue to workspace"));
   expect(proceed).toBeDefined();

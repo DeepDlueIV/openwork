@@ -4,6 +4,7 @@ import { isOpenworkGatewayRuntime } from "@/app/lib/gateway-runtime";
 import { WebStartupScreen } from "./workspace-startup-status";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { useWorkspaceShellLayout } from "./workspace-shell-layout";
 
 // Startup gates cannot depend on the providers they are still waiting to mount.
 export function StartupScreen({ message = "Starting OpenWork" }: { message?: string }) {
@@ -27,9 +28,10 @@ export function StartupScreen({ message = "Starting OpenWork" }: { message?: str
 
 /** Destination geometry only: no cached member/workspace content before authorization. */
 export function SigninDestinationSkeleton({ settings = false, conversation = false }: { settings?: boolean; conversation?: boolean }) {
+  const { leftSidebarWidth } = useWorkspaceShellLayout({ expandedRightWidth: 520 });
   return (
     <div className="flex min-h-dvh bg-background text-foreground" data-testid="signin-destination-skeleton" role="status" aria-label="Opening saved workspace">
-      <aside aria-hidden="true" className="hidden w-64 shrink-0 flex-col gap-4 border-r border-border bg-sidebar p-4 md:flex">
+      <aside aria-hidden="true" style={{ width: leftSidebarWidth }} className="hidden shrink-0 flex-col gap-4 border-r border-border bg-sidebar p-4 md:flex">
         <Skeleton className="h-8 w-28" />
         <Skeleton className="h-8 w-full" />
         <Skeleton className="h-4 w-24" />

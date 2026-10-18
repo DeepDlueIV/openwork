@@ -168,6 +168,8 @@ export interface EngineV2PreviewStatus {
   engineForced?: boolean;
   /** The host is preparing a forced upgrade; engine ownership has not moved yet. */
   forceUpgradePending?: boolean;
+  /** Failed host-owned upgrades retry only on a later boot, after this time. */
+  automaticRetryAt?: number;
   version?: string;
   pid?: number;
   binSource?: string;
@@ -223,6 +225,8 @@ function parseEngineV2PreviewStatus(value: unknown): EngineV2PreviewStatus {
     ...("engineForced" in value && typeof value.engineForced === "boolean" ? { engineForced: value.engineForced } : {}),
     ...("forceUpgradePending" in value && typeof value.forceUpgradePending === "boolean"
       ? { forceUpgradePending: value.forceUpgradePending } : {}),
+    ...("automaticRetryAt" in value && typeof value.automaticRetryAt === "number" && Number.isFinite(value.automaticRetryAt)
+      ? { automaticRetryAt: value.automaticRetryAt } : {}),
     enabled: value.enabled,
     running: value.running,
     chatRouting: "chatRouting" in value && typeof value.chatRouting === "boolean" ? value.chatRouting : false,

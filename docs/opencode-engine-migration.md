@@ -20,13 +20,25 @@ The optional desktop `engineV2Upgrade` invitation still works when force is off.
 All app feature observers use the shared guarded `useOrgFeature` hook: cached
 organization data cannot bypass a desktop-only guard.
 
-Turning the flag off switches only force-owned instances back to v1, once idle.
-An explicit manual engine choice clears that ownership, so it is not reverted.
-Neither direction deletes history: v1 originals remain in place and new v2
-chats remain in v2 storage for a later switch back. Policy updates do not abort
-a copy or a running task. Failures keep v1 selected, retain a durable error and
-backup receipt, and retry only on a later boot with a one-minute-to-one-day
-bounded exponential backoff. Source chat changes during copying or v2 startup
+Turning the flag off blocks future automatic upgrades, including an in-flight
+upgrade that has not selected v2 yet. It never rolls an already-selected v2
+instance back to v1: new chats and replies exist only in v2, and keeping their
+files on disk would not keep them readable on v1. V2 stays selected and starts
+normally on later boots while the rollout is off. A fresh forced selection can
+fall back on its first failed start only before a v2 database exists; an existing
+v2 database may contain new history and is never silently rerouted on a later
+startup failure. Explicit manual engine choices
+retain their existing ownership and consent semantics. Policy updates do not
+abort a copy or a running task. Failures keep v1 selected, retain a durable error
+and backup receipt, and retry only on a later boot with a one-minute-to-one-day
+bounded exponential backoff. Desktop keeps a compact **Chat upgrade paused**
+notice with the verified current engine instead of dismissing a forced failure.
+**Review upgrade** discloses diagnostics and the earliest retry time; closing it
+keeps the notice and chat usable. **Restart OpenWork** is explicit and does not
+call the migration API in the current process. Startup discovery restores a
+failed automatic receipt, even when the copy never started. Host backoff and
+rollout policy still decide whether the later boot attempts a retry.
+Source chat changes during copying or v2 startup
 prevent the switch; a later attempt restores the pre-copy v2 baseline under
 the existing migration ownership lock before copying a fresh v1 snapshot.
 

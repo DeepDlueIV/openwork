@@ -10,6 +10,7 @@ import {
   type EngineV2PreviewStatus,
   type OpenworkServerClient,
 } from "@/app/lib/openwork-server";
+import { relaunchDesktopApp } from "@/app/lib/desktop";
 import { isDesktopRuntime } from "@/app/lib/runtime-env";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -70,6 +71,7 @@ type ProgressState = {
   switchWhenDone: boolean;
   /** The host controller, not the renderer, owns this migration and its engine switch. */
   serverManaged?: boolean;
+  automaticRetryAt?: number;
 };
 
 type SwitchPrompt = {
@@ -170,7 +172,7 @@ function updateProgress(patch: Partial<ProgressState>) {
 /** Open the migration consent. A migration that is already running is shown instead. */
 export function requestEngineMigration(client: EngineMigrationClient, mode: EngineMigrationMode = "migrate") {
   const { progress } = useEngineMigrationStore.getState();
-  if (progress?.migration.state === "running") {
+  if (progress?.migration.state === "running" || (progress?.serverManaged && progress.migration.state === "error")) {
     showEngineMigrationProgress();
     return;
   }
@@ -232,10 +234,10 @@ export function observeEngineMigration(client: EngineMigrationClient, status: En
   if (!migration) return;
   const { progress } = useEngineMigrationStore.getState();
   const serverManaged = status.forceUpgradePending === true
-    || status.engineForced === true || status.engineOrigin === "forced";
+    || status.engineForced === true || status.engineOrigin === "forced" || status.automaticRetryAt !== undefined;
   if (progress) {
     updateProgress({
-      migration, selected: selectedChatEngine(status),
+      migration, selected: selectedChatEngine(status), automaticRetryAt: status.automaticRetryAt,
       ...(serverManaged ? {
         serverManaged: true, switchWhenDone: false,
         ...(!progress.serverManaged ? { view: "banner" } : {}),
@@ -243,9 +245,9 @@ export function observeEngineMigration(client: EngineMigrationClient, status: En
     });
     return;
   }
-  if (migration.state === "running") {
+  if (migration.state === "running" || (serverManaged && migration.state === "error")) {
     presentMigration(client, status, serverManaged ? "banner" : "dialog");
-    if (serverManaged) updateProgress({ serverManaged: true, switchWhenDone: false });
+    if (serverManaged) updateProgress({ serverManaged: true, switchWhenDone: false, automaticRetryAt: status.automaticRetryAt });
   }
 }
 
@@ -261,14 +263,16 @@ export function showEngineMigrationProgress() {
 export function closeEngineMigrationProgress() {
   useEngineMigrationStore.setState((state) => {
     if (!state.progress) return state;
-    if (state.progress.migration.state === "running") return { progress: { ...state.progress, view: "banner" } };
+    if (state.progress.migration.state === "running" || (state.progress.serverManaged && state.progress.migration.state === "error")) {
+      return { progress: { ...state.progress, view: "banner" } };
+    }
     return { progress: null };
   });
 }
 
 export async function retryEngineMigration(allowActiveSessions = false) {
   const progress = useEngineMigrationStore.getState().progress;
-  if (!progress || progress.retrying) return;
+  if (!progress || progress.retrying || progress.serverManaged) return;
   updateProgress({ retrying: true });
   try {
     const status = await progress.client.migrateOpencodeHistory({ allowActiveSessions });
@@ -429,6 +433,45 @@ function MigrationConsentDialog(props: { consent: ConsentState }) {
   );
 }
 
+function AutomaticMigrationRecoveryDialog(props: { progress: ProgressState }) {
+  const { progress } = props;
+  const [restarting, setRestarting] = useState(false);
+  const restart = async () => {
+    if (restarting) return;
+    setRestarting(true);
+    try { await relaunchDesktopApp(); }
+    catch { toast.error(t("engine_migration.restart_failed")); setRestarting(false); }
+  };
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) closeEngineMigrationProgress(); }}>
+      <DialogContent data-testid="engine-migration-recovery">
+        <DialogHeader>
+          <DialogTitle>{t("engine_migration.paused_title")}</DialogTitle>
+          <DialogDescription>{t("engine_migration.current_engine", { engine: progress.selected })}</DialogDescription>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {progress.automaticRetryAt === undefined
+            ? t("engine_migration.automatic_retry")
+            : t("engine_migration.automatic_retry_after", { time: new Date(progress.automaticRetryAt).toLocaleString() })}
+        </p>
+        <details className="group text-xs text-muted-foreground">
+          <summary className="flex cursor-pointer list-none items-center gap-1 select-none hover:text-foreground">
+            <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none" />
+            {t("engine_migration.technical_details")}
+          </summary>
+          <p className="mt-2 break-words whitespace-pre-wrap">{progress.migration.error}</p>
+        </details>
+        <DialogFooter>
+          <Button variant="outline" onClick={closeEngineMigrationProgress}>{t("engine_migration.keep_working")}</Button>
+          {window.__OPENWORK_ELECTRON__?.shell?.relaunch ? (
+            <Button disabled={restarting} onClick={() => void restart()}>{t("engine_migration.restart")}</Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MigrationProgressDialog(props: { progress: ProgressState }) {
   const { progress } = props;
   const { migration } = progress;
@@ -575,6 +618,7 @@ function MigrationFloatingRegion(props: PropsWithChildren) {
 
 function MigrationBanner(props: { progress: ProgressState }) {
   const { migration } = props.progress;
+  const paused = props.progress.serverManaged && migration.state === "error";
   const done = handledCount(migration);
   const count = migration.phase === "copying" && migration.total > 0
     ? t("engine_migration.progress_copied", { done: formatCount(done), total: formatCount(migration.total) })
@@ -587,13 +631,17 @@ function MigrationBanner(props: { progress: ProgressState }) {
         data-testid="engine-migration-banner"
         className="pointer-events-auto flex max-w-xl items-center gap-3 rounded-2xl bg-popover px-4 py-3 text-popover-foreground shadow-[var(--dls-card-shadow)] ring-1 ring-foreground/5"
       >
-        <LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
+        {paused
+          ? <TriangleAlert className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          : <LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />}
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{t("engine_migration.banner_title")}</p>
-          <p className="text-xs text-muted-foreground">{count ? `${count}. ` : ""}{t("engine_migration.banner_note")}</p>
+          <p className="text-sm font-medium">{t(paused ? "engine_migration.paused_title" : "engine_migration.banner_title")}</p>
+          <p className="text-xs text-muted-foreground">{paused
+            ? t("engine_migration.current_engine", { engine: props.progress.selected })
+            : <>{count ? `${count}. ` : ""}{t("engine_migration.banner_note")}</>}</p>
         </div>
         <Button type="button" size="xs" variant="outline" onClick={showEngineMigrationProgress}>
-          {t("engine_migration.show_progress")}
+          {t(paused ? "engine_migration.review_upgrade" : "engine_migration.show_progress")}
         </Button>
       </div>
     </MigrationFloatingRegion>
@@ -657,8 +705,9 @@ function useMigrationLifecycle(progress: ProgressState | null) {
     const current = useEngineMigrationStore.getState().progress;
     if (!current) return;
     if (serverManaged) {
-      // Forced work stays nonblocking on failure too; retries and routing remain host-owned.
-      if (state === "completed" || state === "error") useEngineMigrationStore.setState({ progress: null });
+      // Completion clears quietly. Failure stays as a compact paused notice,
+      // including after reload; only a later host boot retries the upgrade.
+      if (state === "completed" || state === "idle") useEngineMigrationStore.setState({ progress: null });
       return;
     }
     if (view !== "banner") return;
@@ -793,7 +842,7 @@ function useDesktopEngineForcePolicy(features: EngineUpgradeFeatures) {
           window.dispatchEvent(new CustomEvent("openwork-engine-changed"));
         }
         previousEngine = engine;
-        // Off also needs observation while the host waits to revert a forced-owned engine.
+        // Keep observing host-owned work and receipts; off never rolls back v2.
         if (upgrade || status.engineForced === true || status.forceUpgradePending === true) {
           timer = window.setTimeout(() => void sync(), 1_000);
         }
@@ -900,8 +949,11 @@ export function EngineMigrationOverlay(props: { discoverRunningMigration?: boole
       ) : null}
       {consent && !(consent.mode === "upgrade" && features.upgrade)
         ? <MigrationConsentDialog consent={consent} /> : null}
-      {progress?.view === "dialog" ? <MigrationProgressDialog progress={progress} /> : null}
-      {progress?.view === "banner" && progress.migration.state === "running" ? <MigrationBanner progress={progress} /> : null}
+      {progress?.view === "dialog" ? (progress.serverManaged && progress.migration.state === "error"
+        ? <AutomaticMigrationRecoveryDialog progress={progress} />
+        : <MigrationProgressDialog progress={progress} />) : null}
+      {progress?.view === "banner" && (progress.migration.state === "running" || (progress.serverManaged && progress.migration.state === "error"))
+        ? <MigrationBanner progress={progress} /> : null}
       {switchPrompt ? <EngineSwitchPrompt prompt={switchPrompt} /> : null}
     </>
   );

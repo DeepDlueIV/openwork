@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { automaticEngineForcePolicy, retainedHistoryText } from "../worlds/automatic-engine-force-policy.ts";
+import { automaticEngineForcePolicy, retainedHistoryText, newV2HistoryText, newV2Prompt } from "../worlds/automatic-engine-force-policy.ts";
 
 const test = spec.world(automaticEngineForcePolicy, {
   timeout: 240_000,
@@ -42,18 +42,31 @@ test("a member keeps reading the same chat when automatic engine policy turns on
     await user.screenshot();
   });
 
-  await step("after: turning the same policy off returns the forced profile to its unchanged v1 chat", async () => {
+  await step("the member adds a reply that exists only on the new engine", async () => {
+    await user.type("composer", newV2Prompt);
+    await user.press("ENTER");
+    await user.see({ text: newV2HistoryText }, { timeoutMs: 60_000 });
+    const current = await world.messages();
+    const original = await world.originalMessages();
+    expect(current).toContain(newV2HistoryText);
+    expect(original).not.toContain(newV2HistoryText);
+    evidence.recordAssertionEvidence("The new reply exists in v2 but not the original v1 history", newV2HistoryText, current.includes(newV2HistoryText) && !original.includes(newV2HistoryText));
+    await user.screenshot();
+  });
+
+  await step("after: turning policy off keeps both the copied note and new reply readable on v2", async () => {
     await world.setOrganizationPolicy(false);
-    const status = await probe.eventually(() => world.status(), {
-      within: 60_000,
-      label: "policy off returns only the forced selection to v1",
-      until: value => !value.chatRouting && !value.engineForced && value.engineOrigin === "reverted",
-    });
-    expect(await world.messages()).toContain(retainedHistoryText);
     await user.reload();
     await user.see({ text: retainedHistoryText });
+    await user.see({ text: newV2HistoryText });
+    const status = await world.status();
+    expect(status.chatRouting).toBe(true);
+    expect(status.running).toBe(true);
+    expect(status.engineForced).toBe(true);
+    expect(status.engineOrigin).toBe("forced");
+    expect(await world.messages()).toContain(newV2HistoryText);
     await noUpgradeUi();
-    evidence.recordAssertionEvidence("The policy-off profile serves the original chat on v1", JSON.stringify(status), !status.chatRouting && !status.engineForced && status.engineOrigin === "reverted");
+    evidence.recordAssertionEvidence("Policy off keeps the selected v2 engine serving its new history", JSON.stringify(status), status.running && status.chatRouting && status.engineForced);
     await user.screenshot();
   });
 

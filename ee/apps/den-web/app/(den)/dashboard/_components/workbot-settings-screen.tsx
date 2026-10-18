@@ -13,9 +13,11 @@ import {
 import { DenButton } from "../../_components/ui/button";
 import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-template";
 import { DenNotice } from "../../_components/ui/notice";
-import { DenSelect } from "../../_components/ui/select";
+import { DenBrandMark } from "../../_components/ui/brand-mark";
+import { DenCombobox, type DenComboboxOption } from "../../_components/ui/combobox";
 import { DenSkeleton } from "../../_components/ui/skeleton";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { providerIconSlug } from "./library-models";
 import { useSaveWorkbotModel, useWorkbotSettings } from "./workbot-settings-data";
 
 /** The name Workbot introduces itself with: the organization's brand name, unless it is unset or OpenWork. */
@@ -23,6 +25,31 @@ function workbotName(metadata: string | null): string {
   const brand = parseOrganizationMetadata(metadata)?.brandAppName;
   const trimmed = typeof brand === "string" ? brand.trim() : "";
   return trimmed && trimmed !== "OpenWork" ? trimmed.slice(0, 40) : "Workbot";
+}
+
+/** Runner model ids read "provider/model"; the provider part picks the logo. */
+function ModelMark({ id }: { id: string }) {
+  const provider = id.includes("/") ? id.slice(0, id.indexOf("/")) : id;
+  return (
+    <DenBrandMark
+      name={provider}
+      simpleIconSlug={providerIconSlug(provider)}
+      className="h-5 w-5 rounded-[5px] border-gray-200"
+      imageClassName="h-3.5 w-3.5"
+    />
+  );
+}
+
+/** The same searchable rows as the organization default model picker. */
+function modelOptions(settings: WorkbotSettings): DenComboboxOption[] {
+  const missing = settings.model && !settings.models.some((entry) => entry.id === settings.model)
+    ? [{ value: settings.model, label: settings.model, description: "No longer available" }]
+    : [];
+  return [
+    { value: "", label: defaultLabel(settings) },
+    ...missing,
+    ...settings.models.map((entry) => ({ value: entry.id, label: entry.name, keywords: [entry.id], icon: <ModelMark id={entry.id} /> })),
+  ];
 }
 
 function modelName(settings: WorkbotSettings, id: string | null): string {
@@ -129,33 +156,24 @@ export function WorkbotSettingsScreen() {
             <div className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-100 bg-white" data-section="workbot-default-model">
               <SettingsRow label="Default model" labelId={labelId}>
                 {!settings ? (
-                  <DenSkeleton className="h-10 w-72" data-testid="workbot-model-skeleton" />
+                  <DenSkeleton className="h-10 w-80 max-w-full" data-testid="workbot-model-skeleton" />
                 ) : (
                   <>
-                    <div className="w-72 min-w-0 max-w-full">
-                      <DenSelect
-                        aria-labelledby={labelId}
+                    <div className="w-80 min-w-0 max-w-full" data-testid="workbot-model-picker">
+                      <DenCombobox
+                        ariaLabel="Default model"
                         value={draft}
+                        options={modelOptions(settings)}
                         disabled={!canChoose}
-                        searchLabel={settings.models.length > 8 ? "Search models" : undefined}
-                        onChange={(event) => {
-                          setDraft(event.target.value);
+                        placeholder={defaultLabel(settings)}
+                        searchPlaceholder="Search models"
+                        emptyLabel="No models match"
+                        onChange={(value) => {
+                          setDraft(value);
                           setSaved(null);
                           setSaveError(null);
                         }}
-                      >
-                        <option value="">{defaultLabel(settings)}</option>
-                        {settings.model && !settings.models.some((entry) => entry.id === settings.model) ? (
-                          <option value={settings.model} disabled>
-                            Unavailable model
-                          </option>
-                        ) : null}
-                        {settings.models.map((entry) => (
-                          <option key={entry.id} value={entry.id}>
-                            {entry.name}
-                          </option>
-                        ))}
-                      </DenSelect>
+                      />
                     </div>
                     {canManage ? (
                       <DenButton

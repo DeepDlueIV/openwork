@@ -112,20 +112,20 @@ import { encodeConnectSkillToken } from "@/react-app/domains/session/surface/com
 import { AutomationsPage } from "@/react-app/domains/automations/automations-page";
 import { automationProviderCatalog } from "@/react-app/domains/automations/automation-model-options";
 import { CalendarPage } from "@/react-app/domains/calendar/calendar-page";
-import { useCalendarFeature } from "@/react-app/domains/calendar/use-calendar-data";
+import { useOrgFeatureState } from "@/react-app/domains/cloud/use-org-feature";
 import { useBackgroundShellTasksFeature } from "@/react-app/domains/session/status/use-background-shell-tasks-feature";
 import { useAppBuildProgressFeature } from "@/react-app/domains/apps/use-app-build-progress-feature";
 import { useRemoteSessionSubagentsFeature } from "@/react-app/domains/session/remote-threads/use-remote-session-subagents-feature";
 import { remoteThreadAttentionBySession, useRemoteThreadAttentionKey } from "@/react-app/domains/session/remote-threads/remote-thread-store";
-import { useAutomationsDenContext } from "@/react-app/domains/automations/use-automations";
 import { AppsPage } from "@/react-app/domains/apps/apps-page";
 import { DashboardPage } from "@/react-app/domains/dashboard/dashboard-page";
 import { useDashboardDeploymentAvailability } from "@/react-app/domains/dashboard/dashboard-availability";
 import { useAutomationDeploymentEnabled } from "@/react-app/domains/automations/automation-availability";
 import { automationsStateChangedEvent } from "@/react-app/domains/automations/automation-events";
-import type {
-  NewTaskComposerContext,
-  NewTaskComposerHandoff,
+import {
+  MOVE_NEW_TASK_DRAFT_EVENT,
+  type NewTaskComposerContext,
+  type NewTaskComposerHandoff,
 } from "@/react-app/domains/session/chat/new-task-composer";
 import { isDesktopProviderBlocked } from "@/app/cloud/desktop-app-restrictions";
 import { useCheckDesktopRestriction, useOrgRestrictions } from "@/react-app/domains/cloud/desktop-config-provider";
@@ -212,7 +212,7 @@ import {
 import { ModelPickerModal, MODEL_PICKER_UNAVAILABLE_SUBTITLE } from "@/react-app/domains/session/modals/model-picker-modal";
 import { CommandPalette, type PaletteItem, type SessionGroupOption } from "./command-palette";
 import { buildCommandPaletteSessions } from "./command-palette-sessions";
-import { commandPaletteModelTarget, createCommandPaletteModelControls } from "./command-palette-models";
+import { commandPaletteModelOptions, commandPaletteModelTarget, createCommandPaletteModelControls } from "./command-palette-models";
 import { requestRenameSession } from "./session-actions-bus";
 import type { ThinkingModeShortcutDirection } from "./thinking-mode-shortcut";
 import { SessionSearchDialog } from "./session-search-dialog";
@@ -437,7 +437,7 @@ export function SessionRoute() {
   const automationsSurfaceAvailable = automationsEnabled || signedOutDesktopSurfaces;
   const automationsRouteActive = automationsSurfaceAvailable && automationsRouteRequested;
   // The Calendar is an Automations view behind the automationCalendar feature.
-  const calendarFeature = useCalendarFeature(useAutomationsDenContext());
+  const calendarFeature = useOrgFeatureState("automationCalendar");
   useBackgroundShellTasksFeature();
   useAppBuildProgressFeature();
   useRemoteSessionSubagentsFeature();
@@ -3256,14 +3256,35 @@ export function SessionRoute() {
     return items;
   }, [currentSessionForGroupMove, currentSessionPinned, opencodeClient, selectedSessionId, selectedWorkspaceId]);
 
-  const currentSessionGroupId = selectedSessionId
-    ? selectedWorkspaceGroupState?.assignments[selectedSessionId] ?? null
-    : null;
+  // An empty composer has a group too: the one its new task will be created in.
+  // The focused unsent side chat wins over the main empty composer.
+  const paletteDraftDestination = useWorkbenchStore((state) => (
+    state.focusedPane === "secondary" && state.secondary?.draftDestination ? state.secondary.draftDestination : null
+  ));
+  const paletteDraftGroupMove = useMemo(() => {
+    if (!selectedWorkspaceId) return null;
+    const draftGroup = new URLSearchParams(location.search).get("draftGroup") || undefined;
+    const destination = paletteDraftDestination
+      ?? (selectedSessionId ? null : { workspaceId: selectedWorkspaceId, groupId: draftGroup });
+    // Groups are listed for the selected workspace only.
+    if (!destination || destination.workspaceId !== selectedWorkspaceId) return null;
+    const draftOwnerKey = newSessionDraftOwnerKey(sessionDraftScope, destination);
+    return draftOwnerKey ? { draftOwnerKey, groupId: destination.groupId ?? null } : null;
+  }, [location.search, paletteDraftDestination, selectedSessionId, selectedWorkspaceId, sessionDraftScope]);
+
+  const currentSessionGroupId = paletteDraftGroupMove
+    ? paletteDraftGroupMove.groupId
+    : selectedSessionId ? selectedWorkspaceGroupState?.assignments[selectedSessionId] ?? null : null;
 
   const handleMoveCurrentSessionToGroup = useCallback((groupId: string) => {
+    if (paletteDraftGroupMove) {
+      window.dispatchEvent(new CustomEvent(MOVE_NEW_TASK_DRAFT_EVENT, { detail: { draftOwnerKey: paletteDraftGroupMove.draftOwnerKey, groupId } }));
+      focusPromptSoon();
+      return;
+    }
     if (!selectedWorkspaceId || !selectedSessionId) return;
     assignSessionToGroup(selectedWorkspaceId, selectedSessionId, groupId);
-  }, [assignSessionToGroup, selectedSessionId, selectedWorkspaceId]);
+  }, [assignSessionToGroup, paletteDraftGroupMove, selectedSessionId, selectedWorkspaceId]);
 
   const sessionSearchPaletteItem = useMemo<PaletteItem>(() => ({
     id: "session-search.open",
@@ -4116,7 +4137,7 @@ export function SessionRoute() {
       onOpenCalendar={calendarSurfaceAvailable ? () => navigate(calendarRoute()) : undefined}
       onOpenDashboard={() => navigate(dashboardRoute())}
       onCreateWorkspace={handleOpenCreateWorkspace}
-      modelOptions={paletteModelCatalog ? [...paletteModelCatalog] : paletteTargetSessionId === selectedSessionId ? modelPicker.actionOptions : []}
+      modelOptions={commandPaletteModelOptions(paletteModelCatalog, modelPicker.actionOptions)}
       selectedModel={paletteSelectedModel}
       selectedModelBehavior={paletteSelectedModelBehavior}
       onSelectModel={(next, behavior) => {
@@ -4139,7 +4160,7 @@ export function SessionRoute() {
       }}
       sessions={paletteSessionOptions}
       sessionGroups={paletteSessionGroups}
-      currentSessionForGroupMove={currentSessionForGroupMove}
+      currentSessionForGroupMove={paletteDraftGroupMove ? { title: "this new task" } : currentSessionForGroupMove}
       currentSessionGroupId={currentSessionGroupId}
       onMoveCurrentSessionToGroup={handleMoveCurrentSessionToGroup}
       extraItems={[...currentSessionActionPaletteItems, ...(sessionFindPaletteItem ? [sessionFindPaletteItem] : []), sessionSearchPaletteItem, ...terminalPaletteItems, ...(checkDesktopRestriction({ restriction: "allowControlSettings" }) ? [] : [developerModePaletteItem]), diagnosticsCopyPaletteItem, diagnosticsExportPaletteItem, nextSessionTabPaletteItem, prevSessionTabPaletteItem, reloadConfigPaletteItem]}

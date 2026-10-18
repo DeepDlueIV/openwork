@@ -1,8 +1,19 @@
 import type { ModelOption, ModelRef } from "@/app/types";
 import { isAutoModel, modelSource, modelTitle, nextModelSource, nextPinnedModel, orderedModelPins, MODEL_SOURCE_LABELS } from "@/react-app/domains/models/model-catalog";
 
-export function commandPaletteModelTarget(workbench: { focusedPane: string; secondary: { sessionId: string } | null }, primarySessionId: string | null) {
-  return workbench.focusedPane === "secondary" && workbench.secondary ? workbench.secondary.sessionId : primarySessionId;
+export function commandPaletteModelTarget(workbench: { focusedPane: string; secondary: { sessionId: string; draftDestination?: unknown } | null }, primarySessionId: string | null) {
+  if (workbench.focusedPane !== "secondary" || !workbench.secondary) return primarySessionId;
+  // An unsent side chat has no session yet: like its composer, it uses the new-task model.
+  return workbench.secondary.draftDestination ? null : workbench.secondary.sessionId;
+}
+
+/**
+ * The models the palette lists for its target: the focused composer's own list
+ * when it published one, else the route's shared catalog. Never empty just
+ * because the focused pane is a side window.
+ */
+export function commandPaletteModelOptions(published: readonly ModelOption[] | undefined, shared: readonly ModelOption[]): ModelOption[] {
+  return [...(published?.length ? published : shared)];
 }
 
 /** Settings has no focused session: palette and modal selections both update the default-model preference. */

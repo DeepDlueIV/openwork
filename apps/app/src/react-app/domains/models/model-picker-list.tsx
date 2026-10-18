@@ -222,7 +222,7 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
                 { type: "item", id: "copy", label: "Copy model ID", onSelect: () => navigator.clipboard.writeText(`${option.providerID}/${option.modelID}`) },
               ];
               return <ActionContextMenu key={key} actions={actions} render={<CommandItem
-                value={`${key} ${name} ${subtitle}`} disabled={blocked}
+                value={`${group.value}:${key} ${name} ${subtitle}`} disabled={blocked}
                 data-model-key={key} data-checked={active} data-testid={`model-option-${option.providerID}-${option.modelID}`}
                 aria-label={`${name}, ${subtitle}, ${MODEL_SOURCE_LABELS[modelSource(option)]}${active ? ", current model" : ""}`}
                 tabIndex={blocked ? -1 : 0} className="group/model min-h-9 gap-2.5 rounded-lg px-2 py-1.5 text-sm data-disabled:opacity-55"

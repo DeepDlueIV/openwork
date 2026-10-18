@@ -21,6 +21,7 @@ export function TeamPluginAccessPanel({ teamId, teamName, orgSlug, canRevoke }: 
   const source = (item: TeamPluginAccessItem) => item.edge === "direct_team" ? "Shared with this team"
     : item.edge === "org_wide" ? "Shared with everyone" : `From ${item.marketplace?.name ?? "a marketplace"}`;
 
+  if (!access.canRead) return <section aria-label="Plugins & connections" data-testid="team-plugin-access"><DenNotice tone="neutral" message="Viewing this team's access needs View any team or membership in this team. Ask the organization owner." /></section>;
   return <section aria-label="Plugins & connections" data-testid="team-plugin-access">
     <h2 className="mb-2 text-[13px] font-medium text-gray-700">Plugins & connections</h2>
     {access.error ? <DenNotice tone="error" message={access.data && !denied ? `Couldn't refresh team access. Last verified ${new Date(access.dataUpdatedAt).toLocaleString()}. Changes are blocked until verification succeeds.` : "Couldn't verify team access. Try again or ask an organization admin to check your access."} action={<DenButton variant="secondary" size="sm" loading={access.isFetching} onClick={() => void access.refetch()}>Try again</DenButton>} /> : null}

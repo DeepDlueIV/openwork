@@ -1,8 +1,10 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { accessInventory } from "../worlds/access-inventory.ts";
+import { accessInventory, accessInventoryLegacy } from "../worlds/access-inventory.ts";
+import { record, rows, text } from "../worlds/org-invite.ts";
 
 const test = spec.world(accessInventory, { timeout: 900_000, resources: { surfaces: ["web"], services: ["den"] } });
+const legacyTest = spec.world(accessInventoryLegacy, { timeout: 900_000, resources: { surfaces: ["web"], services: ["den"] } });
 
 test("an owner searches every loaded role while lists and pickers keep only one small page mounted", async ({ world, user, probe, step, evidence }) => {
   for (const count of [10_000, 20, 1, 0]) {
@@ -40,12 +42,21 @@ test("an owner searches every loaded role while lists and pickers keep only one 
     await user.click({ testId: "member-role-change" });
     const mounted = await probe.eventually(() => probe.dom('[data-testid="member-role-choice"] [role="option"]'), { within: 30_000, label: "the role inventory reached the picker", until: (result) => result.elements.length > 2 });
     expect(mounted.elements.length).toBeLessThanOrEqual(50);
+    await user.press("End");
+    expect((await probe.dom('[data-testid="member-role-choice"] [role="option"][aria-selected="true"]')).elements[0]?.text).toContain("Role 00047");
+    await user.press("Home");
+    expect((await probe.dom('[data-testid="member-role-choice"] [role="option"][aria-selected="true"]')).elements[0]?.text).toBe("Member");
+    await user.press("ArrowDown");
+    expect((await probe.dom('[data-testid="member-role-choice"] [role="option"][aria-selected="true"]')).elements[0]?.text).toBe("Admin");
     await user.click({ role: "button", label: "Next roles" });
     await user.see({ role: "option", label: /Role 00048/ });
     const start = Date.now();
     await user.type({ placeholder: "Search roles" }, "Role 09999", { replace: true });
     await user.see({ role: "option", label: /Role 09999/ });
     const found = await probe.dom('[data-testid="member-role-choice"] [role="option"]');
+    await user.press("Home");
+    await user.press("Enter");
+    await user.see({ testId: "member-role-change" }, { text: "Role 09999" });
     const detailReads = (await world.traffic.requestLog()).filter((entry) => entry.method === "GET" && /\/permissions\/sets\/[^/?]+$/.test(entry.path));
     evidence.recordAssertionEvidence("picker input is bounded without one permissions request per role", `mounted options=${mounted.elements.length}; last-role matches=${found.elements.length}; detail reads=${detailReads.length}; input-to-result=${Date.now() - start}ms`, mounted.elements.length === 50 && found.elements.length === 1 && detailReads.length < 10);
     expect(found.elements).toHaveLength(1);
@@ -54,6 +65,9 @@ test("an owner searches every loaded role while lists and pickers keep only one 
   });
   await step("a failed inventory is never presented as an empty or complete role list and retries in place", async () => {
     await user.navigate(world.url("/dashboard/members?tab=roles"));
+    // Wait for the new document's real inventory before issuing a reload;
+    // Page.navigate's acknowledgement alone does not mean CDP reattachment.
+    await user.see({ testId: "roles-completeness" });
     await world.failInventory();
     await user.reload();
     await user.see({ text: "Couldn't verify the complete role list. Try again before choosing a role." });
@@ -78,9 +92,27 @@ test("an owner reads elevated access and every source on a narrow screen, with a
     await user.see({ text: "Role 00000" }, { timeoutMs: 90_000 });
     await user.click({ label: "Teams with Role 00000: 3 sources" });
     await user.see({ text: "Operations and support team" });
+    const focused = await probe.dom('[data-testid="access-summary-trigger"]');
+    expect(focused.elements.some((entry) => entry.focused)).toBe(true);
+    await user.press("Enter");
+    await user.notSee({ text: "Operations and support team" });
+    await user.press("Space");
+    await user.see({ text: "Operations and support team" });
     const view = await probe.dom('[data-testid="role-row-custom"]');
     evidence.recordAssertionEvidence("all role sources are readable without hover", `viewport=${view.viewportWidth}; document=${view.documentWidth}; disclosed rows=${view.elements.length}`, view.documentWidth <= view.viewportWidth && view.elements.length === 1);
     expect(view.documentWidth).toBeLessThanOrEqual(view.viewportWidth);
+    await user.screenshot();
+  });
+  await step("a member with team-granted Admin shows Admin while only the sources stay collapsed", async () => {
+    await user.click({ role: "tab", label: /^Members/ });
+    await user.see({ testId: "member-effective-role", text: "Admin" });
+    await user.notSee({ text: "Organization role: Member" });
+    const org = record((await probe.api(world.den.admin, "/v1/org")).body);
+    const member = rows(org.members).find((entry) => entry.id === world.teamMemberId);
+    const levels = await probe.dom('[data-testid="member-effective-role"]');
+    const safe = member?.role === "member" && member.effectiveRole === "admin" && levels.elements.some((entry) => entry.text === "Admin");
+    evidence.recordAssertionEvidence("the collapsed level uses effective access, not the first source label", `direct role=${String(member?.role)}; effective role=${String(member?.effectiveRole)}; collapsed levels=${levels.elements.map((entry) => entry.text).join(", ")}`, safe);
+    expect(safe).toBe(true);
     await user.screenshot();
   });
   await step("a failed team-access read offers retry instead of asking the owner to reload", async () => {
@@ -97,8 +129,49 @@ test("an owner reads elevated access and every source on a narrow screen, with a
     await user.screenshot();
   });
   await step("a plain member still cannot read access for a team they do not belong to", async () => {
-    const result = await probe.api(world.den.members.plain, `/v1/teams/${world.teams[0].id}/plugin-access`);
+    const result = await probe.api(world.den.members.restricted, `/v1/teams/${world.teams[0].id}/plugin-access`);
     evidence.recordAssertionEvidence("readable summaries do not expand authorization", `member read HTTP ${result.response.status}; shared tool name leaked=${result.text.includes("Shared editing tools")}`, [403, 404].includes(result.response.status) && !result.text.includes("Shared editing tools"));
     expect([403, 404]).toContain(result.response.status);
+  });
+});
+
+legacyTest("an owner can change Member to Admin by keyboard with role features off, without changing teams or another member's access", async ({ world, user, probe, step, evidence }) => {
+  let targetId = "";
+  await step("Home, End, arrows and Enter select Admin and return focus to the role field", async () => {
+    await user.see({ text: "Restricted Member" }, { timeoutMs: 90_000 });
+    const org = record((await probe.api(world.den.admin, "/v1/org")).body);
+    const before = rows(org.members).find((entry) => record(entry.user).name === "Restricted Member");
+    targetId = text(before?.id);
+    expect(before?.role).toBe("member");
+    await user.click({ role: "button", label: "Open actions for Restricted Member" });
+    await user.click({ role: "menuitem", label: "Edit role" });
+    await user.click({ role: "button", label: "Role for Restricted Member" });
+    await user.see({ role: "listbox", label: "Role for Restricted Member" });
+    await user.press("End");
+    await user.press("Home");
+    await user.press("ArrowDown");
+    await user.press("Enter");
+    await user.see({ role: "button", label: "Role for Restricted Member" }, { text: "Admin" });
+    const field = await probe.dom('button[aria-label="Role for Restricted Member"]');
+    evidence.recordAssertionEvidence("keyboard selection commits Admin with focus restored", `selected=${field.elements[0]?.text}; field focused=${field.elements[0]?.focused}`, field.elements[0]?.text === "Admin" && field.elements[0]?.focused === true);
+    expect(field.elements[0]?.focused).toBe(true);
+    await user.screenshot();
+  });
+  await step("saving changes only the direct organization role, with no team write", async () => {
+    await user.click({ testId: "member-role-save" });
+    await user.notSee({ testId: "member-role-editor" });
+    const org = record((await probe.api(world.den.admin, "/v1/org")).body);
+    const role = rows(org.members).find((entry) => entry.id === targetId)?.role;
+    const teamWrites = (await world.traffic.requestLog()).filter((entry) => ["PUT", "PATCH"].includes(entry.method) && entry.path.includes("/v1/teams/"));
+    evidence.recordAssertionEvidence("the keyboard choice saves as independent organization Admin", `direct role=${String(role)}; team writes=${teamWrites.length}`, role === "admin" && teamWrites.length === 0);
+    expect(role).toBe("admin");
+    expect(teamWrites).toHaveLength(0);
+    await user.screenshot();
+  });
+  await step("an ordinary observer is still refused that person's effective permissions", async () => {
+    await user.see({ text: "Restricted Member" });
+    const refused = await probe.api(world.den.members.observer, `/v1/members/${targetId}/permissions`);
+    evidence.recordAssertionEvidence("another member's authorization is unchanged", `observer read HTTP ${refused.response.status}`, refused.response.status === 403);
+    expect(refused.response.status).toBe(403);
   });
 });

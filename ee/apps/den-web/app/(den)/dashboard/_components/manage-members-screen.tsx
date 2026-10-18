@@ -235,7 +235,7 @@ export function ManageMembersScreen() {
     const set = value.startsWith("role:") ? customSets.find((entry) => entry.id === value.slice(5)) : null;
     const teams = set ? roleTeams(set.id) : [];
     const referencedTeams = set?.teams.length ? set.teams : set?.team ? [set.team] : [];
-    const unverifiedTeams = referencedTeams.some((reference) => !teams.some((team) => team.id === reference.id));
+    const unverifiedTeams = referencedTeams.some((reference) => !teamsById.has(reference.id));
     const grantable = teams.filter((team) => !team.managedByScim && (!team.grantsOrganizationAdmin || access.canManageAdminTeams));
     const selected = grantable.find((team) => team.id === teamId) ?? (referencedTeams.length === 1 ? grantable[0] : undefined);
     return { set, teams, grantable, selected, unverifiedTeams, blocked: value.startsWith("role:") && (!roleSets.isSuccess || unverifiedTeams || !set || !selected || Boolean(roleLocks.get(set.id)) || !access.canManageTeams) };
@@ -835,10 +835,16 @@ export function ManageMembersScreen() {
 
             {visibleMembers.length === 0 ? <p className="px-5 py-6 text-[13px] text-gray-500" role="status">{memberFilter.trim() ? "No members match your filter." : "No members yet."}</p> : null}
             {visibleMembers.map((member) => {
-              const roleLabels = [
-                ...splitRoleString(member.role).map(formatRoleLabel),
-                ...(teamRoles ? teamRoleLabels({ memberId: member.id, ownRole: member.isOwner ? "owner" : getOrgAccessFlags(member.role, false).isAdmin ? "admin" : "member", teams: orgContext.teams, customTeamIds: customRoles.teamIds, customRoleNameByTeam: sharedRoles ? customRoles.nameByTeam : undefined }) : member.adminTeams.length > 0 ? ["Admin"] : []),
+              // The collapsed level comes from the API's effective role, never
+              // from sorting/guessing privilege in a list of source labels.
+              const effectiveRoleLabel = !member.joinedAt ? `Invited as ${splitRoleString(member.role).map(formatRoleLabel).join(", ")}` : member.isOwner ? "Owner" : getOrgAccessFlags(member.effectiveRole, false).isAdmin ? "Admin" : splitRoleString(member.effectiveRole).map(formatRoleLabel).join(", ");
+              const memberTeams = member.id === orgContext.currentMember.id ? orgContext.currentMemberTeams : orgContext.teams.filter((team) => team.memberIds.includes(member.id));
+              const accessSources = [
+                `${member.joinedAt ? "Organization role" : "Invitation role"}: ${splitRoleString(member.role).map(formatRoleLabel).join(", ")}`,
+                ...member.adminTeams.map((team) => `Admin via ${team.name}`),
+                ...(teamRoles ? memberTeams.flatMap((team) => { const role = customRoles.setByTeam.get(team.id); return role ? [`${sharedRoles ? `${role.name} (custom role)` : "Custom role"} via ${team.name}`] : []; }) : []),
               ];
+              const completeTeamSources = access.canViewTeams || member.id === orgContext.currentMember.id;
               const isInvited = !member.joinedAt;
               const inviteId = member.inviteId;
               const memberAccess = getOrgAccessFlags(member.effectiveRole, member.isOwner);
@@ -870,13 +876,14 @@ export function ManageMembersScreen() {
                 >
                   <OrgMemberIdentity member={member} compact={listToolbars} />
                   <div className="col-start-1 row-start-2 min-w-0 break-words pl-11 text-[13px] text-gray-500 lg:col-auto lg:row-auto lg:pl-0" data-testid="member-role">
-                    {listToolbars ? <AccessSummary items={[...new Set(roleLabels)]} label={`Roles for ${member.user.name || member.user.email}`} /> : splitRoleString(member.role).map(formatRoleLabel).join(", ")}
+                    <span className="block font-medium text-gray-700" data-testid="member-effective-role">{effectiveRoleLabel}</span>
+                    {listToolbars && accessSources.length > 1 ? <AccessSummary items={accessSources} label={`${completeTeamSources ? "Access sources" : "Known access sources"} for ${member.user.name || member.user.email}`} preview="count" /> : null}
                     {!listToolbars && teamRoles ? (
                       <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} customRoleNameByTeam={sharedRoles ? customRoles.nameByTeam : undefined} />
                     ) : !listToolbars && member.adminTeams.length > 0 ? (
                       <span className="mt-1 block text-[12px] text-cyan-700">Admin via {member.adminTeams.map((team) => team.name).join(", ")}</span>
                     ) : null}
-                    {teamRoles && permissionsFeature && !customRoles.verified ? <span className="block whitespace-normal text-[12px] text-gray-500">{access.canViewPermissions ? "Team roles not verified" : "Custom roles not visible"}</span> : null}
+                    {teamRoles && permissionsFeature && (!customRoles.verified || !completeTeamSources) ? <span className="block whitespace-normal text-[12px] text-gray-500">{!access.canViewPermissions ? "Custom roles not visible" : !completeTeamSources ? "Some team roles aren't visible" : "Team roles not verified"}</span> : null}
                   </div>
                   <span data-testid="member-joined" className="col-start-1 row-start-3 pl-11 text-[13px] text-gray-500 lg:col-auto lg:row-auto lg:pl-0">
                     {member.joinedAt ? <span className="lg:hidden">Joined </span> : null}

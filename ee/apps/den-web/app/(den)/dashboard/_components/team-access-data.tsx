@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getErrorMessage, getRequestError, requestJson } from "../../_lib/den-flow";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
+import { getOrgAccessFlags } from "../../_lib/den-org";
 
 export type TeamPluginAccessEdge = "direct_team" | "via_catalog" | "org_wide";
 export type TeamPluginAccessRole = "viewer" | "editor" | "manager";
@@ -115,10 +116,13 @@ export class TeamAccessReadError extends Error {
 }
 
 export function useTeamPluginAccess(teamId: string) {
-  const { orgId } = useOrgDashboard();
-  return useQuery({
-    queryKey: teamAccessQueryKeys.detail(teamId, orgId ?? ""),
-    enabled: Boolean(orgId),
+  const { orgId, orgContext } = useOrgDashboard();
+  // Match the API's teams.view-or-membership rule using its authoritative
+  // membership association, not a potentially partial team-directory projection.
+  const canRead = Boolean(orgId && orgContext?.organization.id === orgId && (getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canViewTeams || orgContext.currentMemberTeams.some((team) => team.id === teamId)));
+  const query = useQuery({
+    queryKey: [...teamAccessQueryKeys.detail(teamId, orgId ?? ""), orgContext?.currentMember.id ?? ""],
+    enabled: canRead,
     retry: false,
     queryFn: async ({ signal }): Promise<TeamPluginAccessItem[]> => {
       const { response, payload } = await requestJson(
@@ -136,6 +140,7 @@ export function useTeamPluginAccess(teamId: string) {
       return items.filter((item): item is TeamPluginAccessItem => item !== null);
     },
   });
+  return { ...query, data: canRead ? query.data : undefined, canRead };
 }
 
 export function useRevokeTeamPluginAccess() {

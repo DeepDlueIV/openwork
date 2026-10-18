@@ -34,7 +34,7 @@ available("an owner enables the explicit Luna default and keeps their saved mode
   });
   await step("the owner keeps an explicit organization model instead of Luna", async () => {
     await user.click({ role: "combobox", label: "Default model" });
-    await user.click({ role: "option", label: "Another model" });
+    await user.click({ role: "option", label: /Another model$/ });
     await user.click({ role: "button", label: "Save model" });
     await user.see({ text: "Saved. New messages use Another model." });
     await user.reload();
@@ -72,7 +72,7 @@ unavailable("an owner sees unavailable Luna without a silent fallback", async ({
   });
   await step("the owner explicitly chooses an available model to recover", async () => {
     await user.click({ role: "combobox", label: "Default model" });
-    await user.click({ role: "option", label: "Another model" });
+    await user.click({ role: "option", label: /Another model$/ });
     await user.click({ role: "button", label: "Save model" });
     await user.see({ text: "Saved. New messages use Another model." });
     await user.notSee({ text: "Workbot can't use GPT-6 Luna right now." });

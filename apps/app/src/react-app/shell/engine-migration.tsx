@@ -670,7 +670,7 @@ function MigrationBanner(props: { progress: ProgressState }) {
             ? t("engine_migration.current_engine", { engine: props.progress.selected })
             : <>{count ? `${count}. ` : ""}{t("engine_migration.banner_note")}</>}</p>
         </div>
-        <Button type="button" size="xs" variant="outline" onClick={showEngineMigrationProgress}>
+        <Button type="button" size="xs" variant="outline" className={paused ? "h-5" : undefined} onClick={showEngineMigrationProgress}>
           {t(paused ? "engine_migration.review_upgrade" : "engine_migration.show_progress")}
         </Button>
       </div>

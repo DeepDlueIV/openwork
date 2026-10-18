@@ -277,12 +277,12 @@ export function ManagedDeploymentsScreen() {
         description: `This removes the deployment record and its pending approval from this workspace. ${providerName(deploymentToRemove.provider)} resources and charges are unchanged. This cannot be undone.`,
         action: "Remove",
       } : null} onConfirm={async () => { if (deploymentToRemove) await remove(deploymentToRemove); }} onClose={() => setDeploymentToRemove(null)} />
-      <CreateDeploymentDialog open={dialogOpen} onOpenChange={setDialogOpen} configuration={configuration} runReauthableAction={runReauthableAction}
+      {configuration ? <CreateDeploymentDialog key={`${orgId}:${orgContext?.currentMember.id}`} open={dialogOpen} onOpenChange={setDialogOpen} configuration={configuration} runReauthableAction={runReauthableAction}
         onCreated={(item) => {
           replace(item); setSelectedId(item.id); setLaunch(null); setDialogOpen(false);
           // Preparing a handoff does not run it or approve billable cloud work.
           if (item.provider === "gcp") void prepare(item, "install");
-        }} />
+        }} /> : null}
     </section>
   );
 }
@@ -399,11 +399,11 @@ function DeploymentDetail({ deployment, launch, busy, canManage, canPrepare, cop
 }
 
 function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthableAction, onCreated }: {
-  open: boolean; onOpenChange: (open: boolean) => void; configuration: Configuration | null;
+  open: boolean; onOpenChange: (open: boolean) => void; configuration: Configuration;
   runReauthableAction: (label: string, action: () => Promise<void>) => Promise<void>; onCreated: (deployment: ManagedDeployment) => void;
 }) {
-  const [chosenProvider, setChosenProvider] = useState<"aws" | "gcp" | null>(null);
-  const provider = chosenProvider ?? (configuration?.providers.find((entry) => entry.available && (entry.provider === "aws" || entry.provider === "gcp"))?.provider === "gcp" ? "gcp" : "aws");
+  // Snapshot the initial cloud once: polling a late lock must not switch the entered target to another cloud.
+  const [provider, setProvider] = useState<"aws" | "gcp">(() => configuration.providers.find((entry) => entry.available && (entry.provider === "aws" || entry.provider === "gcp"))?.provider === "gcp" ? "gcp" : "aws");
   const readiness = configuration?.providers.find((entry) => entry.provider === provider);
   const [projectId, setProjectId] = useState("");
   const [projectNumber, setProjectNumber] = useState("");
@@ -423,6 +423,8 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -444,13 +446,14 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
           const recovery = deploymentActionError(result.payload, provider);
           throw recovery ? new DeploymentReadinessError(recovery) : getRequestError(result.payload, result.response, "Couldn't create the deployment.");
         }
-        onCreated(managedDeploymentSchema.parse(result.payload));
-        setConsent(false);
+        const created = managedDeploymentSchema.parse(result.payload);
+        // A completed request still belongs to its original organization/account.
+        if (mounted.current) { onCreated(created); setConsent(false); }
       });
     } catch (failure) {
-      setError(failure instanceof Error ? failure : new Error("Couldn't create the deployment."));
+      if (mounted.current) setError(failure instanceof Error ? failure : new Error("Couldn't create the deployment."));
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -469,7 +472,7 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
             <div className="space-y-1 text-[13px]">
               <label htmlFor="deployment-cloud" className="text-gray-700">Cloud</label>
               <DenSelect id="deployment-cloud" value={provider} onChange={(event) => {
-                if (event.target.value === "aws" || event.target.value === "gcp") { setChosenProvider(event.target.value); setConsent(false); setError(null); }
+                if (event.target.value === "aws" || event.target.value === "gcp") { setProvider(event.target.value); setConsent(false); setError(null); }
               }}>
                 {(configuration?.providers ?? []).map((entry) => (
                   <option key={entry.provider} value={entry.provider} disabled={!entry.available || entry.provider === "azure"}>{providerName(entry.provider)}{!entry.available ? " (locked)" : ""}</option>
@@ -518,7 +521,7 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
               <input type="checkbox" className="mt-0.5" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
               <span className="min-w-0" data-testid="deployment-cost-consent">{provider === "gcp" ? "I control this Google Cloud project and public DNS zone, with billing enabled. I'll review the installer's permissions and run its command in Google Cloud Shell to approve. Only running the command creates or changes billable Cloud Run, Cloud SQL, load balancer and storage resources in my project. Removing this record does not delete those resources or stop charges. OpenWork receives deployment progress and health checks, never the first-sign-in code." : `I control this AWS account and hosted zone. AWS bills my account for the containers, database and load balancer${networkMode === "dedicated" ? " and NAT gateway (about $100–150 a month at the small size)" : " (about $60–100 a month at the small size, plus my network's own costs)"}. I'll review the installer's permissions in AWS before approving.`}</span>
             </label>
-            <DeploymentActionFeedback error={error} />
+            {readiness && !readiness.available ? <ProviderLock entry={readiness} /> : <DeploymentActionFeedback error={error} />}
             <DenButton type="submit" data-testid="create-deployment-submit" loading={busy} disabled={!consent || !readiness?.available}>{provider === "gcp" ? "Prepare Google Cloud approval" : "Create deployment"}</DenButton>
           </form>
         </Dialog.Popup>

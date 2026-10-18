@@ -67,6 +67,17 @@ export async function readDom(surface: Surface, selector: string) {
   return snapshot;
 }
 
+/** Browser-native file selection. Uses the real file input/change path without opening an OS picker or evaluating app state. */
+export async function attachFiles(surface: Surface, selector: string, files: string[]): Promise<void> {
+  const document = await surface.client.send("DOM.getDocument", { depth: 0 });
+  const root = isRecord(document) && isRecord(document.root) ? numberField(document.root, "nodeId") : null;
+  if (!root) throw new Error("The file picker document is unavailable");
+  const result = await surface.client.send("DOM.querySelectorAll", { nodeId: root, selector });
+  const nodes = isRecord(result) && Array.isArray(result.nodeIds) ? result.nodeIds : [];
+  if (nodes.length !== 1 || typeof nodes[0] !== "number") throw new Error(`Expected one file input for ${selector}; found ${nodes.length}`);
+  await surface.client.send("DOM.setFileInputFiles", { nodeId: nodes[0], files });
+}
+
 interface SerializedMatcher {
   kind: "string" | "regexp";
   value: string;

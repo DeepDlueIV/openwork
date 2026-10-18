@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { streamFeedback, streamFeedbackPrompt, streamFeedbackReasoning, streamFeedbackText, streamFeedbackTail } from "../worlds/stream-feedback.ts";
+import { streamFeedback, streamFeedbackPrompt, streamFeedbackReasoning, streamFeedbackText } from "../worlds/stream-feedback.ts";
 import { streamFeedbackDistribution, summarizeStreamFeedback } from "../worlds/stream-feedback-summary.ts";
 
 const test = spec.world(streamFeedback, {
@@ -12,6 +12,7 @@ const test = spec.world(streamFeedback, {
 // Samples are deltas in one turn, not independent turns. DOM/rAF are not physical paint.
 // The 300 ms p95 budget is specific to this small loopback fixture, not a model/task SLA.
 const frameP95BudgetMs = 300;
+const finalSentence = /The progress note is complete\./;
 
 test("a member sees reasoning and an answer grow before the model finishes", async ({ world, user, probe, step, evidence }) => {
   await step("before: reasoning stays collapsed while the first real deltas arrive", async () => {
@@ -76,8 +77,8 @@ test("a member sees reasoning and an answer grow before the model finishes", asy
       });
       if (chunk === streamFeedbackText[0]) await user.screenshot();
     }
-    await user.see({ text: "t23" });
-    await user.notSee({ text: streamFeedbackTail });
+    await user.see({ text: /\bt23\b/ });
+    await user.notSee({ text: finalSentence }, { timeoutMs: 100 });
     const feedback = await world.feedback();
     const held = await world.providerState();
     const summary = summarizeStreamFeedback(feedback.samples);
@@ -95,7 +96,7 @@ test("a member sees reasoning and an answer grow before the model finishes", asy
 
   await step("after: only releasing the final sentence lets the model finish", async () => {
     await world.releaseText();
-    await user.see({ text: streamFeedbackTail });
+    await user.see({ text: finalSentence });
     await user.see({ role: "button", label: "Run task" }, { timeoutMs: 30_000 });
     await user.notSee({ role: "button", label: "Stop" }, { timeoutMs: 100 });
     const completed = await probe.eventually(() => world.providerState(), {

@@ -1757,7 +1757,7 @@ function MessageGroup({
               not compounded opacity. Hidden actions retain their layout slot. */}
           {modelFooterEnabled && !isLiveGroup && resolvedReplyModel ? <span
             data-testid="reply-model"
-            className={cn("inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", isLastGroup ? "opacity-100" : "opacity-0")}
+            className={cn("inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground dark:text-foreground/70 transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", isLastGroup ? "opacity-100" : "opacity-0")}
           >
             <span className="sr-only">Replied with </span>
             <span aria-hidden="true" className="flex size-3 shrink-0 items-center justify-center">

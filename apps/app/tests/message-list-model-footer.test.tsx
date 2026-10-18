@@ -78,6 +78,7 @@ test("latest completed reply has one accessible footer label and a fixed brand s
   expect(label.previousElementSibling?.className).toContain("group-focus-within/message-group:opacity-100")
   expect(label.className).toContain("pointer-coarse:opacity-100")
   expect(label.className).toContain("motion-reduce:transition-none")
+  expect(label.className).toContain("dark:text-foreground/70")
 })
 
 test("collapsed steps retain duration and count, never duplicate the footer model", async () => {
@@ -103,6 +104,19 @@ test("older turns keep their footer hover-only", async () => {
   expect(labels.length).toBe(2)
   expect(labels[0].className.split(" ")).toContain("opacity-0")
   expect(labels[1].className.split(" ")).toContain("opacity-100")
+})
+
+test("an Auto reply renders the OpenWork mark beside the routed name", async () => {
+  enabled = true
+  const message = answer("reply")
+  message.metadata = { opencode: { replyModel: {
+    requestedProviderID: "openwork", providerID: "openai", modelID: "gpt-6", name: "GPT-6", resolved: true,
+  } } }
+  const container = await render([message])
+  const label = container.querySelector('[data-testid="reply-model"]')
+  expect(label?.textContent).toBe("Replied with GPT-6")
+  expect(label?.querySelector('svg[aria-label="OpenWork"]')).not.toBeNull()
+  expect(label?.querySelector('svg[aria-label="OpenWork"]')?.closest('[aria-hidden="true"]')).not.toBeNull()
 })
 
 test("a streaming reply does not claim a completed model", async () => {

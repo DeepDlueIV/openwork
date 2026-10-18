@@ -265,6 +265,8 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
   const priorityError = getPriorityError(draft, isDefault);
   const disabledPromptCopy = getDisabledPromptCopy(isDefault);
   const formDisabled = saving || togglingEnabled || !canManage;
+  const recoveringAssignments = assignmentRecovery && isEditing;
+  const policyFieldsDisabled = formDisabled || recoveringAssignments;
   const restrictedMode = draft.mode === "restricted";
 
   const handleSelectMode = (mode: PolicyMode) => {
@@ -305,9 +307,9 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
       await runReauthableAction("save-desktop-policy", async () => {
         setSaving(true);
         const payload: DesktopPolicyPayload = {
-          policyName,
-          policy: policyDocumentFromDraft(draft),
-          priority: isDefault ? 0 : draft.priority,
+          policyName: recoveringAssignments && policy ? policy.policyName : policyName,
+          policy: recoveringAssignments && policy ? policy.policy : policyDocumentFromDraft(draft),
+          priority: recoveringAssignments && policy ? policy.priority : isDefault ? 0 : draft.priority,
           memberIds: isDefault ? [] : draft.memberIds,
           teamIds: isDefault ? [] : draft.teamIds,
           roles: isDefault ? [] : draft.roles,
@@ -363,8 +365,8 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
   return (
     <DashboardPageTemplate
       icon={Laptop}
-      title={isEditing ? "Edit desktop policy" : "New desktop policy"}
-      description="Advanced app defaults and grants. Manage team modes and permissions from Team → Access."
+      title={recoveringAssignments ? "Review policy assignments" : isEditing ? "Edit desktop policy" : "New desktop policy"}
+      description={recoveringAssignments ? undefined : "Advanced app defaults and grants. Manage team modes and permissions from Team → Access."}
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <Link
@@ -419,7 +421,7 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
               <DenInput
                 value={draft.policyName}
                 onChange={(event) => setDraft({ ...draft, policyName: event.target.value })}
-                disabled={formDisabled || isDefault}
+                disabled={policyFieldsDisabled || isDefault}
               />
               {isDefault ? (
                 <span className="text-[12px] text-gray-500">The default desktop policy name cannot be changed.</span>
@@ -443,7 +445,7 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
                       priority: Number.isInteger(nextPriority) ? nextPriority : 0,
                     });
                   }}
-                  disabled={formDisabled}
+                  disabled={policyFieldsDisabled}
                 />
                 <span id={PRIORITY_HELP_ID} className="text-[12px] text-gray-500">Higher wins when multiple targeted policies match.</span>
                 {priorityError ? (
@@ -464,6 +466,7 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
             ) : null}
           </div>
 
+          {!recoveringAssignments ? <>
           <fieldset className="grid gap-3" aria-describedby={POLICY_MODE_HELP_ID} data-testid="desktop-policy-mode">
             <legend className="text-[13px] font-medium text-gray-700">Policy mode</legend>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -615,7 +618,9 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
             )}
           </div>
 
-          {assignmentRecovery && !isDefault && policy?.roles.length ? (
+          </> : <p className="text-[13px] text-gray-500">Policy values and priority are unchanged. Only the assignments below are saved.</p>}
+
+          {recoveringAssignments && !isDefault && policy?.roles.length ? (
             <fieldset className="grid gap-2 text-[13px] text-gray-700">
               <legend className="mb-2 font-medium">Existing role assignments</legend>
               {policy.roles.map((role) => (

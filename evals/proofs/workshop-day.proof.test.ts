@@ -60,8 +60,15 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     await appUser.type("composer", "", { replace: true });
     return "";
   }
+  /** The app can still be finishing its first boot; retry the product's own New session a few times. */
+  async function newSession(title: string) {
+    for (let attempt = 1; ; attempt++) {
+      try { await appAgent.createSession(title); await appUser.see("composer"); return; }
+      catch (error) { if (attempt >= 4) throw error; await new Promise((resolve) => setTimeout(resolve, 15_000)); }
+    }
+  }
   async function turn(id: string, prompt: string, options: { session?: string; skill?: RegExp } = {}) {
-    if (options.session) await appAgent.createSession(options.session);
+    if (options.session) await newSession(options.session);
     const before = await world.observe();
     const since = ids(before.messages);
     const inferenceStart = before.inference.length;

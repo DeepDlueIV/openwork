@@ -14,6 +14,7 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }) {
   let workbotUrl = "";
   let starts = 0;
   let exchanges = 0;
+  let latestAuthorizationState: string | null = null;
   const provider = await startFakeHttpServer(async (request, body, response) => {
     const url = new URL(request.url ?? "/", "http://fixture");
     if (url.pathname === "/authorize") {
@@ -68,6 +69,10 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }) {
           let body = ""; for await (const chunk of req) body += chunk;
           if (url.pathname.endsWith("/connect/start")) starts++;
           const result = await den.request(token, req.method === "POST" ? "POST" : "GET", url.pathname + url.search, body ? { body: JSON.parse(body) } : {});
+          if (url.pathname.endsWith("/connect/start")) {
+            const authorizeUrl = field(result.body, "authorizeUrl");
+            latestAuthorizationState = typeof authorizeUrl === "string" ? new URL(authorizeUrl).searchParams.get("state") : null;
+          }
           res.writeHead(result.status, { "content-type": "application/json" }).end(result.text);
           return;
         }
@@ -97,7 +102,7 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }) {
       // Attach only to the real provider window opened by the user's click. No page state is read or written.
       async consent(standalone = false): Promise<Surface> {
         const targets = await listTargets(web.handle.cdpUrl);
-        const target = targets.find(target => target.type === "page" && target.url.startsWith(`${provider.url}/authorize`) && (new URL(target.url).searchParams.get("presentation") === "standalone") === standalone);
+        const target = targets.find(target => target.type === "page" && target.url.startsWith(`${provider.url}/authorize`) && new URL(target.url).searchParams.get("state") === latestAuthorizationState && (new URL(target.url).searchParams.get("presentation") === "standalone") === standalone);
         if (!target) throw new Error("The provider consent window did not open");
         const client = await connect(debuggerUrlFor(web.handle.cdpUrl, target));
         await client.send("Page.enable");

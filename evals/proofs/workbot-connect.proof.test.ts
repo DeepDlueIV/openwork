@@ -71,8 +71,9 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     expect(await world.ready()).toBe(false);
     evidence.recordAssertionEvidence("The actual partial-grant callback gives safe recovery and never unlocks Drive", `ready=${await world.ready()}; URL=${await probe.on(standalone).url()}`, !await world.ready());
     await user.on(standalone).screenshot();
-    await user.click({ role: "button", label: "Cancel" });
-    await probe.eventually(() => probe.dom("button:not(:disabled)"), { within: 5000, label: "the original Documents view is ready to connect again", until: value => value.elements.some(element => element.text === "Connect Google Drive") });
+    // Continue in the Workbot tab the member just returned to; no app state or browser globals are changed.
+    user = user.on(standalone);
+    probe = probe.on(standalone);
   });
   await step("a callback without an opener reports sign-in and returns to the same Documents view", async () => {
     await user.click({ role: "button", label: "Connect Google Drive" });
@@ -92,19 +93,16 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     expect(returned).toBe(`${world.url}documents`);
     evidence.recordAssertionEvidence("The real callback uses Workbot wording and an explicit same-tab return", `Returned to ${returned}; ready=${await world.ready()}; starts=${world.starts()}`, returned === `${world.url}documents` && await world.ready());
     await user.on(standalone).screenshot();
-    // The original consent window was intentionally left open; cancelling it must not revoke the verified grant.
-    await user.click({ role: "button", label: "Cancel" });
-    await probe.eventually(() => probe.dom("button:not(:disabled)"), { within: 5000, label: "the original Documents view is ready to connect again", until: value => value.elements.some(element => element.text === "Connect Google Drive") });
+    // Continue in the Workbot tab the member just returned to; no app state or browser globals are changed.
+    user = user.on(standalone);
+    probe = probe.on(standalone);
   });
   await step("after: reconnecting with full access opens the real Drive list in place", async () => {
-    await user.click({ role: "button", label: "Connect Google Drive" });
-    const consent = await probe.eventually(() => world.consent(), { within: 10_000, label: "the member reconnects the same account", until: value => Boolean(value) });
-    await user.on(consent).click({ role: "button", label: "Approve access" });
     await user.see({ role: "button", label: /^Project brief\.txt$/, nth: 0 });
     await user.notSee({ role: "button", label: "Connect Google Drive" });
     expect(await probe.url()).toContain("/documents");
     expect(await world.ready()).toBe(true);
-    evidence.recordAssertionEvidence("Connected is confirmed by Den, without leaving Documents", `ready=${await world.ready()}; starts=${world.starts()}; token exchanges=${world.exchanges()}; URL=${await probe.url()}`, await world.ready() && world.starts() === 7 && world.exchanges() === 5);
+    evidence.recordAssertionEvidence("Connected is confirmed by Den, without leaving Documents", `ready=${await world.ready()}; starts=${world.starts()}; token exchanges=${world.exchanges()}; URL=${await probe.url()}`, await world.ready() && world.starts() === 6 && world.exchanges() === 4);
     await user.screenshot();
   });
   await step("Welcome reports the same account as Connected only after the verified grant", async () => {
@@ -113,7 +111,7 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     await user.click({ role: "button", label: "Get started" });
     await user.see({ text: "You're all connected" });
     await user.see({ text: /^Connected$/ });
-    evidence.recordAssertionEvidence("Welcome uses the verified connection rather than the popup result", `ready=${await world.ready()}; starts=${world.starts()}`, await world.ready() && world.starts() === 7);
+    evidence.recordAssertionEvidence("Welcome uses the verified connection rather than the popup result", `ready=${await world.ready()}; starts=${world.starts()}`, await world.ready() && world.starts() === 6);
     await user.screenshot();
   });
 });

@@ -9,10 +9,10 @@ test("an administrator keeps a saved default while availability is unknown and s
   await step("before: a failed model source leaves the saved default unverified rather than removed", async () => {
     await user.reload();
     await user.see({ testId: "org-default-model-section" });
-    await user.see("Some of your organization's models couldn't be loaded. The rest are listed.");
+    await user.see({ text: "Some of your organization's models couldn't be loaded. The rest are listed." });
     await user.click({ role: "combobox", label: "Default model" });
-    await user.see("Availability not verified");
-    await user.notSee("No longer available");
+    await user.see({ text: "Availability not verified" });
+    await user.notSee({ text: "No longer available" });
     expect(world.reads()).toContain("partial");
     evidence.recordAssertionEvidence("A partial inventory cannot establish model removal", `options source=provider unavailable; picker=${await probe.text()}`, !(await probe.has("No longer available")));
     await user.screenshot();
@@ -29,9 +29,9 @@ test("an administrator keeps a saved default while availability is unknown and s
   await step("a failed options response still does not claim the saved model was removed", async () => {
     world.scenario("failed");
     await user.reload();
-    await user.see("The model list returned an unexpected response.");
-    await user.notSee("No longer available");
-    await user.notSee("Its members start on the organization default");
+    await user.see({ text: "The model list returned an unexpected response." });
+    await user.notSee({ text: "No longer available" });
+    await user.notSee({ text: "Its members start on the organization default" });
     expect(world.reads()).toContain("failed");
     evidence.recordAssertionEvidence("Failure keeps the saved choice without inventing availability or fallback", `failed read witnessed; current row=${await row()}; retry action visible`, !(await probe.has("No longer available")));
     await user.screenshot();
@@ -39,8 +39,8 @@ test("an administrator keeps a saved default while availability is unknown and s
   await step("a complete inventory reports an unlisted choice without promising an organization fallback", async () => {
     world.scenario("removed");
     await user.reload();
-    await user.see("This saved model is not in the current list. Members who can't use the resolved default keep their desktop default. Choose another model.");
-    await user.notSee("Its members start on the organization default");
+    await user.see({ text: "This saved model is not in the current list. Members who can't use the resolved default keep their desktop default. Choose another model." });
+    await user.notSee({ text: "Its members start on the organization default" });
     expect(world.reads()).toContain("removed");
     evidence.recordAssertionEvidence("Complete absence is distinguished from an unverifiable source", `all sources answered; saved choice remains visible; current row=${await row()}`, (await row()).includes("Saved model"));
     await user.screenshot();
@@ -50,8 +50,8 @@ test("an administrator keeps a saved default while availability is unknown and s
     await user.reload();
     await user.click({ role: "combobox", label: "Default model" });
     await user.click({ role: "option", label: /Model two/ });
-    await user.see("Saved organization default: Model two (Organization models).");
-    await user.notSee("New desktop chats start on");
+    await user.see({ text: "Saved organization default: Model two (Organization models)." });
+    await user.notSee({ text: "New desktop chats start on" });
     evidence.recordAssertionEvidence("Save copy names the organization scope without overriding personal workspace choices or v1 behavior", `saved status=${(await probe.dom('[role="status"]')).elements.map(element => element.text).join(" ")}`, await probe.has("Saved organization default: Model two"));
     await user.screenshot();
   });

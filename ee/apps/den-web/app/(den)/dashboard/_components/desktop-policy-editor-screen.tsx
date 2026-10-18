@@ -18,6 +18,7 @@ import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-templ
 import { DenButton } from "../../_components/ui/button";
 import { DenInput } from "../../_components/ui/input";
 import { DenTextarea } from "../../_components/ui/textarea";
+import { DenSwitch } from "../../_components/ui/switch";
 import { getDesktopPolicyAssignmentsRoute, getDesktopPoliciesRoute, getMembersRoute, getTeamRoute, getOrgAccessFlags, permissionLockReason } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import {
@@ -625,8 +626,9 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
               <legend className="mb-2 font-medium">Existing role assignments</legend>
               {policy.roles.map((role) => (
                 <label key={role} className="flex items-center gap-3">
-                  <input type="checkbox" checked={draft.roles.includes(role)} disabled={formDisabled}
-                    onChange={() => setDraft({ ...draft, roles: draft.roles.includes(role) ? draft.roles.filter((entry) => entry !== role) : [...draft.roles, role] })} />
+                  <DenSwitch checked={draft.roles.includes(role)} disabled={formDisabled}
+                    aria-label={`${role === "owner" ? "Owner" : role === "admin" ? "Admin" : "Member"} role`}
+                    onChange={(checked) => setDraft({ ...draft, roles: checked ? [...draft.roles, role] : draft.roles.filter((entry) => entry !== role) })} />
                   {role === "owner" ? "Owner" : role === "admin" ? "Admin" : "Member"} role
                 </label>
               ))}

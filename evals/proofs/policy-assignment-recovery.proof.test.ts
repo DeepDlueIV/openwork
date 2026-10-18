@@ -20,7 +20,7 @@ test("an owner can recover shared suggestion assignments without unlocking them 
     await user.see({ role: "textbox", label: "Policy name" }, { value: world.policyName, timeoutMs: 60_000 });
     await user.see({ role: "checkbox", label: "Focused audience" });
     await user.see({ role: "checkbox", label: "Other audience" });
-    await user.see({ role: "checkbox", label: "Member role" });
+    await user.see({ role: "switch", label: "Member role" });
     const url = await probe.url();
     evidence.recordAssertionEvidence("the advanced editor is reachable with the rollout on", `assignment recovery URL=${new URL(url).pathname}${new URL(url).search}`, url.includes("view=assignments") && url.includes(world.policyId));
     expect(url).toContain("view=assignments");
@@ -28,7 +28,7 @@ test("an owner can recover shared suggestion assignments without unlocking them 
   });
   await step("the owner separates one audience while retaining the policy and its enforcement values", async () => {
     await user.click({ role: "checkbox", label: "Other audience" });
-    await user.click({ role: "checkbox", label: "Member role" });
+    await user.click({ role: "switch", label: "Member role" });
     await user.click({ role: "button", label: "Save changes" });
     await user.see({ role: "link", label: `Review assignments for ${world.policyName}` }, { timeoutMs: 60_000 });
     const response = await probe.api(world.den.admin, "/v1/desktop-policies");

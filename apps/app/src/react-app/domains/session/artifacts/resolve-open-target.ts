@@ -110,11 +110,13 @@ export function nativeFileAction(
   // A remote worker may use an identical-looking path on a different machine.
   // Unknown provenance is never permission to send that path to the local shell.
   if (!options.isLocalWorkspace || !options.canUseDesktop || !options.os || options.exists === false) return null;
-  const path = localArtifactPath(root, value);
+  const base = localArtifactPath(undefined, root ?? "");
+  if (!base) return null;
+  const path = localArtifactPath(base, value);
   if (!path) return null;
-  const windowsPath = /^[A-Za-z]:[/\\]/.test(path);
-  if ((options.os === "windows") !== windowsPath) return null;
-  if (options?.reveal || !isWorkspaceContainedPath(root, path)) return { path, action: "reveal" };
+  const windowsHost = options.os === "windows";
+  if (windowsHost !== /^[A-Za-z]:[/\\]/.test(base) || windowsHost !== /^[A-Za-z]:[/\\]/.test(path)) return null;
+  if (options.reveal || !isWorkspaceContainedPath(base, path)) return { path, action: "reveal" };
   return { path, action: "open" };
 }
 

@@ -26,6 +26,8 @@ test("native actions require local provenance, a desktop, host-compatible paths 
   expect(nativeFileAction("/work", "report.pdf", { ...local, isLocalWorkspace: false })).toBeNull();
   expect(nativeFileAction("/work", "report.pdf", { ...local, canUseDesktop: false })).toBeNull();
   expect(nativeFileAction("C:\\work", "report.pdf", local)).toBeNull();
+  expect(nativeFileAction("C:\\work", "/work/report.pdf", local)).toBeNull();
+  expect(nativeFileAction(undefined, "/work/report.pdf", local)).toBeNull();
   expect(nativeFileAction("/work", "C:\\work\\report.pdf", local)).toBeNull();
   expect(nativeFileAction("C:\\work", "report.pdf", { ...local, os: "windows" })?.action).toBe("open");
   for (const path of ["https://example.test/report.pdf", "file://other/report.pdf", "\\\\server\\report.pdf", "../report.pdf"]) {

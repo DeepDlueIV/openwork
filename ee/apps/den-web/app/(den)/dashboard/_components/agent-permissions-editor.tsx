@@ -218,13 +218,14 @@ function ScopeAgents({ access, data, policy, team, area }: {
   const toast = useDenToast();
   const [draft, setDraft] = useState<AgentPermissionSettings | null>(null);
   const [draftBase, setDraftBase] = useState(policy.settings);
-  const conflict = draft !== null && !sameSettings(draftBase, policy.settings);
+  const hasEdits = draft !== null && !sameSettings(draft, draftBase);
+  const conflict = hasEdits && !sameSettings(draftBase, policy.settings);
   const [saveError, setSaveError] = useState<string | null>(null);
   const editable = data.canEdit;
-  const settings = draft ?? policy.settings;
+  const settings = hasEdits && draft ? draft : policy.settings;
   const name = team ?? "Everyone";
-  const changes = agentPermissionDefinitions.filter((definition) => !sameSetting(definition, settings[definition.key], policy.settings[definition.key])).length;
-  const dirty = draft !== null && changes > 0;
+  const changes = hasEdits && draft ? agentPermissionDefinitions.filter((definition) => !sameSetting(definition, draft[definition.key], draftBase[definition.key])).length : 0;
+  const dirty = hasEdits;
   const savedChanges = team ? changedDefinitions(policy.settings) : [];
   const hadRecord = hasTeamRecord(policy);
 
@@ -317,7 +318,7 @@ function ScopeAgents({ access, data, policy, team, area }: {
         teams={team ? [] : data.teams.filter(hasTeamRecord)}
         area={area}
         editable={editable && !save.isPending}
-        onChange={(next) => { if (!draft) setDraftBase(policy.settings); setSaveError(null); setDraft(next); }}
+        onChange={(next) => { if (!hasEdits) setDraftBase(policy.settings); setSaveError(null); setDraft(next); }}
       />
       {conflict ? <DenNotice tone="warning" message={<div><p>Saved settings changed while you were editing. Your draft is kept.</p><ul className="mt-2 grid gap-1">{agentPermissionDefinitions.filter((definition) => !sameSetting(definition, draftBase[definition.key], policy.settings[definition.key])).map((definition) => <li key={definition.key} className="break-words">{definition.label}: saved {settingLabel(definition, policy.settings[definition.key])}; your draft {settingLabel(definition, settings[definition.key])}</li>)}</ul></div>} action={<DenButton size="sm" variant="secondary" onClick={() => { if (draft) setDraft(rebaseAgentPermissionDraft(draftBase, draft, policy.settings)); setDraftBase(policy.settings); }}>Keep my edits on latest settings</DenButton>} /> : null}
       {saveError ? <DenNotice tone="error" message={saveError} /> : null}

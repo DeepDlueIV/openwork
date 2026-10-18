@@ -207,8 +207,9 @@ function PermissionSetEditor({ ready, set, update, impact }: {
   /** sharedRoles: who a save changes, e.g. "Updates Sales and Engineering, 9 people". */
   impact?: string;
 }) {
-  const [draft, setDraft] = useState<ReadonlyMap<string, { status: PermissionStatus; before: PermissionStatus }>>(new Map());
-  const conflicts = set.permissions.filter((state) => { const edit = draft.get(state.key); return edit && edit.before !== state.status && edit.status !== state.status; });
+  // This endpoint writes only changed keys, not a whole saved snapshot. Retain
+  // those edits while unrelated keys refresh; no remount or stale snapshot replay.
+  const [draft, setDraft] = useState<ReadonlyMap<string, PermissionStatus>>(new Map());
   const toast = useDenToast();
   const readOnlyReason = update.isPending ? "Saving these changes." : setReadOnlyReason(ready, set);
 
@@ -217,7 +218,7 @@ function PermissionSetEditor({ ready, set, update, impact }: {
     return [{
       key: state.key,
       status: state.status,
-      draft: draft.get(state.key)?.status ?? state.status,
+      draft: draft.get(state.key) ?? state.status,
       lockedReason: keyLockReason(ready, set, state.key, state.status, state.locked),
     }];
   });
@@ -230,15 +231,15 @@ function PermissionSetEditor({ ready, set, update, impact }: {
       const copy = new Map(current);
       if (!saved) return current;
       if (next === saved) copy.delete(key);
-      else copy.set(key, { status: next, before: current.get(key)?.before ?? saved });
+      else copy.set(key, next);
       return copy;
     });
   }
 
   async function save(toSave: PermissionChange[], undoable: boolean) {
-    if (readOnlyReason || conflicts.length > 0) return;
+    if (readOnlyReason) return;
     await update.mutateAsync(toSave);
-    setDraft((current) => new Map([...current].filter(([key, edit]) => !toSave.some((change) => change.key === key && change.status === edit.status))));
+    setDraft((current) => new Map([...current].filter(([key, edit]) => !toSave.some((change) => change.key === key && change.status === edit))));
     const count = plural(toSave.length, "change");
     toast({
       title: undoable ? `Saved ${count}` : `Undid ${count}`,
@@ -266,7 +267,6 @@ function PermissionSetEditor({ ready, set, update, impact }: {
         readOnlyReasonId={readOnlyReason ? "permission-set-read-only" : undefined}
         beforeList={readOnlyReason ? <DenNotice tone="neutral" icon={LockKeyhole} message={<span id="permission-set-read-only">{readOnlyReason}</span>} /> : null}
       />
-      {conflicts.length > 0 ? <DenNotice tone="warning" message="Saved permissions changed while you were editing. Review the current values above; your draft is kept." action={<DenButton size="sm" variant="secondary" onClick={() => setDraft((current) => new Map([...current].map(([key, edit]) => [key, { ...edit, before: set.permissions.find((state) => state.key === key)?.status ?? edit.before }])))}>Keep my edits</DenButton>} /> : null}
       {update.error ? <DenNotice tone="error" message={update.error.message} /> : null}
       {changes.length > 0 ? (
         <DenStickyActionBar
@@ -274,7 +274,7 @@ function PermissionSetEditor({ ready, set, update, impact }: {
           summary={impact ? <span className="flex flex-col"><span className="font-medium text-gray-900">{impact}</span><span>{plural(changes.length, "unsaved change")}</span></span> : <span>{plural(changes.length, "unsaved change")}</span>}
         >
           <DenButton variant="secondary" disabled={update.isPending} onClick={() => { update.reset(); setDraft(new Map()); }}>Discard</DenButton>
-          <DenButton loading={update.isPending} disabled={Boolean(readOnlyReason) || conflicts.length > 0} onClick={() => void save(changes, true).catch(() => undefined)}>Save changes</DenButton>
+          <DenButton loading={update.isPending} disabled={Boolean(readOnlyReason)} onClick={() => void save(changes, true).catch(() => undefined)}>Save changes</DenButton>
         </DenStickyActionBar>
       ) : null}
     </div>

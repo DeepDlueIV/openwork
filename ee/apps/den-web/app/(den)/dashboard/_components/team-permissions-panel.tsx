@@ -51,9 +51,10 @@ function TeamPermissionsEditor({ teamId, teamName, heading, policy, canManage, o
   const initial = teamPermissionDraft(policy?.policy);
   const [draftState, setDraftState] = useState<TeamPermissionDraft | null>(null);
   const [draftBase, setDraftBase] = useState(initial);
-  const draft = draftState ?? initial;
-  const conflict = draftState !== null && JSON.stringify(draftBase) !== JSON.stringify(initial);
-  function setDraft(next: TeamPermissionDraft) { if (!draftState) setDraftBase(initial); setDraftState(next); }
+  const hasEdits = draftState !== null && JSON.stringify(draftBase) !== JSON.stringify(draftState);
+  const draft = hasEdits && draftState ? draftState : initial;
+  const conflict = hasEdits && JSON.stringify(draftBase) !== JSON.stringify(initial);
+  function setDraft(next: TeamPermissionDraft) { if (!hasEdits) setDraftBase(initial); setDraftState(next); }
   const [review, setReview] = useState<TeamPermissionDraft | null>(null);
   const [preview, setPreview] = useState(false);
   const [pendingSite, setPendingSite] = useState(false);

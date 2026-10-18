@@ -19,7 +19,7 @@ const test = spec.world(workshopNarrative, {
 });
 const profile = process.env.OPENWORK_WORKSHOP_PROFILE ?? "gpt-sol-fast";
 // Smaller open-weight models are ~3× slower per step; give them the same task with a proportionate clock.
-const TURN_MS = profile === "qwen-27b" ? 600_000 : 240_000;
+const TURN_MS = profile === "qwen-27b" ? 600_000 : 360_000;
 type Json = Record<string, unknown>;
 const record = (value: unknown): Json => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Json : {};
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];

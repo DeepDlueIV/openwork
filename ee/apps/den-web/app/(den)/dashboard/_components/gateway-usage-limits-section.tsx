@@ -258,7 +258,7 @@ export function GatewayLimitRow({ policy, orgSlug, teams, members, providerColum
       </span>
       {providerColumn ? (
         <span className="flex w-36 shrink-0 flex-col" data-testid="gateway-limit-provider-label">
-          <span className="text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers)}</span>
+          <span className="text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers, providerLimits)}</span>
           {policy.providerId && !providerLimits ? <span className="text-[11px] text-gray-500">Not enforced while off</span> : null}
         </span>
       ) : null}

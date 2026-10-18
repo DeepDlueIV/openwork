@@ -17,7 +17,7 @@ import { DenSwitch } from "../../_components/ui/switch";
 import { getAiGatewayLimitRoute, getAiGatewayLimitsRoute, orgFeatureEnabled, type DenOrgMember, type DenOrgTeam } from "../../_lib/den-org";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
 import { useGatewayAccessProviders } from "./gateway-subject-access-data";
-import { defaultProviderLimitLabel, providerLimitLabel } from "./provider-limit-scope";
+import { providerLimitLabel } from "./provider-limit-scope";
 import { getProviderIconSlug } from "./llm-provider-data";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { formatUsageCost } from "../_features/analytics/stacked-daily-chart";
@@ -336,7 +336,7 @@ function ProviderCard({ orgId, headingId, value, onChange, enabled }: {
   const providers = useGatewayAccessProviders(orgId);
   const unverified = providers.isPending || providers.isFetching || providers.isError;
   const options = [
-    { value: DEFAULT_PROVIDER, label: defaultProviderLimitLabel, description: "A provider's own applicable limit replaces this default", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> },
+    { value: DEFAULT_PROVIDER, label: providerLimitLabel(null, undefined, enabled), description: enabled ? "A provider's own applicable limit replaces this default" : "Limits per provider are off. This default covers every provider.", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> },
     ...(providers.data ?? []).filter((provider) => provider.status !== "disabled" || provider.id === value).map((provider) => ({
       value: provider.id,
       label: provider.name,
@@ -345,7 +345,7 @@ function ProviderCard({ orgId, headingId, value, onChange, enabled }: {
     })),
   ];
   if (value && !providers.data?.some((provider) => provider.id === value)) {
-    options.push({ value, label: providerLimitLabel(value, unverified ? undefined : providers.data), description: "The saved provider scope is unchanged.", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> });
+    options.push({ value, label: providerLimitLabel(value, unverified ? undefined : providers.data, enabled), description: "The saved provider scope is unchanged.", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> });
   }
   return (
     <section className={`${CARD} mt-5`} aria-labelledby={headingId} data-testid="gateway-limit-provider">

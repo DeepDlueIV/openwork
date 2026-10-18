@@ -96,6 +96,13 @@ into it, and on demand (Actions → "Deploy runner to celld" → Run workflow). 
 - **`CELLD_DEPLOY_SLACK_WEBHOOK_URL`** (optional): an environment secret holding a Slack incoming-webhook URL for the
   channel that should hear about deploys. Without it the run posts nothing.
 
+**Keep the default model authorized.** `CELLD_RUNNER_VARS` carries a provider route, key, model alias and protocol as
+one configuration. Before replacing a retired alias, list `/models` on the intended route with that same key and
+use its exact returned id; an alias from another route is not authorization. GPT-6.1 Sol needs `openai-responses`.
+A smoke `model_http_403` is a model-access failure, not the expected unauthenticated `401` assertion. The smoke logs
+only a recognized terminal error code and whether the answer matched, never provider details or answer content.
+Repair the environment configuration; never bypass the real turn or compatibility check to deploy it.
+
 **Batch runner deploys.** Every switch cancels the turns of busy cells after `CELLD_DEPLOY_MAX_AGE_S` (60 s), so
 fewer deploys means fewer interrupted people. Keep the `dev` push trigger (the runner must not fall behind Workbot
 and den-api), and batch through the approval instead:

@@ -36,6 +36,7 @@ const { BuiltAppPreviewSync, BuiltAppChatPreview } = await import("../src/react-
 const { BuiltMcpAppPanel } = await import("../src/react-app/domains/apps/built-mcp-app-panel")
 const { removeDashboardTileCache } = await import("../src/react-app/domains/dashboard/dashboard-tile-cache")
 const { flushDashboardTileCacheStorage } = await import("../src/app/lib/dashboard-cache-storage")
+const { authorizeMcpAppAccess, denyMcpAppAccess, mcpAppAccessKey, mcpAppAccessVersion } = await import("../src/app/lib/mcp-app-presentation-cache")
 const {
   buildMcpAppCsp,
   hasPreservedMcpAppResult,
@@ -177,9 +178,8 @@ async function startupFixture(options: Pick<McpAppSandboxViewProps, "presentatio
   }
 }
 
-function authoredPart(): DynamicToolUIPart {
+function authoredPart(revisionId = "cov_00000000000000000000000000"): DynamicToolUIPart {
   const appId = "cob_00000000000000000000000000"
-  const revisionId = "cov_00000000000000000000000000"
   const resourceUri = mcpAppResourceUri(appId, revisionId)
   return {
     type: "dynamic-tool", toolName: "openwork_create_app", toolCallId: "authored-app", state: "output-available", input: {}, output: "Published",
@@ -288,7 +288,7 @@ describe("Authored App presentation", () => {
     const resourceUri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
     const app = fixture({ resourceUri })
     const resolve = spyOn(host.client, "resolveMcpApp").mockResolvedValue({ app })
-    const render = () => host.renderElement(createElement(McpAppFrame, { part, origin }))
+    const render = (nextPart = part, nextOrigin = origin) => host.renderElement(createElement(McpAppFrame, { part: nextPart, origin: nextOrigin }))
     const fallback = () => host.container.querySelector("[data-mcp-app-fallback]")
     const retry = async () => {
       const button = Array.from(host.container.querySelectorAll("button")).find(candidate => candidate.textContent === "Retry")
@@ -308,7 +308,40 @@ describe("Authored App presentation", () => {
       resolve.mockRejectedValue(new OpenworkServerError(401, "mcp_auth_required", "Sign-in needs refreshing"))
       await retry()
       expect(Boolean(fallback())).toBe(!denied)
+      await host.renderElement(createElement("div"))
+      await render()
+      expect(Boolean(fallback())).toBe(!denied)
+      await host.renderElement(createElement("div"))
+      await render(authoredPart("cov_00000000000000000000000001"))
+      expect(Boolean(fallback())).toBe(!denied)
+      await host.renderElement(createElement("div"))
+      resolve.mockResolvedValue({ app })
+      await render(part, { ...origin, sessionId: "fresh-authorized-read" })
+      expect(fallback()?.textContent).toContain("Review the project checklist")
+      expect(host.container.querySelector("iframe")).not.toBeNull()
     } finally { resolve.mockRestore(); await host.dispose() }
+  })
+
+  test("denials are principal/workspace/App scoped, revision independent, and cannot be cleared by an older authorization response", async () => {
+    const host = await startupFixture()
+    const origin = { client: host.client, workspaceId: "scoped-access", sessionId: "first-chat", readOnly: false, principalScope: "cloud:member-a:organization" }
+    const app = "cob_00000000000000000000000000"
+    const uri = mcpAppResourceUri(app, "cov_00000000000000000000000000")
+    const key = mcpAppAccessKey(origin, uri)
+    try {
+      expect(key).not.toBeNull()
+      expect(mcpAppAccessKey({ ...origin, sessionId: "another-chat" }, mcpAppResourceUri(app, "cov_00000000000000000000000001"))).toBe(key)
+      expect(mcpAppAccessKey({ ...origin, principalScope: "cloud:member-b:organization" }, uri)).not.toBe(key)
+      expect(mcpAppAccessKey({ ...origin, workspaceId: "another-workspace" }, uri)).not.toBe(key)
+      const before = mcpAppAccessVersion(key)
+      denyMcpAppAccess(key)
+      const denied = mcpAppAccessVersion(key)
+      expect(denied).toBeGreaterThan(before)
+      authorizeMcpAppAccess(key, before)
+      expect(mcpAppAccessVersion(key)).toBe(denied)
+      authorizeMcpAppAccess(key, denied)
+      expect(mcpAppAccessVersion(key)).toBe(0)
+    } finally { await host.dispose() }
   })
 
   test("does not mistake generic tool prose or a mismatched revision for authored fallback", () => {

@@ -15,7 +15,7 @@ import { AppChatArtifact } from "@/react-app/domains/apps/app-chat-artifact"
 import { createConnectionActionController, hasHostConnectionActions, standardMcpToolResult } from "./mcp-connection-action"
 import { openDesktopUrl } from "@/app/lib/desktop"
 import { mcpAppDiscoverySignature } from "@/app/lib/mcp-app-discovery-scheduler"
-import { scheduleCachedMcpAppDiscovery } from "@/app/lib/mcp-app-presentation-cache"
+import { authorizeMcpAppAccess, denyMcpAppAccess, mcpAppAccessKey, mcpAppAccessVersion, scheduleCachedMcpAppDiscovery, useMcpAppAccessDenied } from "@/app/lib/mcp-app-presentation-cache"
 import { cachedMcpAppResult, forgetMcpAppResult, MCP_APP_CACHE_REQUEST_META, MCP_APP_CACHED_RESULT_META, rememberMcpAppResult } from "@/app/lib/mcp-app-result-cache"
 import { createMcpAppOpenLoads } from "@/app/lib/mcp-app-open-loads"
 import { onCloudCredentialRefreshed, readCloudCredentialRevision } from "@/react-app/domains/connections/cloud-credential-revision"
@@ -1023,20 +1023,23 @@ export function McpAppFrame({ part, origin, onStateChange }: McpAppRendererObser
 }
 
 function McpAppFallbackFrame({ part, origin, onStateChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
-  const [accessDenied, setAccessDenied] = useState(false)
+  const context = useOptionalMessageList()
+  const summary = mcpAppSummarySchema.safeParse(preservedResult(part)?.structuredContent?.app)
+  const accessKey = summary.success ? mcpAppAccessKey(origin ?? context?.mcpAppOrigin ?? null, summary.data.resourceUri) : null
+  const accessDenied = useMcpAppAccessDenied(accessKey)
   const fallback = mcpAppTextFallback(part)
   return <>
     {fallback && !accessDenied ? <McpAppTextFallback text={fallback} /> : null}
-    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} onAccessChange={allowed => setAccessDenied(!allowed)} />
+    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} accessKey={accessKey} />
   </>
 }
 
-function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, onAccessChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin; onAccessChange: (allowed: boolean) => void }) {
+function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, accessKey }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin; accessKey: string | null }) {
   const stagedLoading = useAppBuildProgressEnabled()
   const context = useOptionalMessageList()
   const nextOrigin = surfaceOrigin ?? context?.mcpAppOrigin ?? null
   const { uiStateOwner, readOnly, getConnectionDecision, onMcpReconnect } = context ?? {}
-  const origin = useMemo(() => nextOrigin, [nextOrigin?.client, nextOrigin?.workspaceId, nextOrigin?.sessionId, nextOrigin?.engine, nextOrigin?.readOnly])
+  const origin = useMemo(() => nextOrigin, [nextOrigin?.client, nextOrigin?.workspaceId, nextOrigin?.sessionId, nextOrigin?.engine, nextOrigin?.readOnly, nextOrigin?.principalScope])
   const openworkServerClient = origin?.client
   const workspaceId = origin?.workspaceId
   const nextResult = preservedResult(part)
@@ -1096,12 +1099,10 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, onAcc
   }
   const inputArguments = inputCache.current.value
   // Retire the old view in the same commit, before the passive resolution effect runs.
-  const resolution = useMemo(() => ({}), [origin, part.toolName, part.toolCallId, result, inputArguments, resolveToken])
+  const resolution = useMemo(() => ({}), [origin, part.toolName, part.toolCallId, result, inputArguments, resolveToken, accessKey])
   const resolvedFor = useRef<object | null>(null)
   const onStateChangeRef = useRef(onStateChange)
   onStateChangeRef.current = onStateChange
-  const onAccessChangeRef = useRef(onAccessChange)
-  onAccessChangeRef.current = onAccessChange
   useLayoutEffect(() => {
     onStateChangeRef.current?.(origin && result ? "loading" : "unavailable")
   }, [resolution])
@@ -1123,6 +1124,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, onAcc
     setError(null)
     if (draft || !result || !openworkServerClient || !workspaceId || !origin) return () => { cancelled = true }
     const startedAt = performance.now()
+    const observedAccessVersion = mcpAppAccessVersion(accessKey)
     const checkpoints = ["resolve-started"]
     const usesCloudCredentials = Boolean(launch) || part.toolName.startsWith("openwork-cloud_")
     const credentialScope = { serverBaseUrl: openworkServerClient.baseUrl, workspaceId }
@@ -1141,7 +1143,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, onAcc
           setApp(resolved)
           setPreviewActions(undefined)
           if (resolved) {
-            onAccessChangeRef.current(true)
+            authorizeMcpAppAccess(accessKey, observedAccessVersion)
             live.resolve({ origin, app: resolved })
           } else {
             onStateChangeRef.current?.("unavailable")
@@ -1151,7 +1153,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, onAcc
         (cause) => {
           live.reject(cause)
           if (cancelled) return
-          if (isMcpAppAccessDenial(cause)) onAccessChangeRef.current(false)
+          if (isMcpAppAccessDenial(cause)) denyMcpAppAccess(accessKey)
           onStateChangeRef.current?.("unavailable")
           checkpoints.push(`resolve-failed+${Math.round(performance.now() - startedAt)}ms`)
           if (launch || isActionableMcpAppResolutionError(cause)) {

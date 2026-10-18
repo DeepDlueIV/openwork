@@ -100,6 +100,63 @@ test("a receipt never clears text typed after the follow-up was submitted", asyn
   expect(input.value).toBe("Text written during the wait")
 })
 
+test("a next draft survives switching away, a failed pending send, and reopening its own conversation", async () => {
+  let reject: (payload: unknown) => void = () => {}
+  response = async (action) => action === "send" ? new Promise((resolve) => { reject = resolve }) : { messages: [] }
+  await mount()
+  await type("Submitted before switching")
+  await act(async () => container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })))
+  await type("Keep my next draft on reopen")
+  await act(async () => root?.render(<p>Another tab</p>))
+  await act(async () => reject({ error: "refused", message: "The computer refused the follow-up." }))
+  await act(async () => root?.render(<RemoteThreadPanel tab={{ ...tab, owner: { ...owner, sessionId: "ses_other" } }} />))
+  expect(container.querySelector("textarea")?.value).toBe("")
+  await type("Another conversation's draft")
+  await act(async () => root?.render(<RemoteThreadPanel tab={tab} />))
+  expect(container.querySelector("textarea")?.value).toBe("Keep my next draft on reopen")
+  expect(container.textContent).toContain("Submitted before switching")
+  expect(container.textContent).toContain("The computer refused the follow-up")
+})
+
+test("a late send acknowledgement cannot erase the Stop submitted while it was in flight", async () => {
+  let acceptSend: (payload: unknown) => void = () => {}
+  let acceptStop: (payload: unknown) => void = () => {}
+  response = async (action) => new Promise((resolve) => { if (action === "send") acceptSend = resolve; else acceptStop = resolve })
+  const sending = sendRemoteFollowUp(entry(), "Follow up before Stop")
+  const stopping = stopRemoteThread(entry(), "msg_original")
+  const stopId = entry().stop?.id
+  acceptSend({ state: "accepted" })
+  await sending
+  expect(entry().stop?.id).toBe(stopId)
+  expect(entry().stop?.phase).toBe("requesting")
+  await stopRemoteThread(entry(), "msg_original")
+  expect(calls.filter((action) => action === "stop")).toHaveLength(1)
+  acceptStop({ stopped: true })
+  await stopping
+  expect(entry().stop?.id).toBe(stopId)
+  expect(entry().stop?.phase).toBe("accepted")
+})
+
+for (const action of ["send", "stop"]) test(`a known ${action} receipt survives transport failure and recovery only reads it`, async () => {
+  response = async (kind) => kind === "read" ? Promise.reject(new Error("fixture connection lost")) : { state: "pending", requestId: "receipt_known" }
+  if (action === "send") await sendRemoteFollowUp(entry(), "Retain this submitted message")
+  else await stopRemoteThread(entry(), "msg_original")
+  const followUpId = action === "send" ? entry().followUps[0]?.id : undefined
+  const pending = action === "send" ? entry().followUps[0] : entry().stop
+  expect(pending).toMatchObject({ phase: "unconfirmed", requestId: "receipt_known" })
+  await checkRemoteThreadAction(entry(), followUpId)
+  const stillPending = action === "send" ? entry().followUps[0] : entry().stop
+  expect(stillPending?.requestId).toBe("receipt_known")
+  response = async (kind, input) => {
+    expect(kind).toBe("read")
+    expect(input).toEqual({ requestId: "receipt_known" })
+    return action === "send" ? { state: "accepted" } : { stopped: true }
+  }
+  await checkRemoteThreadAction(entry(), followUpId)
+  expect(calls.filter((kind) => kind === action)).toHaveLength(1)
+  expect((action === "send" ? entry().followUps[0] : entry().stop)?.phase).toBe("accepted")
+}, 10_000)
+
 test("failed sends preserve submitted text separately from the next draft", async () => {
   response = async (action) => action === "send" ? { error: "rejected", message: "The computer refused this follow-up." } : { messages: [] }
   await sendRemoteFollowUp(entry(), "Keep the submitted text")

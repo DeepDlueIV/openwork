@@ -10,7 +10,7 @@ import { latestUserMessageId, type RemoteTranscriptPage } from "@/lib/remote-ses
 import { cn } from "@/lib/utils"
 import type { RemoteThreadPanelTab } from "../panel/panel-tab-store"
 import { readRemoteThread, sendRemoteFollowUp, stopRemoteThread } from "./remote-thread-actions"
-import { useFollowRemoteThread, useRemoteThread, useRemoteThreadStore, useRemoteThreadsEnabled, type RemoteThreadEntry } from "./remote-thread-store"
+import { useFollowRemoteThread, useRemoteThread, useRemoteThreadStore, useRemoteThreadsEnabled, type RemoteThreadEntry, type RemoteThreadOwner } from "./remote-thread-store"
 import { RemoteThreadActionRecovery } from "./remote-thread-action-recovery"
 import { formatRelativeTime } from "@/app/utils"
 import { remoteThreadView } from "./remote-thread-view"
@@ -40,10 +40,10 @@ export function RemoteThreadPanel({ tab }: { tab: RemoteThreadPanelTab }) {
   if (!entry) {
     return <div className="p-4 text-sm text-muted-foreground">{t("session.remote_task_read_failed")}</div>
   }
-  return <RemoteThreadConversation key={entry.start.key} entry={entry} />
+  return <RemoteThreadConversation key={entry.start.key} entry={entry} owner={tab.owner} />
 }
 
-function RemoteThreadConversation({ entry }: { entry: RemoteThreadEntry }) {
+function RemoteThreadConversation({ entry, owner }: { entry: RemoteThreadEntry; owner: RemoteThreadOwner }) {
   const [now, setNow] = useState(() => Date.now())
   const view = remoteThreadView(entry.start, entry, now)
   const [page, setPage] = useState<RemoteTranscriptPage | null>(null)
@@ -51,7 +51,9 @@ function RemoteThreadConversation({ entry }: { entry: RemoteThreadEntry }) {
   const [readPending, setReadPending] = useState(false)
   const [checkedAt, setCheckedAt] = useState<number | null>(null)
   const [limit, setLimit] = useState(PAGE_SIZE)
-  const [draft, setDraft] = useState("")
+  const draftOwner = `${owner.workspaceId}:${owner.sessionId}`
+  const draft = entry.drafts[draftOwner] ?? ""
+  const setDraft = (text: string) => useRemoteThreadStore.getState().update(entry.start.key, (thread) => ({ ...thread, drafts: { ...thread.drafts, [draftOwner]: text } }))
   const sending = entry.followUps.some((item) => item.phase === "requesting")
   const stopping = entry.stop?.phase === "requesting"
   const stopPending = Boolean(entry.stop && entry.stop.phase !== "failed")
@@ -102,7 +104,7 @@ function RemoteThreadConversation({ entry }: { entry: RemoteThreadEntry }) {
       } else if (outcome.kind === "error") {
         setReadError(outcome.message)
         setReadPending(false)
-        state.requestId = null
+        state.requestId = outcome.requestId ?? null
       } else {
         state.requestId = outcome.requestId
         setReadPending(true)
@@ -141,11 +143,10 @@ function RemoteThreadConversation({ entry }: { entry: RemoteThreadEntry }) {
   function sendFollowUp() {
     const text = draft.trim()
     if (!text || !canFollowUp) return
-    // Clear only the submitted draft, before awaiting anything. The next draft
-    // remains editable and independent even if the remote computer is slow.
-    setDraft("")
+    // Admission moves only this owner's submitted draft onto the shared thread.
+    // A newer editable draft survives both the receipt and a panel remount.
     stickToBottom.current = true
-    void sendRemoteFollowUp(entry, text)
+    void sendRemoteFollowUp(entry, text, draftOwner)
   }
 
   function stop() {

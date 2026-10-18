@@ -138,7 +138,7 @@ export type RemoteReadOutcome =
   | { kind: "page"; page: RemoteTranscriptPage }
   /** The desktop has not answered yet: read this requestId later. */
   | { kind: "pending"; requestId: string }
-  | { kind: "error"; code: string; message: string; retryable: boolean }
+  | { kind: "error"; code: string; message: string; retryable: boolean; requestId?: string }
 
 function transcriptMessage(value: unknown): RemoteTranscriptMessage | null {
   if (!isRecord(value)) return null

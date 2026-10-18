@@ -46,11 +46,12 @@ export type RemoteThreadOwner = { workspaceId: string; sessionId: string }
 
 /** A request is not proof that the remote turn stopped or a message arrived. */
 export type RemoteThreadAction = {
+  id: string
   phase: "requesting" | "accepted" | "unconfirmed" | "failed"
   message: string | null
   requestId: string | null
 }
-export type RemoteThreadFollowUp = RemoteThreadAction & { id: string; text: string }
+export type RemoteThreadFollowUp = RemoteThreadAction & { text: string; stopIdAtSubmission: string | null }
 
 export type RemoteThreadEntry = {
   start: RemoteThreadStart
@@ -67,6 +68,8 @@ export type RemoteThreadEntry = {
   firstSeenAt: number
   followedUpAt: number | null
   followUps: RemoteThreadFollowUp[]
+  /** Separate drafts for each owning conversation, retained when its panel unmounts. */
+  drafts: Record<string, string>
   stop: RemoteThreadAction | null
   owners: Record<string, RemoteThreadOwner>
   viewers: number
@@ -78,7 +81,7 @@ type RemoteThreadState = {
   threads: Record<string, RemoteThreadEntry>
   setEnabled: (enabled: boolean) => void
   watch: (start: RemoteThreadStart, input: { owner: RemoteThreadOwner; organizationId: string; startedAt: number | null }) => () => void
-  followedUp: (key: string) => void
+  followedUp: (key: string, stopIdAtSubmission?: string | null) => void
   /** The agent sent the task a follow-up itself. */
   revive: (sessionId: string) => void
   apply: (result: RemoteSessionStatusResult, keys: readonly string[], checkedAt: number) => void
@@ -126,6 +129,7 @@ export const useRemoteThreadStore = create<RemoteThreadState>()((set, get) => ({
             firstSeenAt: now,
             followedUpAt: null,
             followUps: [],
+            drafts: {},
             stop: null,
             owners: { [ownerKey]: input.owner },
             viewers: 1,
@@ -142,12 +146,14 @@ export const useRemoteThreadStore = create<RemoteThreadState>()((set, get) => ({
       })
     }
   },
-  followedUp: (key) => {
+  followedUp: (key, stopIdAtSubmission) => {
     const now = Date.now()
     set((state) => {
       const current = state.threads[key]
       if (!current) return state
-      return { threads: { ...state.threads, [key]: { ...current, followedUpAt: now, activeSince: now, stop: null } } }
+      // A late send acknowledgement must never clear a newer Stop request.
+      const stop = stopIdAtSubmission !== undefined && (current.stop?.id ?? null) === stopIdAtSubmission ? null : current.stop
+      return { threads: { ...state.threads, [key]: { ...current, followedUpAt: now, activeSince: now, stop } } }
     })
     kick(true)
   },

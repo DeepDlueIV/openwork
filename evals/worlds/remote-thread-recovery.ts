@@ -29,9 +29,13 @@ export async function remoteThreadRecovery(seed: Seed) {
   let outage = false;
   let stopMode: "reject" | "pending" | "accepted" = "reject";
   let sendCount = 0;
+  let rejectedSendCount = 0;
+  let rejectSend = false;
   let readCount = 0;
   let stopCount = 0;
   let statusCount = 0;
+  let receiptReadCount = 0;
+  let failedReceiptReads = 0;
   let releaseSend: (() => void) | undefined;
   const statusWaiters = new Set<() => void>();
   const changed = () => { version++; for (const wake of statusWaiters) wake(); };
@@ -53,6 +57,7 @@ export async function remoteThreadRecovery(seed: Seed) {
     if (url.pathname.endsWith("/send")) {
       sendCount++;
       await new Promise<void>((resolve) => { releaseSend = resolve; });
+      if (rejectSend) { rejectedSendCount++; return { error: "follow_up_refused", message: "The computer refused this follow-up. Review it before trying again.", retryable: true }; }
       messages.push({ id: String(body.messageId), role: "user", text: String(body.prompt), toolCalls: [] });
       changed(); return { state: "accepted", messageId: body.messageId };
     }
@@ -61,7 +66,15 @@ export async function remoteThreadRecovery(seed: Seed) {
       return stopMode === "reject" ? { error: "computer_offline", message: "The computer refused Stop. Try again when it reconnects.", retryable: true } : { state: "pending", requestId: "request_stop_proof" };
     }
     if (url.pathname.endsWith("/read")) {
-      if (body.requestId) return stopMode === "accepted" ? { stopped: true } : { state: "pending", requestId: "request_stop_proof" };
+      if (body.requestId) {
+        if (body.requestId !== "request_stop_proof") throw new Error("Recovery read a different remote receipt");
+        receiptReadCount++;
+        if (stopMode === "pending" && failedReceiptReads === 0) {
+          failedReceiptReads++;
+          return Response.json({ error: "fixture_connection_lost", message: "The receipt read could not reach the computer." }, { status: 503 });
+        }
+        return stopMode === "accepted" ? { stopped: true } : { state: "pending", requestId: "request_stop_proof" };
+      }
       readCount++;
       return { title, messages: messages.slice(-Number(body.limit ?? 30)), nextCursor: null };
     }
@@ -69,13 +82,13 @@ export async function remoteThreadRecovery(seed: Seed) {
   }, ["GET", "POST"]);
   return {
     app, session, title,
-    releaseFollowUp() { releaseSend?.(); },
+    releaseFollowUp(rejected = false) { rejectSend = rejected; releaseSend?.(); },
     pendingStop() { stopMode = "pending"; },
     acceptStop() { stopMode = "accepted"; },
     settle() { stopped = true; changed(); },
     disconnect() { outage = true; changed(); },
     reconnect() { outage = false; changed(); },
-    counts() { fixture.check(); return { sends: sendCount, reads: readCount, stops: stopCount, statuses: statusCount }; },
+    counts() { fixture.check(); return { sends: sendCount, rejectedSends: rejectedSendCount, reads: readCount, stops: stopCount, statuses: statusCount, receiptReads: receiptReadCount, failedReceiptReads }; },
     async [Symbol.asyncDispose]() { releaseSend?.(); for (const wake of statusWaiters) wake(); await fixture[Symbol.asyncDispose](); },
   };
 }

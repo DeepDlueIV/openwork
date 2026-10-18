@@ -64,6 +64,7 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
   });
   await step("role permission edits survive History and return through correctly associated panels", async () => {
     await user.navigate(world.url(`/dashboard/permissions/${world.role}`));
+    await user.see({ role: "tab", label: "Permissions" });
     await user.click({ role: "tab", label: "Permissions" });
     await user.click({ role: "switch", label: "View any team" });
     await user.see({ testId: "permission-set-save-bar" });

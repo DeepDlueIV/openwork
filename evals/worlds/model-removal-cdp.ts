@@ -58,7 +58,12 @@ export async function modelRemovalHttpFixture(app: AppWeb, patterns: string[], r
         if (message.error) pending.get(message.id)?.reject(new Error(JSON.stringify(message.error)));
         else pending.get(message.id)?.resolve();
       }
-      if (message.method === "Fetch.requestPaused" && isRecord(message.params)) void paused(message.params).catch(fail);
+      if (message.method === "Fetch.requestPaused" && isRecord(message.params)) void paused(message.params).catch((error: unknown) => {
+        // Navigation can cancel a held HTTP request before its fixture replies.
+        // The UI assertions still require the replacement request to succeed.
+        if (error instanceof Error && error.message.includes('"message":"Invalid InterceptionId."')) return;
+        fail(error);
+      });
     } catch (error) { fail(error); }
   });
   socket.addEventListener("error", () => fail(new Error("Model-removal CDP connection failed.")));

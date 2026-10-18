@@ -15,6 +15,8 @@ mock.module("@/app/lib/den", () => ({
   DenApiError: class extends Error {},
 }))
 mock.module("@/components/markdown/markdown", () => ({ MarkdownBlock: ({ text }: { text: string }) => <p>{text}</p> }))
+mock.module("@/components/chat/message-list-provider", () => ({ useMessageList: () => ({ workspaceId: "ws_owner", sessionId: "ses_owner", readOnly: false }) }))
+const { RemoteThreadRunLine } = await import("../src/components/chat/remote-thread-run-line")
 const { useRemoteThreadStore } = await import("../src/react-app/domains/session/remote-threads/remote-thread-store")
 const { RemoteThreadPanel } = await import("../src/react-app/domains/session/remote-threads/remote-thread-panel")
 const { sendRemoteFollowUp, stopRemoteThread, checkRemoteThreadAction } = await import("../src/react-app/domains/session/remote-threads/remote-thread-actions")
@@ -57,9 +59,9 @@ const entry = () => {
   if (!found) throw new Error("Missing thread")
   return found
 }
-async function mount() {
+async function mount(withRow = false) {
   root = createRoot(container)
-  await act(async () => root?.render(<RemoteThreadPanel tab={tab} />))
+  await act(async () => root?.render(<>{withRow ? <RemoteThreadRunLine start={start} part={{ type: "dynamic-tool", toolName: "openwork-cloud_execute_capability", toolCallId: "call_remote", state: "output-available", input: {}, output: {} }} /> : null}<RemoteThreadPanel tab={tab} /></>))
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
 }
 async function type(text: string) {
@@ -87,6 +89,17 @@ test("a slow follow-up keeps the next editable draft on success and retains the 
   expect(entry().followUps[0]?.phase).toBe("accepted")
 })
 
+test("a receipt never clears text typed after the follow-up was submitted", async () => {
+  let accept: (payload: unknown) => void = () => {}
+  response = async (action) => action === "send" ? new Promise((resolve) => { accept = resolve }) : { messages: [] }
+  await mount()
+  await type("Submitted follow-up")
+  await act(async () => { container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })) })
+  const input = await type("Text written during the wait")
+  await act(async () => accept({ state: "accepted" }))
+  expect(input.value).toBe("Text written during the wait")
+})
+
 test("failed sends preserve submitted text separately from the next draft", async () => {
   response = async (action) => action === "send" ? { error: "rejected", message: "The computer refused this follow-up." } : { messages: [] }
   await sendRemoteFollowUp(entry(), "Keep the submitted text")
@@ -95,11 +108,12 @@ test("failed sends preserve submitted text separately from the next draft", asyn
 
 test("Stop rejection remains shared on the thread and never says Stopped", async () => {
   response = async (action) => action === "stop" ? { error: "offline", message: "The computer is offline. Try again when it reconnects." } : { messages: [] }
-  await stopRemoteThread(entry(), "msg_original")
+  await mount(true)
+  await act(async () => container.querySelector<HTMLButtonElement>("[data-remote-thread-stop]")?.click())
+  expect(container.querySelector("[data-remote-thread]")?.textContent).toContain("The computer is offline")
+  expect(container.querySelector("[data-remote-thread-panel]")?.textContent).toContain("The computer is offline")
   expect(entry().stop).toMatchObject({ phase: "failed", message: "The computer is offline. Try again when it reconnects." })
   expect(remoteThreadView(start, entry(), Date.now()).stopped).toBe(false)
-  await mount()
-  expect(container.textContent).toContain("The computer is offline")
 })
 
 test("an exhausted Stop receipt is unconfirmed; Check again reads the receipt without repeating Stop", async () => {

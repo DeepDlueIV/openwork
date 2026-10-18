@@ -17,7 +17,7 @@ const catalog = { delivery: "native", skills: [fixture,
   { ...fixture, name: "setup-notes", title: "Setup notes", digest: undefined,
     setup: { status: "needs_connection", message: "Connect the fixture service." } },
   { ...fixture, name: "release", title: "Release", url: "skill://release/SKILL.md", digest: sha256Digest("expected") },
-] };
+] } satisfies Parameters<typeof nativeSkills>[0];
 
 type Hook = Parameters<NonNullable<CloudSkillContext["session"]>["hook"]>[1];
 async function until(check: () => boolean) {
@@ -164,7 +164,7 @@ test("visibility, count and description budgets bound reads before hydration", a
   for (const long of [false, true]) {
     const entries = Array.from({ length: 200 }, (_, index) => ({ ...fixture, name: `fixture-${String(index).padStart(3, "0")}`,
       url: `skill://fixture-${index}/SKILL.md`, digest: sha256Digest(`body-${index}`), description: long ? "x".repeat(1_024) : "short" }));
-    const listed = { delivery: "native", skills: [...entries, { ...fixture, name: "hidden-entry", modelDiscovery: false }] };
+    const listed = { delivery: "native", skills: [...entries, { ...fixture, name: "hidden-entry", modelDiscovery: false }] } satisfies Parameters<typeof nativeSkills>[0];
     const expected = nativeSkills(listed, new Map()).length;
     let reads = 0;
     const app = await harness(name => {

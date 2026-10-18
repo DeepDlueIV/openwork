@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createEngineV2Preview, readEngineV2PreviewState } from "../src/engine-v2-preview.js";
+import { createEngineV2Preview, readEngineV2PreviewState, writeEngineV2PreviewState } from "../src/engine-v2-preview.js";
 import { historyRevision } from "../src/engine-auto-upgrade.js";
 import { backupV2Database, snapshotV1Database } from "../src/opencode-v2-migration.js";
 import { openHistoryDatabase, stringField } from "../src/opencode-v2-history-store.js";
@@ -32,6 +32,48 @@ async function profile(run: (directory: string, config: ServerConfig) => Promise
     await rm(directory, { recursive: true, force: true });
   }
 }
+
+test("automatic routing is not persisted or published if policy expires during journal preparation", async () => {
+  await profile(async (directory, config) => {
+    await writeEngineV2PreviewState(config, { enabled: true, chatRouting: false });
+    const before = await readFile(join(directory, "engine-v2-preview.json"));
+    let eligible = true;
+    let checks = 0;
+    let published = false;
+    const expired = new Error("Policy epoch expired");
+    const selection = writeEngineV2PreviewState(config, { enabled: true, chatRouting: true }, {
+      validate: () => { checks++; if (!eligible) throw expired; },
+      apply: () => { published = true; },
+    });
+    assert.equal(checks, 1, "witness: preparation has started but the atomic rename has not");
+    eligible = false;
+    await assert.rejects(selection, error => error === expired);
+    assert.equal(checks, 2, "eligibility is checked again after asynchronous journal preparation");
+    assert.equal(published, false);
+    assert.deepEqual(await readFile(join(directory, "engine-v2-preview.json")), before);
+    assert.equal((await readdir(directory)).includes("engine-v2-preview.json.tmp"), false);
+  });
+});
+
+test("automatic durable commit and routing publication cannot be split by a later policy callback", async () => {
+  await profile(async (_directory, config) => {
+    let checks = 0;
+    let published = false;
+    let callbackSawPublished = false;
+    await writeEngineV2PreviewState(config, { enabled: true, chatRouting: true }, {
+      validate: () => {
+        if (++checks === 2) queueMicrotask(() => { callbackSawPublished = published; });
+      },
+      apply: () => {
+        assert.equal(readEngineV2PreviewState(config).chatRouting, true, "publication follows the successful atomic rename");
+        published = true;
+      },
+    });
+    assert.equal(checks, 2);
+    assert.equal(published, true);
+    assert.equal(callbackSawPublished, true, "a later policy callback observes an already-selected engine, not a pending automatic cutover");
+  });
+});
 
 test("v2 backups retain the newest two WAL-complete snapshots without writing the source", async () => {
   await profile(async (directory) => {

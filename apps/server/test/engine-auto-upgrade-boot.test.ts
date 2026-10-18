@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { createEngineV2Preview, readEngineV2PreviewState } from "../src/engine-v2-preview.js";
 import { openHistoryDatabase } from "../src/opencode-v2-history-store.js";
+import { enterEngineMutation } from "../src/engine-switch-fence.js";
 import type { ServerConfig } from "../src/types.js";
 
 async function profile(run: (config: ServerConfig, dir: string) => Promise<void>): Promise<void> {
@@ -79,6 +80,53 @@ test("policy off before idle prevents the future automatic process start", { ski
   });
 });
 
+for (const reenabled of [false, true]) test(`policy off during the final fenced idle read prevents automatic cutover (re-enabled: ${reenabled})`, { skip: process.platform === "win32", timeout: 15_000 }, async () => {
+  await profile(async (config, dir) => {
+    const binary = join(dir, "healthy-engine.mjs");
+    // A real child and loopback metadata API exercise shipping startup/health;
+    // no engine binary install, model request or history mutation is needed.
+    writeFileSync(binary, `#!/usr/bin/env node\nimport { createServer } from 'node:http';
+const server = createServer((request, response) => {
+  response.setHeader('content-type', 'application/json');
+  response.end(JSON.stringify(request.url?.startsWith('/api/info') ? { version: 'test', pid: process.pid } : { data: [] }));
+});
+server.listen(0, '127.0.0.1', () => console.log('server listening on http://127.0.0.1:' + server.address().port));
+`, { mode: 0o700 });
+    process.env.OPENWORK_OPENCODE2_BIN = binary;
+    const finalIdle = Promise.withResolvers<boolean>();
+    let probes = 0;
+    let finalProbed = false;
+    const engine = createEngineV2Preview({ config, autoUpgradeIdle: async () => {
+      if (++probes !== 2) return true;
+      finalProbed = true;
+      return finalIdle.promise;
+    } });
+    try {
+      const deadline = Date.now() + 10_000;
+      while (!finalProbed && !engine.status().lastError && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(finalProbed, true, JSON.stringify(engine.status()));
+      assert.equal(engine.status().running, true, "witness: healthy v2 has started, but the final fenced idle read is held");
+      assert.equal(engine.status().chatRouting, false);
+      const acknowledged = engine.setForcePolicy({ upgrade: false });
+      assert.equal(acknowledged.chatRouting, false, "policy off is acknowledged before the final read resolves");
+      if (reenabled) engine.setForcePolicy({ upgrade: true });
+      const waitingV1 = enterEngineMutation(config, "v1");
+      finalIdle.resolve(true);
+      const release = await waitingV1;
+      await release();
+      assert.equal(engine.status().chatRouting, false, "the obsolete attempt must not select v2 after off acknowledgement, even after off/on");
+      assert.equal(readEngineV2PreviewState(config).chatRouting, false);
+      assert.equal(engine.status().automaticRetryAt, undefined, "policy invalidation does not manufacture or reset a failure cooldown");
+      engine.setForcePolicy({ upgrade: false });
+      await engine.setChatRouting(true);
+      assert.equal(engine.status().chatRouting, true, "an explicit manual selection remains usable with automatic policy off");
+      assert.equal(readEngineV2PreviewState(config).engineOrigin, "manual");
+      engine.setForcePolicy({ upgrade: false });
+      assert.equal(engine.status().chatRouting, true, "off must also preserve the now-used manual v2 selection");
+    } finally { finalIdle.resolve(true); await engine.stop(); }
+  });
+});
+
 test("policy off does not restart a failed sidecar, but explicit manual recovery can", { skip: process.platform === "win32" }, async () => {
   await profile(async (config, dir) => {
     const binary = join(dir, "failed-engine");
@@ -99,7 +147,11 @@ test("policy off does not restart a failed sidecar, but explicit manual recovery
         await new Promise(resolve => setTimeout(resolve, 250));
         assert.equal(starts(), 1, "off/status/boot refreshes must not bypass the failed attempt's cooldown");
       }
-      assert.equal(engine.status().automaticRetryAt, retryAt);
+      engine.setForcePolicy({ upgrade: true });
+      engine.setForcePolicy({ upgrade: false });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      assert.equal(starts(), 1, "off/on cannot revive the failed attempt or create another automatic process");
+      assert.equal(engine.status().automaticRetryAt, retryAt, "policy epochs must retain the existing failed-start cooldown");
       assert.equal(engine.migrateHistory().migration.state, "running", "explicit manual consent is not an automatic retry");
       const manualDeadline = Date.now() + 10_000;
       while ((engine.status().migration.state === "running" || starts() < 2) && Date.now() < manualDeadline) await new Promise(resolve => setTimeout(resolve, 5));

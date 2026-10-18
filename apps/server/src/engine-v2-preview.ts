@@ -12,7 +12,7 @@ import { waitForEngineSkillChanges } from "./opencode-v2-skill-settle.js";
 import { MCP_READINESS_RPC_ID } from "./opencode-v2-mcp-readiness.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -300,12 +300,27 @@ export function seedFreshInstallEngineState(config: Pick<ServerConfig, "configPa
 export async function writeEngineV2PreviewState(
   config: ServerConfig,
   state: EngineV2PreviewState,
+  cutover?: { validate(): void; apply(): void },
 ): Promise<void> {
+  cutover?.validate();
   await mkdir(runtimeStorageDir(config), { recursive: true });
   const path = statePath(config);
   const temporary = `${path}.tmp`;
-  await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await rename(temporary, path);
+  let committed = false;
+  try {
+    await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    if (cutover) {
+      // Preparing the tiny journal is asynchronous. Eligibility, its atomic
+      // rename and routing publication share one turn: policy-off cannot be
+      // acknowledged between the last check and a later automatic cutover.
+      cutover.validate();
+      renameSync(temporary, path);
+      cutover.apply();
+      committed = true;
+    } else await rename(temporary, path);
+  } finally {
+    if (cutover && !committed) await rm(temporary, { force: true });
+  }
 }
 
 function exec(file: string, args: string[], options: { cwd?: string; timeout?: number } = {}): Promise<void> {
@@ -578,6 +593,11 @@ export function createEngineV2Preview(options: {
   let engineChangedAt = initialState.engineChangedAt;
   let engineForced = initialState.engineForced === true;
   let forceUpgrade = config.engineAutoUpgrade === true;
+  let forcePolicyEpoch = 0;
+  const obsoletePolicy = new Error("Automatic upgrade policy changed. Keeping the selected engine.");
+  const requireAutomaticPolicy = (epoch: number) => {
+    if (!forceUpgrade || forcePolicyEpoch !== epoch) throw obsoletePolicy;
+  };
   let autoUpgradeRetry = initialState.autoUpgradeRetry;
   const autoUpgradeAbort = new AbortController();
   let autoUpgradeJob: Promise<void> | undefined;
@@ -601,20 +621,22 @@ export function createEngineV2Preview(options: {
   let v1HistoryCopiedAt = initialState.v1HistoryCopiedAt;
   let v1HistoryCopyStartedAt = initialState.v1HistoryCopyStartedAt;
   let stateWrites: Promise<void> = Promise.resolve();
-  const persistState = (receipt: EngineV2MigrationStatus = migration) => {
-    const snapshot: EngineV2PreviewState = {
-      enabled, chatRouting, engineOrigin, engineForced,
-      ...(engineChangedAt === undefined ? {} : { engineChangedAt }),
-      ...(automaticHistoryRevision === undefined ? {} : { automaticHistoryRevision }),
-      ...(automaticHistoryCopy ? { automaticHistoryCopy: true } : {}),
-      ...(autoUpgradeRetry ? { autoUpgradeRetry } : {}),
-      ...(v1HistoryCopiedAt === undefined ? {} : { v1HistoryCopiedAt }),
-      ...(v1HistoryCopyStartedAt === undefined ? {} : { v1HistoryCopyStartedAt }),
-      ...(receipt.state === "completed" || receipt.state === "error" ? { historyCopyResult: receipt } : {}),
-    };
+  const snapshotState = (receipt: EngineV2MigrationStatus = migration): EngineV2PreviewState => ({
+    enabled, chatRouting, engineOrigin, engineForced,
+    ...(engineChangedAt === undefined ? {} : { engineChangedAt }),
+    ...(automaticHistoryRevision === undefined ? {} : { automaticHistoryRevision }),
+    ...(automaticHistoryCopy ? { automaticHistoryCopy: true } : {}),
+    ...(autoUpgradeRetry ? { autoUpgradeRetry } : {}),
+    ...(v1HistoryCopiedAt === undefined ? {} : { v1HistoryCopiedAt }),
+    ...(v1HistoryCopyStartedAt === undefined ? {} : { v1HistoryCopyStartedAt }),
+    ...(receipt.state === "completed" || receipt.state === "error" ? { historyCopyResult: receipt } : {}),
+  });
+  const persistState = (receipt: EngineV2MigrationStatus = migration,
+    cutover?: { state: EngineV2PreviewState; validate(): void; apply(): void }) => {
+    const snapshot = cutover?.state ?? snapshotState(receipt);
     // A manual choice and a settling automatic attempt share one journal.
     // Serialize their atomic renames so an older write cannot win after consent.
-    const pending = stateWrites.catch(() => undefined).then(() => writeEngineV2PreviewState(config, snapshot));
+    const pending = stateWrites.catch(() => undefined).then(() => writeEngineV2PreviewState(config, snapshot, cutover));
     stateWrites = pending;
     return pending;
   };
@@ -1137,35 +1159,58 @@ export function createEngineV2Preview(options: {
       : "This chat is still in OpenCode v1 and hasn't been copied to v2. Migrate your chats to OpenCode v2, or switch back to v1 to open it.";
   }
 
-  async function setChatRouting(nextChatRouting: boolean, origin: EngineOrigin = "manual", forceOwned = origin === "forced", expectedGeneration?: number): Promise<EngineV2PreviewStatus> {
-    if (nextChatRouting) await requireV1HistoryCopied();
-    requireNoMigration();
-    if (nextChatRouting) requireHistoryCopyFinished();
-    if (expectedGeneration !== undefined && expectedGeneration !== choiceGeneration) throw new Error("Manual engine choice retained.");
-    if (origin === "manual") choiceGeneration++;
-    const mutationGeneration = choiceGeneration;
-    const previous = { enabled, chatRouting, engineOrigin, engineChangedAt, engineForced, automaticHistoryCopy, automaticHistoryRevision, autoUpgradeRetry };
-    chatRouting = nextChatRouting;
-    engineOrigin = origin;
-    if (origin === "reverted") enabled = false;
-    engineChangedAt = new Date().toISOString();
-    engineForced = forceOwned;
-    if (nextChatRouting) {
-      // Any accepted v2 selection, including a manual choice, retires the
-      // automatic baseline. It may now serve new history: a later boot must
-      // neither fence startup nor restore an older pre-copy target over it.
-      automaticHistoryCopy = false;
-      automaticHistoryRevision = undefined;
-      autoUpgradeRetry = undefined;
-    }
-    try { await persistState(); }
-    catch (error) {
-      if (choiceGeneration === mutationGeneration) {
-        ({ enabled, chatRouting, engineOrigin, engineChangedAt, engineForced, automaticHistoryCopy, automaticHistoryRevision, autoUpgradeRetry } = previous);
+  async function setChatRouting(nextChatRouting: boolean, origin: EngineOrigin = "manual", forceOwned = origin === "forced",
+    automatic?: { generation: number; policyEpoch: number }): Promise<EngineV2PreviewStatus> {
+    const validate = () => {
+      requireNoMigration();
+      if (nextChatRouting) requireHistoryCopyFinished();
+      if (automatic) {
+        if (automatic.generation !== choiceGeneration) throw new Error("Manual engine choice retained.");
+        requireAutomaticPolicy(automatic.policyEpoch);
+        autoUpgradeAbort.signal.throwIfAborted();
       }
-      throw error;
+    };
+    if (nextChatRouting) await requireV1HistoryCopied();
+    validate();
+    const changedAt = new Date().toISOString();
+    const apply = () => {
+      chatRouting = nextChatRouting;
+      engineOrigin = origin;
+      if (origin === "reverted") enabled = false;
+      engineChangedAt = changedAt;
+      engineForced = forceOwned;
+      if (nextChatRouting) {
+        // A selected v2 engine may now serve new history. Retire its automatic
+        // baseline without ever fencing or restoring an older target over it.
+        automaticHistoryCopy = false;
+        automaticHistoryRevision = undefined;
+        autoUpgradeRetry = undefined;
+      }
+      if (automatic && origin === "fresh") migration = { state: "idle", imported: 0, skipped: 0, total: 0 };
+    };
+    if (automatic) {
+      // Do not publish routing while the journal is queued or being prepared.
+      // Its guarded commit checks both manual ownership and policy epoch after
+      // the final await, then publishes the durable selection in the same turn.
+      const next: EngineV2PreviewState = { ...snapshotState(), chatRouting: nextChatRouting,
+        engineOrigin: origin, engineChangedAt: changedAt, engineForced: forceOwned,
+        automaticHistoryCopy: undefined, automaticHistoryRevision: undefined, autoUpgradeRetry: undefined,
+        ...(origin === "fresh" ? { historyCopyResult: undefined } : {}),
+      };
+      await persistState(migration, { state: next, validate, apply });
+    } else {
+      if (origin === "manual") choiceGeneration++;
+      const mutationGeneration = choiceGeneration;
+      const previous = { enabled, chatRouting, engineOrigin, engineChangedAt, engineForced, automaticHistoryCopy, automaticHistoryRevision, autoUpgradeRetry };
+      apply();
+      try { await persistState(); }
+      catch (error) {
+        if (choiceGeneration === mutationGeneration) {
+          ({ enabled, chatRouting, engineOrigin, engineChangedAt, engineForced, automaticHistoryCopy, automaticHistoryRevision, autoUpgradeRetry } = previous);
+        }
+        throw error;
+      }
     }
-    if (expectedGeneration !== undefined && expectedGeneration !== choiceGeneration) throw new Error("Manual engine choice retained.");
     warmActiveWorkspace();
     return status();
   }
@@ -1308,11 +1353,13 @@ export function createEngineV2Preview(options: {
   async function autoUpgrade(): Promise<boolean> {
     autoUpgradeInFlight = true;
     const generation = choiceGeneration;
+    const policyEpoch = forcePolicyEpoch;
     autoUpgradeGeneration = generation;
     const attemptStartedAt = new Date().toISOString();
     autoUpgradeStartedAt = attemptStartedAt;
     const requireCurrentChoice = () => {
       if (choiceGeneration !== generation) throw new Error("Manual engine choice retained.");
+      requireAutomaticPolicy(policyEpoch);
     };
     const idle = async () => {
       requireCurrentChoice();
@@ -1341,9 +1388,7 @@ export function createEngineV2Preview(options: {
             throw new Error("OpenCode v1 gained history or running work while v2 started. Keeping v1 until a later boot.");
           }
           requireCurrentChoice();
-          migration = { state: "idle", imported: 0, skipped: 0, total: 0 };
-          await setChatRouting(true, "fresh", true, generation);
-          requireCurrentChoice();
+          await setChatRouting(true, "fresh", true, { generation, policyEpoch });
         } });
         return true;
       }
@@ -1405,8 +1450,8 @@ export function createEngineV2Preview(options: {
             if (!forceUpgrade || !await idle() || automaticHistoryRevision !== await historyRevision(source)) {
               throw new Error("OpenCode v1 changed while v2 started. Keeping v1 until a later boot.");
             }
-            await setChatRouting(true, "forced", true, generation);
             requireCurrentChoice();
+            await setChatRouting(true, "forced", true, { generation, policyEpoch });
           } });
         },
       });
@@ -1414,7 +1459,7 @@ export function createEngineV2Preview(options: {
     } catch (error) {
       // Manual intent supersedes this attempt. Its late response cannot change
       // routing, ownership, the receipt or cooldown of the accepted choice.
-      if (choiceGeneration !== generation) return false;
+      if (choiceGeneration !== generation || error === obsoletePolicy) return false;
       // The attempt only selects v2 after a healthy, durable switch. Until
       // then v1 remains selected; do not overwrite a concurrent manual choice
       // when the attempt fails. Keep the private copy/checkpoint for next boot.
@@ -1433,6 +1478,9 @@ export function createEngineV2Preview(options: {
   }
 
   function setForcePolicy(policy: { upgrade: boolean }): EngineV2PreviewStatus {
+    // An off/on sequence cannot revive a response from the old policy epoch.
+    // Repeated observations do not invalidate work or reset failure cooldowns.
+    if (forceUpgrade !== policy.upgrade) forcePolicyEpoch++;
     forceUpgrade = policy.upgrade;
     // Off blocks future upgrades, not access to an already-selected engine:
     // new v2 history has no reverse copy into v1. Never stop or reroute it.

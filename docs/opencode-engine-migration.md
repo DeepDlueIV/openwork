@@ -36,6 +36,12 @@ automatic attempts bind to a manual-choice generation: an explicit later choice
 supersedes their idle reads, cutover and failure receipts. Copy preparation and
 transfer hold the migration fence, and the shared state journal
 serializes writes so a late automatic rename cannot win after manual consent.
+Automatic cutover also binds to a separate policy epoch, checked after the final
+idle/history reads and again after preparing its journal. Eligibility, atomic
+journal rename and routing publication share one event-loop turn; policy-off
+cannot be acknowledged before a later automatic selection. Off/on never revives
+an attempt from the older epoch or resets a failed-start cooldown. Explicit manual
+selection and continued use of already-selected v2 are not gated by this check.
 Policy updates do not abort a copy or a running task. Failures retain the selected
 engine, durable error and backup receipt. Automatic retries
 only run on a later boot with a one-minute-to-one-day bounded exponential

@@ -37,19 +37,22 @@ export async function producedFileEvidence(seed: Seed) {
 }
 
 export const producedFileV2Prompt = "Prepare my summary.";
-export async function producedFileV2Evidence(seed: Seed) {
+async function nativeFileEvidence(seed: Seed, pathFree: boolean) {
   const engine = "v2";
-  const workspacePath = seed.tmpPath("produced-file-evidence-v2");
+  const name = pathFree ? "produced-file-evidence-path-free" : "produced-file-evidence-v2";
+  const token = "produced-file-fixture-client";
+  const hostToken = "produced-file-fixture-host";
+  const workspacePath = seed.tmpPath(name);
   await mkdir(workspacePath, { recursive: true });
   const mock = seed.mock({ isolatedProcessEnv: true, agentWorkloads: [{
     promptMarker: producedFileV2Prompt, latestUserTurn: true,
-    finalReply: "Voilà [résumé](summary.md).",
+    finalReply: pathFree ? "Voilà." : "Voilà. summary.md",
     steps: [
       { tool: "shell", arguments: { command: "printf '# Summary\\n\\nThe requested summary.\\n' > summary.md", description: "Prepare the summary" } },
       { tool: "shell", arguments: { command: "printf 'not-produced.pdf\\n'", description: "Read a reference" } },
     ],
   }] });
-  const app = await seed.appWeb({ name: "produced-file-evidence-v2", workspacePath, engine, headless: true, mocks: { agent: mock } });
+  const app = await seed.appWeb({ name, workspacePath, engine, headless: true, mocks: { agent: mock }, env: { OPENWORK_TOKEN: token, OPENWORK_HOST_TOKEN: hostToken } });
   const workspace = await seed.workspace(app, workspacePath);
   const witness = app.mocks.agent;
   if (!witness) throw new Error("Native summary model witness did not start");
@@ -59,5 +62,26 @@ export async function producedFileV2Evidence(seed: Seed) {
     } },
   }, engine);
   const session = await seed.session(app, { title: "Summary export" });
-  return { app, workspace, session, summary: () => readFile(join(workspacePath, "summary.md"), "utf8") };
+  return { app, workspace, session, summary: () => readFile(join(workspacePath, "summary.md"), "utf8"),
+    async nativeEvidence() {
+      const response = await fetch(`${app.openworkUrl}/workspace/${workspace.workspaceId}/opencode2/api/session/${session.sessionId}/message`, {
+        headers: { Authorization: `Bearer ${token}`, "x-openwork-host-token": hostToken }, signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error(`Reading native change evidence failed: ${response.status}`);
+      const payload: unknown = await response.json();
+      const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+      const messages = record(payload) && Array.isArray(payload.data) ? payload.data.filter(record) : [];
+      if (!messages.length) throw new Error("The native history witness returned no messages");
+      const content = messages.flatMap(message => Array.isArray(message.content) ? message.content.filter(record) : []);
+      const tools = content.filter(part => part.type === "tool").map(part => {
+        const state = record(part.state) ? part.state : {};
+        return { tool: part.tool ?? part.name, stateKeys: Object.keys(state), metadataKeys: record(state.metadata) ? Object.keys(state.metadata) : [] };
+      });
+      return { messageKeys: [...new Set(messages.flatMap(Object.keys))], contentTypes: [...new Set(content.map(part => part.type))], tools };
+    },
+  };
 }
+
+export async function producedFileV2Evidence(seed: Seed) { return nativeFileEvidence(seed, false); }
+/** Diagnostic boundary, not a claim that path-free shell output discovery is fixed. */
+export async function producedFileV2PathFreeEvidence(seed: Seed) { return nativeFileEvidence(seed, true); }

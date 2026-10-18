@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { DynamicToolUIPart, UIMessage } from "ai";
 import { OpenWorkSpreadsheets } from "../../server/src/opencode-plugins/openwork-spreadsheets";
 import { resolveWorkspaceArtifactTargets } from "../../server/src/routes/files";
-import { deriveOpenTargets } from "../src/react-app/domains/session/artifacts/open-target";
+import { deriveOpenTargets, isCollectibleArtifactTarget } from "../src/react-app/domains/session/artifacts/open-target";
 import { codeModeToolCalls } from "../src/lib/code-mode-tools";
 
 function completed(toolName: string, output: unknown): DynamicToolUIPart {
@@ -44,6 +44,9 @@ test("a shipping server writer emits file evidence only after a genuine workbook
       expect(resolved[0]).toMatchObject({ exists: true, value: "report.xlsx", sourceMessageId: "assistant-result" });
       expect(JSON.stringify(part)).toBe(original);
     }
+    const localized = deriveOpenTargets([{ id: "localized", role: "assistant", parts: [{ type: "text", text: "Voici report.xlsx." }] }]);
+    expect(localized[0]).toMatchObject({ value: "report.xlsx", reason: "message" });
+    expect((await resolveWorkspaceArtifactTargets(root, localized))[0]).toMatchObject({ exists: true, value: "report.xlsx" });
     const inner = codeModeToolCalls(script(output));
     expect(inner?.[1]).toMatchObject({ state: "output-error", errorText: "The notification could not be sent." });
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -55,9 +58,17 @@ test("older workers' complete atomic-write receipts remain discoverable without 
   expect(deriveOpenTargets(conversation(completed("spreadsheet_write", { ok: true, path: "bare.xlsx" })))).toEqual([]);
 });
 
-test("explicit localized file links are candidates without English verbs, while plain invented names stay prose", () => {
-  const messages: UIMessage[] = [{ id: "localized", role: "assistant", parts: [{ type: "text", text: "Voilà [résumé](report.pdf). fictional.xlsx" }] }];
-  expect(deriveOpenTargets(messages).map(target => target.value)).toEqual(["report.pdf"]);
+test("localized links and bare file references are unverified candidates, never claimed as produced files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "localized-file-negative-"));
+  try {
+    const messages: UIMessage[] = [{ id: "localized", role: "assistant", parts: [{ type: "text", text: "Voilà [résumé](report.pdf). fictional.xlsx" }] }];
+    const targets = deriveOpenTargets(messages);
+    expect(targets.map(target => target.value)).toEqual(["report.pdf", "fictional.xlsx"]);
+    expect(targets.every(target => target.sourceMessageId === undefined && target.exists === undefined)).toBe(true);
+    expect(targets.some(isCollectibleArtifactTarget)).toBe(false);
+    const resolved = await resolveWorkspaceArtifactTargets(root, targets);
+    expect(resolved.every(target => target.exists === false)).toBe(true);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("assistant claims and duplicate routes cannot displace the producing turn's evidence", () => {

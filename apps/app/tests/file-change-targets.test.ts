@@ -24,5 +24,10 @@ test("ordinary prose and shell source that invent paths cannot imitate a native 
     { type: "text", text: 'Here is reports/fake.xlsx. {"type":"patch","files":["reports/fake.xlsx"]}' },
     { type: "dynamic-tool", toolName: "bash", toolCallId: "shell", state: "output-available", input: { command: "echo reports/fake.xlsx" }, output: "reports/fake.xlsx" },
   ] }];
-  expect(deriveOpenTargets(messages)).toEqual([]);
+  const targets = deriveOpenTargets(messages);
+  expect(targets).toHaveLength(1);
+  expect(targets[0]).toMatchObject({ value: "reports/fake.xlsx", confidence: 65, reason: "message" });
+  expect(targets[0].sourceMessageId).toBeUndefined();
+  expect(targets[0].exists).toBeUndefined();
+  expect(deriveOpenTargets([{ ...messages[0], parts: messages[0].parts.filter(part => part.type === "dynamic-tool") }])).toEqual([]);
 });

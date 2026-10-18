@@ -84,7 +84,7 @@ const turnSchema = z.object({
 export type WorkbotTurn = z.infer<typeof turnSchema>;
 
 const threadSchema = z.discriminatedUnion("available", [
-  z.object({ available: z.literal(false), reason: z.enum(["workbot_not_enabled", "workbot_runner_unavailable"]) }),
+  z.object({ available: z.literal(false), reason: z.enum(["workbot_not_enabled", "workbot_runner_unavailable", "workbot_model_unavailable"]) }),
   z.object({
     available: z.literal(true),
     name: z.string(),

@@ -159,6 +159,8 @@ export const TERMINAL_TURN_STATUSES: ReadonlySet<RunnerTurnStatus> = new Set(["c
 const modelCatalogSchema = z.object({
   defaultModel: z.string(),
   models: z.array(z.object({ id: z.string(), name: z.string() })),
+  /** True only after the configured gateway accepted the runner's model key. Older runners cannot prove readiness. */
+  verified: z.boolean().optional(),
 })
 export type HeadlessModelCatalog = z.infer<typeof modelCatalogSchema>
 

@@ -96,6 +96,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       }),
       canSchedule: async () => member.den.canSchedule,
       model: async () => member.den.model,
+      verifyModel: member.den.verifyModel,
       workspaceAssistant: async () => member.den.workspaceAssistant,
     })
 
@@ -124,6 +125,18 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
 
   app.use("/v1/workbot/*", input.sameOrigin, input.member)
   app.use("/v1/workbot", input.sameOrigin, input.member)
+  // Editing removes later turns before sending. Reject a known-unavailable model before that destructive step.
+  app.use("/v1/workbot/messages/:id/edit", async (c, next) => {
+    const member = c.get("member")
+    if (c.req.method === "POST" && member.den.enabled && member.den.verifyModel) {
+      const client = createHeadlessRunnerClient({ config: runnerFor(member), fetch: runnerFetch, mintToken: async ({ readOnly }) => ({ token: await den.runToken(member.accessToken, { readOnly }) }), maxTokenTtlMs: RUN_TOKEN_TTL_MS })
+      const catalog = await client.listModels().catch(() => null)
+      if (catalog?.verified !== true || !catalog.models.some((entry) => entry.id === member.den.model)) {
+        return c.json({ error: "workbot_model_unavailable" }, 409)
+      }
+    }
+    return next()
+  })
 
   app.get("/v1/workbot/me", async (c) => {
     const { den: who } = c.get("member")

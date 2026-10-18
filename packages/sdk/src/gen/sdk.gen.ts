@@ -16113,7 +16113,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get Workbot settings
    *
-   * Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires View OpenWork Models settings or Manage OpenWork Models, and Workbot.
+   * Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. With workbotLunaDefault on, Workbot's null choice means explicit GPT-6 Luna, defaultModel identifies that default and defaultReadiness reports authenticated catalog availability; Slack and Automations keep their existing default policy. Requires View OpenWork Models settings or Manage OpenWork Models, and Workbot.
    */
   public getV1OrgWorkbotSettings<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -16126,7 +16126,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Set Workbot's default model
    *
-   * Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.
+   * Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default, except Workbot uses explicit GPT-6 Luna while workbotLunaDefault is on. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.
    */
   public putV1OrgWorkbotSettings<ThrowOnError extends boolean = false>(
     parameters: {

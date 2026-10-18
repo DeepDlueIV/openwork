@@ -753,6 +753,7 @@ export type AdminFeature = {
     | "workbot"
     | "workbotSharing"
     | "workbotTeamLinks"
+    | "workbotLunaDefault"
     | "workbotDocuments"
     | "workbotWorkspaceAssistant"
     | "automationCalendar"
@@ -831,6 +832,7 @@ export type AdminOrganizationsPageResponse = {
       workbot: boolean;
       workbotSharing: boolean;
       workbotTeamLinks: boolean;
+      workbotLunaDefault: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1042,6 +1044,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       workbotTeamLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotLunaDefault: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1305,6 +1316,7 @@ export type AdminOverviewResponse = {
       workbot: boolean;
       workbotSharing: boolean;
       workbotTeamLinks: boolean;
+      workbotLunaDefault: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1516,6 +1528,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       workbotTeamLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotLunaDefault: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6791,6 +6812,7 @@ export type WorkbotSettings = {
   }>;
   modelAvailable: boolean;
   runnerReachable: boolean;
+  defaultReadiness?: "available" | "unavailable" | "unverified";
 };
 
 export type WorkbotUnknownModelError = {
@@ -6881,6 +6903,7 @@ export type WorkbotSession = {
   };
   sideChats: boolean;
   model?: string | null;
+  verifyModel?: boolean;
 };
 
 export type WorkbotRunToken = {
@@ -7858,6 +7881,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       workbotSharing: boolean;
       workbotTeamLinks: boolean;
+      workbotLunaDefault: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8069,6 +8093,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotTeamLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotLunaDefault: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8320,6 +8353,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       workbotSharing: boolean;
       workbotTeamLinks: boolean;
+      workbotLunaDefault: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8531,6 +8565,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotTeamLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotLunaDefault: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

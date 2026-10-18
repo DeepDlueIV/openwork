@@ -113,7 +113,7 @@ const exportedConversation = z
   })
   .strict()
 
-export type ModelCatalog = { defaultModel: string; models: Array<{ id: string; name: string }> }
+export type ModelCatalog = { defaultModel: string; models: Array<{ id: string; name: string }>; verified?: boolean }
 
 export function createApp(input: {
   store: Store

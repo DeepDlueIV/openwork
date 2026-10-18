@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import type { WorkbotSettings } from "@openwork/types/den/workbot-settings";
+import { WORKBOT_DEFAULT_MODEL_NAME, type WorkbotSettings } from "@openwork/types/den/workbot-settings";
 import {
   getBrandAppearanceRoute,
   getOrgAccessFlags,
@@ -58,11 +58,13 @@ function modelName(settings: WorkbotSettings, id: string | null): string {
 }
 
 function defaultModelName(settings: WorkbotSettings): string {
+  if (settings.defaultReadiness) return WORKBOT_DEFAULT_MODEL_NAME;
   if (!settings.defaultModel) return "the default model";
   return settings.models.find((entry) => entry.id === settings.defaultModel)?.name ?? "the default model";
 }
 
 function defaultLabel(settings: WorkbotSettings): string {
+  if (settings.defaultReadiness) return `Default: ${WORKBOT_DEFAULT_MODEL_NAME}`;
   return settings.defaultModel ? `Default (${defaultModelName(settings)})` : "Default";
 }
 
@@ -104,7 +106,7 @@ export function WorkbotSettingsScreen() {
   const savedModel = settings?.model ?? null;
   const draftModel = draft || null;
   const changed = draftModel !== savedModel;
-  const canChoose = canManage && settings?.runnerReachable === true && !save.isPending;
+  const canChoose = canManage && settings?.runnerReachable === true && settings.defaultReadiness !== "unverified" && !save.isPending;
 
   async function store(model: string | null, previous: string | null) {
     setSaveError(null);
@@ -138,8 +140,14 @@ export function WorkbotSettingsScreen() {
           {settings && settings.runnerReachable && !settings.modelAvailable && settings.model ? (
             <DenNotice
               tone="warning"
-              message={`The saved model is no longer available. New messages use ${defaultModelName(settings)} until you choose another model.`}
+              message={settings.defaultReadiness
+                ? "The saved model isn't available. Workbot won't send new messages with another model. Choose an available model."
+                : `The saved model is no longer available. New messages use ${defaultModelName(settings)} until you choose another model.`}
             />
+          ) : null}
+
+          {settings?.defaultReadiness && settings.defaultReadiness !== "available" && !settings.model ? (
+            <DenNotice tone="warning" message="Workbot can't use GPT-6 Luna right now. Choose an available model or ask your deployment admin to check access. Existing conversations are kept." />
           ) : null}
 
           {query.isError ? (
@@ -188,6 +196,18 @@ export function WorkbotSettingsScreen() {
                   </>
                 )}
               </SettingsRow>
+              {settings?.defaultReadiness ? (
+                <SettingsRow label="Workbot default">
+                  <span role="status" className="text-[13px] text-gray-600" data-testid="workbot-default-readiness">
+                    {settings.defaultReadiness === "available" ? "GPT-6 Luna available"
+                      : settings.defaultReadiness === "unavailable" ? "GPT-6 Luna unavailable"
+                      : "Couldn't verify GPT-6 Luna"}
+                  </span>
+                  <DenButton variant="secondary" size="sm" loading={query.isFetching} onClick={() => void query.refetch()}>
+                    Check availability
+                  </DenButton>
+                </SettingsRow>
+              ) : null}
               <SettingsRow label="Name">
                 <span className="text-[13px] text-gray-900" data-testid="workbot-name">{name}</span>
                 <Link

@@ -200,6 +200,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotLunaDefault: {
+    label: "Workbot: GPT-6 Luna default",
+    description: "Workbot uses GPT-6 Luna when no organization model is chosen, and admins can check whether that default is available without silently switching providers.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   workbotDocuments: {
     label: "Workbot Documents",
     description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",

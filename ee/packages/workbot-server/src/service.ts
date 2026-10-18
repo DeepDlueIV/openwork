@@ -3,6 +3,7 @@ import type { HeadlessRunnerClient, RunnerSavedFile } from "@openwork-ee/headles
 import { AUTOMATION_CLOUD_DEFAULT_MODEL } from "@openwork/types/automations"
 import { readWorkbotContextPrompt, readWorkbotCorrectionPrompt, workbotContextPrompt, workbotCorrectionPrompt, WORKBOT_MAX_MESSAGE_CHARS, type WorkbotViewContext } from "@openwork/types/workbot-context"
 import { buildWorkbotTurns, GREETING_RUNNER_ID, interruptedTurnIds, threadBusy, WORKBOT_MESSAGE_PREFIX, type WorkbotTurn } from "./thread.js"
+import { workbotModelReady } from "./model-readiness.js"
 
 /**
  * Workbot: one chat per person, set up once by an admin. Each member has a
@@ -54,12 +55,18 @@ export type WorkbotDeps = {
    * Unset: the runner's default.
    */
   model?: (organizationId: string) => Promise<string | null>
+  /** Explicit Luna rollout: refuse new turns unless this runner verifies the selected model. Never blocks reads. */
+  verifyModel?: boolean
   workspaceAssistant?: (organizationId: string) => Promise<boolean>
 }
 
 /** The model a new turn runs on, as `sendTurn` takes it: nothing means the runner's default. */
 async function modelFor(actor: WorkbotActor, deps: WorkbotDeps): Promise<{ model?: string }> {
   const model = deps.model ? await deps.model(actor.organizationId).catch(() => null) : null
+  if (deps.verifyModel) {
+    const catalog = await deps.client?.listModels().catch(() => null) ?? null
+    if (!workbotModelReady(model, catalog)) throw new WorkbotUnavailableError("workbot_model_unavailable")
+  }
   return model ? { model } : {}
 }
 
@@ -162,7 +169,7 @@ function validTimeZone(value: string | undefined) {
 }
 
 export class WorkbotUnavailableError extends Error {
-  constructor(readonly code: "workbot_not_enabled" | "workbot_runner_unavailable") {
+  constructor(readonly code: "workbot_not_enabled" | "workbot_runner_unavailable" | "workbot_model_unavailable") {
     super(code)
     this.name = "WorkbotUnavailableError"
   }

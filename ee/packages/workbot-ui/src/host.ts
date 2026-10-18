@@ -59,6 +59,9 @@ export async function hostFetch(path: string, init: RequestInit = {}) {
 }
 
 export function errorMessage(payload: unknown, fallback: string) {
+  if (typeof payload === "object" && payload !== null && "error" in payload && payload.error === "workbot_model_unavailable") {
+    return "I can't answer with your workspace's model right now. Ask your workspace admin to check Workbot's model."
+  }
   const host = workbotHost()
   if (host.errorMessage) return host.errorMessage(payload, fallback)
   if (typeof payload === "object" && payload !== null && "message" in payload && typeof payload.message === "string") return payload.message

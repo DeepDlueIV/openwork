@@ -22,7 +22,8 @@ import { createInternalMcpPrincipalHeader } from "../session.js"
 import { getOrganizationContextForUser, listTeamsForMember } from "../orgs.js"
 import { listMemberUsableConnectionFacts } from "../routes/org/mcp-connections.js"
 import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
-import { organizationDefaultModel } from "./model.js"
+import { headlessModelCatalog, organizationDefaultModel } from "./model.js"
+import { explicitWorkbotModel } from "./readiness.js"
 import { recordWorkbotTelemetry, workbotTelemetrySchema, workbotTelemetryServiceAuthorized } from "./telemetry.js"
 import { resolvePermissionsForMember } from "../permissions/resolve.js"
 
@@ -59,6 +60,8 @@ const sessionSchema = z.object({
    * omitted by older Dens, means the headless runner's default.
    */
   model: z.string().nullable().optional(),
+  /** Require an authenticated runner catalog before new turns; older Dens omit this. Reads remain available. */
+  verifyModel: z.boolean().optional(),
 }).meta({ ref: "WorkbotSession" })
 
 const runTokenSchema = z.object({ token: z.string(), expiresAt: z.iso.datetime() }).meta({ ref: "WorkbotRunToken" })
@@ -275,11 +278,14 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         // Den's management list requires View all connections as well as the write permission.
         apps: permissions?.has("connections.manage") === true && permissions.has("connections.view"),
       }
-      // A failed read must not sign anyone out of Workbot: it answers on the runner's default instead.
-      const model = await organizationDefaultModel(organization.id, {
-        features: async () => features,
-        chosenModel: async () => readWorkbotModel(organization.metadata),
-      }).catch(() => null)
+      const verifyModel = features.workbot && features.workbotLunaDefault
+      // Explicit routing applies only to Workbot. Slack and Automations retain their existing policy.
+      const model = verifyModel
+        ? explicitWorkbotModel(readWorkbotModel(organization.metadata), await headlessModelCatalog())
+        : await organizationDefaultModel(organization.id, {
+          features: async () => features,
+          chosenModel: async () => readWorkbotModel(organization.metadata),
+        }).catch(() => null)
       return c.json({
         user,
         organization: { id: organization.id, name: organization.name, brandAppName: readBrandAppName(organization.metadata) },
@@ -293,6 +299,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         sideChats: features.workbot,
         teamLinks,
         model,
+        ...(verifyModel ? { verifyModel: true } : {}),
       })
     },
   )

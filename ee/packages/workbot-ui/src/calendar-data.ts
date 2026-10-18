@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import {
   denGoogleCalendarEventsResponseSchema,
@@ -68,7 +68,11 @@ export const workbotRunsSource: AutomationRunsSource = {
     if (input.limit) params.set("limit", String(input.limit));
     return calendarJson(automationRunRangeSchema, `/v1/automation-runs?${params.toString()}`);
   },
-  listRuns: (automationId, input) => calendarJson(runPageSchema, `/v1/automations/${encodeURIComponent(automationId)}/runs?limit=${input.limit}`),
+  listRuns: (automationId, input) => {
+    const params = new URLSearchParams({ limit: String(input.limit) });
+    if (input.cursor) params.set("cursor", input.cursor);
+    return calendarJson(runPageSchema, `/v1/automations/${encodeURIComponent(automationId)}/runs?${params}`);
+  },
 };
 
 export const workbotCalendarTransport: CalendarTransport = {
@@ -80,17 +84,51 @@ export const workbotCalendarTransport: CalendarTransport = {
 export const calendarKey = ["workbot", "calendar"] as const;
 
 export function useWorkbotAutomations() {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: [...calendarKey, "automations"],
-    queryFn: () => calendarJson(automationListSchema, "/v1/automations?limit=100"),
+    initialPageParam: "",
+    queryFn: async ({ pageParam, signal }) => {
+      const params = new URLSearchParams({ limit: "100" });
+      if (pageParam) params.set("cursor", pageParam);
+      const page = await calendarJson(automationListSchema, `/v1/automations?${params}`, { signal });
+      if (page.nextCursor === pageParam) throw new Error("The automation list did not advance. Try again.");
+      return page;
+    },
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
     refetchInterval: 60_000,
   });
+  const data = useMemo(() => query.data ? {
+    items: [...new Map(query.data.pages.flatMap((page) => page.items).map((item) => [item.automation.id, item])).values()],
+    nextCursor: query.data.pages.at(-1)?.nextCursor ?? null,
+  } : undefined, [query.data]);
+  return { ...query, data };
 }
 
 export function useAutomationRuns(automationId: string | null) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: [...calendarKey, "runs", automationId],
-    queryFn: () => calendarJson(runPageSchema, `/v1/automations/${encodeURIComponent(automationId ?? "")}/runs?limit=10`),
+    initialPageParam: "",
+    queryFn: async ({ pageParam, signal }) => {
+      const params = new URLSearchParams({ limit: "20" });
+      if (pageParam) params.set("cursor", pageParam);
+      const page = await calendarJson(runPageSchema, `/v1/automations/${encodeURIComponent(automationId ?? "")}/runs?${params}`, { signal });
+      if (page.nextCursor === pageParam) throw new Error("The run history did not advance. Try again.");
+      return page;
+    },
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    enabled: automationId !== null,
+  });
+  const data = useMemo(() => query.data ? {
+    items: [...new Map(query.data.pages.flatMap((page) => page.items).map((run) => [run.id, run])).values()],
+    nextCursor: query.data.pages.at(-1)?.nextCursor ?? null,
+  } : undefined, [query.data]);
+  return { ...query, data };
+}
+
+export function useWorkbotAutomation(automationId: string | null) {
+  return useQuery({
+    queryKey: [...calendarKey, "automation", automationId],
+    queryFn: ({ signal }) => calendarJson(automationDetailSchema, `/v1/automations/${encodeURIComponent(automationId ?? "")}`, { signal }),
     enabled: automationId !== null,
   });
 }

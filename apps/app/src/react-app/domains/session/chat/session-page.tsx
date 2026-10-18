@@ -776,7 +776,7 @@ export function SessionPage(props: SessionPageProps) {
         preview: fileTarget.preview,
         target: fileTarget,
         runtime: {
-          client: runtime.client,
+          serverBaseUrl: runtime.client?.baseUrl ?? "",
           workspaceId: runtime.runtimeWorkspaceId,
           workspaceRoot: runtime.workspaceRoot,
           isLocalWorkspace: runtime.workspaceType === "local",

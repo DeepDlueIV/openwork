@@ -65,14 +65,21 @@ function isTextContent(target: OpenTarget): boolean {
 }
 
 export function ArtifactPanel(props: ArtifactPanelProps) {
-  const { sessionId, tab, onClose } = props;
-  const { client, workspaceId, workspaceRoot, isLocalWorkspace = false } = tab.runtime ?? props;
+  const { sessionId, tab, client, workspaceId, workspaceRoot, onClose } = props;
+  const isLocalWorkspace = props.isLocalWorkspace === true && tab.runtime?.isLocalWorkspace !== false;
   const transcriptTargets = usePanelTabStore((state) => state.transcriptArtifactTargets[sessionId] ?? EMPTY_TRANSCRIPT_TARGETS);
   const artifactTargets = useMemo(() => transcriptTargets.filter(isCollectibleArtifactTarget), [transcriptTargets]);
   const target = tab.target ?? artifactTargets.find((item) => item.id === tab.id) ?? null;
 
   if (!target || !client || !workspaceId) {
     return null;
+  }
+  // A tab carries provenance, never a captured client/token that can outlive
+  // the active connection. A different workspace must not borrow this one's
+  // file access or local shell, even when their path strings happen to match.
+  if (tab.runtime && (tab.runtime.serverBaseUrl !== client.baseUrl
+    || tab.runtime.workspaceId !== workspaceId || tab.runtime.workspaceRoot !== workspaceRoot)) {
+    return <PreviewError message="Open this file in its workspace to preview it." />;
   }
 
   return (
@@ -118,7 +125,7 @@ function ArtifactPanelView({ sessionId, client, workspaceId, workspaceRoot, isLo
       label: nextTarget.name,
       preview: nextTarget.preview,
       target: nextTarget,
-      runtime: { client, workspaceId, workspaceRoot, isLocalWorkspace },
+      runtime: { serverBaseUrl: client.baseUrl, workspaceId, workspaceRoot, isLocalWorkspace },
     });
   };
 

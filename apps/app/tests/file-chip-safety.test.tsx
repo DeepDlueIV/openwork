@@ -8,6 +8,8 @@ import { OpenTargetProvider } from "../src/lib/target-provider";
 import { PlatformProvider, createDefaultPlatform } from "../src/react-app/kernel/platform";
 import { nativeFileAction, openTargetForHref } from "../src/react-app/domains/session/artifacts/resolve-open-target";
 import { openTargetFromWorkspaceFile } from "../src/react-app/domains/session/artifacts/open-target";
+import { ArtifactPanel } from "../src/react-app/domains/session/artifacts/artifact-panel";
+import { createOpenworkServerClient } from "../src/app/lib/openwork-server";
 
 const ownedDom = typeof window === "undefined";
 if (ownedDom) GlobalRegistrator.register({ url: "http://localhost/" });
@@ -41,6 +43,26 @@ test("chip resolution retains the exact verified target and missing state rather
   const missing = { ...verified, exists: false };
   expect(openTargetForHref("/work/report.pdf", [missing], "/work")).toBe(missing);
   expect(openTargetForHref("report.pdf", [missing], "/work")?.exists).toBe(false);
+});
+
+test("an artifact from another runtime cannot borrow the active connection or local shell", async () => {
+  const client = createOpenworkServerClient({ baseUrl: "http://active.example.test", token: "current-fixture-token" });
+  const target = openTargetFromWorkspaceFile("report.pdf");
+  if (!target) throw new Error("fixture target missing");
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ArtifactPanel sessionId="chat" client={client} workspaceId="active" workspaceRoot="/work" isLocalWorkspace
+      tab={{ id: target.id, type: "artifact", label: target.name, preview: target.preview, target,
+        runtime: { serverBaseUrl: "http://worker.example.test", workspaceId: "worker", workspaceRoot: "/work", isLocalWorkspace: false } }} onClose={() => {}} />));
+    expect(host.textContent).toContain("Open this file in its workspace to preview it.");
+    expect(host.querySelectorAll("button")).toHaveLength(0);
+    await act(async () => root.render(<ArtifactPanel sessionId="chat" client={null} workspaceId={null} workspaceRoot="/work" isLocalWorkspace
+      tab={{ id: target.id, type: "artifact", label: target.name, preview: target.preview, target,
+        runtime: { serverBaseUrl: "http://worker.example.test", workspaceId: "worker", workspaceRoot: "/work", isLocalWorkspace: false } }} onClose={() => {}} />));
+    expect(host.textContent).toBe("");
+  } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
 for (const scenario of [

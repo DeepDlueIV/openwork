@@ -62,6 +62,10 @@ export function agentPermissionsQueryKey(orgId: string): string[] {
   return ["agent-permissions", orgId];
 }
 
+export class AgentPermissionsReadError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 export function useAgentPermissions(orgId: string, enabled = true) {
   return useQuery({
     queryKey: agentPermissionsQueryKey(orgId),
@@ -75,7 +79,7 @@ export function useAgentPermissions(orgId: string, enabled = true) {
         15000,
       );
       if (!response.ok) {
-        throw new Error(getErrorMessage(payload, `Couldn't load agent permissions (${response.status}).`));
+        throw new AgentPermissionsReadError(getErrorMessage(payload, `Couldn't load agent permissions (${response.status}).`), response.status);
       }
       const parsed = listSchema.safeParse(payload);
       if (!parsed.success) throw new Error("Agent permissions returned an unexpected response.");

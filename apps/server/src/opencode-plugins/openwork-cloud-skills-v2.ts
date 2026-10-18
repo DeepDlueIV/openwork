@@ -20,14 +20,16 @@ type CatalogSkill = Catalog["skills"][number];
 
 type NativeSkill = { id: string; name: string; description: string; path: string; content: string };
 type Registration = { dispose(): Promise<void> };
-type PromptEvent = { prompt: { text: string; skills?: Array<{ id: string }> } };
+type PromptEvent = { readonly sessionID: string; prompt: { text: string; skills?: Array<{ id: string }> } };
 export type CloudSkillContext = {
   options: { url: string; token: string };
   skill: {
     transform(callback: (editor: { get(id: string): unknown; add(skill: NativeSkill): void }) => void): Promise<Registration>;
     reload(): Promise<void>;
   };
-  session?: { hook(name: "prompt", callback: (event: PromptEvent) => void): Promise<Registration> };
+  session?: {
+    hook(name: "prompt", callback: (event: PromptEvent) => void | Promise<void>): Promise<Registration>;
+  };
 };
 
 export const CLOUD_SKILL_ID_PREFIX = "openwork-cloud-";
@@ -39,6 +41,7 @@ const DISCOVERY_DESCRIPTION_CHARS = 200;
 const NATIVE_BUDGET_CHARS = 64_000;
 const NATIVE_DESCRIPTION_CHARS = 1_024;
 const MAX_MENTIONED_SKILLS = 3;
+const MAX_CONCURRENT_READS = 2;
 
 const skillId = (skill: CatalogSkill) => `${CLOUD_SKILL_ID_PREFIX}${skill.name}`;
 // Not SKILL.md: the native skill tool must not scan a fake directory. The engine
@@ -145,14 +148,15 @@ export function mentionedSkillIds(text: string, skills: ReadonlyArray<Pick<Nativ
   return ids;
 }
 
-/** Setup only starts background discovery, not a network dependency. Do not
- * touch the native registry until opted-in metadata arrives: the off path must
- * leave local skill discovery alone, including its cold initialization.
- * No storage, configuration rewrite, watcher, or admission hook is involved
- * until Den turns native delivery on. */
+/** Setup starts background discovery, not a chat-wide network dependency.
+ * Do not touch the native registry until opted-in metadata arrives. The prompt
+ * hook is inert off-rollout; only explicit Cloud attachments wait for the cold
+ * metadata read, and only selected native instructions gate their admission.
+ * No storage, configuration rewrite or watcher is involved. */
 export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
   let skills: NativeSkill[] = [];
   let native = false;
+  let catalog: Catalog = { skills: [] };
   let fingerprint = "[]";
   let closed = false;
   let refreshing = false;
@@ -163,7 +167,7 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
   let registration: Registration | undefined;
   let promptHook: Registration | undefined;
 
-  const call = async (name: "openwork_skills" | "openwork_skill_read", input: unknown) => {
+  const call = async (name: "openwork_skills" | "openwork_skill_read" | "openwork_skill_authorize", input: unknown) => {
     const response = await fetch(context.options.url, {
       method: "POST", redirect: "error",
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
@@ -173,42 +177,11 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
     return response.ok ? await response.json() : null;
   };
 
-  const loadContents = async (catalog: Catalog) => {
-    const wanted = new Set(catalog.skills.flatMap(skill => skill.digest && !skill.setup ? [skill.digest] : []));
-    for (const digest of contents.keys()) if (!wanted.has(digest)) contents.delete(digest);
-    for (const skill of catalog.skills) {
-      if (closed || !skill.digest || !skill.url || skill.setup || contents.has(skill.digest)) continue;
-      const result = z.object({ content: z.string() }).safeParse(await call("openwork_skill_read", { url: skill.url }).catch(() => null));
-      // Only a body that matches Den's published digest is used.
-      if (result.success && sha256Digest(result.data.content) === skill.digest) contents.set(skill.digest, result.data.content);
-    }
-  };
-
-  const ensurePromptHook = async () => {
-    if (promptHook || !context.session) return;
-    promptHook = await context.session.hook("prompt", event => {
-      if (!native || skills.length === 0) return;
-      const attached = new Set((event.prompt.skills ?? []).map(skill => skill.id));
-      const mentioned = mentionedSkillIds(event.prompt.text, skills).filter(id => !attached.has(id));
-      if (mentioned.length === 0) return;
-      event.prompt.skills = [...(event.prompt.skills ?? []), ...mentioned.map(id => ({ id }))];
-    });
-  };
-
-  const refresh = async () => {
-    if (closed || refreshing) return;
-    refreshing = true;
-    try {
-      const value = await call("openwork_skills", {});
-      if (value === null) return;
-      const catalog = catalogSchema.parse(value);
-      native = catalog.delivery === "native";
-      if (native) {
-        await loadContents(catalog);
-        await ensurePromptHook();
-      } else {
-        contents.clear();
-      }
+  // Publish metadata immediately, then replace discovery notes as individual
+  // bodies arrive. A prompt never waits for the full catalog to hydrate.
+  let publishing = Promise.resolve();
+  const publish = () => {
+    publishing = publishing.catch(() => {}).then(async () => {
       const next = native ? nativeSkills(catalog, contents) : discoverySkills(catalog);
       const key = JSON.stringify(next);
       if (closed || key === fingerprint) return;
@@ -227,6 +200,104 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
         await context.skill.reload();
       }
       fingerprint = key;
+    });
+    return publishing;
+  };
+
+  type ReadJob = { digest: string; run(): Promise<void>; done: Promise<void> };
+  const pending: ReadJob[] = [];
+  const reading = new Map<string, ReadJob>();
+  let activeReads = 0;
+  const drain = () => {
+    while (!closed && activeReads < MAX_CONCURRENT_READS && pending.length) {
+      const job = pending.shift();
+      if (!job) break;
+      activeReads++;
+      void job.run().catch(() => {}).finally(() => { activeReads--; reading.delete(job.digest); drain(); });
+    }
+  };
+  const hydrate = (skill: CatalogSkill, urgent = false): Promise<void> => {
+    const { digest, url } = skill;
+    if (closed || !digest || !url || skill.setup || contents.has(digest)) return Promise.resolve();
+    const existing = reading.get(digest);
+    if (existing) {
+      // A selected skill jumps ahead of queued catalog reads, not ahead of
+      // the two network requests already running. No second fetch per digest.
+      const index = pending.indexOf(existing);
+      if (urgent && index > 0) { pending.splice(index, 1); pending.unshift(existing); }
+      return existing.done;
+    }
+    let finish: () => void = () => {};
+    const done = new Promise<void>(resolve => { finish = resolve; });
+    const job: ReadJob = { digest, done, async run() {
+      try {
+        if (closed || !native || !catalog.skills.some(entry => entry.digest === digest && entry.url === url && !entry.setup)) return;
+        const result = z.object({ content: z.string() }).safeParse(await call("openwork_skill_read", { url }).catch(() => null));
+        // A late read cannot restore instructions removed by a refresh/kill.
+        if (!closed && native && catalog.skills.some(entry => entry.digest === digest && entry.url === url && !entry.setup)
+          && result.success && sha256Digest(result.data.content) === digest) {
+          contents.set(digest, result.data.content);
+          await publish();
+        }
+      } finally { finish(); }
+    } };
+    reading.set(digest, job);
+    if (urgent) pending.unshift(job); else pending.push(job);
+    drain();
+    return done;
+  };
+
+  const ensurePromptHook = async () => {
+    if (promptHook || !context.session) return;
+    const session = context.session;
+    promptHook = await session.hook("prompt", async event => {
+      const attached = new Set((event.prompt.skills ?? []).map(skill => skill.id));
+      const explicit = [...attached].filter(id => id.startsWith(CLOUD_SKILL_ID_PREFIX));
+      // Only an explicit Cloud attachment needs the cold catalog promise.
+      // Ordinary chat never waits on discovery, let alone all catalog bodies.
+      if (explicit.length) await initialCatalog;
+      if (!native || closed) return;
+      const mentioned = mentionedSkillIds(event.prompt.text, skills).filter(id => !attached.has(id));
+      const ids = [...explicit, ...mentioned];
+      if (ids.length === 0) return;
+      // The pinned engine materializes prompt attachments without the skill
+      // tool's check. The bridge uses the same permission-create operation as
+      // explicit composer attachments, including the engine's policy hooks.
+      const permission = z.object({ data: z.object({ effect: z.enum(["allow", "ask", "deny"]) }) })
+        .parse(await call("openwork_skill_authorize", { sessionID: event.sessionID, ids }));
+      if (permission.data.effect !== "allow") {
+        throw new Error(permission.data.effect === "ask"
+          ? "Named skills require permission. Nothing was sent. Allow these skills in the permission request, then send again."
+          : "Named skills are not permitted. Nothing was sent.");
+      }
+      const selected = ids.map(id => catalog.skills.find(skill => skillId(skill) === id));
+      await Promise.all(selected.map(skill => skill ? hydrate(skill, true) : Promise.resolve()));
+      if (!native || closed) return;
+      if (selected.some(skill => !skill?.digest || skill.setup || !contents.has(skill.digest)
+        || !catalog.skills.some(current => skillId(current) === skillId(skill) && current.digest === skill.digest && !current.setup))) {
+        throw new Error("Skill instructions are unavailable. Nothing was sent. Try again or retrieve the skill through get_skill.");
+      }
+      await publish();
+      event.prompt.skills = [...(event.prompt.skills ?? []), ...mentioned.map(id => ({ id }))];
+    });
+  };
+
+  const refresh = async () => {
+    if (closed || refreshing) return;
+    refreshing = true;
+    try {
+      const value = await call("openwork_skills", {});
+      if (value === null) return;
+      const incoming = catalogSchema.parse(value);
+      native = incoming.delivery === "native";
+      // Apply listing budgets BEFORE fetching any bodies, including visibility,
+      // count and description cost. Unselected catalog entries cost no reads.
+      const selected = new Set((native ? nativeSkills(incoming, new Map()) : discoverySkills(incoming)).map(skill => skill.id));
+      catalog = { ...incoming, skills: incoming.skills.filter(skill => skill.modelDiscovery === true && selected.delete(skillId(skill))) };
+      const wanted = new Set(native ? catalog.skills.flatMap(skill => skill.digest && !skill.setup ? [skill.digest] : []) : []);
+      for (const digest of contents.keys()) if (!wanted.has(digest)) contents.delete(digest);
+      await publish();
+      if (native) for (const skill of catalog.skills) void hydrate(skill).catch(() => {});
     } catch {
       // Cloud readiness is never a prerequisite to chatting. Discovery entries
       // carry no body; native bodies are dropped as soon as Den stops listing them.
@@ -234,15 +305,20 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
       refreshing = false;
     }
   };
+  let initialCatalog = Promise.resolve();
+  await ensurePromptHook();
   const timer = setInterval(() => void refresh(), 30_000);
   timer.unref();
-  void refresh();
+  initialCatalog = refresh();
   return async () => {
     closed = true;
     clearInterval(timer);
     controller.abort();
     skills = [];
     contents.clear();
+    for (const job of pending.splice(0)) void job.run();
+    reading.clear();
+    await publishing.catch(() => {});
     await promptHook?.dispose();
     await registration?.dispose();
   };

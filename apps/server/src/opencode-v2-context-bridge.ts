@@ -7,9 +7,14 @@ import { createV2ReadAdapter, readV2SessionActivity } from "./opencode-v2-read-a
 import { isRecord } from "./workspace-kv-store.js";
 import { createV2BrowserBridge } from "./opencode-v2-browser-bridge.js";
 
-const requestSchema = z.object({ name: z.enum(["openwork_context", "openwork_query", "openwork_skills", "openwork_skill_read"]), input: z.unknown() });
-// Advertise only reads this bridge executes. Native MCP discovery owns remote
-// tool names; v1 executor spellings and unregistered commands do not belong here.
+const requestSchema = z.object({ name: z.enum(["openwork_context", "openwork_query", "openwork_skills", "openwork_skill_read", "openwork_skill_authorize"]), input: z.unknown() });
+const skillAuthorizationSchema = z.object({
+  sessionID: z.string().regex(/^ses_[a-zA-Z0-9]+$/).max(128),
+  ids: z.array(z.string().regex(/^openwork-cloud-[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80)).min(1).max(150),
+}).strict();
+// Advertise only reads this bridge executes. The internal Cloud-attachment
+// authorization operation is not a model tool or a generic command executor.
+// Native MCP discovery owns remote tool names.
 function readAffordances(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(readAffordances);
   if (!isRecord(value)) return value;
@@ -24,7 +29,10 @@ function readAffordances(value: unknown): unknown {
  * Build this host entry as one bundle: packaged desktops relocate engine plugin
  * files, and the shared factory and its request-local transport must use the
  * same AsyncLocalStorage instance rather than separately bundled copies. */
-export async function createV2ContextBridge(hostRequest: (path: string, init?: RequestInit) => Promise<unknown>) {
+export async function createV2ContextBridge(
+  hostRequest: (path: string, init?: RequestInit) => Promise<unknown>,
+  authorizeSkillAttachment?: (sessionID: string, ids: string[]) => Promise<unknown>,
+) {
   const token = randomBytes(32).toString("base64url");
   const plugin = await OpenWorkExtensionsPreview();
   const server = await serve({ hostname: "127.0.0.1", port: 0, fetch: async request => {
@@ -44,6 +52,15 @@ export async function createV2ContextBridge(hostRequest: (path: string, init?: R
       // runs in the background and never participates in prompt admission.
       if (call.name === "openwork_skills") {
         return Response.json(await read("/experimental/connect/skills"));
+      }
+      // This capability can only evaluate Cloud skill attachments; it cannot
+      // grant permission, reply to a request, or invoke arbitrary host APIs.
+      // Den's existing default-off nativeCloudSkills rollout owns this path.
+      if (call.name === "openwork_skill_authorize") {
+        const input = skillAuthorizationSchema.parse(call.input);
+        const catalog = z.object({ delivery: z.literal("native") }).safeParse(await read("/experimental/connect/skills"));
+        if (!catalog.success || !authorizeSkillAttachment) return new Response(null, { status: 403 });
+        return Response.json(await authorizeSkillAttachment(input.sessionID, input.ids));
       }
       // Internal plugin read: one listed skill's SKILL.md for native delivery.
       if (call.name === "openwork_skill_read") {

@@ -1,11 +1,12 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveEvalEngine, type Seed } from "@openwork/env";
+import type { Seed } from "@openwork/env";
 import { configureProvider } from "./chat.ts";
 
 export const producedFilePrompt = "Prepare a two-sheet budget workbook.";
 export async function producedFileEvidence(seed: Seed) {
-  const engine = resolveEvalEngine();
+  // This tool ships on v1. A second world below proves the native v2 path.
+  const engine = "v1";
   const workspacePath = seed.tmpPath("produced-file-evidence");
   await mkdir(workspacePath, { recursive: true });
   const mock = seed.mock({ isolatedProcessEnv: true, agentWorkloads: [{
@@ -17,10 +18,10 @@ export async function producedFileEvidence(seed: Seed) {
         { name: "Summary", rows: [["Total", 30]] }, { name: "Inputs", rows: [["North", 10], ["South", 20]] },
       ] } },
       // Merely printing a plausible path must not promote another artifact.
-      { tool: engine === "v2" ? "shell" : "bash", arguments: { command: "printf 'not-produced.pdf\\n'", description: "Read a reference" } },
+      { tool: "bash", arguments: { command: "printf 'not-produced.pdf\\n'", description: "Read a reference" } },
     ],
   }] });
-  const app = await seed.appWeb({ name: "produced-file-evidence", workspacePath, headless: true, mocks: { agent: mock } });
+  const app = await seed.appWeb({ name: "produced-file-evidence", workspacePath, engine, headless: true, mocks: { agent: mock } });
   const workspace = await seed.workspace(app, workspacePath);
   const witness = app.mocks.agent;
   if (!witness) throw new Error("Export model witness did not start");

@@ -10,8 +10,16 @@ import { createDenClient } from "../src/app/lib/den";
 import { useAutomationListQuery, type AutomationsDenContext } from "../src/react-app/domains/automations/use-automations";
 
 const runtimeFetch = globalThis.fetch;
-beforeAll(() => { GlobalRegistrator.register(); Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, fetch: runtimeFetch }); });
-afterAll(() => GlobalRegistrator.unregister());
+const ownedDom = !GlobalRegistrator.isRegistered && typeof document === "undefined";
+const previousAct = Reflect.get(globalThis, "IS_REACT_ACT_ENVIRONMENT");
+beforeAll(() => {
+  if (ownedDom) GlobalRegistrator.register({ url: "http://localhost/" });
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, fetch: runtimeFetch });
+});
+afterAll(async () => {
+  Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", previousAct);
+  if (ownedDom) await GlobalRegistrator.unregister();
+});
 
 function item(index: number): AutomationList["items"][number] {
   return {

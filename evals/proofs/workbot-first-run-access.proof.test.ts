@@ -32,6 +32,7 @@ test("a member in a disabled workspace gets a real next action, while an enabled
   });
   await step("an enabled workspace opens chat instead of the disabled screen", async () => {
     await user.navigate(`${world.url}?enabled=true`);
+    await user.click({ role: "button", label: "Get started" });
     await user.see({ role: "textbox", label: "Message Workbot" });
     await user.notSee({ testId: "workbot-workspace-access" });
     expect((await probe.dom('[data-testid="workbot-workspace-access"]')).elements).toHaveLength(0);

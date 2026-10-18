@@ -38,6 +38,16 @@ test("a new person verifies their email, creates a workspace and returns directl
     await user.notSee({ text: "Requested access" });
     await user.screenshot();
     await user.click({ role: "button", label: "Create workspace and open Workbot" });
+    await probe.eventually(() => probe.url(), { within: 60_000, label: "the OAuth callback returns to Workbot", until: url => new URL(url).origin === world.url && new URL(url).pathname === "/" });
+    await user.navigate(`${world.url}/v1/workbot/me`);
+    const account: unknown = JSON.parse(await probe.text());
+    expect(account).toMatchObject({ organizationName: world.workspaceName, enabled: true, firstRun: true });
+    await user.navigate(world.url);
+    const arrival = await probe.eventually(async () => ({
+      ready: (await probe.dom('textarea[aria-label="Message Workbot"]')).elements.length > 0,
+      welcome: await probe.has("Get started"),
+    }), { within: 30_000, label: "Workbot opens the conversation or its optional welcome", until: value => value.ready || value.welcome });
+    if (arrival.welcome) await user.click({ role: "button", label: "Get started" });
     await user.see({ role: "textbox", label: "Message Workbot" }, { timeoutMs: 90_000 });
     await user.notSee({ testId: "workbot-workspace-access" });
     expect(new URL(await probe.url()).origin).toBe(world.url);

@@ -12,13 +12,17 @@ export async function workbotFirstRun(seed: Seed) {
   try {
     const world = await bootWorkbot(resources, undefined, {
       live: false,
-      denEnv: { DEN_ORG_MODE: "multi_org", DEN_REQUIRE_EMAIL_VERIFICATION: "true", DEN_FEATURE_WORKBOT_FIRST_RUN: "true" },
+      // Do not share deployment feature-cache keys with other local worlds' disposable databases.
+      denEnv: { DATABASE_REDIS_URL: "", DEN_ORG_MODE: "multi_org", DEN_REQUIRE_EMAIL_VERIFICATION: "true", DEN_FEATURE_WORKBOT_FIRST_RUN: "true" },
     });
     const rollout = await denFetch(world.den.admin, "/v1/admin/features/workbot", {
       method: "PUT", headers: { authorization: `Bearer ${world.den.admin.token}`, "content-type": "application/json" },
       body: JSON.stringify({ enabled: true }),
     });
-    if (!rollout.response.ok) throw new Error(`Local Workbot rollout: HTTP ${rollout.response.status}`);
+    const feature = isRecord(rollout.body) ? rollout.body.feature : null;
+    if (!rollout.response.ok || !isRecord(feature) || feature.enabled !== true || feature.killed === true || feature.lock === false) {
+      throw new Error(`Local Workbot rollout is not enabled: HTTP ${rollout.response.status}`);
+    }
     const runId = `${Date.now().toString(36)}${process.pid.toString(36)}`;
     const person = personDefaults("first-workbot", undefined, runId);
     const web = await seed.web({ den: world.den, headless: true, viewport: { width: 1440, height: 1000 } });

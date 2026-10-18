@@ -221,7 +221,7 @@ function ScopeAgents({ access, data, policy, team, area }: {
   const hasEdits = draft !== null && !sameSettings(draft, draftBase);
   const conflict = hasEdits && !sameSettings(draftBase, policy.settings);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const editable = data.canEdit;
+  const editable = data.canEdit && access.canManage;
   const settings = hasEdits && draft ? draft : policy.settings;
   const name = team ?? "Everyone";
   const changes = hasEdits && draft ? agentPermissionDefinitions.filter((definition) => !sameSetting(definition, draft[definition.key], draftBase[definition.key])).length : 0;

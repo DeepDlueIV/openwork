@@ -178,9 +178,8 @@ export function parseRemoteRead(payload: unknown): RemoteReadOutcome {
   const requestId = remotePendingRequestId(payload)
   if (requestId) return { kind: "pending", requestId }
   const record = parseRecord(payload)
-  const messages = Array.isArray(record?.messages)
-    ? record.messages.flatMap((message) => transcriptMessage(message) ?? [])
-    : []
+  if (!Array.isArray(record?.messages)) return { kind: "error", code: "invalid_transcript", message: "Couldn't confirm the conversation. Check again.", retryable: true }
+  const messages = record.messages.flatMap((message) => transcriptMessage(message) ?? [])
   return {
     kind: "page",
     page: {

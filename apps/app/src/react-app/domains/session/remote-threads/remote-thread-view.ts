@@ -25,7 +25,7 @@ export type RemoteThreadView = {
 
 const STOPPED = /abort|interrupt|cancel/i
 
-export function remoteThreadView(start: RemoteThreadStart, entry: RemoteThreadEntry | null, now: number, stoppedHere = false): RemoteThreadView {
+export function remoteThreadView(start: RemoteThreadStart, entry: RemoteThreadEntry | null, now: number): RemoteThreadView {
   const status = entry?.status ?? null
   // Before the first answer: Cloud tasks are already running, others wait for their computer.
   const state: RemoteSessionThreadState = status?.state ?? (start.target === "cloud" ? "running" : "starting")
@@ -33,7 +33,7 @@ export function remoteThreadView(start: RemoteThreadStart, entry: RemoteThreadEn
     ? t("session.remote_task_cloud")
     : status?.computerLabel ?? t("session.remote_task_your_computer")
   const error = status?.error ?? null
-  const stopped = state === "error" && (stoppedHere || STOPPED.test(`${error?.code ?? ""} ${error?.message ?? ""}`))
+  const stopped = state === "error" && STOPPED.test(`${error?.code ?? ""} ${error?.message ?? ""}`)
   const waitingFor = state === "waiting" ? status?.waitingFor ?? "question" : null
   const since = entry?.activeSince ?? null
   const elapsed = since === null ? "" : formatElapsedSeconds(Math.max(0, Math.floor((now - since) / 1000)))
@@ -41,16 +41,20 @@ export function remoteThreadView(start: RemoteThreadStart, entry: RemoteThreadEn
     : waitingFor === "permission" ? t("session.remote_task_permission", { computer })
     : waitingFor === "question" ? t("session.remote_task_question", { computer })
     : state === "idle" ? [t("session.remote_task_completed"), status?.preview].filter(Boolean).join(" · ")
-    : state === "error" ? stopped ? t("session.remote_task_stopped") : error?.message ?? t("session.remote_task_stopped")
+    : state === "error" ? stopped ? t("session.remote_task_stopped") : error?.message ?? "Task failed · open the conversation to check it"
     : t("session.remote_task_working", { elapsed }).trim()
+  const stop = entry?.stop
+  const stopLine = state !== "idle" && state !== "error" && stop && stop.phase !== "failed"
+    ? stop.phase === "requesting" ? "Requesting Stop…" : stop.phase === "accepted" ? "Stop requested · waiting for the task" : "Stop not confirmed · task may still be running"
+    : null
   return {
     title: status?.title && status.title !== "Remote session" ? status.title : start.title,
     computer,
     state,
     waitingFor,
     stopped,
-    status: line,
-    lastChecked: entry?.stale && entry.checkedAt ? t("session.remote_task_last_checked", { time: formatRelativeTime(entry.checkedAt) }) : null,
+    status: stopLine ?? line,
+    lastChecked: entry?.stale ? entry.checkedAt ? `Couldn't verify · ${t("session.remote_task_last_checked", { time: formatRelativeTime(entry.checkedAt) })}` : "Couldn't verify this task" : null,
     active: state !== "idle" && state !== "error",
     started: Boolean(status?.sessionId ?? start.sessionId),
   }

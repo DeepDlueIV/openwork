@@ -44,6 +44,14 @@ const REVIVE_WINDOW_MS = 2 * 60_000
 
 export type RemoteThreadOwner = { workspaceId: string; sessionId: string }
 
+/** A request is not proof that the remote turn stopped or a message arrived. */
+export type RemoteThreadAction = {
+  phase: "requesting" | "accepted" | "unconfirmed" | "failed"
+  message: string | null
+  requestId: string | null
+}
+export type RemoteThreadFollowUp = RemoteThreadAction & { id: string; text: string }
+
 export type RemoteThreadEntry = {
   start: RemoteThreadStart
   organizationId: string
@@ -58,6 +66,8 @@ export type RemoteThreadEntry = {
   /** When this window first showed the task. */
   firstSeenAt: number
   followedUpAt: number | null
+  followUps: RemoteThreadFollowUp[]
+  stop: RemoteThreadAction | null
   owners: Record<string, RemoteThreadOwner>
   viewers: number
   lastViewedAt: number
@@ -73,6 +83,7 @@ type RemoteThreadState = {
   revive: (sessionId: string) => void
   apply: (result: RemoteSessionStatusResult, keys: readonly string[], checkedAt: number) => void
   markStale: (keys: readonly string[]) => void
+  update: (key: string, change: (entry: RemoteThreadEntry) => RemoteThreadEntry) => void
 }
 
 function settled(entry: RemoteThreadEntry) {
@@ -114,6 +125,8 @@ export const useRemoteThreadStore = create<RemoteThreadState>()((set, get) => ({
             activeSince: input.startedAt,
             firstSeenAt: now,
             followedUpAt: null,
+            followUps: [],
+            stop: null,
             owners: { [ownerKey]: input.owner },
             viewers: 1,
             lastViewedAt: now,
@@ -134,7 +147,7 @@ export const useRemoteThreadStore = create<RemoteThreadState>()((set, get) => ({
     set((state) => {
       const current = state.threads[key]
       if (!current) return state
-      return { threads: { ...state.threads, [key]: { ...current, followedUpAt: now, activeSince: now } } }
+      return { threads: { ...state.threads, [key]: { ...current, followedUpAt: now, activeSince: now, stop: null } } }
     })
     kick(true)
   },
@@ -161,6 +174,11 @@ export const useRemoteThreadStore = create<RemoteThreadState>()((set, get) => ({
       return { threads }
     })
   },
+  update: (key, change) => set((state) => {
+    const entry = state.threads[key]
+    if (!entry) return state
+    return { threads: { ...state.threads, [key]: change(entry) } }
+  }),
   markStale: (keys) => {
     set((state) => {
       const threads = { ...state.threads }

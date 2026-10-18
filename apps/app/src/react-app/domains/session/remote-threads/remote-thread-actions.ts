@@ -7,13 +7,7 @@ import {
   remotePendingRequestId,
   type RemoteReadOutcome,
 } from "@/lib/remote-session-thread"
-import { useRemoteThreadStore, type RemoteThreadEntry } from "./remote-thread-store"
-
-/**
- * What a person does with a task from its panel: read it, follow up, stop it.
- * Each is one Den call; a desktop that takes longer than about 20 seconds
- * answers with a requestId, which is read every two seconds until it does.
- */
+import { useRemoteThreadStore, type RemoteThreadAction, type RemoteThreadEntry } from "./remote-thread-store"
 
 const REQUEST_POLL_MS = 2_000
 const REQUEST_WAIT_MS = 40_000
@@ -71,11 +65,11 @@ async function call(action: "read" | "send" | "stop", input: Record<string, unkn
   }
 }
 
-export async function readRemoteThread(entry: RemoteThreadEntry, input: { limit: number; cursor?: string | null }): Promise<RemoteReadOutcome> {
+export async function readRemoteThread(entry: RemoteThreadEntry, input: { limit: number; cursor?: string | null; requestId?: string | null }): Promise<RemoteReadOutcome> {
   const location = remoteThreadLocation(entry)
   if (!location) return { kind: "error", code: "not_started", message: "The conversation appears once the computer starts the task.", retryable: true }
   try {
-    return parseRemoteRead(await call("read", {
+    return parseRemoteRead(await call("read", input.requestId ? { requestId: input.requestId } : {
       ...location,
       limit: input.limit,
       ...(input.cursor ? { from: "end", cursor: input.cursor } : {}),
@@ -85,35 +79,79 @@ export async function readRemoteThread(entry: RemoteThreadEntry, input: { limit:
   }
 }
 
-export async function sendRemoteFollowUp(entry: RemoteThreadEntry, prompt: string): Promise<Failure | null> {
-  const location = remoteThreadLocation(entry)
-  if (!location) return { code: "not_started", message: "Wait for the computer to start the task, then send your follow-up.", retryable: true }
-  try {
-    // One id per follow-up: a retried send is admitted once.
-    const payload = await call("send", { ...location, prompt, messageId: remoteFollowUpMessageId() })
-    if (remotePendingRequestId(payload)) return { code: "desktop_request_pending", message: "The computer hasn't confirmed your follow-up yet. Check the conversation before sending it again.", retryable: false }
-    const error = remoteActionError(payload)
-    if (error) return error
-    useRemoteThreadStore.getState().followedUp(entry.start.key)
-    return null
-  } catch (error) {
-    return failure(error)
+function actionResult(payload: unknown, action: "send" | "stop"): RemoteThreadAction {
+  const requestId = remotePendingRequestId(payload)
+  if (requestId) return {
+    phase: "unconfirmed", requestId,
+    message: action === "send" ? "The computer hasn't confirmed this follow-up. Check again before sending it again." : "The computer hasn't confirmed Stop. The task may still be running.",
   }
+  const error = remoteActionError(payload)
+  if (error) return { phase: "failed", requestId: null, message: error.message }
+  return { phase: "accepted", requestId: null, message: null }
 }
 
-/** Stops the task's current turn; a desktop stop names it, so a newer turn is never stopped. */
-export async function stopRemoteThread(entry: RemoteThreadEntry, latestUserId?: string | null): Promise<Failure | null> {
+const requesting: RemoteThreadAction = { phase: "requesting", requestId: null, message: null }
+
+/** The submitted message lives on the thread, independently of the next editable draft. */
+export async function sendRemoteFollowUp(entry: RemoteThreadEntry, prompt: string): Promise<void> {
+  const store = useRemoteThreadStore.getState()
+  const current = store.threads[entry.start.key]
+  if (!current || current.followUps.some((item) => item.phase === "requesting")) return
+  const id = remoteFollowUpMessageId()
+  store.update(entry.start.key, (thread) => ({ ...thread, followUps: [...thread.followUps, { ...requesting, id, text: prompt }] }))
   const location = remoteThreadLocation(entry)
-  if (!location) return { code: "not_started", message: "The task hasn't started yet.", retryable: true }
+  let result: RemoteThreadAction
   try {
+    result = location ? actionResult(await call("send", { ...location, prompt, messageId: id }), "send")
+      : { phase: "failed", requestId: null, message: "Wait for the computer to start the task, then send your follow-up." }
+  } catch (error) {
+    // A lost response is not proof that a send failed. Never replay it automatically.
+    result = { phase: "unconfirmed", requestId: null, message: `${failure(error).message} Check the conversation before sending this follow-up again.` }
+  }
+  store.update(entry.start.key, (thread) => ({ ...thread, followUps: thread.followUps.map((item) => item.id === id ? { ...item, ...result } : item) }))
+  if (result.phase === "accepted") store.followedUp(entry.start.key)
+}
+
+/** Stops only the current turn. Its receipt is shared by the row and panel. */
+export async function stopRemoteThread(entry: RemoteThreadEntry, latestUserId?: string | null): Promise<void> {
+  const store = useRemoteThreadStore.getState()
+  const current = store.threads[entry.start.key]
+  if (!current || (current.stop && current.stop.phase !== "failed")) return
+  store.update(entry.start.key, (thread) => ({ ...thread, stop: requesting }))
+  let result: RemoteThreadAction
+  try {
+    const location = remoteThreadLocation(entry)
+    if (!location) throw new Error("not_started")
     let messageId = latestUserId ?? null
     if (!messageId) {
       const tail = await readRemoteThread(entry, { limit: 4 })
       messageId = tail.kind === "page" ? latestUserMessageId(tail.page.messages) : null
     }
-    // The status the chat already follows shows the task settling; nothing else to ask.
-    return remoteActionError(await call("stop", { ...location, ...(messageId ? { messageId } : {}) }))
+    // Never issue an unguarded desktop Stop after an unconfirmed transcript read.
+    if (!messageId && entry.start.target === "desktop") {
+      result = { phase: "failed", requestId: null, message: "Couldn't confirm the current turn. Open the conversation and try Stop again." }
+    } else result = actionResult(await call("stop", { ...location, ...(messageId ? { messageId } : {}) }), "stop")
   } catch (error) {
-    return failure(error)
+    result = { phase: "unconfirmed", requestId: null, message: `${failure(error).message} Stop isn't confirmed; the task may still be running.` }
+  }
+  store.update(entry.start.key, (thread) => ({ ...thread, stop: result }))
+}
+
+/** Check an existing receipt, never repeat the send/stop mutation. */
+export async function checkRemoteThreadAction(entry: RemoteThreadEntry, followUpId?: string): Promise<void> {
+  const store = useRemoteThreadStore.getState()
+  const current = store.threads[entry.start.key]
+  const action = followUpId ? current?.followUps.find((item) => item.id === followUpId) : current?.stop
+  if (!action?.requestId || action.phase === "requesting") return
+  const update = (result: RemoteThreadAction) => store.update(entry.start.key, (thread) => followUpId
+    ? { ...thread, followUps: thread.followUps.map((item) => item.id === followUpId ? { ...item, ...result } : item) }
+    : { ...thread, stop: result })
+  update({ ...action, phase: "requesting" })
+  try {
+    const result = actionResult(await call("read", { requestId: action.requestId }), followUpId ? "send" : "stop")
+    update(result)
+    if (followUpId && result.phase === "accepted") store.followedUp(entry.start.key)
+  } catch (error) {
+    update({ ...action, phase: "unconfirmed", message: failure(error).message })
   }
 }

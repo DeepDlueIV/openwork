@@ -45,10 +45,13 @@ failure("a member keeps using the original chat after an automatic upgrade fails
     await user.reload();
     await user.see({ text: retainedHistoryText });
     await user.see({ text: continuedWorkText });
+    const retry = await world.manualRetry();
+    expect(retry.status).toBe(409);
+    expect(retry.body).toContain("engine_upgrade_host_managed");
     const status = await world.status();
     expect(status.automaticRetryAt).toBe(retryAt);
     expect(status.migration.state).toBe("error");
-    evidence.recordAssertionEvidence("The same durable failure and cooldown survive continued use", JSON.stringify(status), !status.chatRouting && status.migration.state === "error" && status.automaticRetryAt === retryAt);
+    evidence.recordAssertionEvidence("The same failure and cooldown survive use; a duplicate copy is refused", `${JSON.stringify(status)}; retry HTTP ${retry.status} ${retry.body}`, !status.chatRouting && status.migration.state === "error" && status.automaticRetryAt === retryAt && retry.status === 409 && retry.body.includes("engine_upgrade_host_managed"));
     await user.screenshot();
   });
 });

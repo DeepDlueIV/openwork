@@ -35,7 +35,10 @@ bounded exponential backoff. Desktop keeps a compact **Chat upgrade paused**
 notice with the verified current engine instead of dismissing a forced failure.
 **Review upgrade** discloses diagnostics and the earliest retry time; closing it
 keeps the notice and chat usable. **Restart OpenWork** is explicit and does not
-call the migration API in the current process. Startup discovery restores a
+call the migration API in the current process. The host also refuses an
+interactive retry of its pending/paused automatic copy with 409
+`engine_upgrade_host_managed`, so another surface cannot duplicate the attempt.
+Manual migration retries keep their existing behavior. Startup discovery restores a
 failed automatic receipt, even when the copy never started. Host backoff and
 rollout policy still decide whether the later boot attempts a retry.
 Source chat changes during copying or v2 startup

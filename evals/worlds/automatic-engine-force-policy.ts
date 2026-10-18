@@ -56,7 +56,7 @@ async function engineForcePolicyWorld(seed: Seed, options: { unavailableV2?: boo
       options: { baseURL: `${model.url}/v1`, apiKey: "sk-local-history" }, models: { "history-model": { name: "History model" } } } },
   }, "v1");
   const session = await seed.session(app, { title: "A project note that survives engine policy changes" });
-  async function request(path: string, init: { method?: string; body?: string } = {}) {
+  async function request(path: string, init: { method?: string; body?: string } = {}, expectedStatus?: number) {
     // App-web's host URL is sandbox-loopback on remote placements. Use the
     // browser's network, not the runner's localhost. This escape hatch calls
     // shipping authenticated HTTP APIs only; it never reads/writes UI state.
@@ -66,7 +66,7 @@ async function engineForcePolicyWorld(seed: Seed, options: { unavailableV2?: boo
       } });
       return { status: response.status, text: await response.text() };
     }, [`${app.openworkUrl}${path}`, token, hostToken, init]), { awaitPromise: true, timeoutMs: 30_000 });
-    if (result.status < 200 || result.status >= 300) throw new Error(`${init.method ?? "GET"} ${path}: ${result.status} ${result.text}`);
+    if (result.status !== expectedStatus && (result.status < 200 || result.status >= 300)) throw new Error(`${init.method ?? "GET"} ${path}: ${result.status} ${result.text}`);
     return new Response(result.status === 204 ? null : result.text, { status: result.status });
   }
   const sessionPath = `/workspace/${workspace.workspaceId}/opencode/session/${session.sessionId}`;
@@ -92,6 +92,12 @@ async function engineForcePolicyWorld(seed: Seed, options: { unavailableV2?: boo
     },
     async originalMessages(): Promise<string> {
       return (await request(`${sessionPath}/message`)).text();
+    },
+    async manualRetry(): Promise<{ status: number; body: string }> {
+      const response = await request("/experimental/engine-v2-preview/migrate", {
+        method: "POST", body: JSON.stringify({ confirm: true, allowActiveSessions: true }),
+      }, 409);
+      return { status: response.status, body: await response.text() };
     },
     // These are the shipping host/client APIs, not browser state setters.
     async setOrganizationPolicy(upgrade: boolean): Promise<void> {

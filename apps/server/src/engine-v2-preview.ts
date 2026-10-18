@@ -1188,7 +1188,11 @@ export function createEngineV2Preview(options: {
   }
 
   function migrateHistory(): EngineV2PreviewStatus {
-    return migration.state === "running" ? status() : runMigration(false);
+    if (migration.state === "running") return status();
+    if (autoUpgradeJob !== undefined || automaticHistoryCopy || autoUpgradeRetry !== undefined) {
+      throw new ApiError(409, "engine_upgrade_host_managed", "Automatic chat upgrade is paused or pending. Restart OpenWork to retry when upgrades are enabled and the cooldown has ended.");
+    }
+    return runMigration(false);
   }
 
   function runMigration(resumed: boolean, automatic = false): EngineV2PreviewStatus {

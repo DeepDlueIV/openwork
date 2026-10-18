@@ -48,12 +48,39 @@ test("boot never blocks: unreadable v1 history stays on v1 with a durable error 
       assert.ok((persisted.autoUpgradeRetry?.retryAt ?? 0) > Date.now());
       assert.equal(persisted.historyCopyResult?.state, "error");
       assert.equal(engine.status().automaticRetryAt, persisted.autoUpgradeRetry?.retryAt);
+      assert.throws(() => engine.migrateHistory(), { status: 409, code: "engine_upgrade_host_managed" });
       engine.start();
       engine.setForcePolicy({ upgrade: true });
       engine.setForcePolicy({ upgrade: true });
       await new Promise(resolve => setTimeout(resolve, 20));
       assert.equal(errors.length, 1, "status reads and policy refreshes cannot retry in the same boot");
       assert.equal(engine.status().automaticRetryAt, persisted.autoUpgradeRetry?.retryAt);
+    } finally { await engine.stop(); }
+  });
+});
+
+test("an automatic upgrade waiting for idle cannot be duplicated by an interactive migration", async () => {
+  await profile(async config => {
+    const engine = createEngineV2Preview({ config, autoUpgradeIdle: async () => false });
+    try {
+      assert.equal(engine.status().migration.state, "idle");
+      assert.throws(() => engine.migrateHistory(), { status: 409, code: "engine_upgrade_host_managed" });
+      assert.equal(engine.status().chatRouting, false);
+    } finally { await engine.stop(); }
+  });
+});
+
+test("interactive migration errors still allow an explicit retry without automatic ownership", async () => {
+  await profile(async (config, dir) => {
+    config.engineAutoUpgrade = false;
+    writeFileSync(join(dir, "v1.db"), "isolated source");
+    const engine = createEngineV2Preview({ config, deferStart: true });
+    try {
+      assert.equal(engine.migrateHistory().migration.state, "running");
+      for (let check = 0; check < 100 && engine.status().migration.state === "running"; check++) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(engine.status().migration.state, "error");
+      assert.equal(engine.status().automaticRetryAt, undefined);
+      assert.equal(engine.migrateHistory().migration.state, "running", "manual recovery remains explicit and usable");
     } finally { await engine.stop(); }
   });
 });

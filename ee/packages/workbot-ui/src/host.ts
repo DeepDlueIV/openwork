@@ -33,6 +33,8 @@ export type WorkbotHost = {
   sideChats?: boolean
   /** Copy-only sharing; does not create invitations or grant membership. */
   shareWorkbot?: { enabled: boolean }
+  /** Den-resolved team permissions. Omitted by older hosts; no admin controls then. */
+  teamLinks?: { enabled: boolean; settings: boolean; apps: boolean; denUrl: string; organizationId: string }
   /** Authenticated identity for permission-protected model-setting caches; absent on older hosts. */
   identity?: { principalId: string; organizationId: string }
 }

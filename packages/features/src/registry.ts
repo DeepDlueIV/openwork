@@ -193,6 +193,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotTeamLinks: {
+    label: "Workbot: team settings links",
+    description: "Members with team management access can open their organization's Workbot settings and app connections from Workbot.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   workbotDocuments: {
     label: "Workbot Documents",
     description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",

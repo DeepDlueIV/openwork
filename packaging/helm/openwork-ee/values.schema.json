@@ -218,6 +218,16 @@
               ],
               "description": "Workbot: share with coworkers: Members can copy a Workbot link for coworkers; team access still requires an invitation. Renders DEN_FEATURE_WORKBOT_SHARING."
             },
+            "workbotTeamLinks": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: team settings links: Members with team management access can open their organization's Workbot settings and app connections from Workbot. Renders DEN_FEATURE_WORKBOT_TEAM_LINKS."
+            },
             "workbotDocuments": {
               "enum": [
                 "",

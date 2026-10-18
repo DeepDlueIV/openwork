@@ -31,6 +31,7 @@ export const denSessionSchema = z.object({
   documents: z.boolean().default(false),
   workspaceAssistant: z.boolean().default(false),
   shareWorkbot: z.object({ enabled: z.boolean() }).optional(),
+  teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
   /** Side chats are on for this person. A Den from before side chats doesn't say: off. */
   sideChats: z.boolean().default(false),
   /** The organization's default model for Workbot's turns. Null, or a Den from before it, means the runner's default. */

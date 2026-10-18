@@ -2450,6 +2450,7 @@
               "slackWorkbotReplies",
               "workbot",
               "workbotSharing",
+              "workbotTeamLinks",
               "workbotDocuments",
               "workbotWorkspaceAssistant",
               "automationCalendar",
@@ -2703,6 +2704,9 @@
                     "workbotSharing": {
                       "type": "boolean"
                     },
+                    "workbotTeamLinks": {
+                      "type": "boolean"
+                    },
                     "workbotDocuments": {
                       "type": "boolean"
                     },
@@ -2788,6 +2792,7 @@
                     "slackWorkbotReplies",
                     "workbot",
                     "workbotSharing",
+                    "workbotTeamLinks",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -3933,6 +3938,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotTeamLinks": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "workbotDocuments": {
                       "type": "object",
                       "properties": {
@@ -5019,6 +5080,7 @@
                     "slackWorkbotReplies",
                     "workbot",
                     "workbotSharing",
+                    "workbotTeamLinks",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -5467,6 +5529,9 @@
                     "workbotSharing": {
                       "type": "boolean"
                     },
+                    "workbotTeamLinks": {
+                      "type": "boolean"
+                    },
                     "workbotDocuments": {
                       "type": "boolean"
                     },
@@ -5552,6 +5617,7 @@
                     "slackWorkbotReplies",
                     "workbot",
                     "workbotSharing",
+                    "workbotTeamLinks",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -6697,6 +6763,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotTeamLinks": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "workbotDocuments": {
                       "type": "object",
                       "properties": {
@@ -7783,6 +7905,7 @@
                     "slackWorkbotReplies",
                     "workbot",
                     "workbotSharing",
+                    "workbotTeamLinks",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -29313,6 +29436,25 @@
               "enabled"
             ]
           },
+          "teamLinks": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "settings": {
+                "type": "boolean"
+              },
+              "apps": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled",
+              "settings",
+              "apps"
+            ]
+          },
           "sideChats": {
             "type": "boolean"
           },
@@ -31865,6 +32007,9 @@
                         "workbotSharing": {
                           "type": "boolean"
                         },
+                        "workbotTeamLinks": {
+                          "type": "boolean"
+                        },
                         "workbotDocuments": {
                           "type": "boolean"
                         },
@@ -31950,6 +32095,7 @@
                         "slackWorkbotReplies",
                         "workbot",
                         "workbotSharing",
+                        "workbotTeamLinks",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -33095,6 +33241,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotTeamLinks": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "workbotDocuments": {
                           "type": "object",
                           "properties": {
@@ -34181,6 +34383,7 @@
                         "slackWorkbotReplies",
                         "workbot",
                         "workbotSharing",
+                        "workbotTeamLinks",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -34378,6 +34581,9 @@
                         "workbotSharing": {
                           "type": "boolean"
                         },
+                        "workbotTeamLinks": {
+                          "type": "boolean"
+                        },
                         "workbotDocuments": {
                           "type": "boolean"
                         },
@@ -34463,6 +34669,7 @@
                         "slackWorkbotReplies",
                         "workbot",
                         "workbotSharing",
+                        "workbotTeamLinks",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -35608,6 +35815,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotTeamLinks": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "workbotDocuments": {
                           "type": "object",
                           "properties": {
@@ -36694,6 +36957,7 @@
                         "slackWorkbotReplies",
                         "workbot",
                         "workbotSharing",
+                        "workbotTeamLinks",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -105728,7 +105992,7 @@
           "Organizations"
         ],
         "summary": "Get Workbot settings",
-        "description": "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires the View OpenWork Models settings permission and Workbot.",
+        "description": "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires View OpenWork Models settings or Manage OpenWork Models, and Workbot.",
         "responses": {
           "200": {
             "description": "Workbot settings returned.",

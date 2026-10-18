@@ -15,6 +15,7 @@ export const meSchema = z.object({
   documents: z.boolean().default(false),
   workspaceAssistant: z.boolean().default(false),
   shareWorkbot: z.object({ enabled: z.boolean() }).optional(),
+  teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
   /** The organization runs Automations in the cloud, so the Calendar can create them. */
   canSchedule: z.boolean().default(false),
   /** Side chats are on for this person (while Workbot is on). */
@@ -68,6 +69,9 @@ export function createHost(me: Me): WorkbotHost {
     documents: me.documents,
     workspaceAssistant: me.workspaceAssistant,
     shareWorkbot: me.enabled ? me.shareWorkbot : undefined,
+    teamLinks: me.enabled && me.teamLinks && me.denUrl && me.organizationId
+      ? { ...me.teamLinks, denUrl: me.denUrl, organizationId: me.organizationId }
+      : undefined,
     canSchedule: me.canSchedule,
     connectionsHref: me.denUrl ? `${me.denUrl}/dashboard/your-connections` : null,
     sideChats: me.sideChats,

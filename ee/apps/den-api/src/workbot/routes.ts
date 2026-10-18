@@ -24,6 +24,7 @@ import { listMemberUsableConnectionFacts } from "../routes/org/mcp-connections.j
 import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
 import { organizationDefaultModel } from "./model.js"
 import { recordWorkbotTelemetry, workbotTelemetrySchema, workbotTelemetryServiceAuthorized } from "./telemetry.js"
+import { resolvePermissionsForMember } from "../permissions/resolve.js"
 
 /**
  * What Den tells the Workbot app (ee/apps/workbot) about a signed-in person. Workbot calls these server-to-server
@@ -49,6 +50,8 @@ const sessionSchema = z.object({
   workspaceAssistant: z.boolean().optional(),
   /** Sharing a URL never grants membership; invitations still require Den's recent sign-in. */
   shareWorkbot: z.object({ enabled: z.boolean() }).optional(),
+  /** Team controls are hints only; Den's destination routes still enforce permissions. */
+  teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
   /** The person can start side chats next to their main chat (while Workbot is on). */
   sideChats: z.boolean(),
   /**
@@ -262,7 +265,16 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       if (auditBlocked) return auditBlocked
       const { organization, user, memberId } = resolved
       const canSchedule = (await cloudAutomationRuntime(organization.id).catch(() => "web")) === "headless"
-      const features = await getOrganizationFeatures(organization.id)
+      const features = await getOrganizationFeatures(organization.id, { userId: user.id })
+      const permissions = features.workbot && resolved.scopes.has(DEN_MCP_READ_SCOPE)
+        ? await resolvePermissionsForMember({ organizationId: organization.id, memberId: normalizeDenTypeId("member", memberId) })
+        : null
+      const teamLinks = {
+        enabled: features.workbot && features.workbotTeamLinks,
+        settings: permissions?.has("inference.view") === true || permissions?.has("inference.manage") === true,
+        // Den's management list requires View all connections as well as the write permission.
+        apps: permissions?.has("connections.manage") === true && permissions.has("connections.view"),
+      }
       // A failed read must not sign anyone out of Workbot: it answers on the runner's default instead.
       const model = await organizationDefaultModel(organization.id, {
         features: async () => features,
@@ -279,6 +291,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         workspaceAssistant: features.workbot && features.workbotWorkspaceAssistant,
         shareWorkbot: features.workbot ? { enabled: features.workbotSharing } : undefined,
         sideChats: features.workbot,
+        teamLinks,
         model,
       })
     },

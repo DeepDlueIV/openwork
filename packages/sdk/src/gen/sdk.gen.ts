@@ -16113,7 +16113,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get Workbot settings
    *
-   * Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires the View OpenWork Models settings permission and Workbot.
+   * Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires View OpenWork Models settings or Manage OpenWork Models, and Workbot.
    */
   public getV1OrgWorkbotSettings<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<

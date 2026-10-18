@@ -752,6 +752,7 @@ export type AdminFeature = {
     | "slackWorkbotReplies"
     | "workbot"
     | "workbotSharing"
+    | "workbotTeamLinks"
     | "workbotDocuments"
     | "workbotWorkspaceAssistant"
     | "automationCalendar"
@@ -829,6 +830,7 @@ export type AdminOrganizationsPageResponse = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotSharing: boolean;
+      workbotTeamLinks: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1031,6 +1033,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       workbotSharing: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1293,6 +1304,7 @@ export type AdminOverviewResponse = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotSharing: boolean;
+      workbotTeamLinks: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1495,6 +1507,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       workbotSharing: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6853,6 +6874,11 @@ export type WorkbotSession = {
   shareWorkbot?: {
     enabled: boolean;
   };
+  teamLinks?: {
+    enabled: boolean;
+    settings: boolean;
+    apps: boolean;
+  };
   sideChats: boolean;
   model?: string | null;
 };
@@ -7831,6 +7857,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotSharing: boolean;
+      workbotTeamLinks: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8033,6 +8060,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotSharing: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8283,6 +8319,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotSharing: boolean;
+      workbotTeamLinks: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8485,6 +8522,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotSharing: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

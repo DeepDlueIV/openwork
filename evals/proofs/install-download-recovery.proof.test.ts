@@ -1,10 +1,9 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { installDownloadRecovery } from "../worlds/install-download-recovery.ts";
-import { denRememberLastOrganization } from "../worlds/den-remember-last-organization.ts";
+import { installDownloadRecovery, installOrganizationChoice } from "../worlds/install-download-recovery.ts";
 
 const test = spec.world(installDownloadRecovery, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
-const choiceTest = spec.world(denRememberLastOrganization, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
+const choiceTest = spec.world(installOrganizationChoice, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
 
 choiceTest("a generic install link asks its recipient to sign in and choose their own organization", async ({ world, user, probe, step, evidence }) => {
   await step("the shared link does not authenticate its recipient", async () => {
@@ -38,15 +37,15 @@ choiceTest("a generic install link asks its recipient to sign in and choose thei
     await user.screenshot();
   });
   await step("sharing the install link never promises a connected workspace or grants access", async () => {
-    await user.navigate(new URL("/dashboard", world.den.ref.webUrl).toString());
-    await user.see({ testId: "den-download-openwork" }, { timeoutMs: 60_000 });
-    await user.click({ testId: "den-download-openwork" });
-    await user.see({ text: /Recipients sign in and choose an organization they can access/ });
-    await user.notSee({ text: /already connected/ });
-    const generic = await probe.has("This link does not grant access.");
+    const owner = user.on(world.owner);
+    await owner.see({ testId: "den-download-openwork" }, { timeoutMs: 60_000 });
+    await owner.click({ testId: "den-download-openwork" });
+    await owner.see({ text: /Recipients sign in and choose an organization they can access/ });
+    await owner.notSee({ text: /already connected/ });
+    const generic = await probe.on(world.owner).has("This link does not grant access.");
     evidence.recordAssertionEvidence("the shared link describes its real scope", `sign-in and authorized organization choice disclosed; no-access-grant notice=${generic}`, generic);
     expect(generic).toBe(true);
-    await user.screenshot();
+    await owner.screenshot();
   });
 });
 
@@ -61,10 +60,10 @@ test("a signed-in member can retry an unavailable installer without a timed succ
   });
   await step("an unavailable download stays requested with a visible retry instead of advancing", async () => {
     requestedAt = Date.now();
-    await user.click({ role: "link", label: "Apple Silicon (M1+)" });
-    await user.see("Download requested");
+    await user.click({ role: "link", label: /Apple Silicon \(M1\+\)/ });
+    await user.see({ text: "Download requested" });
     await user.see({ role: "link", label: "Retry download" });
-    await user.notSee("Download started");
+    await user.notSee({ text: "Download started" });
     const log = await probe.eventually(() => world.faults.requestLog(), { within: 15_000, label: "the installer request really failed", until: (requests) => requests.some((entry) => entry.path.includes("/v1/me/install/") && entry.status === 503) });
     const failures = log.filter((entry) => entry.path.includes("/v1/me/install/") && entry.status === 503).length;
     evidence.recordAssertionEvidence("the failed request never becomes an installed state", `actual installer 503 requests=${failures}; Download requested and Retry download remain visible`, failures === 1);
@@ -73,9 +72,9 @@ test("a signed-in member can retry an unavailable installer without a timed succ
   });
   await step("after: more than five seconds still leaves recovery visible until the member confirms the file", async () => {
     const elapsed = await probe.eventually(() => Date.now() - requestedAt, { within: 10_000, label: "observe past the former five-second timer", until: (value) => value >= 6000 });
-    await user.see("Download requested");
+    await user.see({ text: "Download requested" });
     await user.see({ role: "link", label: "Retry download" });
-    await user.notSee("Download started");
+    await user.notSee({ text: "Download started" });
     await user.click({ role: "link", label: "Retry download" });
     const log = await probe.eventually(() => world.faults.requestLog(), { within: 15_000, label: "retry sends another installer request", until: (requests) => requests.filter((entry) => entry.path.includes("/v1/me/install/") && entry.status === 503).length === 2 });
     const failures = log.filter((entry) => entry.path.includes("/v1/me/install/") && entry.status === 503).length;

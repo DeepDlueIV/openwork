@@ -1,5 +1,12 @@
 import { allocateFreePorts } from "@openwork/cdp";
 import { faultProxy, type Seed } from "@openwork/env";
+import { denRememberLastOrganization } from "./den-remember-last-organization.ts";
+
+export async function installOrganizationChoice(seed: Seed) {
+  const world = await denRememberLastOrganization(seed);
+  const owner = await seed.web({ den: world.den, signedInAs: world.den.admin, startPath: "/dashboard", headless: true, viewport: { width: 1440, height: 1000 } });
+  return { ...world, owner };
+}
 
 export async function installDownloadRecovery(seed: Seed) {
   await using setup = new AsyncDisposableStack();

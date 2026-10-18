@@ -47,8 +47,8 @@ test("a person switches conversations and reloads without losing or sending eith
     const percentile = (fraction: number) => values[Math.max(0, Math.ceil(values.length * fraction) - 1)];
     expect(values.length).toBeGreaterThanOrEqual(20);
     expect(feedback.samples.every((sample) => Number.isFinite(sample.ms) && sample.ms >= 0 && sample.observed)).toBe(true);
-    const requests = world.submissionWitness();
-    expect(requests).toEqual({ connected: true, submissions: [] });
+    const requests = await world.submissionWitness();
+    expect(requests).toMatchObject({ connected: true, submissions: [] });
     evidence.recordAssertionEvidence("Local draft feedback is measured separately from model time", JSON.stringify({
       phase: feedback.phase, viewport: feedback.viewport, samples: values.length,
       p50Ms: percentile(0.5), p95Ms: percentile(0.95),
@@ -71,9 +71,10 @@ test("a person switches conversations and reloads without losing or sending eith
     const first = await probe.composer();
     expect(first.userMessageCount).toBe(0);
     expect(second.userMessageCount).toBe(0);
-    const requests = world.submissionWitness();
-    expect(requests).toEqual({ connected: true, submissions: [] });
-    evidence.recordAssertionEvidence("Reload preserves independent drafts without replay", `New document confirmed; first: ${first.userMessageCount} user messages; second: ${second.userMessageCount} user messages; prompt submissions: ${requests.submissions.length}; both drafts intact`, first.userMessageCount === 0 && second.userMessageCount === 0 && first.draftText === FIRST && second.draftText === SECOND && requests.connected && requests.submissions.length === 0);
+    const requests = await world.submissionWitness();
+    expect(requests).toMatchObject({ connected: true, submissions: [] });
+    expect(requests.documentRequests).toBeGreaterThan(0);
+    evidence.recordAssertionEvidence("Reload preserves independent drafts without replay", `New document confirmed; first: ${first.userMessageCount} user messages; second: ${second.userMessageCount} user messages; prompt submissions: ${requests.submissions.length}; reload document requests: ${requests.documentRequests}; both drafts intact`, first.userMessageCount === 0 && second.userMessageCount === 0 && first.draftText === FIRST && second.draftText === SECOND && requests.connected && requests.submissions.length === 0 && requests.documentRequests > 0);
     await user.screenshot();
   });
 });

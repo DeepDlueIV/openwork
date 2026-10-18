@@ -97,7 +97,7 @@ export const BackgroundTasksLabel = React.memo(function BackgroundTasksLabel({ s
       <Tooltip open={open} onOpenChange={setOpen}>
         <TooltipTrigger
           render={<span tabIndex={0} />}
-          className={cn("cursor-default rounded-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/50", shimmer && !uncertain && "ow-text-shimmer")}
+          className={cn("cursor-default rounded-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/50", uncertain && "text-muted-foreground", shimmer && !uncertain && "ow-text-shimmer")}
         >
           {uncertain ? `${shells.length} background ${shells.length === 1 ? "task" : "tasks"} last known running · ${Number.isFinite(checkedAt) ? `checked ${formatRelativeTime(checkedAt)}` : "last check unknown"} · couldn't verify` : runningBackgroundTasksLabel(shells.length)}
         </TooltipTrigger>

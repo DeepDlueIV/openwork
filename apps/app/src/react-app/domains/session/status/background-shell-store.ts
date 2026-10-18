@@ -12,6 +12,8 @@ export type BackgroundShell = {
   observedAt: number;
   /** Last successful running-command listing (or the start event). */
   checkedAt?: number;
+  /** Latest applied listing attempt; a slower older read cannot undo its result. */
+  checkStartedAt?: number;
   /** A listing failed: the command is last known running, not verified running. */
   stale?: boolean;
 };
@@ -84,7 +86,7 @@ export function resyncBackgroundShells(book: BackgroundShellBook, input: Backgro
   }
   let next = book;
   for (const shell of Object.values(book.running)) {
-    if (!inScope(shell.sessionId) || listed.has(shell.id) || shell.observedAt >= input.startedAt) continue;
+    if (!inScope(shell.sessionId) || listed.has(shell.id) || Math.max(shell.observedAt, shell.checkStartedAt ?? 0) >= input.startedAt) continue;
     next = settleBackgroundShell(next, shell.id);
   }
   for (const shell of listed.values()) {
@@ -101,14 +103,15 @@ export function resyncBackgroundShells(book: BackgroundShellBook, input: Backgro
 }
 
 /** Failed reads preserve both the count and when it was last confirmed. */
-export function markBackgroundShellFreshness(book: BackgroundShellBook, sessionIds: ReadonlySet<string> | "all", checkedAt?: number, failedBefore = Infinity): BackgroundShellBook {
+export function markBackgroundShellFreshness(book: BackgroundShellBook, sessionIds: ReadonlySet<string> | "all", checkedAt?: number, failedBefore = Date.now()): BackgroundShellBook {
   const running = { ...book.running };
   let changed = false;
   for (const shell of Object.values(book.running)) {
     if (sessionIds !== "all" && !sessionIds.has(shell.sessionId)) continue;
-    // An older failed read must not override a newer event or successful check.
-    if (checkedAt === undefined && Math.max(shell.observedAt, shell.checkedAt ?? 0) > failedBefore) continue;
-    running[shell.id] = { ...shell, stale: checkedAt === undefined, checkedAt: checkedAt === undefined ? shell.checkedAt ?? shell.observedAt : Math.max(checkedAt, shell.checkedAt ?? 0, shell.observedAt) };
+    // Older completions cannot undo a later check, including a later failure.
+    const attemptAt = checkedAt ?? failedBefore;
+    if (Math.max(shell.observedAt, shell.checkStartedAt ?? 0) > attemptAt) continue;
+    running[shell.id] = { ...shell, stale: checkedAt === undefined, checkStartedAt: attemptAt, checkedAt: checkedAt === undefined ? shell.checkedAt ?? shell.observedAt : Math.max(checkedAt, shell.checkedAt ?? 0, shell.observedAt) };
     changed = true;
   }
   return changed ? { ...book, running } : book;

@@ -114,7 +114,7 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
   assert.equal(JSON.stringify(report).includes(workspace.owner.email), false)
 })
 
-test("the real runner reports a completed greeting to Den without any browser event relay", async () => {
+test("the runner reports a completed greeting without a browser, even when sign-in readiness finishes later", async () => {
   const workspace = await den.createOrg(await den.signUp("Runner Test"), "Runner adoption workspace")
   const token = await den.mintMcpToken(workspace.owner, workspace.orgId)
   const sessionId = workbotMainSession({ organizationId: workspace.orgId, memberId: workspace.owner.memberId })
@@ -130,6 +130,14 @@ test("the real runner reports a completed greeting to Den without any browser ev
     limits: { maxConcurrentTurns: 1, maxSteps: 2, turnTimeoutMs: 30_000, credentialRefreshMs: 60_000, contextCharBudget: 10_000 }, workbotTelemetry: reporter })
   const app = runnerApp({ store, runner, apiToken: service })
   const headers = { authorization: `Bearer ${service}`, "content-type": "application/json" }
+  const { recordWorkbotTelemetry, workbotTelemetrySchema } = await import("../../src/workbot/telemetry.js")
+  const { readWorkbotAdoptionReport } = await import("../../src/workbot/adoption-report.js")
+  const { normalizeRows } = await import("../../src/mcp/admin-tools.js")
+  let finishProbe: ((count: number | null) => void) | undefined
+  const delayedProbe = new Promise<number | null>((resolve) => { finishProbe = resolve })
+  const signedInAt = Date.now()
+  const signIn = recordWorkbotTelemetry({ organizationId: workspace.orgId, memberId: workspace.owner.memberId },
+    workbotTelemetrySchema.parse({ event: "signed_in", id: "slow-readiness-signin-0001", timestamp: signedInAt }), () => delayedProbe)
   try {
     assert.equal((await app.request(`/v1/sessions/${sessionId}`, { method: "PUT", headers, body: "{}" })).status, 201)
     const send = () => app.request(`/v1/sessions/${sessionId}/turns`, { method: "POST", headers, body: JSON.stringify({ messageId: "wb_hello", prompt: "private hidden greeting prompt", credentials: { mcpToken: token, readOnly: true } }) })
@@ -144,7 +152,18 @@ test("the real runner reports a completed greeting to Den without any browser ev
     assert.equal(completed?.metadata?.model, "actual-greeting-model")
     assert.equal(completed?.metadata?.model_source, "response")
     assert.equal(JSON.stringify({ stored, dimensions }).includes("private"), false)
+    // The greeting is already terminal while the sign-in's ready-count probe is still held.
+    assert.ok(finishProbe)
+    finishProbe(0)
+    await signIn
+    const day = new Date(signedInAt).toISOString().slice(0, 10)
+    const report = await readWorkbotAdoptionReport({ startDate: day, endDate: day, organizationId: workspace.orgId }, async (query) => normalizeRows(await db.execute(query)))
+    assert.equal(report.funnel.greetingCompleted, 1, "a slow sign-in probe cannot erase the completed greeting from its cohort")
+    assert.equal(report.members.rows[0]?.greetingState, "completed")
+    assert.equal(report.members.rows[0]?.readyCountAtSignIn, 0)
   } finally {
+    finishProbe?.(0)
+    await signIn
     await runner.shutdown()
     store.close()
     await new Promise<void>((resolve) => server.close(() => resolve()))

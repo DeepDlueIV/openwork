@@ -50,6 +50,7 @@ test("a member sees unverified work, failed stop, and a last-known conversation 
     world.restore();
     await user.click({ role: "button", label: "Check again" });
     await user.see({ text: "The report has three sections." });
+    await probe.eventually(() => probe.text(), { within: 10_000, label: "the stream and conversation read recover", until: text => !text.includes("Connection interrupted. Showing the last known") });
     await user.notSee({ text: /Connection interrupted\. Showing the last known/ });
     expect(world.sends()).toBe(0);
     evidence.recordAssertionEvidence("Recovery only reads the conversation", "No message POST occurred while stopping or reconnecting", world.sends() === 0);

@@ -92,8 +92,8 @@ function serializeDelimited(rows: SpreadsheetRows, delimiter: string) {
 }
 
 function unsupportedWorkbookMessage(ext: string) {
-  if (ext === "xls") return "Legacy .xls workbooks can't be edited here. Save the file as .xlsx and open it again.";
-  if (ext === "ods") return "OpenDocument spreadsheets can't be edited here. Export the file as .xlsx and open it again.";
+  if (ext === "xls") return "Legacy .xls workbooks can't be previewed here. Download it or open it in a spreadsheet app.";
+  if (ext === "ods") return "OpenDocument spreadsheets can't be previewed here. Download it or open it in a spreadsheet app.";
   return null;
 }
 

@@ -72,6 +72,9 @@ test("CSV and TSV still round-trip edits including quotes and embedded delimiter
     expect(content.kind).toBe("text");
     expect(await parseSpreadsheet({ name, content })).toEqual(rows);
   }
+  for (const name of ["book.xls", "book.ods"]) {
+    await expect(parseSpreadsheet({ name, content: { kind: "binary", data: new ArrayBuffer(0) } })).rejects.toThrow("Download it or open it in a spreadsheet app.");
+  }
   for (const name of ["book.xlsx", "book.XLSX", "book.xlsm", "book.ods", "book.xls", "unknown.zip"]) {
     expect(isEditableSpreadsheet(name)).toBe(false);
     await expect(serializeSpreadsheet(name, [["replacement"]])).rejects.toThrow("read-only");

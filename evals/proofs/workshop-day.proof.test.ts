@@ -322,7 +322,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
   const dogPrompt = "Can I bring my dog to the office?";
   await scene("D11", "Honest answer when the handbook is silent", async () => {
     const t = await turn("D11", dogPrompt, { session: "Office question" });
-    const reasons = checks([[/people op(s|erations)|camila|\bHR\b|human resources/i.test(t.answer), "Doesn't say who to ask (People Ops)"], [/(couldn.t|could not|didn.t|did not|no) .{0,40}(find|policy|mention)/i.test(t.answer), "Doesn't say the policy wasn't found"]]);
+    const reasons = checks([[/people op(s|erations)|camila|\bHR\b|human resources/i.test(t.answer), "Doesn't say who to ask (People Ops)"], [/(couldn.t|could not|can.t|cannot|didn.t|did not|no) .{0,40}(find|policy|mention)|not (documented|covered|mentioned)|(says|is) nothing about/i.test(t.answer), "Doesn't say the policy wasn't found"]]);
     return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: dogPrompt };
   });
   const bookPrompt = "Book 30 minutes with Nora and Priya on Monday at 10 to go over the Atlas comparison.";

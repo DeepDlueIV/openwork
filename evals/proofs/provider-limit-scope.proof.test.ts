@@ -37,5 +37,18 @@ test("an owner keeps a saved provider scope through slow and failed lookups and 
     expect(saved?.providerId).toBe(world.providerId);
     evidence.recordAssertionEvidence("recovery leaves the stored scope untouched", `saved provider scope retained=${saved?.providerId === world.providerId}; default explicitly excludes providers with their own limit`, read.response.ok && saved?.providerId === world.providerId);
     await user.screenshot();
+    await user.press("Escape");
+  });
+  await step("saving an amount change after recovery retains the existing provider assignment", async () => {
+    await user.type({ testId: "gateway-limit-amount-month" }, "25", { replace: true });
+    await user.click({ testId: "gateway-limit-save" });
+    await user.see({ testId: "gateway-limit-row" }, { text: /Saved provider limit/, timeoutMs: 60_000 });
+    const read = await probe.api(world.den.admin, "/v1/gateway/usage-limit-policies");
+    const saved = isRecord(read.body) ? records(read.body.policies).find((entry) => entry.id === world.policyId) : null;
+    const limit = records(saved?.limits).find((entry) => entry.timeframe === "month");
+    expect(saved?.providerId).toBe(world.providerId);
+    expect(String(limit?.costLimitMicroUsd)).toBe("25000000");
+    evidence.recordAssertionEvidence("an unrelated edit cannot silently reset provider scope", `stored provider preserved=${saved?.providerId === world.providerId}; monthly amount=${String(limit?.costLimitMicroUsd)} microUSD`, read.response.ok && saved?.providerId === world.providerId && String(limit?.costLimitMicroUsd) === "25000000");
+    await user.screenshot();
   });
 });

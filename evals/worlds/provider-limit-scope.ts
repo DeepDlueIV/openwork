@@ -23,7 +23,7 @@ export async function providerLimitScope(seed: Seed) {
   const saved = await seed.api(den.admin, "/v1/gateway/usage-limit-policies", {
     method: "POST", body: JSON.stringify({ name: "Saved provider limit", providerId: provider.id, hardLimit: true, allowRequestReset: true, limits: [{ timeframe: "month", costUsd: "20" }] }),
   });
-  const policy = isRecord(saved.body) && isRecord(saved.body.policy) ? saved.body.policy : null;
+  const policy = isRecord(saved.body) ? saved.body : null;
   if (!saved.response.ok || typeof policy?.id !== "string") throw new Error(`Limit setup failed: ${saved.response.status} ${saved.text}`);
   await faults.faults.latency("/api/den/v1/inference-providers", 4000, { times: 1 });
   await faults.faults.status("/api/den/v1/inference-providers", 503, { times: 1, body: { error: "Fixture provider lookup unavailable" } });

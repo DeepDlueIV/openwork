@@ -162,9 +162,14 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
       denyFile: () => { fileDenied = true; }, allowFile: () => { fileDenied = false; }, denyBudget: () => { deniedFiles.add("file_budget"); },
       makeOfficeAvailable: () => { officeError = null; },
       disableDocuments: () => { documentsOff = true; }, enableDocuments: () => { documentsOff = false; },
-      // Test-owned OS reconnect signal, not an internal product setter. This
-      // exercises the real parent useQuery revalidation rather than invoking it.
-      reconnect: () => seed.evalIn(web, browserScript(() => { window.dispatchEvent(new Event("offline")); window.dispatchEvent(new Event("online")); }, [])),
+      // Test-owned wall-clock + OS connectivity fault, not a query/cache setter.
+      // Both base and head cross the real 60-second parent stale boundary, then
+      // exercise its ordinary reconnect revalidation without a minute of sleep.
+      reconnectAfterStaleMinute: () => seed.evalIn(web, browserScript(() => {
+        const now = Date.now.bind(Date);
+        Date.now = () => now() + 61_000;
+        window.dispatchEvent(new Event("offline")); window.dispatchEvent(new Event("online"));
+      }, [])),
       async [Symbol.asyncDispose]() { await resources.disposeAsync(); },
     };
   } catch (error) { await resources.disposeAsync(); throw error; }

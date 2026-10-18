@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { AutomationRun } from "@openwork/types/automations"
 
 import { createDenClient, DenApiError, readDenSettings, type DenClient } from "@/app/lib/den"
@@ -50,12 +50,23 @@ export function useAutomationsDenContext(): AutomationsDenContext {
 }
 
 export function useAutomationListQuery(context: AutomationsDenContext) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: [...context.queryRoot, "list"],
-    queryFn: () => context.client!.listAutomations(context.organizationId!, { limit: 100 }),
+    initialPageParam: "",
+    queryFn: async ({ pageParam }) => {
+      const page = await context.client!.listAutomations(context.organizationId!, { limit: 100, ...(pageParam ? { cursor: pageParam } : {}) })
+      if (page.nextCursor === pageParam) throw new Error("The automation list did not advance. Try again.")
+      return page
+    },
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled: context.ready,
     refetchInterval: AUTOMATIONS_SLOW_POLL_MS,
   })
+  const data = useMemo(() => query.data ? {
+    items: [...new Map(query.data.pages.flatMap((page) => page.items).map((item) => [item.automation.id, item])).values()],
+    nextCursor: query.data.pages.at(-1)?.nextCursor ?? null,
+  } : undefined, [query.data])
+  return { ...query, data }
 }
 
 export function useAutomationDetailQuery(context: AutomationsDenContext, automationId: string | null) {

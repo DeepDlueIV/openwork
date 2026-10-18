@@ -186,7 +186,7 @@ export function CalendarPage(props: {
   const enabled = feature.data === true
   const organizationDefaultName = useCalendarDefaultModelName(denContext, enabled).data
   const listQuery = useAutomationListQuery(denContext)
-  const automationItems = listQuery.data?.items
+  const automationItems = useMemo(() => listQuery.data?.items.slice(0, 100), [listQuery.data])
   const runsQuery = useAutomationRunsInRange(denContext, range, automationItems, enabled && layers.automations)
   const { busyAction, act } = useAutomationActions(denContext)
   const transport = useCalendarTransport(denContext)
@@ -311,6 +311,7 @@ export function CalendarPage(props: {
         <label className="flex items-center gap-2" data-calendar-layer="automations">
           <Checkbox checked={layers.automations} onCheckedChange={(checked) => setLayers((current) => ({ ...current, automations: checked === true }))} />
           <span>Your Automations</span>
+          {listQuery.hasNextPage || (listQuery.data?.items.length ?? 0) > 100 ? <span className="text-xs text-muted-foreground" data-calendar-automations-incomplete>First 100 loaded Automations · <Button variant="link" size="xs" className="h-auto p-0" onClick={() => navigate("/automations")}>Open all Automations</Button></span> : null}
           {runsQuery.isFetching && !runsQuery.data ? <Skeleton className="h-3 w-10 rounded" /> : null}
           {runsQuery.data && !runsQuery.data.complete ? (
             <Tooltip>

@@ -41,8 +41,10 @@ test("a person can find an unreported native output without mistaking conversati
   await step("the person explicitly browses and searches the current workspace", async () => {
     await user.click({ role: "button", label: "Browse workspace files" });
     await user.see({ role: "textbox", label: /^Search .* files$/ }, { timeoutMs: 30_000 });
+    await user.see({ role: "treeitem", label: /unrelated\.md/ }, { timeoutMs: 30_000 });
     await user.type({ role: "textbox", label: /^Search .* files$/ }, "summary");
     await user.see({ role: "treeitem", label: /summary\.md/ }, { timeoutMs: 30_000 });
+    await user.notSee({ role: "treeitem", label: /unrelated\.md/ });
     const trees = (await probe.dom("[data-workspace-file-tree]")).elements;
     expect(trees).toHaveLength(1);
     evidence.recordAssertionEvidence("The existing scoped workspace catalog finds the unreported file", "Search summary shows summary.md in the real workspace tree; no command text was parsed", trees.length === 1 && (await world.summary()).includes("The requested summary."));

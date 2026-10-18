@@ -130,8 +130,10 @@ object appears where it will live, then fills in.
 Requested, accepted and completed are distinct facts. Unknown or stale is not
 empty, removed or successful. An unconfirmed write is not automatically retried.
 Keep cached last-known data with its age during refresh failures, unless access
-is revoked. Show one actionable failure inline; diagnostics are one labeled
-disclosure away. The same action has the same outcome semantics across direct
+is revoked. A denial stays a barrier through later failures, retries and
+remounts until a fresh authorized read; scope it to the resource and its owner,
+not a component's lifetime. Show one actionable failure inline; diagnostics are
+one labeled disclosure away. The same action has the same outcome semantics across direct
 tools, scripts, native and cloud delivery; presentation may differ, not action
 semantics.
 

@@ -115,6 +115,7 @@ import { CalendarPage } from "@/react-app/domains/calendar/calendar-page";
 import { useOrgFeatureState } from "@/react-app/domains/cloud/use-org-feature";
 import { useBackgroundShellTasksFeature } from "@/react-app/domains/session/status/use-background-shell-tasks-feature";
 import { useAppBuildProgressFeature } from "@/react-app/domains/apps/use-app-build-progress-feature";
+import { useLastTurnModelFooterFeature } from "@/react-app/domains/session/sync/use-last-turn-model-footer-feature";
 import { useRemoteSessionSubagentsFeature } from "@/react-app/domains/session/remote-threads/use-remote-session-subagents-feature";
 import { remoteThreadAttentionBySession, useRemoteThreadAttentionKey } from "@/react-app/domains/session/remote-threads/remote-thread-store";
 import { AppsPage } from "@/react-app/domains/apps/apps-page";
@@ -440,6 +441,7 @@ export function SessionRoute() {
   const calendarFeature = useOrgFeatureState("automationCalendar");
   useBackgroundShellTasksFeature();
   useAppBuildProgressFeature();
+  useLastTurnModelFooterFeature();
   useRemoteSessionSubagentsFeature();
   const calendarSurfaceAvailable = automationsEnabled && denAuth.isSignedIn && calendarFeature.data === true;
   const calendarAvailabilityPending = denAuthChecking || (automationsEnabled && denAuth.isSignedIn && calendarFeature.isLoading);

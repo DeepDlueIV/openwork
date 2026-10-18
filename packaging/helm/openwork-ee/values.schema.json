@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "lastTurnModelFooter": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Last reply model footer: Show the model that replied quietly below the latest answer instead of above the turn. Renders DEN_FEATURE_LAST_TURN_MODEL_FOOTER."
+            },
             "liveProviderSync": {
               "enum": [
                 "",

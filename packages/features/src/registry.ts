@@ -53,6 +53,13 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  lastTurnModelFooter: {
+    label: "Last reply model footer",
+    description: "Show the model that replied quietly below the latest answer instead of above the turn.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   liveProviderSync: {
     label: "Live provider sync",
     description: "Keep desktop OpenCode v2 models up to date with the organization's AI Gateway in real time.",

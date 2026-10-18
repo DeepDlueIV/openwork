@@ -36,6 +36,18 @@ export function mergeReplyMetadata(previous: unknown, next: unknown) {
   } };
 }
 
+/** The requested Auto route keeps OpenWork's mark even after routing upstream. */
+export function replyModelProvider(message: UIMessage) {
+  const model = field(field(message.metadata, "opencode"), "replyModel");
+  const requestedProviderID = text(field(model, "requestedProviderID"));
+  const requestedModelID = text(field(model, "requestedModelID"));
+  const providerID = text(field(model, "providerID"));
+  if (requestedProviderID === "openwork" || providerID === "openwork"
+    || requestedModelID === AUTO_MODEL_ID) return "openwork";
+  // Opaque gateway ids must not become a monogram or a remote logo request.
+  return providerID?.startsWith("ipr_") ? undefined : providerID;
+}
+
 export function replyModelLabel(message: UIMessage) {
   const model = field(field(message.metadata, "opencode"), "replyModel");
   const modelID = text(field(model, "modelID"));

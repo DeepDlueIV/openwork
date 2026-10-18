@@ -44,7 +44,9 @@ import { sessionBackgroundShells, useBackgroundShellStore, type BackgroundShell 
 import { messageAutoAccessWall } from "@/app/lib/inference-access"
 import { AutoAccessNotice } from "@/react-app/domains/cloud/auto-access-ui"
 import { rejectedRecoveryFromMessage } from "@/react-app/domains/session/sync/rejected-turn"
-import { replyModelLabel } from "@/react-app/domains/session/sync/reply-model"
+import { replyModelLabel, replyModelProvider } from "@/react-app/domains/session/sync/reply-model"
+import { useLastTurnModelFooterEnabled } from "@/react-app/domains/session/sync/use-last-turn-model-footer-feature"
+import { ProviderIcon } from "@/react-app/design-system/provider-icon"
 import { openAlternativeModelPicker } from "@/app/lib/inference-access"
 import { ApplyPatchTool } from "@/components/tools/apply-patch"
 import { BashTool } from "@/components/tools/bash"
@@ -1504,6 +1506,7 @@ function MessageGroup({
   const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision } = useMessageList()
   const connectionCardParts = React.useMemo(() => connectionCardPartIds(items, getConnectionDecision), [items, getConnectionDecision])
   const newestAppCalls = React.useMemo(() => new Set(newestAppCallIds.split("\n")), [newestAppCallIds])
+  const modelFooterEnabled = useLastTurnModelFooterEnabled()
   const lastItem = items[items.length - 1]
   // Branch/revert must target a real server-side message id. Synthetic
   // client-side messages (e.g. session errors) don't exist on the server and
@@ -1687,12 +1690,12 @@ function MessageGroup({
       {/* The scroll area keeps the same 8px rhythm the parts inside a single
           message use, so a step row is spaced identically whether or not a
           message boundary happens to fall between it and the previous row. */}
-      {!isLiveGroup && resolvedReplyModel && !collapseSteps ? <div data-testid="completed-work-rail" className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1 px-2 text-sm text-muted-foreground md:px-10">
-        {replySummaryLabel ? <span>{replySummaryLabel} · </span> : null}<span data-testid="reply-model">{resolvedReplyModel}</span>
+      {!isLiveGroup && resolvedReplyModel && !collapseSteps && (!modelFooterEnabled || replySummaryLabel) ? <div data-testid="completed-work-rail" className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1 px-2 text-sm text-muted-foreground md:px-10">
+        {modelFooterEnabled ? <span>{replySummaryLabel}</span> : <>{replySummaryLabel ? <span>{replySummaryLabel} · </span> : null}<span data-testid="reply-model">{resolvedReplyModel}</span></>}
       </div> : null}
       {stepItems.length > 0 ? (
         collapseSteps ? (
-          <CompletedStepRun label={resolvedReplyModel ? replySummaryLabel : stepRunLabel} modelLabel={resolvedReplyModel}>
+          <CompletedStepRun label={resolvedReplyModel ? replySummaryLabel : stepRunLabel} modelLabel={modelFooterEnabled ? null : resolvedReplyModel}>
             <div className="flex flex-col gap-2">
               {renderItems(stepItems, 0)}
               {foldedReasoning}
@@ -1715,7 +1718,8 @@ function MessageGroup({
       ))}
       {renderItems(proseItems, stepItems.length, collapseSteps || panelLive)}
       {lastTextMessage && !isStreaming && (
-        <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100 md:px-8", forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0")}>
+        <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 md:px-8", !modelFooterEnabled && "transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", !modelFooterEnabled && (forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0"))}>
+          <div className={cn(modelFooterEnabled ? "flex items-center gap-2" : "contents", modelFooterEnabled && "transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", modelFooterEnabled && (forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0"))}>
           <MessageActions className="flex gap-0">
             <CopyMessageButton messages={renderableItems.map((item) => item.message)} />
             {lastRealItem ? (
@@ -1748,6 +1752,19 @@ function MessageGroup({
             ) : null}
           </MessageActions>
            <MessageTimestamp message={lastItem.message} />
+          </div>
+          {/* Keep caption ink readable (DESIGN.md V1/V2); hierarchy comes from size,
+              not compounded opacity. Hidden actions retain their layout slot. */}
+          {modelFooterEnabled && !isLiveGroup && resolvedReplyModel ? <span
+            data-testid="reply-model"
+            className={cn("inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", isLastGroup ? "opacity-100" : "opacity-0")}
+          >
+            <span className="sr-only">Replied with </span>
+            <span aria-hidden="true" className="flex size-3 shrink-0 items-center justify-center">
+              {lastRealItem && replyModelProvider(lastRealItem.message) ? <ProviderIcon providerId={replyModelProvider(lastRealItem.message)} size={12} /> : null}
+            </span>
+            <span className="truncate">{resolvedReplyModel}</span>
+          </span> : null}
           {/* <MessageSources messages={items.map((item) => item.message)} /> */}
         </div>
       )}

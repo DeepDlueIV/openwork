@@ -35,9 +35,10 @@ test("an owner searches every loaded role while lists and pickers keep only one 
   await step("the role picker pages the same ten thousand roles and searches beyond its first page", async () => {
     await world.inventory(10_000);
     await user.navigate(world.url("/dashboard/members"));
+    await user.see({ role: "button", label: "Add member" });
     await user.click({ role: "button", label: "Add member" });
     await user.click({ testId: "member-role-change" });
-    const mounted = await probe.dom('[data-testid="member-role-choice"] [role="option"]');
+    const mounted = await probe.eventually(() => probe.dom('[data-testid="member-role-choice"] [role="option"]'), { within: 30_000, label: "the role inventory reached the picker", until: (result) => result.elements.length > 2 });
     expect(mounted.elements.length).toBeLessThanOrEqual(50);
     await user.click({ role: "button", label: "Next roles" });
     await user.see({ role: "option", label: /Role 00048/ });

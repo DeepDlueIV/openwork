@@ -73,7 +73,11 @@ export function WorkspaceAssistant({ name, context, includeContext, onIncludeCon
   const anchor = useRef<HTMLDivElement>(null);
   useEffect(() => { if (!active) setOpen(false); }, [active]);
   return <div ref={anchor} className="fixed bottom-3 right-3 z-30 w-[min(26rem,calc(100vw-1.5rem))] sm:bottom-5 sm:right-5" data-workbot-workspace-assistant>
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={(next, details) => {
+      // The composer belongs to this explicit disclosure, not to the document behind it.
+      if (!next && details.reason === "outside-press" && details.event.target instanceof Node && anchor.current?.contains(details.event.target)) return;
+      setOpen(next);
+    }}>
       <div className="mb-1 flex min-w-0 items-center justify-end gap-1.5">
         {context && <button type="button" aria-pressed={includeContext} onClick={() => onIncludeContext(!includeContext)} title={includeContext ? "Exclude this view from your next message" : "Include a read-only reference to this view"} className={`min-w-0 truncate rounded-full bg-[var(--wb-surface)] px-2.5 py-1 text-[11px] shadow-[var(--wb-card-shadow)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] ${includeContext ? "text-[var(--wb-text)]" : "text-[var(--wb-muted)] line-through"}`} data-workbot-view-context data-testid="workbot-view-context">{workbotContextLabel(context)}{includeContext ? " · Read-only context" : ""}{context.kind === "document" && context.unsaved ? " · Unsaved edits excluded" : ""}</button>}
         <Popover.Trigger className="flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-[var(--wb-surface)] px-2.5 text-[11px] text-[var(--wb-text)] shadow-[var(--wb-card-shadow)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]" aria-label={open ? "Hide workspace chat" : "Show workspace chat"}><MessageCircle size={13} strokeWidth={1.5} aria-hidden />{name}</Popover.Trigger>

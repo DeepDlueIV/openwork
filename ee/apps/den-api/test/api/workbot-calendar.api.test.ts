@@ -38,7 +38,7 @@ test("calendar detail uses the real proxy and remains owner, organization, scope
     assert.equal(denied.text.includes("Summarize a project note"), false)
   }
   const removed = await den.as(owner, orgId)("DELETE", `/v1/members/${teammate.memberId}`)
-  assert.equal(removed.status, 200, summary(removed))
+  assert.equal(removed.status, 204, summary(removed))
   const revoked = await den.request(teammateToken, "GET", path)
   assert.ok([401, 403].includes(revoked.status), summary(revoked))
   assert.equal(revoked.text.includes("Summarize a project note"), false)

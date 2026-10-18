@@ -297,6 +297,19 @@ export function appCreationFailures(run: AppCreationRun): DynamicToolUIPart[] {
   ));
 }
 
+/** Calls with their own App row need not be repeated in the script's rail.
+ * Unprojected guide failures and the script's own outcome remain independent. */
+export function unrepresentedAppCalls(part: DynamicToolUIPart, represented: ReadonlySet<string>): DynamicToolUIPart[] | null {
+  const calls = codeModeToolCalls(part);
+  if (!calls) return null;
+  const occurrences = new Map<string, number>();
+  return calls.filter(call => {
+    const occurrence = occurrences.get(call.toolName) ?? 0;
+    occurrences.set(call.toolName, occurrence + 1);
+    return !represented.has(`${part.toolCallId}:app:${call.toolName}:${occurrence}`);
+  });
+}
+
 /** Only calls represented by the App row fold into it. A script's own failure
  * or unrelated work is not an App-stage outcome and keeps its ordinary row. */
 export function foldedAppCreationPartIds(runs: AppCreationRun[]): Set<string> {
@@ -304,15 +317,10 @@ export function foldedAppCreationPartIds(runs: AppCreationRun[]): Set<string> {
     const represented = new Set(appCreationParts(run).filter(part => !codeModeHasFailures(part) || appBuilderResultFailed(part)).map(part => part.toolCallId));
     const executions = (run.executions ?? []).filter(part => {
       if (appBuilderResultFailed(part)) return false;
-      const calls = codeModeToolCalls(part);
-      const occurrences = new Map<string, number>();
+      const calls = unrepresentedAppCalls(part, represented);
       // A lead-in inside a mixed script is not necessarily projected into the
       // App row. Fold only calls whose individual outcome has a visible home.
-      return Boolean(calls?.length && calls.every(call => {
-        const occurrence = occurrences.get(call.toolName) ?? 0;
-        occurrences.set(call.toolName, occurrence + 1);
-        return represented.has(`${part.toolCallId}:app:${call.toolName}:${occurrence}`);
-      }));
+      return calls !== null && calls.length === 0;
     });
     return [...represented, ...executions.map(part => part.toolCallId)];
   }));

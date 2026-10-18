@@ -82,6 +82,19 @@ test("a script's own failure stays visible beside its completed inner App result
   expect(container.querySelector("[data-app-builder-status]")?.textContent).toBe("Result not recorded");
 });
 
+test("a represented App rejection has one inline home beside the script's own error", async () => {
+  const script: DynamicToolUIPart = { type: "dynamic-tool", toolName: "execute", toolCallId: "script", input: { code: "prepare_app(); create_app(); throw Error()" }, state: "output-error", errorText: "Later script failure", callProviderMetadata: { openwork: { codeMode: {
+    calls: [{ tool: "openwork.prepare_app", input: { title: "Project board" }, status: "error" }, { tool: "openwork.create_app", input: { title: "Project board" }, status: "completed" }],
+    details: [{ invocationId: "script:0", ordinal: 0, tool: "openwork_prepare_app", status: "error", input: { title: "Project board" }, startedAt: 1, error: "Review the selected tools." }],
+  } } } };
+  const preparation: DynamicToolUIPart = { type: "dynamic-tool", toolName: "openwork_prepare_app", toolCallId: "script:app:openwork_prepare_app:0", state: "output-error", input: { title: "Project board" }, errorText: "Review the selected tools." };
+  const built: DynamicToolUIPart = { type: "dynamic-tool", toolName: "openwork_create_app", toolCallId: "script:app:openwork_create_app:0", input: { title: "Project board" }, state: "output-available", output: { unrecorded: true }, callProviderMetadata: { openwork: { mcpResult: { structuredContent: { unrecorded: true } } } } };
+  const container = await render([script, preparation, built]);
+  expect(container.querySelectorAll('[data-capability-call="openwork_prepare_app"]').length).toBe(1);
+  expect(container.querySelector("[data-code-mode-script-error]")?.textContent).toContain("Later script failure");
+  expect(container.querySelectorAll("[data-app-builder-failure]").length).toBe(1);
+});
+
 test("loaded skill instructions remain inspectable beside collapsed work", async () => {
   const loaded: DynamicToolUIPart = { type: "dynamic-tool", toolName: "skill", toolCallId: "skill", input: { name: "review" }, state: "output-available", output: "<skill_content>Check each report section.</skill_content>" };
   const container = await render([...thoughts, loaded]);

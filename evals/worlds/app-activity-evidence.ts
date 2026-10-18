@@ -45,7 +45,10 @@ export async function appActivityEvidence(seed: Seed) {
   const token = randomUUID();
   const hostToken = randomUUID();
   const web = await seed.appWeb({ name: "app-activity-evidence", workspacePath: seed.tmpPath("app-activity-evidence"), engine: "v2", headless: true, mouse: true,
-    env: { OPENWORK_TOKEN: token, OPENWORK_HOST_TOKEN: hostToken, ...(process.env.OPENWORK_OPENCODE2_BIN ? { OPENWORK_OPENCODE2_BIN: process.env.OPENWORK_OPENCODE2_BIN } : {}) }, mocks: { agent: mock } });
+    env: { OPENWORK_TOKEN: token, OPENWORK_HOST_TOKEN: hostToken,
+      ...(process.env.pnpm_config_verify_deps_before_run ? { pnpm_config_verify_deps_before_run: process.env.pnpm_config_verify_deps_before_run } : {}),
+      ...(process.env.OPENWORK_OPENCODE2_BIN ? { OPENWORK_OPENCODE2_BIN: process.env.OPENWORK_OPENCODE2_BIN } : {}),
+    }, mocks: { agent: mock } });
   await web.client.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   const workspace = await seed.workspace(web, web.workspaceRoot);
   const witness = web.mocks.agent!;

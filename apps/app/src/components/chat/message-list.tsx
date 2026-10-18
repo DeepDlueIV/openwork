@@ -1,6 +1,6 @@
 "use memo";
 
-import { appBuildActivity, appBuildInProgress, appCreationFailures, appCreationRuns, foldedAppCreationPartIds } from "@/react-app/domains/apps/app-creation-progress"
+import { appBuildActivity, appBuildInProgress, appCreationFailures, appCreationRuns, foldedAppCreationPartIds, unrepresentedAppCalls } from "@/react-app/domains/apps/app-creation-progress"
 import { appBuilderResultFailed } from "@/react-app/domains/apps/built-mcp-app-model"
 import { skillEvidence } from "@/lib/skill-evidence"
 import { useAppBuildProgressEnabled } from "@/react-app/domains/apps/use-app-build-progress-feature"
@@ -276,7 +276,7 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
   if (part.toolCallId === connectionQuestionToolCallId || isReservedConnectionQuestionPart(part)) return null
   const promptCall = credentialPromptCall(part)
   const remoteStart = remoteThreads && part.type === "dynamic-tool" ? remoteThreadFromToolPart(part) : null
-  const calls = part.type === "dynamic-tool" ? codeModeToolCalls(part)?.filter(call => !pinnedSkills.has(call.toolCallId)) ?? null : null
+  const calls = part.type === "dynamic-tool" ? unrepresentedAppCalls(part, appCreationParts)?.filter(call => !pinnedSkills.has(call.toolCallId)) ?? null : null
   const remoteStarts = remoteThreads && calls && part.type === "dynamic-tool" ? (codeModeCallsWithResults(part) ?? []).flatMap((call) => {
     const start = remoteThreadFromToolPart(call)
     return start ? [{ start, call }] : []

@@ -108,7 +108,7 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
     if (!inFlight && !failed) return null;
     const reason = shortReason(part);
     return (
-      <div data-code-mode-call={part.toolCallId} className="group/step min-w-0">
+      <div data-code-mode-call={part.toolCallId} data-code-mode-script-error={failed || undefined} className="group/step min-w-0">
         <div className="flex min-h-6 min-w-0 items-center gap-2 text-sm text-muted-foreground">
           <span className={cn("shrink-0", running && "ow-text-shimmer")}>{label}</span>
           {failed && reason ? <span className="min-w-0 truncate text-xs text-muted-foreground">{reason}</span> : null}
@@ -137,7 +137,7 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
     // The script's arbitrary return value is not the inner call's result.
     // Its source/output stays inspectable without attesting skill delivery.
     return (
-      <div data-code-mode-call={part.toolCallId}>
+      <div data-code-mode-call={part.toolCallId} data-code-mode-failure={failedCallIds.has(only.toolCallId) || undefined}>
         <CapabilityCallLine
           part={only}
           detailsPart={part}

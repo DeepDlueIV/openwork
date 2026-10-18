@@ -53,7 +53,7 @@ async function harness(respond: (name: string, input: unknown) => unknown | Prom
   const stop = await registerCloudSkillDiscovery({
     options: { url: `http://127.0.0.1:${server.port}/read`, token: "fixture-token" },
     skill: {
-      async list() { return registered; },
+      async list() { return { data: registered }; },
       async transform(callback) { transforms++; transform = callback; replay(); return { async dispose() { registered = []; } }; },
       async reload() { replay(); },
     },

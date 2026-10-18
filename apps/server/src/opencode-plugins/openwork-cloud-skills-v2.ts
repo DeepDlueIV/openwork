@@ -24,7 +24,7 @@ type PromptEvent = { readonly sessionID: string; prompt: { text: string; skills?
 export type CloudSkillContext = {
   options: { url: string; token: string };
   skill: {
-    list(): Promise<ReadonlyArray<NativeSkill>>;
+    list(): Promise<{ data: ReadonlyArray<Pick<NativeSkill, "id" | "content">> }>;
     transform(callback: (editor: { get(id: string): unknown; add(skill: NativeSkill): void }) => void): Promise<Registration>;
     reload(): Promise<void>;
   };
@@ -316,7 +316,7 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
         || authorized.some((snapshot, index) => !sameCloudSkillSnapshot(snapshot, expected[index]))) throw unavailable();
       // A transform from another plugin, or a local refresh during the bridge
       // call, must not substitute a different body under the authorized ID.
-      const registered = await context.skill.list();
+      const { data: registered } = await context.skill.list();
       if (!native || closed || authorized.some(snapshot => {
         const local = catalog.skills.find(skill => skillId(skill) === snapshot.id);
         const current = local && skillSnapshot(local);

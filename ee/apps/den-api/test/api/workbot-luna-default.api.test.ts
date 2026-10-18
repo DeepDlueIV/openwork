@@ -48,6 +48,13 @@ test("an owner sees explicit Luna readiness, keeps an isolated organization over
   assert.equal((await den.as(other.owner, workspace.orgId)("GET", path)).status, 404)
   assert.equal((await den.as(other.owner, workspace.orgId)("PUT", path, { model: "gateway/luna" })).status, 404)
   assert.equal(field((await call("GET", path)).body, "model"), "gateway/other")
+  assert.equal((await den.setFeature(other.orgId, "workbot", true)).status, 200)
+  assert.equal((await den.setFeature(other.orgId, "workbotLunaDefault", true)).status, 200)
+  const otherSettings = await den.as(other.owner, other.orgId)("GET", path)
+  assert.equal(field(otherSettings.body, "model"), null)
+  assert.equal(field(otherSettings.body, "defaultModel"), "gateway/luna")
+  const otherToken = await den.mintMcpToken(other.owner, other.orgId)
+  assert.equal(field((await den.request(otherToken, "GET", "/v1/workbot/session")).body, "model"), "gateway/luna")
 
   luna = false
   const missing = await call("GET", path)

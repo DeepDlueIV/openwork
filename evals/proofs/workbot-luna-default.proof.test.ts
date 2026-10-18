@@ -15,10 +15,10 @@ available("an owner enables the explicit Luna default and keeps their saved mode
   });
   await step("the owner enables the Luna rollout for this workspace", async () => {
     await user.navigate(world.featureUrl);
-    await user.click({ role: "tab", label: "Features" });
+    await user.click({ role: "link", label: "Features" });
     await user.click({ testId: "admin-capability-workbotLunaDefault" });
     await user.see({ testId: "admin-capability-source-workbotLunaDefault" }, { text: "Set for this organization" });
-    const enabled = (await probe.dom('[data-testid="admin-capability-workbotLunaDefault"][aria-checked="true"]')).elements.length === 1;
+    const enabled = await probe.eventually(async () => (await probe.dom('[data-testid="admin-capability-workbotLunaDefault"][aria-checked="true"]:not([disabled])')).elements.length === 1, { within: 10_000, until: value => value, label: "saved Luna rollout" });
     expect(enabled).toBe(true);
     evidence.recordAssertionEvidence("The owner explicitly enables Luna", "The workspace feature switch is on", enabled);
     await user.screenshot();
@@ -44,9 +44,9 @@ available("an owner enables the explicit Luna default and keeps their saved mode
   });
   await step("turning off the rollout keeps the organization's saved model", async () => {
     await user.navigate(world.featureUrl);
-    await user.click({ role: "tab", label: "Features" });
+    await user.click({ role: "link", label: "Features" });
     await user.click({ testId: "admin-capability-workbotLunaDefault" });
-    await user.see({ testId: "admin-capability-source-workbotLunaDefault" }, { text: "Set for this organization" });
+    await probe.eventually(async () => (await probe.dom('[data-testid="admin-capability-workbotLunaDefault"][aria-checked="false"]:not([disabled])')).elements.length === 1, { within: 10_000, until: value => value, label: "saved rollout rollback" });
     await user.navigate(world.settingsUrl);
     await user.see({ role: "combobox", label: "Default model" }, { value: "Another model" });
     await user.notSee({ testId: "workbot-default-readiness" });
@@ -99,7 +99,7 @@ unverified("an owner cannot mistake an unverified runner fallback for a ready de
   await step("a new check keeps the honest state and gives the owner a recovery action", async () => {
     await user.click({ role: "button", label: "Check availability" });
     await user.see({ testId: "workbot-default-readiness" }, { text: "Couldn't verify GPT-6 Luna" });
-    await user.see({ text: "ask your deployment admin to check access" });
+    await user.see({ text: /ask your deployment admin to check access/ });
     evidence.recordAssertionEvidence("No unrelated model is selected after a failed verification", "Default: GPT-6 Luna remains selected and the deployment admin is named as the next action", (await probe.dom('[data-testid="workbot-model-picker"] input[value="Default: GPT-6 Luna"]')).elements.length === 1);
     await user.screenshot();
   });

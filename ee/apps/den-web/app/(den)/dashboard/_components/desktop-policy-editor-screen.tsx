@@ -615,6 +615,19 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery 
             )}
           </div>
 
+          {assignmentRecovery && !isDefault && policy?.roles.length ? (
+            <fieldset className="grid gap-2 text-[13px] text-gray-700">
+              <legend className="mb-2 font-medium">Existing role assignments</legend>
+              {policy.roles.map((role) => (
+                <label key={role} className="flex items-center gap-3">
+                  <input type="checkbox" checked={draft.roles.includes(role)} disabled={formDisabled}
+                    onChange={() => setDraft({ ...draft, roles: draft.roles.includes(role) ? draft.roles.filter((entry) => entry !== role) : [...draft.roles, role] })} />
+                  {role === "owner" ? "Owner" : role === "admin" ? "Admin" : "Member"} role
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
+
           {!isDefault ? (
             <div className="grid items-start gap-5 lg:grid-cols-2">
               <div className="flex flex-col gap-2">

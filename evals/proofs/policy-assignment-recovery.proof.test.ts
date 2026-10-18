@@ -10,7 +10,7 @@ test("an owner can recover shared suggestion assignments without unlocking them 
     await user.see({ text: /Suggestions have shared or overlapping policy assignments/ }, { timeoutMs: 60_000 });
     await user.notSee({ role: "button", label: "Edit suggestions" });
     const locked = await probe.has("Editing is locked to preserve other teams and members.");
-    evidence.recordAssertionEvidence("shared suggestions remain protected", `two team assignments; editing locked=${locked}`, locked);
+    evidence.recordAssertionEvidence("shared suggestions remain protected", `two team assignments and an existing role scope; editing locked=${locked}`, locked);
     expect(locked).toBe(true);
     await user.screenshot();
   });
@@ -20,6 +20,7 @@ test("an owner can recover shared suggestion assignments without unlocking them 
     await user.see({ role: "textbox", label: "Policy name" }, { value: world.policyName, timeoutMs: 60_000 });
     await user.see({ role: "checkbox", label: "Focused audience" });
     await user.see({ role: "checkbox", label: "Other audience" });
+    await user.see({ role: "checkbox", label: "Member role" });
     const url = await probe.url();
     evidence.recordAssertionEvidence("the advanced editor is reachable with the rollout on", `assignment recovery URL=${new URL(url).pathname}${new URL(url).search}`, url.includes("view=assignments") && url.includes(world.policyId));
     expect(url).toContain("view=assignments");
@@ -27,6 +28,7 @@ test("an owner can recover shared suggestion assignments without unlocking them 
   });
   await step("the owner separates one audience while retaining the policy and its enforcement values", async () => {
     await user.click({ role: "checkbox", label: "Other audience" });
+    await user.click({ role: "checkbox", label: "Member role" });
     await user.click({ role: "button", label: "Save changes" });
     await user.see({ role: "link", label: `Review assignments for ${world.policyName}` }, { timeoutMs: 60_000 });
     const response = await probe.api(world.den.admin, "/v1/desktop-policies");

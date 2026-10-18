@@ -16,7 +16,7 @@ export async function policyAssignmentRecovery(seed: Seed) {
   }
   const policyName = "Shared prompt policy";
   const result = await seed.api(den.admin, "/v1/desktop-policies", {
-    method: "POST", body: JSON.stringify({ policyName, teamIds, priority: 17, isEnabled: true,
+    method: "POST", body: JSON.stringify({ policyName, teamIds, roles: ["member"], priority: 17, isEnabled: true,
       policy: { allowCustomProviders: false, onboardingPrompts: ["Summarize my notes", "Draft a project update"] } }),
   });
   if (!result.response.ok) throw new Error(`Policy setup failed: ${result.response.status} ${result.text}`);

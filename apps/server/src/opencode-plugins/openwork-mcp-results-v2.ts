@@ -22,9 +22,10 @@ type Context = {
 };
 
 /** One OpenWork Cloud call made inside a Code Mode `execute`, kept because it reports a connection or an App build. */
-export type PreservedMcpResult =
+export type PreservedMcpResult = (
   | { tool: string; input: unknown; status: "completed"; output: unknown }
-  | { tool: string; input: unknown; status: "error"; error: string };
+  | { tool: string; input: unknown; status: "error"; error: string }
+) & { invocationId?: string; ordinal?: number };
 
 const OPENWORK_CLOUD_TOOL = /^(?:openwork|openwork-cloud)_/;
 const MAX_ENTRY_BYTES = 64 * 1_024;
@@ -154,6 +155,19 @@ export function createMcpResultsCollector() {
 
   function settle(execution: Execution, detail: ToolDetail, outcome: { status: "completed"; output: unknown } | { status: "error"; error: string }): void {
     if (detail.status !== "running") return;
+    // Keep delivery metadata before the bounded diagnostic preview. The input
+    // can exhaust that preview's allowance, but must not discard a real launch.
+    const entry = preservedEntry({ tool: detail.tool, messageID: "", id: detail.invocationId,
+      input: execution.rawInputs.get(detail),
+      ...(outcome.status === "completed" ? { status: "completed", result: { output: outcome.output } } : outcome) });
+    if (entry && execution.connections.length < MAX_ENTRIES) {
+      const preserved = { ...entry, invocationId: detail.invocationId, ordinal: detail.ordinal };
+      const bytes = byteLength(preserved) + 1;
+      if (bytes <= execution.remaining) {
+        execution.connections.push(preserved);
+        execution.remaining -= bytes;
+      }
+    }
     const result = bounded(outcome.status === "completed" ? outcome.output : outcome.error,
       Math.min(MAX_ENTRY_BYTES / 2, execution.allowance.get(detail) ?? 0, execution.remaining));
     execution.remaining -= result.bytes;
@@ -203,7 +217,7 @@ export function createMcpResultsCollector() {
         open.delete(key(event));
         if (event.status === "completed" && execution && (execution.connections.length || execution.calls.length || execution.truncated)) {
           event.result.metadata = { ...(event.result.metadata ?? {}),
-            ...(execution.connections.length ? { openworkMcpResults: execution.connections } : {}),
+            ...(execution.connections.length ? { openworkMcpResults: execution.connections.toSorted((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0)) } : {}),
             ...(execution.calls.length ? { openworkToolDetails: execution.calls } : {}),
             ...(execution.truncated ? { openworkToolDetailsTruncated: true } : {}) };
         }
@@ -213,9 +227,12 @@ export function createMcpResultsCollector() {
       // The hook sees the same input object as `execute.before`. Matching by
       // tool name alone would cross-wire parallel repeated calls.
       const tool = normalizedTool(event.tool);
-      const matching = execution.calls.filter(call => call.status === "running" && call.tool === tool && execution.rawInputs.get(call) === event.input);
-      if (matching.length === 1) settle(execution, matching[0]!, event.status === "completed"
-        ? { status: "completed", output: event.result.output } : { status: "error", error: errorText(event.error) });
+      const matching = execution.calls.filter(call => call.tool === tool && execution.rawInputs.get(call) === event.input);
+      if (matching.length === 1) {
+        settle(execution, matching[0]!, event.status === "completed"
+          ? { status: "completed", output: event.result.output } : { status: "error", error: errorText(event.error) });
+        return;
+      }
       if (execution.connections.length >= MAX_ENTRIES) return;
       const entry = preservedEntry(event);
       if (!entry) return;
@@ -252,8 +269,13 @@ export function createMcpResultsCollector() {
       const detail = execution?.calls.find(call => call.invocationId === invocationId);
       if (execution && detail) settle(execution, detail, outcome);
     },
-    details(event: Pick<CallEvent, "messageID" | "id">): ToolDetail[] {
-      return open.get(key(event))?.calls.map(call => ({ ...call })) ?? [];
+    metadata(event: Pick<CallEvent, "messageID" | "id">): Record<string, unknown> {
+      const execution = open.get(key(event));
+      return execution ? {
+        openworkToolDetails: execution.calls.map(call => ({ ...call })),
+        openworkMcpResults: execution.connections.toSorted((left, right) => (left.ordinal ?? 0) - (right.ordinal ?? 0)),
+        ...(execution.truncated ? { openworkToolDetailsTruncated: true } : {}),
+      } : {};
     },
   };
 }
@@ -276,7 +298,9 @@ export default {
             const invocationId = collector.claim(event);
             if (invocationId === undefined) return execute(input, call);
             const publish = async () => {
-              await call.progress({ openworkToolDetails: collector.details(event) }).catch(() => {});
+              // Progress is persisted even when execute later throws. Do not
+              // wait for the parent success hook to deliver completed calls.
+              await call.progress(collector.metadata(event)).catch(() => {});
             };
             await publish();
             try {

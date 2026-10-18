@@ -1,0 +1,83 @@
+import { describe, expect, test } from "bun:test";
+import type { ToolPart } from "@opencode-ai/sdk/v2/client";
+import { codeModeConnectionParts } from "../src/app/lib/opencode-v2-adapter";
+import plugin, { createMcpResultsCollector } from "../../server/src/opencode-plugins/openwork-mcp-results-v2";
+
+const event = { messageID: "message", id: "execute" };
+const launch = { appId: "app", title: "Project board", resourceUri: "ui://project-board" };
+const result = { app: { title: "Project board" }, launch };
+function parent(metadata: Record<string, unknown>, status: "running" | "completed" | "error"): ToolPart {
+  const base = { id: "execute", callID: "execute", messageID: "message", sessionID: "session", type: "tool" as const,
+    tool: "execute", metadata: { openworkV2CodeMode: true } };
+  if (status === "running") return { ...base, state: { status, input: {}, metadata, title: "execute", time: { start: 1 } } };
+  if (status === "error") return { ...base, state: { status, input: {}, metadata, error: "Later script failure", time: { start: 1, end: 10 } } };
+  return { ...base, state: { status, input: {}, metadata, output: "arbitrary script return", title: "execute", time: { start: 1, end: 10 } } };
+}
+
+for (const status of ["running", "completed", "error"] as const) {
+  test(`a completed App retains its launch while its parent is ${status}`, () => {
+    const collector = createMcpResultsCollector();
+    collector.before({ ...event, tool: "execute" });
+    const input = { title: "Project board", reactSource: "x".repeat(40_000) };
+    const call = { ...event, tool: "openwork-cloud.create_app", input };
+    collector.before(call);
+    const id = collector.claim(call)!;
+    collector.settle(event, id, { status: "completed", output: result });
+    const metadata = collector.metadata(event);
+    const outer = parent(metadata, status);
+    const [app] = codeModeConnectionParts(outer);
+    expect(app?.state.status).toBe("completed");
+    expect(app?.state).toMatchObject({ metadata: { openworkMcpResult: { _meta: { "openwork/mcpApp": launch } } } });
+    if (status === "error") expect(outer.state).toMatchObject({ error: "Later script failure" });
+  });
+}
+
+test("parallel App results keep invocation identity when they finish in reverse order", () => {
+  const collector = createMcpResultsCollector();
+  collector.before({ ...event, tool: "execute" });
+  const calls = ["First board", "Second board"].map(title => ({ ...event, tool: "openwork-cloud.create_app", input: { title } }));
+  calls.forEach(call => collector.before(call));
+  const ids = calls.map(call => collector.claim(call)!);
+  collector.settle(event, ids[1]!, { status: "completed", output: { launch: { ...launch, title: "Second board" } } });
+  const live = codeModeConnectionParts(parent(collector.metadata(event), "running"));
+  expect(live.map(call => call.state.status)).toEqual(["running", "completed"]);
+  const secondId = live[1]!.callID;
+  collector.settle(event, ids[0]!, { status: "completed", output: { launch: { ...launch, title: "First board" } } });
+  const done = codeModeConnectionParts(parent(collector.metadata(event), "error"));
+  expect(done.map(call => call.state.input.title)).toEqual(["First board", "Second board"]);
+  expect(done[1]!.callID).toBe(secondId);
+  expect(done.every(call => call.state.status === "completed")).toBe(true);
+});
+
+test("older status-only captures retain successful calls without inventing a launch", () => {
+  const [app] = codeModeConnectionParts(parent({ toolCalls: [{ tool: "openwork-cloud.create_app", input: {}, status: "completed" }] }, "error"));
+  expect(app?.state).toMatchObject({ status: "completed", output: JSON.stringify({ unrecorded: true }) });
+});
+
+test("the actual tool wrapper persists delivery metadata before the script can fail", async () => {
+  type Context = Parameters<typeof plugin.setup>[0];
+  type Editor = Parameters<Parameters<Context["tool"]["transform"]>[0]>[0];
+  type Editable = Parameters<Parameters<Editor["update"]>[1]>[0];
+  let before: ((event: { tool: string; messageID: string; id: string; input: unknown }) => void) | undefined;
+  const call = { ...event, tool: "openwork-cloud.create_app", input: { title: "Project board" } };
+  const tool: Editable = { async execute() { return { output: result }; } };
+  const context: Context = { tool: {
+    async transform(update) {
+      update({ get: () => undefined, list: () => [{ id: call.tool }], update: (_id, wrap) => wrap(tool) });
+      return { async dispose() {} };
+    },
+    async hook(name, callback) {
+      if (name === "execute.before") before = callback;
+      return { async dispose() {} };
+    },
+  } };
+  const dispose = await plugin.setup(context);
+  before?.({ ...event, tool: "execute", input: {} });
+  before?.(call);
+  const progress: Record<string, unknown>[] = [];
+  await tool.execute(call.input, { ...event, async progress(metadata) { progress.push(metadata); } });
+  const [app] = codeModeConnectionParts(parent(progress.at(-1)!, "error"));
+  expect(app?.state.status).toBe("completed");
+  expect(JSON.stringify(app)).toContain("ui://project-board");
+  await dispose();
+});

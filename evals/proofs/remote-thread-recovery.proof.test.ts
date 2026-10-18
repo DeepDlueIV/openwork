@@ -57,6 +57,7 @@ test("a member keeps the next draft and sees the same confirmed remote task stat
     await user.click({ role: "button", label: "Send" });
     await user.see({ text: "Sending…" });
     await user.type({ role: "textbox", label: "Follow up" }, "Draft survives switching and reopening.");
+    await user.hover({ role: "button", label: `Select tab: ${world.title}` });
     await user.click({ role: "button", label: `Close tab: ${world.title}` });
     world.releaseFollowUp(true);
     await probe.eventually(() => world.counts().rejectedSends, { within: 10_000, intervalMs: 100, label: "the pending follow-up is rejected while its panel is closed", until: (count) => count === 1 });

@@ -384,7 +384,7 @@ export default function McpSelectOrganizationPage() {
         </div>
       ) : null}
 
-      <SetupFacts rows={workbot ? facts.filter((fact) => fact.label === "Account") : facts} />
+      <SetupFacts rows={workbot ? [{ label: "Account", value: <span className="min-w-0 truncate" title={email ?? undefined}>{email ?? "…"}</span>, testId: "mcp-account-email" }] : facts} />
 
       {firstParty ? null : <McpConsentPermissions scope={requestedScope} actor={actor} />}
 

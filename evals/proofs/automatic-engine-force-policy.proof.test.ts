@@ -31,7 +31,7 @@ failure("a member keeps using the original chat after an automatic upgrade fails
   });
   await step("after: the member sends and reads a new reply on the current engine", async () => {
     await user.type("composer", continuedWorkPrompt);
-    await user.press("ENTER");
+    await user.press("Enter");
     await user.see({ text: continuedWorkText }, { timeoutMs: 60_000 });
     const messages = await world.messages();
     expect(messages).toContain(continuedWorkText);
@@ -88,9 +88,9 @@ test("a member keeps a new v2 chat readable when automatic engine policy turns o
   });
 
   await step("the member creates a chat and reply that exist only on the new engine", async () => {
-    await user.click({ role: "button", text: /New session/ });
+    await user.click({ role: "button", label: "New session" });
     await user.type("composer", newV2Prompt);
-    await user.press("ENTER");
+    await user.press("Enter");
     await user.see({ text: newV2HistoryText }, { timeoutMs: 60_000 });
     sessionId = (await probe.hash()).match(/\/session\/([^/?#]+)/)?.[1] ?? "";
     expect(sessionId).not.toBe("");

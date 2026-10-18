@@ -130,7 +130,7 @@ import {
   type NewTaskComposerHandoff,
 } from "@/react-app/domains/session/chat/new-task-composer";
 import { isDesktopProviderBlocked } from "@/app/cloud/desktop-app-restrictions";
-import { useCheckDesktopRestriction, useOrgRestrictions } from "@/react-app/domains/cloud/desktop-config-provider";
+import { useCheckDesktopRestriction, useDesktopConfig, useOrgRestrictions } from "@/react-app/domains/cloud/desktop-config-provider";
 import { newChatDefaultModel, orgDefaultModelForEngine } from "@/react-app/domains/models/org-default-model";
 import { useRestrictionNotice } from "@/react-app/domains/cloud/restriction-notice-provider";
 import { ReactSessionRuntime } from "@/react-app/domains/session/sync/runtime-sync";
@@ -150,7 +150,7 @@ import { getModelBehaviorSummary, nextModelBehaviorValue, previousModelBehaviorV
 import { computeModelAvailability, createUnavailableConfirmationGate, type ModelAvailability } from "@/react-app/domains/session/surface/model-availability";
 import { useModelRemovalConfirmation } from "@/react-app/domains/session/surface/use-model-removal-confirmation";
 import { closestAvailableModel } from "@/react-app/domains/session/surface/model-removal";
-import { modelRecoveryChatKey, temporaryRecoveredDefault, useModelRecoveryStore } from "@/react-app/domains/session/surface/model-recovery-store";
+import { modelRecoveryChatKey, temporaryRecoveredDefault, useDefaultModelRecovery, useModelRecoveryStore } from "@/react-app/domains/session/surface/model-recovery-store";
 import { readModelDisplayMemory, rememberModelDisplayNames } from "@/react-app/domains/session/surface/model-display-memory";
 import { useSessionFindStore } from "@/react-app/domains/session/surface/find-store";
 import { useModelPicker } from "@/react-app/domains/session/modals/use-model-picker";
@@ -514,6 +514,7 @@ export function SessionRoute() {
   const checkDesktopRestriction = useCheckDesktopRestriction();
   // The organization's (or team's) default model for new chats; only the v2 engine applies it.
   const orgConfiguredDefaultModel = useOrgRestrictions().defaultModel;
+  const { freshConfigStatus } = useDesktopConfig();
   const restrictionNotice = useRestrictionNotice();
   const [activeOrganizationRole, setActiveOrganizationRole] = useState<DenOrgRole | null>(null);
   const [openworkServerHostInfoState, setOpenworkServerHostInfoState] = useState<OpenworkServerInfo | null>(null);
@@ -590,7 +591,8 @@ export function SessionRoute() {
   const newChatDefault = newChatDefaultModel({ workspaceDefault, orgDefault: orgNewTaskModel,
     appDefault: { model: local.prefs.defaultModel, variant: local.prefs.modelVariant ?? null } });
   const defaultSelectionKey = JSON.stringify([workspaceDefaultScope, workspaceDefault, orgNewTaskModel, newChatDefault]);
-  const newTaskRecovery = useModelRecoveryStore((state) => state.byChat[newTaskRecoveryChatKey]);
+  const newTaskRecovery = useDefaultModelRecovery(newTaskRecoveryChatKey, defaultSelectionKey,
+    Boolean(workspaceDefaultScope) && freshConfigStatus === "ready");
   const effectiveNewChatDefault = temporaryRecoveredDefault(newChatDefault, newTaskRecovery, defaultSelectionKey);
   const configuredNewTaskModel = effectiveNewChatDefault.model;
   // This route creates the provider below; use its same scope when choosing a new-task default.

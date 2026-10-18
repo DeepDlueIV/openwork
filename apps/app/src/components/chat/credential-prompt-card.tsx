@@ -64,15 +64,17 @@ export function CredentialPromptCards({ part }: { part: DynamicToolUIPart }) {
   const messageList = useOptionalMessageList()
   const settings = readDenSettings()
   const scope = JSON.stringify([settings.baseUrl, settings.activeOrgId, part.toolCallId])
-  const progress = useRef({ scope, ready: new Set<string>(), requested: false, resumed: false })
-  if (progress.current.scope !== scope) progress.current = { scope, ready: new Set(), requested: false, resumed: false }
+  const required = new Set(prompts.map(({ prompt }) => targetKey(prompt)))
+  const progress = useRef({ scope, required, ready: new Set<string>(), requested: false, resumed: false })
+  if (progress.current.scope !== scope) progress.current = { scope, required, ready: new Set(), requested: false, resumed: false }
+  progress.current.required = required
   const fulfilled = (key: string, saved: boolean) => {
     const current = progress.current
     // A completion from a previous account must not resume the new account's task.
     if (current.scope !== scope) return
     current.ready.add(key)
     current.requested ||= saved
-    if (!current.requested || current.resumed || !prompts.every(({ prompt }) => current.ready.has(targetKey(prompt)))) return
+    if (!current.requested || current.resumed || ![...current.required].every((target) => current.ready.has(target))) return
     current.resumed = true
     messageList?.continueAfterConnection?.(part.toolCallId, CREDENTIAL_SAVED_CONTINUE_PROMPT)
   }

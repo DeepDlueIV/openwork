@@ -8,14 +8,16 @@ import type { DynamicToolUIPart } from "ai"
 let saves = 0
 let continues = 0
 let rejectSave = false
+let saveResponse: (() => Promise<void>) | null = null
+let queryClient: QueryClient
 mock.module("@/app/lib/den", () => ({
   DenApiError: class extends Error {},
   readDenSettings: () => ({ baseUrl: "http://localhost/", authToken: "fixture", activeOrgId: "org_fixture" }),
   createDenClient: () => ({
     gatewayCredentialSetReady: async () => false,
     listMcpConnections: async () => [],
-    saveGatewayProviderCredential: async () => { saves++; if (rejectSave) throw new Error("fixture rejection") },
-    saveMcpConnectionSharedKey: async () => { saves++; if (rejectSave) throw new Error("fixture rejection") },
+    saveGatewayProviderCredential: async () => { saves++; await saveResponse?.(); if (rejectSave) throw new Error("fixture rejection") },
+    saveMcpConnectionSharedKey: async () => { saves++; await saveResponse?.(); if (rejectSave) throw new Error("fixture rejection") },
   }),
 }))
 mock.module("@/react-app/domains/cloud/den-auth-provider", () => ({ useDenAuth: () => ({ isSignedIn: true }) }))
@@ -38,7 +40,7 @@ afterAll(async () => { if (ownedDom) await GlobalRegistrator.unregister() })
 beforeEach(() => {
   previousAct = Reflect.get(globalThis, "IS_REACT_ACT_ENVIRONMENT")
   Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true)
-  saves = 0; continues = 0; rejectSave = false
+  saves = 0; continues = 0; rejectSave = false; saveResponse = null
   container = document.createElement("div"); document.body.append(container)
 })
 afterEach(async () => {
@@ -49,15 +51,15 @@ afterEach(async () => {
 function prompt(id: string) {
   return { schemaVersion: "1", kind: "credential_prompt", target: { type: "mcp_connection_key", connectionId: id }, name: id, destination: "https://fixture.example/mcp" }
 }
-function script(): DynamicToolUIPart {
-  const calls = ["emc_first", "emc_second", "emc_first"].map((id) => ({ tool: "openwork-cloud.execute_capability", input: { name: "postMcpConnections", body: { name: id } }, status: "completed" }))
+function script(ids = ["emc_first", "emc_second", "emc_first"]): DynamicToolUIPart {
+  const calls = ids.map((id) => ({ tool: "openwork-cloud.execute_capability", input: { name: "postMcpConnections", body: { name: id } }, status: "completed" }))
   return { type: "dynamic-tool", toolName: "execute", toolCallId: "call_script", state: "output-available", input: {}, output: "done",
-    callProviderMetadata: { openwork: { codeMode: { calls, details: calls.map((call, ordinal) => ({ tool: call.tool, input: call.input, ordinal, output: { credentialPrompt: prompt(["emc_first", "emc_second", "emc_first"][ordinal] ?? "") } })) } } } }
+    callProviderMetadata: { openwork: { codeMode: { calls, details: calls.map((call, ordinal) => ({ tool: call.tool, input: call.input, ordinal, output: { credentialPrompt: prompt(ids[ordinal] ?? "") } })) } } } }
 }
 async function mount(part: DynamicToolUIPart, group = false) {
   root = createRoot(container)
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  await act(async () => root?.render(<QueryClientProvider client={client}>{group ? <CredentialPromptCards part={part} /> : <CredentialPromptCard part={part} />}</QueryClientProvider>))
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  await act(async () => root?.render(<QueryClientProvider client={queryClient}>{group ? <CredentialPromptCards part={part} /> : <CredentialPromptCard part={part} />}</QueryClientProvider>))
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
 }
 async function type(input: HTMLInputElement | null, text: string) {
@@ -88,6 +90,26 @@ test("two trusted setup calls render two deduplicated cards and resume the paren
   expect(saves).toBe(2)
   expect(continues).toBe(1)
   expect(container.innerHTML).not.toContain("fixture-private")
+})
+
+test("a deferred save uses the latest required targets, not the list captured before another request arrived", async () => {
+  let release: () => void = () => {}
+  saveResponse = () => new Promise((resolve) => { release = resolve })
+  await mount(script(["emc_deferred_a"]), true)
+  await type(container.querySelector("input"), "fixture-private-a")
+  await save(container)
+  expect(saves).toBe(1)
+  await act(async () => root?.render(<QueryClientProvider client={queryClient}><CredentialPromptCards part={script(["emc_deferred_a", "emc_deferred_b"])} /></QueryClientProvider>))
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
+  expect(container.querySelectorAll("section")).toHaveLength(2)
+  await act(async () => release())
+  expect(continues).toBe(0)
+  saveResponse = null
+  const second = container.querySelectorAll("section")[1]
+  if (!second) throw new Error("Missing newly required credential")
+  await type(second.querySelector("input"), "fixture-private-b")
+  await save(second)
+  expect(continues).toBe(1)
 })
 
 test("safe identifiers survive local and remote validation failure while secrets clear and results never take focus", async () => {

@@ -56,6 +56,7 @@ test("a member keeps separate chat drafts and one draft across Home and Document
 test("a member retries a refused correction without losing earlier messages or the correction", async ({ world, user, probe, step, evidence }) => {
   await step("the member corrects an earlier question while both earlier replies stay visible", async () => {
     await user.see({ text: "Use Monday" });
+    await user.hover({ text: "Use Monday" });
     await user.click({ role: "button", label: /^(Correct|Edit) message$/, nth: 0 });
     await user.see({ text: "Correcting: Use Monday" });
     await user.type({ role: "textbox", label: /^(Correct|Edit) your message$/ }, "Use Friday", { replace: true });

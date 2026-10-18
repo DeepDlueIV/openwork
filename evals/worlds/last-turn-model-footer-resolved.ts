@@ -18,7 +18,7 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   if (!organizationId) throw new Error("The footer proof requires an organization.");
   async function setRollout(enabled: boolean) {
     const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { lastTurnModelFooter: enabled } }),
+      method: "PUT", body: JSON.stringify({ capabilities: { lastTurnModelFooter: enabled, liveProviderSync: true } }),
     });
     if (!result.response.ok) throw new Error(`Changing the footer rollout failed: ${result.response.status} ${result.text}`);
   }

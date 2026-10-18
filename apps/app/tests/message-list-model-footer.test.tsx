@@ -154,6 +154,16 @@ test("the footer follows its own session picker's catalog when it arrives", asyn
   expect(container.querySelector('[data-testid="reply-model"]')?.textContent).toBe("Replied with GPT-6 Luna")
 })
 
+test("a metadata-free native completion marker keeps the answer's model footer", async () => {
+  enabled = true
+  const message = answer("reply")
+  message.metadata = { opencode: { replyModel: { providerID: "ipr_fixture", modelID: "gwm_fixture" } } }
+  const container = await render([message, { id: "completion", role: "assistant", parts: [] }], false, [
+    { providerID: "ipr_fixture", modelID: "gwm_fixture", title: "GPT-6 Luna", description: "OpenAI" },
+  ])
+  expect(container.querySelector('[data-testid="reply-model"]')?.textContent).toBe("Replied with GPT-6 Luna")
+})
+
 test("an unknown gateway identity stays hidden without a catalog title", async () => {
   enabled = true
   const message = answer("reply")

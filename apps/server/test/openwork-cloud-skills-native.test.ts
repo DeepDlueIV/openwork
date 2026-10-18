@@ -9,6 +9,7 @@ import { test } from "node:test";
 import { createManagedOpencodeV2Server } from "../src/managed-opencode-v2.js";
 import { createV2ContextBridge } from "../src/opencode-v2-context-bridge.js";
 import { sha256Digest } from "../src/opencode-plugins/openwork-cloud-skills-v2.js";
+import { serve } from "../src/serve-node.js";
 
 const binary = process.env.OPENWORK_TEST_OPENCODE2 ?? "/Applications/OpenWork.app/Contents/Resources/sidecars/opencode2";
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -48,6 +49,11 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
   let engine: Awaited<ReturnType<typeof createManagedOpencodeV2Server>> | undefined;
   const catalogHeld = deferred();
   const bodyHeld = deferred();
+  let loadedModelRequests = 0;
+  const model = await serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    if ((await request.text()).includes("PRIVATE_SKILL_BODY_CANARY")) loadedModelRequests++;
+    return new Response(`data: ${JSON.stringify({ id: "skill-fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "Fixture complete" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "skill-fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+  } });
   const bridge = await createV2ContextBridge(async path => {
     if (path === "/experimental/connect/skills") {
       catalogReads++; await catalogHeld.promise;
@@ -68,6 +74,15 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
     assert.equal(result.status, 200);
     return result.json;
   });
+  let cleaned = false;
+  const cleanup = async () => {
+    if (cleaned) return;
+    cleaned = true;
+    catalogHeld.resolve(); bodyHeld.resolve();
+    await engine?.close(); await bridge.close(); await model.stop();
+    await rm(root, { recursive: true, force: true });
+  };
+  t.after(cleanup);
   const entry = join(root, "entry.ts");
   await writeFile(entry, `
     import { registerCloudSkillDiscovery } from ${JSON.stringify(join(repo, "apps/server/src/opencode-plugins/openwork-cloud-skills-v2.ts"))};
@@ -82,9 +97,13 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
       HOME: home, OPENCODE_TEST_HOME: home, XDG_CONFIG_HOME: join(home, "config"), XDG_DATA_HOME: join(home, "data"),
       XDG_CACHE_HOME: join(home, "cache"), XDG_STATE_HOME: join(home, "state"), OPENCODE_DISABLE_MODELS_FETCH: "true",
     } });
+    // All inference is synthetic and loopback-only, including auxiliary calls.
+    await engine.injectProvider({ id: "native_skill_fixture", name: "Native skill fixture", apiKey: "fixture-only",
+      baseUrl: `http://127.0.0.1:${model.port}/v1`, models: [{ id: "fixture", name: "Fixture",
+        config: { limit: { context: 8192, output: 1024 }, tool_call: false } }] });
     const makeSession = async (effect: "deny" | "ask" | "allow") => {
       const created = await engine!.fetchJson("/api/session", { method: "POST", body: { title: "Native skill permission fixture", location: { directory: project },
-        permissions: [{ action: "skill", resource: "*", effect }] } });
+        model: { providerID: "native_skill_fixture", id: "fixture" }, permissions: [{ action: "skill", resource: "*", effect }] } });
       assert.equal(created.status, 200);
       assert.ok(record(created.json) && record(created.json.data) && typeof created.json.data.id === "string");
       return created.json.data.id;
@@ -111,6 +130,7 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
     const ready = await selected;
     assert.equal(ready.status, 200);
     assert.ok(JSON.stringify(ready.json).includes("PRIVATE_SKILL_BODY_CANARY"), "ready admission contains verified instructions, not discovery metadata");
+    await until(() => loadedModelRequests > 0);
     t.diagnostic("cold metadata held: ordinary admitted; selected waited for metadata and its verified body");
 
     for (const effect of ["deny", "ask", "allow"] as const) {
@@ -161,9 +181,5 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
     assert.equal((await bridgeCall({ sessionID: coldID, ids: [id] })).status, 403, "kill/off prevents native authorization immediately");
     assert.equal(authorizations, before, "invalid and off-rollout calls never reach engine permission evaluation");
     assert.ok(!(engine.stdout + engine.stderr).includes("PRIVATE_SKILL_BODY_CANARY"), "skill bodies never enter native logs");
-  } finally {
-    catalogHeld.resolve(); bodyHeld.resolve();
-    await engine?.close(); await bridge.close();
-    await rm(root, { recursive: true, force: true });
-  }
+  } finally { await cleanup(); }
 });

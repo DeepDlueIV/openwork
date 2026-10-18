@@ -179,7 +179,7 @@ export function mcpAppTextFallback(part: DynamicToolUIPart): string | null {
 function McpAppTextFallback({ text }: { text: string }) {
   const element = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const finish = startMcpAppTiming("chat.fallback-paint")
+    const finish = startMcpAppTiming("chat.fallback-paint-opportunity")
     // Two frames observe a paint opportunity, not a provider result or iframe render.
     let second: number | undefined
     const first = requestAnimationFrame(() => {

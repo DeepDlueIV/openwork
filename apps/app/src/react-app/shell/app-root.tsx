@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 
 import { captureAnalyticsEvent, initAnalytics } from "../../app/lib/analytics";
@@ -12,7 +12,6 @@ import {
 import { exchangeHandoffAndSignIn } from "../../app/lib/den-handoff";
 import {
   denSettingsChangedEvent,
-  denSessionUpdatedEvent,
 } from "../../app/lib/den-session-events";
 import { evalRelaunchDesktopApp, readDesktopDistributionInfo } from "../../app/lib/desktop";
 import { outboundEgressAllowed } from "../../app/lib/enterprise-activation";
@@ -60,7 +59,7 @@ import {
   shouldRenderPreparedRedirect,
   signedInRoute,
 } from "./den-signin-routing";
-import { StartupScreen } from "./startup-screen";
+import { SigninDestinationSkeleton, StartupScreen } from "./startup-screen";
 import { WebStartupScreen } from "./workspace-startup-status";
 import { isOpenworkGatewayRuntime } from "../../app/lib/gateway-runtime";
 
@@ -97,8 +96,6 @@ function DenSigninGate({ children }: DenSigninGateProps) {
   const denAuth = useDenAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const locationRef = useRef(location);
-  locationRef.current = location;
   const bootstrap = useSyncExternalStore(
     subscribeToDenBootstrap,
     readDenBootstrapSnapshot,
@@ -156,44 +153,14 @@ function DenSigninGate({ children }: DenSigninGateProps) {
     requireSignin,
   ]);
 
-  // After a fresh sign-in, returning members go straight to chat. Give org
-  // restoration a brief chance to settle before treating the user as new.
-  useEffect(() => {
-    const handler = (event: WindowEventMap[typeof denSessionUpdatedEvent]) => {
-      if (event.detail?.status !== "success") return;
-      const signInLocation = locationRef.current;
-      let attempts = 0;
-      const check = () => {
-        const currentLocation = locationRef.current;
-        if (
-          currentLocation.pathname !== signInLocation.pathname
-          || currentLocation.search !== signInLocation.search
-          || currentLocation.hash !== signInLocation.hash
-        ) return;
-        attempts++;
-        const settings = readDenSettings();
-        if (settings.authToken?.trim() && readOrgSelectionPending().pending) {
-          // Desktop-initiated sign-in: the org chooser decides — do not race
-          // it to /session while the choice is deliberately open.
-          navigate("/onboarding", { replace: true });
-        } else if (settings.authToken?.trim() && settings.activeOrgId?.trim()) {
-          navigate("/session", { replace: true });
-        } else if (attempts < 10) {
-          // Session persistence should already be done, but retry briefly in
-          // case another consumer is still applying the handoff result.
-          setTimeout(check, 500);
-        } else if (settings.authToken?.trim()) {
-          navigate(signedInRoute(settings.activeOrgId), { replace: true });
-        }
-      };
-      // First check after a short delay for the auth to settle
-      setTimeout(check, 500);
-    };
-    window.addEventListener(denSessionUpdatedEvent, handler);
-    return () => window.removeEventListener(denSessionUpdatedEvent, handler);
-  }, [navigate]);
+  // Reactive auth routing above owns sign-in completion. Background success
+  // events must not replace a returning member's conversation or settings route.
 
   if (requireSignin && denAuth.status === "checking") {
+    if (readDenSettings().authToken?.trim() && !onSignin && !onOnboarding) {
+      return <SigninDestinationSkeleton settings={path.startsWith("/settings")}
+        conversation={/\/session\/.+/.test(path)} />;
+    }
     if (isOpenworkGatewayRuntime()) return <WebStartupScreen message="Checking sign-in…" />;
     return <StartupScreen message="Checking your sign-in" />;
   }

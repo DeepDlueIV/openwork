@@ -106,6 +106,11 @@ export type McpAppRendererState = "loading" | "connected" | "unavailable"
 
 type McpAppRendererObserver = { onStateChange?: (state: McpAppRendererState) => void }
 
+const MCP_APP_ACCESS_DENIAL_CODES = new Set(["mcp_access_denied", "tool_denied", "tool_not_visible"])
+function isMcpAppAccessDenial(cause: unknown): boolean {
+  return cause instanceof OpenworkServerError && MCP_APP_ACCESS_DENIAL_CODES.has(cause.code)
+}
+
 export type PreservedMcpAppResult = {
   content: Array<Record<string, unknown>>
   isError?: boolean
@@ -591,7 +596,15 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
     // The generated runtime's error boundary reports through the standard SDK
     // logging channel, not the sandbox's document diagnostic messages.
     bridge.onloggingmessage = ({ level, logger, data }) => {
-      if (level === "error" && logger === "generated-mcp-app" && (data === "react-render" || data === "react-mount")) {
+      // Legacy string logs cannot distinguish bootstrap from a delivered render.
+      // The generated runtime attests the failing render's own launch-data state;
+      // host notification delivery alone is not evidence that bootstrap failed.
+      if (level !== "error" || logger !== "generated-mcp-app" || !isRecord(data)
+        || typeof data.renderRevision !== "number" || (data.stage !== "react-render" && data.stage !== "react-mount")) return
+      if (data.hasLaunchResult === false) {
+        // An observed bootstrap event, not a startup latency or failed view.
+        startMcpAppTiming("bootstrap-render-observed")()
+      } else if (data.hasLaunchResult === true) {
         fail("MCP_APP_DOCUMENT_RUNTIME_ERROR", "app-initialization", null,
           "The App could not render. Retry the preview.", sandbox.expectedOrigin)
       }
@@ -1006,14 +1019,19 @@ export function McpAppFrame({ part, origin, onStateChange }: McpAppRendererObser
   const result = preservedResult(part)
   if (isRetiredFirstPartyConfirmation(part.toolName, result)) return null
   if (isNativeConnectionAppLaunch(part)) return null
+  return <McpAppFallbackFrame part={part} origin={origin} onStateChange={onStateChange} />
+}
+
+function McpAppFallbackFrame({ part, origin, onStateChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
+  const [accessDenied, setAccessDenied] = useState(false)
   const fallback = mcpAppTextFallback(part)
   return <>
-    {fallback ? <McpAppTextFallback text={fallback} /> : null}
-    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} />
+    {fallback && !accessDenied ? <McpAppTextFallback text={fallback} /> : null}
+    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} onAccessChange={allowed => setAccessDenied(!allowed)} />
   </>
 }
 
-function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
+function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, onAccessChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin; onAccessChange: (allowed: boolean) => void }) {
   const stagedLoading = useAppBuildProgressEnabled()
   const context = useOptionalMessageList()
   const nextOrigin = surfaceOrigin ?? context?.mcpAppOrigin ?? null
@@ -1082,6 +1100,8 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange }: Mcp
   const resolvedFor = useRef<object | null>(null)
   const onStateChangeRef = useRef(onStateChange)
   onStateChangeRef.current = onStateChange
+  const onAccessChangeRef = useRef(onAccessChange)
+  onAccessChangeRef.current = onAccessChange
   useLayoutEffect(() => {
     onStateChangeRef.current?.(origin && result ? "loading" : "unavailable")
   }, [resolution])
@@ -1120,8 +1140,10 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange }: Mcp
           resolvedFor.current = resolution
           setApp(resolved)
           setPreviewActions(undefined)
-          if (resolved) live.resolve({ origin, app: resolved })
-          else {
+          if (resolved) {
+            onAccessChangeRef.current(true)
+            live.resolve({ origin, app: resolved })
+          } else {
             onStateChangeRef.current?.("unavailable")
             live.reject(new Error("This tool no longer advertises an App."))
           }
@@ -1129,6 +1151,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange }: Mcp
         (cause) => {
           live.reject(cause)
           if (cancelled) return
+          if (isMcpAppAccessDenial(cause)) onAccessChangeRef.current(false)
           onStateChangeRef.current?.("unavailable")
           checkpoints.push(`resolve-failed+${Math.round(performance.now() - startedAt)}ms`)
           if (launch || isActionableMcpAppResolutionError(cause)) {

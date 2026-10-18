@@ -5,7 +5,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 /** Network-only resource fault. The browser still runs the real host and sandbox. */
-export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<unknown>) {
+export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<unknown>, readChecklist: (checkOnly: boolean) => Promise<unknown>) {
   if (!app.client.webSocketDebuggerUrl) throw new Error("App presentation requires browser CDP");
   const socket = new WebSocket(app.client.webSocketDebuggerUrl);
   const pending = new Map<number, { resolve(): void; reject(error: Error): void }>();
@@ -32,9 +32,19 @@ export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<un
     if (typeof params.requestId !== "string" || !record(params.request)) throw new Error("Malformed resource request");
     const requestId = params.requestId;
     if (params.request.method === "OPTIONS") return command("Fetch.continueRequest", { requestId });
-    const body = await resolve();
+    const isRead = typeof params.request.url === "string" && new URL(params.request.url).pathname.endsWith("/mcp-apps/call");
+    let checkOnly = false;
+    if (isRead) {
+      const input: unknown = typeof params.request.postData === "string" ? JSON.parse(params.request.postData) : null;
+      if (!record(input) || input.name !== "read_checklist" || input.approved === true) {
+        throw new Error("The checklist fixture only accepts its declared background read or authority recheck");
+      }
+      checkOnly = input.checkOnly === true;
+    }
+    const body = await (isRead ? readChecklist(checkOnly) : resolve());
     await command("Fetch.fulfillRequest", {
-      requestId, responseCode: 200,
+      requestId, responseCode: record(body) && body.code === "mcp_access_denied" ? 403
+        : record(body) && body.code === "mcp_auth_required" ? 401 : 200,
       responseHeaders: [
         { name: "Content-Type", value: "application/json" },
         { name: "Access-Control-Allow-Origin", value: new URL(app.webUrl).origin },
@@ -62,7 +72,7 @@ export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<un
     socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
     socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("App presentation CDP connection failed")); }, { once: true });
   });
-  await command("Fetch.enable", { patterns: [{ urlPattern: "*/mcp-apps/resolve", requestStage: "Request" }] });
+  await command("Fetch.enable", { patterns: ["*/mcp-apps/resolve", "*/mcp-apps/call"].map(urlPattern => ({ urlPattern, requestStage: "Request" })) });
   return {
     check() { if (failure) throw failure; },
     async [Symbol.asyncDispose]() {

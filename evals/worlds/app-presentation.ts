@@ -15,22 +15,41 @@ export const APP_FALLBACK = "Review the project checklist and mark completed ite
 const appId = "cob_00000000000000000000000000";
 const revisionId = "cov_00000000000000000000000000";
 export const APP_RESOURCE = mcpAppResourceUri(appId, revisionId);
-type Scenario = "cold" | "warm" | "slow" | "error" | "reopen";
+type Scenario = "cold" | "warm" | "slow" | "error" | "reopen" | "bootstrap" | "denied" | "auth-outage";
 
-/** Real appWeb, engine, message capture and generated React runtime. Only the
- * published resource discovery has deterministic network slowness/errors. */
+/** Real appWeb, engine, message capture and generated React runtime. Resource
+ * discovery and one declared read use deterministic HTTP fixtures, never live
+ * providers. The useful view appears only after the read crosses the real bridge. */
 export async function appPresentation(seed: Seed) {
   const healthy = await buildGeneratedMcpApp({ title: "Project checklist", description: null,
-    reactSource: `export default function Checklist() {
+    reactSource: `export default function Checklist({ app, result }) {
       const [done, setDone] = React.useState(false);
-      return <main><h2>Project checklist</h2><p>{done ? "Review completed" : "Review pending"}</p><button type="button" onClick={() => setDone(true)}>Mark reviewed</button></main>;
+      const [status, setStatus] = React.useState(null);
+      const [freshness, setFreshness] = React.useState(null);
+      React.useEffect(() => {
+        if (result === undefined) return;
+        let closed = false;
+        app.callServerTool({ name: "read_checklist", arguments: {} }).then(reply => {
+          if (!closed && !reply.isError) {
+            setStatus(reply.structuredContent.status);
+            setFreshness(reply._meta?.["openwork/cachedAt"] ? "Saved result" : "Read result");
+          }
+        });
+        return () => { closed = true; };
+      }, [app, result]);
+      return <main>{status === null ? <p role="status">Checking project items</p> : <><h2>Project checklist</h2><p>{done ? "Review completed" : status}</p><p>{freshness}</p><button type="button" onClick={() => setDone(true)}>Mark reviewed</button></>}</main>;
     }`, cssSource: "body{margin:0}main{padding:16px}h2{font-size:16px}button{font:inherit}" });
   const broken = await buildGeneratedMcpApp({ title: "Project checklist", description: null,
     reactSource: `export default function Checklist() { throw new Error("The checklist could not render."); }` });
-  if (!healthy.ok || !broken.ok) throw new Error("The representative generated App did not compile");
+  const bootstrap = await buildGeneratedMcpApp({ title: "Project checklist", description: null,
+    reactSource: `export default function Checklist({ result }) {
+      const title = result.structuredContent.app.title;
+      return <main><h2>{title}</h2><p>Launch data received</p></main>;
+    }` });
+  if (!healthy.ok || !broken.ok || !bootstrap.ok) throw new Error("The representative generated App did not compile");
   const summary = { appId, revisionId, resourceUri: APP_RESOURCE, title: "Project checklist", description: null,
     pluginId: "plg_00000000000000000000000000", toolName: "open_app", serverPath: `/mcp/agent/connections/${appId}`,
-    textFallback: APP_FALLBACK, tools: [] };
+    textFallback: APP_FALLBACK, tools: [{ name: "read_checklist", description: "Read the project checklist", capability: "fixture:read-checklist", mode: "input", readOnly: true }] };
   const launch = { connectionId: appId, toolName: "open_app", resourceUri: APP_RESOURCE, arguments: {} };
   const mock = seed.mock({ isolatedProcessEnv: true, allowUnauthenticatedMcp: true,
     tools: [{ name: "create_app", description: "Publish the requested project checklist", inputSchema: { type: "object", properties: {} },
@@ -50,9 +69,12 @@ export async function appPresentation(seed: Seed) {
     provider: { presentation: { npm: "@ai-sdk/openai-compatible", name: "Project model",
       options: { baseURL: `${witness.url}/v1`, apiKey: "synthetic-presentation-key" }, models: { checklist: { name: "Project model" } } } },
   }, "v1");
+  const neighbor = await seed.session(app, { title: "Reference notes" });
   const session = await seed.session(app, { title: "Project checklist" });
   let scenario: Scenario = "cold";
   const resolutions: { scenario: Scenario; elapsedMs: number }[] = [];
+  const providerReads: { scenario: Scenario; elapsedMs: number }[] = [];
+  const keptResultChecks: { scenario: Scenario }[] = [];
   let count = 0;
   const network = await appPresentationHttp(app, async () => {
     const current = scenario;
@@ -60,8 +82,21 @@ export async function appPresentation(seed: Seed) {
     if (current === "slow") await wait(1_800);
     else if (current === "cold") await wait(250);
     resolutions.push({ scenario: current, elapsedMs: Math.round(performance.now() - start) });
+    if (current === "denied") return { code: "mcp_access_denied", message: "App access was removed. Ask an administrator to review access." };
+    if (current === "auth-outage") return { code: "mcp_auth_required", message: "The connection needs a fresh sign-in." };
     return { app: { launchId: `presentation-${++count}`, serverName: "openwork-app-host-connect-fixture", toolName: "open_app",
-      resourceUri: APP_RESOURCE, html: current === "error" ? broken.html : healthy.html, csp: healthy.csp, prefersBorder: false } };
+      resourceUri: APP_RESOURCE, html: current === "error" ? broken.html : current === "bootstrap" ? bootstrap.html : healthy.html, csp: healthy.csp, prefersBorder: false } };
+  }, async checkOnly => {
+    const current = scenario;
+    if (checkOnly) {
+      keptResultChecks.push({ scenario: current });
+      return { content: [], _meta: { "openwork/readOnly": true, "openwork/providerIdentity": "synthetic-checklist-provider" } };
+    }
+    const start = performance.now();
+    await wait(120);
+    providerReads.push({ scenario: current, elapsedMs: Math.round(performance.now() - start) });
+    return { content: [{ type: "text", text: "Review pending" }], structuredContent: { status: "Review pending" },
+      _meta: { "openwork/readOnly": true, "openwork/providerIdentity": "synthetic-checklist-provider" } };
   });
   if (!app.client.webSocketDebuggerUrl) throw new Error("The App's browser has no CDP endpoint");
   const endpoint = new URL(app.client.webSocketDebuggerUrl);
@@ -70,9 +105,19 @@ export async function appPresentation(seed: Seed) {
     env: { ...process.env, CDP_URL: `http://${endpoint.host}` }, encoding: "utf8", timeout: 20_000,
   }).trim();
   return {
-    app, session, workspace,
+    app, session, neighbor, workspace,
     scenario(next: Scenario) { network.check(); scenario = next; },
     resolutions() { network.check(); return [...resolutions]; },
+    providerReads() { network.check(); return [...providerReads]; },
+    keptResultChecks() { network.check(); return [...keptResultChecks]; },
+    // Browser network controls, never renderer stores: cold means a fresh
+    // renderer document plus cleared/disabled HTTP cache, not a cold process.
+    async coldBrowserCache() {
+      await app.client.send("Network.enable");
+      await app.client.send("Network.clearBrowserCache");
+      await app.client.send("Network.setCacheDisabled", { cacheDisabled: true });
+    },
+    async warmBrowserCache() { await app.client.send("Network.setCacheDisabled", { cacheDisabled: false }); },
     published: () => witness.toolCalls(),
     releaseReply: () => witness.releaseAgentReply(APP_REQUEST, 1),
     armFlicker: () => runFlicker("arm"),

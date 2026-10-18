@@ -259,7 +259,13 @@ describe("Authored App presentation", () => {
       expect(state()).toBe("Connected")
       await act(async () => { host.bridges[0].onloggingmessage?.({ level: "error", logger: "other-app", data: "react-render" }) })
       expect(state()).toBe("Connected")
-      await act(async () => { host.bridges[0].onloggingmessage?.({ level: "error", logger: "generated-mcp-app", data: "react-render" }) })
+      await act(async () => {
+        host.bridges[0].onloggingmessage?.({ level: "error", logger: "generated-mcp-app", data: "react-render" })
+        host.bridges[0].onloggingmessage?.({ level: "error", logger: "generated-mcp-app", data: { stage: "react-render", renderRevision: 0, hasLaunchResult: false } })
+      })
+      expect(state()).toBe("Connected")
+      expect(host.container.querySelector("iframe")).not.toBeNull()
+      await act(async () => { host.bridges[0].onloggingmessage?.({ level: "error", logger: "generated-mcp-app", data: { stage: "react-render", renderRevision: 2, hasLaunchResult: true } }) })
       expect(state()).toBe("Unavailable")
       expect(fallback()).toBe(saved)
       expect(host.container.querySelector("iframe")).toBeNull()
@@ -272,6 +278,36 @@ describe("Authored App presentation", () => {
       expect(state()).toBe("Connected")
       expect(host.container.textContent).not.toContain("Ready")
       expect(resolve).toHaveBeenCalledTimes(2)
+    } finally { resolve.mockRestore(); await host.dispose() }
+  })
+
+  test.each(["mcp_access_denied", "tool_denied", "tool_not_visible", "mcp_auth_required", "mcp_unreachable"])("reopening with %s masks only authoritative denials, including during a later transient retry", async code => {
+    const host = await startupFixture()
+    const part = authoredPart()
+    const origin = { client: host.client, workspaceId: `fallback-access-${code}`, sessionId: "session-access", readOnly: true }
+    const resourceUri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
+    const app = fixture({ resourceUri })
+    const resolve = spyOn(host.client, "resolveMcpApp").mockResolvedValue({ app })
+    const render = () => host.renderElement(createElement(McpAppFrame, { part, origin }))
+    const fallback = () => host.container.querySelector("[data-mcp-app-fallback]")
+    const retry = async () => {
+      const button = Array.from(host.container.querySelectorAll("button")).find(candidate => candidate.textContent === "Retry")
+      if (!button) throw new Error("Missing access recovery action")
+      await act(async () => button.click())
+    }
+    const denied = ["mcp_access_denied", "tool_denied", "tool_not_visible"].includes(code)
+    try {
+      await render()
+      expect(fallback()?.textContent).toContain("Review the project checklist")
+      await host.renderElement(createElement("div"))
+      resolve.mockRejectedValue(new OpenworkServerError(403, code, "Access needs attention"))
+      await render()
+      if (code === "mcp_unreachable") await host.advance(4_000)
+      expect(host.container.querySelector("iframe")).toBeNull()
+      expect(Boolean(fallback())).toBe(!denied)
+      resolve.mockRejectedValue(new OpenworkServerError(401, "mcp_auth_required", "Sign-in needs refreshing"))
+      await retry()
+      expect(Boolean(fallback())).toBe(!denied)
     } finally { resolve.mockRestore(); await host.dispose() }
   })
 

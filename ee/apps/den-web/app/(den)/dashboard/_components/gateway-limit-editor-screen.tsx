@@ -17,6 +17,7 @@ import { DenSwitch } from "../../_components/ui/switch";
 import { getAiGatewayLimitRoute, getAiGatewayLimitsRoute, orgFeatureEnabled, type DenOrgMember, type DenOrgTeam } from "../../_lib/den-org";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
 import { useGatewayAccessProviders } from "./gateway-subject-access-data";
+import { defaultProviderLimitLabel, providerLimitLabel } from "./provider-limit-scope";
 import { getProviderIconSlug } from "./llm-provider-data";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { formatUsageCost } from "../_features/analytics/stacked-daily-chart";
@@ -333,8 +334,9 @@ function ProviderCard({ orgId, headingId, value, onChange, enabled }: {
   orgId: string; headingId: string; value: string | null; onChange: (value: string | null) => void; enabled: boolean;
 }) {
   const providers = useGatewayAccessProviders(orgId);
+  const unverified = providers.isPending || providers.isFetching || providers.isError;
   const options = [
-    { value: DEFAULT_PROVIDER, label: "All providers", description: "Default limit for providers without their own limit", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> },
+    { value: DEFAULT_PROVIDER, label: defaultProviderLimitLabel, description: "A provider's own applicable limit replaces this default", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> },
     ...(providers.data ?? []).filter((provider) => provider.status !== "disabled" || provider.id === value).map((provider) => ({
       value: provider.id,
       label: provider.name,
@@ -342,18 +344,18 @@ function ProviderCard({ orgId, headingId, value, onChange, enabled }: {
       icon: <DenBrandMark name={provider.name} simpleIconSlug={getProviderIconSlug(provider.providerId)} className="h-6 w-6 rounded-[6px]" imageClassName="h-3.5 w-3.5" />,
     })),
   ];
-  if (value && providers.data && !providers.data.some((provider) => provider.id === value)) {
-    options.push({ value, label: "Removed provider", description: "This provider was deleted. The limit no longer applies.", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> });
+  if (value && !providers.data?.some((provider) => provider.id === value)) {
+    options.push({ value, label: providerLimitLabel(value, unverified ? undefined : providers.data), description: "The saved provider scope is unchanged.", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> });
   }
   return (
     <section className={`${CARD} mt-5`} aria-labelledby={headingId} data-testid="gateway-limit-provider">
       <h3 id={headingId} className={CARD_TITLE}>Provider</h3>
       <div className="mt-3 max-w-[520px]">
-        <DenCombobox ariaLabel="Provider" value={value ?? DEFAULT_PROVIDER} options={options} disabled={!enabled}
+        <DenCombobox ariaLabel="Provider" value={value ?? DEFAULT_PROVIDER} options={options} disabled={!enabled || unverified}
           placeholder="Choose a provider…" searchPlaceholder="Search providers" emptyLabel="No providers"
           onChange={(next) => onChange(next === DEFAULT_PROVIDER ? null : next)} />
       </div>
-      {providers.isError ? <p role="alert" className="mt-2 text-[12px] text-[var(--ow-danger)]">{providers.error.message}</p> : null}
+      {providers.isPending || providers.isFetching ? <p role="status" className="mt-2 text-[12px] text-gray-500">Checking provider choices. The saved scope is unchanged.</p> : providers.isError ? <DenNotice className="mt-2" tone="error" message="Could not verify provider choices. The saved scope is unchanged." action={<DenButton variant="secondary" onClick={() => void providers.refetch()}>Retry providers</DenButton>} /> : value && !providers.data.some((provider) => provider.id === value) ? <p role="status" className="mt-2 text-[12px] text-gray-500">The saved provider is not in your current list. Keep its scope or choose another provider.</p> : null}
       {!enabled ? <p className="mt-2 text-[12px] text-gray-500" data-testid="gateway-limit-provider-off">Limits per provider are turned off for this organization, so default limits apply instead.</p>
         : value ? <p className="mt-2 text-[12px] text-gray-500">People with this limit stop counting this provider toward the default limit.</p> : null}
     </section>

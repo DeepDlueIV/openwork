@@ -14,6 +14,8 @@ import { DenTable } from "../../_components/ui/table";
 import { getAiGatewayLimitRoute, getAiGatewayLimitsRoute, getAiGatewayPersonRoute, getNewAiGatewayLimitRoute, type DenOrgMember, type DenOrgTeam } from "../../_lib/den-org";
 import { useGatewayAccessProviders } from "./gateway-subject-access-data";
 import { describeWho } from "./gateway-limit-editor-screen";
+import { providerLimitLabel } from "./provider-limit-scope";
+export { providerLimitLabel } from "./provider-limit-scope";
 import { formatLimitMoney, timeframeLabels, timeframePeriods, useGatewayLimitsMutation, useGatewayMembers, useGatewayPolicies, type GatewayUsageMember } from "./gateway-usage-limits-data";
 
 type Directory = { teams: DenOrgTeam[]; members: DenOrgMember[] };
@@ -237,13 +239,6 @@ function PersonLookup({ orgId, orgSlug }: { orgId: string; orgSlug: OrgSlug }) {
   );
 }
 
-/** Name of the provider a limit is for, or "All providers" for a default limit. */
-export function providerLimitLabel(providerId: string | null | undefined, providers: { id: string; name: string }[] | undefined): string {
-  if (!providerId) return "All providers";
-  if (!providers) return "One provider";
-  return providers.find((provider) => provider.id === providerId)?.name ?? "Removed provider";
-}
-
 /** One spend limit: who it applies to, its provider, amounts, what happens at the limit, and Edit. */
 export function GatewayLimitRow({ policy, orgSlug, teams, members, providerColumn, providerLimits, providers, canEdit = true }: {
   policy: GatewayUsageLimitPolicy;
@@ -263,7 +258,7 @@ export function GatewayLimitRow({ policy, orgSlug, teams, members, providerColum
       </span>
       {providerColumn ? (
         <span className="flex w-36 shrink-0 flex-col" data-testid="gateway-limit-provider-label">
-          <span className="truncate text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers)}</span>
+          <span className="text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers)}</span>
           {policy.providerId && !providerLimits ? <span className="text-[11px] text-gray-500">Not enforced while off</span> : null}
         </span>
       ) : null}

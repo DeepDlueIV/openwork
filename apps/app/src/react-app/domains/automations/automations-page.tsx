@@ -754,7 +754,7 @@ export function AutomationsPage(props: {
       </div>
       {listQuery.isError ? <p role="alert" className="text-sm text-muted-foreground">Couldn&apos;t verify more Automations. <Button variant="link" size="sm" onClick={() => void (listQuery.isFetchNextPageError ? listQuery.fetchNextPage() : listQuery.refetch())}>Retry</Button></p> : null}
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground" data-automation-list-completeness>
-        <span>{listQuery.data?.items.length ?? 0} loaded{listQuery.hasNextPage ? "; more Automations available" : "; all Automations loaded"}</span>
+        <span>{listQuery.data?.items.length ?? 0} loaded{listQuery.isError ? "; completeness unverified" : listQuery.hasNextPage ? "; more Automations available" : "; all Automations loaded"}</span>
         {listQuery.hasNextPage ? <Button variant="outline" size="sm" disabled={listQuery.isFetching} onClick={() => void listQuery.fetchNextPage()}>{listQuery.isFetchingNextPage ? "Checking Automations…" : "Load more Automations"}</Button> : null}
       </div>
       {filteredItems.length === 0 ? (

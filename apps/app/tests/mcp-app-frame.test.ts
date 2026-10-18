@@ -1,11 +1,12 @@
-import { afterAll, describe, expect, jest, spyOn, test } from "bun:test"
+import { afterAll, describe, expect, jest, mock, spyOn, test } from "bun:test"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { act, createElement } from "react"
 import { createRoot } from "react-dom/client"
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js"
-import type { DynamicToolUIPart } from "ai"
+import type { DynamicToolUIPart, UIMessage } from "ai"
+import { mcpAppResourceUri } from "@openwork/types/mcp-app"
 
 import {
   createOpenworkServerClient,
@@ -20,6 +21,10 @@ import * as mcpAppOrigin from "../src/components/chat/mcp-app-origin"
 import { markCloudCredentialRefreshed } from "../src/react-app/domains/connections/cloud-credential-revision"
 
 GlobalRegistrator.register({ url: "https://web.example/" })
+// happy-dom does not deliver intersection observations. These scheduler tests
+// model visible frames; browser proofs exercise the real visibility gate.
+Reflect.deleteProperty(globalThis, "IntersectionObserver")
+mock.module("../src/react-app/domains/session/status/use-offline-recovery-feature", () => ({ useOfflineRecoveryFeature: () => false }))
 afterAll(() => GlobalRegistrator.unregister())
 const { MessageListProvider } = await import("../src/components/chat/message-list-provider")
 const { WorkspaceProvider } = await import("../src/react-app/shell/workspace-provider")
@@ -27,6 +32,8 @@ const { useUiStateStore } = await import("../src/react-app/shell/ui-state-store"
 const { usePanelTabStore } = await import("../src/react-app/domains/session/panel/panel-tab-store")
 const { useSessionActivityStore } = await import("../src/react-app/domains/session/status/session-activity-store")
 const { McpAppTile } = await import("../src/react-app/domains/dashboard/mcp-app-tile")
+const { BuiltAppPreviewSync, BuiltAppChatPreview } = await import("../src/react-app/domains/apps/built-app-chat-preview")
+const { BuiltMcpAppPanel } = await import("../src/react-app/domains/apps/built-mcp-app-panel")
 const { removeDashboardTileCache } = await import("../src/react-app/domains/dashboard/dashboard-tile-cache")
 const { flushDashboardTileCacheStorage } = await import("../src/app/lib/dashboard-cache-storage")
 const {
@@ -38,6 +45,7 @@ const {
   McpAppFrame,
   McpAppSandboxView,
   secureMcpAppHtml,
+  mcpAppTextFallback,
 } = await import("../src/components/chat/mcp-app-frame")
 
 function fixture(overrides: Partial<OpenworkMcpAppResource> = {}): OpenworkMcpAppResource {
@@ -168,6 +176,115 @@ async function startupFixture(options: Pick<McpAppSandboxViewProps, "presentatio
     },
   }
 }
+
+function authoredPart(): DynamicToolUIPart {
+  const appId = "cob_00000000000000000000000000"
+  const revisionId = "cov_00000000000000000000000000"
+  const resourceUri = mcpAppResourceUri(appId, revisionId)
+  return {
+    type: "dynamic-tool", toolName: "openwork_create_app", toolCallId: "authored-app", state: "output-available", input: {}, output: "Published",
+    callProviderMetadata: { openwork: { mcpResult: {
+      content: [{ type: "text", text: "Transport prose must not be the fallback." }],
+      structuredContent: { app: { appId, revisionId, resourceUri, title: "Project checklist", description: null,
+        pluginId: "plg_00000000000000000000000000", toolName: "open_app", serverPath: `/mcp/agent/connections/${appId}`,
+        textFallback: "Review the project checklist and mark completed items.", tools: [] } },
+      _meta: { "openwork/mcpApp": { connectionId: appId, toolName: "open_app", resourceUri, arguments: {} } },
+    } } },
+  }
+}
+
+describe("Authored App presentation", () => {
+  test("a new publication offers Open but never opens, navigates or selects another pane", async () => {
+    const host = await startupFixture()
+    const part = authoredPart()
+    const origin = { client: host.client, workspaceId: "fixture", sessionId: "explicit-open", readOnly: false }
+    const appId = "cob_00000000000000000000000000"
+    const render = async (parts: DynamicToolUIPart[], active: boolean) => {
+      const messages: UIMessage[] = [{ id: "request", role: "user", parts: [{ type: "text", text: "Make a checklist" }] },
+        { id: "reply", role: "assistant", parts }]
+      await host.renderElement(createElement(MessageListProvider, {
+        client: host.client, workspaceId: "fixture", sessionId: origin.sessionId,
+        showThinking: false, developerMode: false, displaySuggestions: false, providerConnectedCount: 0,
+        dispatchAction: () => {}, setPrompt: () => {}, onRevertToUserMessage: () => {}, onForkAtMessage: () => {}, onEditUserMessage: () => {},
+        onMcpReconnect: async () => {}, onMcpReopenAuthorization: async () => {},
+        children: createElement(BuiltAppPreviewSync, { messages, active }, createElement(BuiltAppChatPreview, { part, compact: true })),
+      }))
+    }
+    usePanelTabStore.getState().clearSession(origin.sessionId)
+    try {
+      await render([{ ...part, state: "input-available" }], true)
+      await render([part], true)
+      expect(usePanelTabStore.getState().sessions[origin.sessionId]?.tabs ?? []).toEqual([])
+      const open = host.container.querySelector<HTMLButtonElement>('[aria-label="Open preview"]')
+      expect(open?.textContent).toContain("Open")
+      await act(async () => open?.click())
+      expect(usePanelTabStore.getState().sessions[origin.sessionId]?.activeTabId).toBe(`mcp-app:${appId}`)
+      usePanelTabStore.getState().openTab(origin.sessionId, { type: "app", id: "other", appId: "other", label: "Other" })
+      await render([structuredClone(part)], false)
+      expect(usePanelTabStore.getState().sessions[origin.sessionId]?.activeTabId).toBe("other")
+      usePanelTabStore.getState().closeTab(origin.sessionId, `mcp-app:${appId}`)
+      await render([structuredClone(part)], true)
+      expect(usePanelTabStore.getState().sessions[origin.sessionId]?.tabs.map(tab => tab.id)).toEqual(["other"])
+    } finally { usePanelTabStore.getState().clearSession(origin.sessionId); await host.dispose() }
+  })
+
+  test("panel reports observed renderer state, and fallback survives discovery, failure and retry", async () => {
+    const host = await startupFixture()
+    const part = authoredPart()
+    const origin = { client: host.client, workspaceId: "fallback", sessionId: "session-fallback", readOnly: true }
+    const pending = Promise.withResolvers<{ app: OpenworkMcpAppResource }>()
+    const resolve = spyOn(host.client, "resolveMcpApp").mockImplementationOnce(() => pending.promise)
+    const resourceUri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
+    const tab = { type: "mcp-app", id: "panel-fallback", appId: "cob_00000000000000000000000000", label: "Project checklist", part, origin } satisfies Parameters<typeof BuiltMcpAppPanel>[0]["tab"]
+    const state = () => host.container.querySelector("[data-app-renderer-state]")?.textContent
+    const fallback = () => host.container.querySelector("[data-mcp-app-fallback]")
+    const notify = async (method: string) => {
+      const source = host.container.querySelector("iframe")?.contentWindow
+      await act(async () => { window.dispatchEvent(new MessageEvent("message", { source, origin: "https://sandbox.example", data: { method, params: {} } })) })
+    }
+    try {
+      await host.renderElement(createElement(BuiltMcpAppPanel, { tab, onClose: () => {} }))
+      expect(state()).toBe("Opening")
+      const saved = fallback()
+      expect(saved?.textContent).toContain("Saved fallback · Not live data")
+      expect(saved?.textContent).toContain("Review the project checklist")
+      expect(host.container.textContent).not.toContain("Transport prose")
+      const app = fixture({ toolName: "render-0", resourceUri })
+      resolve.mockResolvedValue({ app })
+      await act(async () => pending.resolve({ app }))
+      expect(state()).toBe("Opening")
+      await notify("ui/notifications/sandbox-proxy-ready")
+      expect(state()).toBe("Opening")
+      await act(async () => { host.bridges[0].oninitialized?.() })
+      expect(state()).toBe("Connected")
+      await act(async () => { host.bridges[0].onloggingmessage?.({ level: "error", logger: "other-app", data: "react-render" }) })
+      expect(state()).toBe("Connected")
+      await act(async () => { host.bridges[0].onloggingmessage?.({ level: "error", logger: "generated-mcp-app", data: "react-render" }) })
+      expect(state()).toBe("Unavailable")
+      expect(fallback()).toBe(saved)
+      expect(host.container.querySelector("iframe")).toBeNull()
+      const retry = Array.from(host.container.querySelectorAll("button")).find(button => button.textContent === "Retry")
+      await act(async () => retry?.click())
+      expect(state()).toBe("Opening")
+      expect(fallback()).toBe(saved)
+      await notify("ui/notifications/sandbox-proxy-ready")
+      await act(async () => { host.bridges[1].oninitialized?.() })
+      expect(state()).toBe("Connected")
+      expect(host.container.textContent).not.toContain("Ready")
+      expect(resolve).toHaveBeenCalledTimes(2)
+    } finally { resolve.mockRestore(); await host.dispose() }
+  })
+
+  test("does not mistake generic tool prose or a mismatched revision for authored fallback", () => {
+    const part = authoredPart()
+    expect(mcpAppTextFallback(part)).toContain("Review the project checklist")
+    expect(mcpAppTextFallback({ ...part, callProviderMetadata: undefined })).toBeNull()
+    const changed = structuredClone(part)
+    const result = Reflect.get(Object(changed.callProviderMetadata?.openwork), "mcpResult")
+    Reflect.set(Reflect.get(result, "structuredContent").app, "revisionId", "cov_00000000000000000000000001")
+    expect(mcpAppTextFallback(changed)).toBeNull()
+  })
+})
 
 describe("MCP App startup scheduling", () => {
   test("cached HTML exposes pending tools, waits for a live lease, and never reuses cached authority", async () => {

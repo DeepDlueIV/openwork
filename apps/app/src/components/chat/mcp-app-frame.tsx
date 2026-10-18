@@ -7,7 +7,8 @@ import type { McpUiStyles, McpUiStyleVariableKey } from "@modelcontextprotocol/e
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 
 import { connectionActionAppResourceUri, legacyConnectionActionAppResourceUri } from "@openwork/types/connection-action-app"
-import { parseMcpAppResourceUri } from "@openwork/types/mcp-app"
+import { mcpAppSummarySchema, parseMcpAppResourceUri } from "@openwork/types/mcp-app"
+import { startMcpAppTiming } from "@openwork/types/mcp-app-timing"
 import { appToolResultConnectionToolName, connectionCardFromMcpToolResult, isConnectionDiscoveryTool } from "@/components/tools/error-attribution"
 import { DashboardConnectionCard } from "@/react-app/domains/dashboard/dashboard-connection-card"
 import { AppChatArtifact } from "@/react-app/domains/apps/app-chat-artifact"
@@ -100,6 +101,11 @@ const ACTIONABLE_MCP_APP_RESOLUTION_CODES = new Set([
   "unsupported_resource_permissions",
 ])
 
+/** Connected means initialized and launch data delivered, not verified live data. */
+export type McpAppRendererState = "loading" | "connected" | "unavailable"
+
+type McpAppRendererObserver = { onStateChange?: (state: McpAppRendererState) => void }
+
 export type PreservedMcpAppResult = {
   content: Array<Record<string, unknown>>
   isError?: boolean
@@ -154,6 +160,39 @@ export function builtMcpAppId(part: DynamicToolUIPart): string | null {
   const launch = gatewayMcpAppLaunch(preservedResult(part)?._meta)
   const app = launch ? parseMcpAppResourceUri(launch.resourceUri) : null
   return app && launch?.connectionId === app.appId && launch.toolName === "open_app" ? app.appId : null
+}
+
+/** Authored copy comes from a validated revision, never mixed transport prose. */
+export function mcpAppTextFallback(part: DynamicToolUIPart): string | null {
+  const result = preservedResult(part)
+  const launch = gatewayMcpAppLaunch(result?._meta)
+  const summary = mcpAppSummarySchema.safeParse(result?.structuredContent?.app)
+  if (result?.isError === true || !summary.success) return null
+  const resource = parseMcpAppResourceUri(summary.data.resourceUri)
+  if (resource?.appId !== summary.data.appId || resource.revisionId !== summary.data.revisionId) return null
+  if (!launch) return result?._meta?.["openwork/mcpApp"] === undefined && /(?:^|_)(?:create_app|update_app|open_app)$/.test(part.toolName)
+    ? summary.data.textFallback : null
+  return launch.connectionId === summary.data.appId && launch.resourceUri === summary.data.resourceUri
+    && launch.toolName === summary.data.toolName ? summary.data.textFallback : null
+}
+
+function McpAppTextFallback({ text }: { text: string }) {
+  const element = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const finish = startMcpAppTiming("chat.fallback-paint")
+    // Two frames observe a paint opportunity, not a provider result or iframe render.
+    let second: number | undefined
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        if (element.current?.getBoundingClientRect().height) finish()
+      })
+    })
+    return () => { cancelAnimationFrame(first); if (second !== undefined) cancelAnimationFrame(second) }
+  }, [text])
+  return <div ref={element} className="py-3 text-sm" data-mcp-app-fallback>
+    <p className="mb-1 text-xs text-muted-foreground">Saved fallback · Not live data</p>
+    <p className="whitespace-pre-wrap break-words">{text}</p>
+  </div>
 }
 
 export function gatewayMcpAppLaunch(meta: unknown): OpenworkMcpAppLaunchReference | null {
@@ -301,7 +340,7 @@ export function McpAppDiagnosticNotice({ error, notice, onRetry, engine }: { err
         <Button type="button" variant="link" size="xs" className="mt-1 px-0" onClick={onRetry}>{t("common.retry")}</Button>
       ) : null}
       <details className="mt-1">
-        <summary className="cursor-pointer select-none">Technical details{compact ? null : ` (${error.code})`}</summary>
+        <summary className="cursor-pointer select-none">Technical details</summary>
         <p className="mt-1">Copy these details when reporting the rendering problem.</p>
         <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-[11px] text-foreground">{details}</pre>
         <button
@@ -321,7 +360,7 @@ export function McpAppDiagnosticNotice({ error, notice, onRetry, engine }: { err
   )
 }
 
-export type McpAppSandboxViewProps = {
+export type McpAppSandboxViewProps = McpAppRendererObserver & {
   origin: McpAppOrigin
   app: OpenworkMcpAppResource
   /**
@@ -377,7 +416,7 @@ export type McpAppSandboxViewProps = {
  * bridges it to the workspace MCP App host. Chat messages and dashboard tiles
  * share this exact pipeline so rendering and diagnostics stay identical.
  */
-export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInPlace = false, liveReady = false, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey }: McpAppSandboxViewProps) {
+export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInPlace = false, liveReady = false, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey, onStateChange }: McpAppSandboxViewProps) {
   const openworkServerClient = origin.client
   const workspaceId = origin.workspaceId
   const readOnly = origin.readOnly
@@ -397,6 +436,8 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
   onErrorRef.current = onError
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
+  const onStateChangeRef = useRef(onStateChange)
+  onStateChangeRef.current = onStateChange
   const signIn = useMcpAppSignIn(result)
   const reportToolResultRef = useRef(signIn.reportToolResult)
   reportToolResultRef.current = signIn.reportToolResult
@@ -428,6 +469,8 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
     const iframe = iframeRef.current
     if (!iframe || !iframe.contentWindow || !openworkServerClient || !workspaceId) return
     let disposed = false
+    onStateChangeRef.current?.("loading")
+    const finishDeliveryTiming = startMcpAppTiming("result-delivered")
     let actions = createMcpAppActions(origin, app)
     // A retry or sign-in reload is a new open.
     const loads = createMcpAppOpenLoads(openKey === undefined ? undefined : JSON.stringify([openKey, retryAttempt]))
@@ -479,6 +522,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
       }
       console.error(`[OpenWork MCP App] ${code}`, diagnostic)
       setError(diagnostic)
+      onStateChangeRef.current?.("unavailable")
       onErrorRef.current?.()
     }
     checkpoint("resource-resolved")
@@ -544,6 +588,14 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
     let releaseStartup: (() => void) | undefined
     let navigationStarted = false
     let connected = false
+    // The generated runtime's error boundary reports through the standard SDK
+    // logging channel, not the sandbox's document diagnostic messages.
+    bridge.onloggingmessage = ({ level, logger, data }) => {
+      if (level === "error" && logger === "generated-mcp-app" && (data === "react-render" || data === "react-mount")) {
+        fail("MCP_APP_DOCUMENT_RUNTIME_ERROR", "app-initialization", null,
+          "The App could not render. Retry the preview.", sandbox.expectedOrigin)
+      }
+    }
 
     let pendingHeight: number | null = null
     let sizeSettleTimer: number | undefined
@@ -670,8 +722,9 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
           }
           if (next !== toolDeliveryRef.current) continue
           if (!ready) {
-            performance.measure("openwork.mcp-app.first-paint", { start: startedAt, duration: performance.now() - startedAt })
+            finishDeliveryTiming()
             ready = true
+            onStateChangeRef.current?.("connected")
             onReadyRef.current?.()
           }
           if (next === toolDeliveryRef.current) return
@@ -903,7 +956,9 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
     setError(null)
     setRetryAttempt((attempt) => attempt + 1)
   })
-  if (error) return <McpAppDiagnosticNotice error={error} notice={unavailableNotice} onRetry={reload} engine={origin.engine} />
+  if (error) return <div className={presentation === "dashboard" ? undefined : "mt-3"} style={{ minHeight: height }}>
+    <McpAppDiagnosticNotice error={error} notice={unavailableNotice} onRetry={reload} engine={origin.engine} />
+  </div>
   return (
     <>
       <McpAppSignInPrompts prompts={signIn.prompts} appTitle={signIn.appTitle} scope={app.resourceUri}
@@ -947,14 +1002,18 @@ export function isNativeConnectionAppLaunch(part: DynamicToolUIPart): boolean {
     && (launch.resourceUri === connectionActionAppResourceUri || launch.resourceUri === legacyConnectionActionAppResourceUri)
 }
 
-export function McpAppFrame({ part, origin }: { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
+export function McpAppFrame({ part, origin, onStateChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
   const result = preservedResult(part)
   if (isRetiredFirstPartyConfirmation(part.toolName, result)) return null
   if (isNativeConnectionAppLaunch(part)) return null
-  return <EmbeddedMcpAppFrame part={part} origin={origin} />
+  const fallback = mcpAppTextFallback(part)
+  return <>
+    {fallback ? <McpAppTextFallback text={fallback} /> : null}
+    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} />
+  </>
 }
 
-function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
+function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
   const stagedLoading = useAppBuildProgressEnabled()
   const context = useOptionalMessageList()
   const nextOrigin = surfaceOrigin ?? context?.mcpAppOrigin ?? null
@@ -1021,6 +1080,11 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   // Retire the old view in the same commit, before the passive resolution effect runs.
   const resolution = useMemo(() => ({}), [origin, part.toolName, part.toolCallId, result, inputArguments, resolveToken])
   const resolvedFor = useRef<object | null>(null)
+  const onStateChangeRef = useRef(onStateChange)
+  onStateChangeRef.current = onStateChange
+  useLayoutEffect(() => {
+    onStateChangeRef.current?.(origin && result ? "loading" : "unavailable")
+  }, [resolution])
 
   useEffect(() => {
     let cancelled = false
@@ -1057,11 +1121,15 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
           setApp(resolved)
           setPreviewActions(undefined)
           if (resolved) live.resolve({ origin, app: resolved })
-          else live.reject(new Error("This tool no longer advertises an App."))
+          else {
+            onStateChangeRef.current?.("unavailable")
+            live.reject(new Error("This tool no longer advertises an App."))
+          }
         },
         (cause) => {
           live.reject(cause)
           if (cancelled) return
+          onStateChangeRef.current?.("unavailable")
           checkpoints.push(`resolve-failed+${Math.round(performance.now() - startedAt)}ms`)
           if (launch || isActionableMcpAppResolutionError(cause)) {
             const diagnostic: McpAppDiagnostic = {
@@ -1115,9 +1183,12 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   }
   if (!result) return null
   if (!origin) return <p role="status">This artifact is missing its conversation origin. Reopen the conversation to use it.</p>
-  if (error) return <McpAppDiagnosticNotice error={error} notice={CHAT_MCP_APP_UNAVAILABLE_NOTICE} onRetry={() => setResolveToken((token) => token + 1)} engine={origin.engine} />
+  if (error) return <div style={{ minHeight: heightRef.current }}>
+    <McpAppDiagnosticNotice error={error} notice={CHAT_MCP_APP_UNAVAILABLE_NOTICE} onRetry={() => setResolveToken((token) => token + 1)} engine={origin.engine} />
+  </div>
   if (!app || resolvedFor.current !== resolution) return launch && resolvedFor.current !== resolution
-    ? stagedLoading ? <McpAppLoading /> : <p role="status">Opening artifact…</p> : null
+    ? mcpAppTextFallback(part) ? <div style={{ minHeight: heightRef.current }}><McpAppLoading /></div>
+      : stagedLoading ? <McpAppLoading /> : <p role="status">Opening artifact…</p> : null
   if (appConnection) return <DashboardConnectionCard toolName={appConnection.toolName} toolCallId={`${part.toolCallId}:app`}
     output={appConnection.output} onConnected={() => { setAppConnection(null); setResolveToken((token) => token + 1) }} />
   return (
@@ -1125,13 +1196,16 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
       origin={previewActions && previewOrigin ? previewOrigin : origin}
       resolveLiveActions={previewActions && !origin.readOnly ? previewActions : undefined}
       app={app}
+      onStateChange={(state) => onStateChangeRef.current?.(state)}
       toolName={part.toolName}
       inputArguments={inputArguments}
       result={result}
       connectionController={connectionController}
       unavailableNotice={CHAT_MCP_APP_UNAVAILABLE_NOTICE}
+      onRetry={() => setResolveToken(token => token + 1)}
       openKey={JSON.stringify([scope, part.toolCallId, resolveToken])}
       onRequestTeardown={() => {
+        onStateChangeRef.current?.("unavailable")
         if (app.launchId) void origin.client.releaseMcpApp(origin.workspaceId, app.launchId).catch(() => undefined)
         setApp(null)
       }}
@@ -1141,7 +1215,10 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
         if (!isRecord(appResult) || appResult.isError !== true) return
         const toolName = appToolResultConnectionToolName(app, part.toolName)
         const match = connectionCardFromMcpToolResult(toolName, appResult)
-        if (match) setAppConnection({ toolName, output: match.output })
+        if (match) {
+          onStateChangeRef.current?.("unavailable")
+          setAppConnection({ toolName, output: match.output })
+        }
       }}
     />
   )

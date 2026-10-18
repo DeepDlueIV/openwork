@@ -4,7 +4,7 @@ import { automaticEngineForcePolicy, retainedHistoryText, newV2HistoryText, newV
 
 const test = spec.world(automaticEngineForcePolicy, {
   timeout: 240_000,
-  resources: { surfaces: ["appWeb"], services: [] },
+  resources: { surfaces: ["appWeb"], services: ["mock"] },
   needs: { commands: ["bun", "opencode"] },
 });
 

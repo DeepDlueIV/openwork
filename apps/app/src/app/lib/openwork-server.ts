@@ -1729,7 +1729,7 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
         token,
         timeoutMs: timeouts.config,
       })),
-    /** The host owns idle checks, bounded retries, migration and forced-only revert. */
+    /** The host owns idle checks, bounded retries and migration; off preserves selected v2 history. */
     setEngineV2ForcePolicy: async (policy: { upgrade: boolean }): Promise<EngineV2PreviewStatus> =>
       parseEngineV2PreviewStatus(await requestJson<unknown>(baseUrl, "/experimental/engine-v2-preview/force", {
         token, hostToken, method: "POST", body: policy, timeoutMs: timeouts.config,

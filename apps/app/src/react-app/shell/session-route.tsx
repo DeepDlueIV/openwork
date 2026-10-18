@@ -1299,12 +1299,16 @@ export function SessionRoute() {
   );
   const activeComposerModel = selectedSessionModelSelection?.model ?? (selectedSessionId ? local.prefs.defaultModel : newTaskModel) ?? null;
   const recoveryChatKey = modelRecoveryChatKey(modelRecoveryScope, selectedSessionId);
-  const rememberedModelTitles = useMemo(() => readModelDisplayMemory(modelRecoveryScope), [modelRecoveryScope]);
+  // Persist names under the existing stable workspace identity, not a local
+  // server port or engine-version URL that can change at the next launch.
+  const modelDisplayScope = workspaceDefaultScope ? JSON.stringify([sessionDraftScope, workspaceDefaultScope]) : null;
+  const rememberedModelTitles = useMemo(() => readModelDisplayMemory(modelDisplayScope ?? ""), [modelDisplayScope]);
   useEffect(() => {
+    if (!modelDisplayScope) return;
     const selected = modelPicker.knownOptions.find((option) => option.providerID === activeComposerModel?.providerID
       && option.modelID === activeComposerModel.modelID);
-    if (selected) rememberModelDisplayNames(modelRecoveryScope, rememberedModelTitles, [selected]);
-  }, [modelRecoveryScope, rememberedModelTitles, modelPicker.knownOptions, activeComposerModel]);
+    if (selected) rememberModelDisplayNames(modelDisplayScope, rememberedModelTitles, [selected]);
+  }, [modelDisplayScope, rememberedModelTitles, modelPicker.knownOptions, activeComposerModel]);
   const modelAvailabilityGate = useMemo(() => createUnavailableConfirmationGate(), []);
   const [availabilityRecheckTick, bumpAvailabilityRecheck] = useReducer(
     (value: number) => value + 1,

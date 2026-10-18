@@ -3,6 +3,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { readModelDisplayMemory, rememberModelDisplayNames } from "../src/react-app/domains/session/surface/model-display-memory";
 import { closestAvailableModel } from "../src/react-app/domains/session/surface/model-removal";
 import type { ModelOption } from "../src/app/types";
+import { workspaceModelScope } from "../src/react-app/kernel/model-config";
 
 const ownedDom = typeof window === "undefined";
 if (ownedDom) GlobalRegistrator.register({ url: "http://localhost/" });
@@ -23,6 +24,15 @@ test("cold-start names and maker survive removal without crossing an identity sc
   const sonnet = option("gwm_sonnet", "Claude Sonnet 4.5");
   if (!remembered) throw new Error("Display memory is missing");
   expect(closestAvailableModel([luna, sonnet], [luna], [], remembered, () => true)).toEqual(sonnet);
+});
+
+test("display identity survives a local port change and v1-to-v2 migration", () => {
+  const scope = (port: number, engine: string, profileId = "profile-a") => JSON.stringify(["member-a", workspaceModelScope({
+    profileId, workspaceId: "workspace-a", opencodeBaseUrl: `http://127.0.0.1:${port}/workspace/workspace-a/${engine}`, localRuntime: true,
+  })]);
+  rememberModelDisplayNames(scope(8787, "opencode"), new Map(), [model]);
+  expect(readModelDisplayMemory(scope(8788, "opencode2")).get("ipr_fixture/gwm_opus")).toEqual(model);
+  expect(readModelDisplayMemory(scope(8788, "opencode2", "profile-b")).size).toBe(0);
 });
 
 test("only bounded public identity/title metadata is retained", () => {

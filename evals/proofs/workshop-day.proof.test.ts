@@ -32,8 +32,24 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
   const world = subject;
   const appUser = user.on(world.app);
   const appAgent = agent.on(world.app);
-  await appUser.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+  // Film mode: 2x device pixels so close-ups of the composer and answer stay sharp, visible typing, Enter to send.
+  const FILM_HIRES = process.env.OPENWORK_WORKSHOP_FILM_HIRES === "1";
+  await appUser.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: FILM_HIRES ? 2 : 1 });
   const services = user.on(world.serviceBrowser);
+  if (FILM_HIRES) await services.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 2 });
+  /** Film-only, read-only: where the composer, send button and latest answer are on screen (CSS px). */
+  const screenRects = () => probe.eval(world.app, () => {
+    const box = (element: Element | null | undefined) => { if (!element) return null; const r = element.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? { x: r.x, y: r.y, width: r.width, height: r.height } : null; };
+    const editor = Array.from(document.querySelectorAll('[contenteditable="true"][data-lexical-editor="true"]')).find((element) => element.getBoundingClientRect().width > 0) ?? null;
+    const named = (element: Element) => (element.getAttribute("aria-label") ?? element.getAttribute("title") ?? element.textContent ?? "").trim();
+    const send = Array.from(document.querySelectorAll("button")).find((element) => named(element) === "Run task" && element.getBoundingClientRect().width > 0) ?? null;
+    let shell: Element | null = editor;
+    while (shell?.parentElement && send && !shell.contains(send)) shell = shell.parentElement;
+    const assistants = Array.from(document.querySelectorAll('[data-message-role="assistant"]')).filter((element) => element.getBoundingClientRect().height > 0);
+    const finalText = Array.from(assistants.at(-1)?.querySelectorAll(".text-foreground.prose") ?? []).at(-1) ?? null;
+    const users = Array.from(document.querySelectorAll('[data-message-role="user"]')).filter((element) => element.getBoundingClientRect().height > 0);
+    return { viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, editor: box(editor), composer: box(shell), send: box(send), answer: box(finalText), prompt: box(users.at(-1)) };
+  }).catch(() => null);
   const assistantText = (messages: unknown, since: Set<unknown>) => list(messages).map(record).filter((message) => record(message.info).role === "assistant" && !since.has(record(message.info).id)).flatMap((message) => list(message.parts).map(record).filter((part) => part.type === "text").map((part) => String(part.text ?? ""))).join("\n");
   const toolNames = (messages: unknown, since: Set<unknown>) => list(messages).map(record).filter((message) => !since.has(record(message.info).id)).flatMap((message) => list(message.parts).map(record).filter((part) => part.type === "tool").map((part) => `${part.tool} ${text(record(record(part.state).input))}`));
   const ids = (messages: unknown) => new Set(list(messages).map((message) => record(record(message).info).id));
@@ -75,8 +91,21 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const pickedSkill = options.skill ? await pickSkill(options.skill) : "";
     if (pickedSkill) world.markScene(`${id}:skill-picked`);
     const started = Date.now();
-    await appUser.type("composer", prompt, { replace: !pickedSkill });
-    await appUser.click("Run task");
+    if (FILM_HIRES) {
+      // What a person does on camera: click into the composer, type, press Enter.
+      world.markScene(`${id}:typing`, { rects: await screenRects() });
+      await appUser.type("composer", prompt, { replace: !pickedSkill, intervalMs: 28 });
+      world.markScene(`${id}:typed`, { rects: await screenRects() });
+      await appUser.press("Enter");
+      world.markScene(`${id}:enter`);
+      // Enter is the product's own submit; fall back to the button only if the draft is still there.
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      const pending = await probe.eval(world.app, () => (Array.from(document.querySelectorAll('[contenteditable="true"][data-lexical-editor="true"]')).find((element) => element.getBoundingClientRect().width > 0)?.textContent ?? "").trim().length).catch(() => 0);
+      if (pending > 0) await appUser.click("Run task");
+    } else {
+      await appUser.type("composer", prompt, { replace: !pickedSkill });
+      await appUser.click("Run task");
+    }
     world.markScene(`${id}:prompt`);
     const stopFollow = world.followLatest();
     let completed = true;
@@ -86,7 +115,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
       world.abortInferenceAfter(inferenceStart + 1);
     });
     await stopFollow();
-    world.markScene(`${id}:answered`);
+    world.markScene(`${id}:answered`, FILM_HIRES ? { rects: await screenRects() } : undefined);
     await world.settleInference();
     let after = await world.observe();
     // A person answers a clarifying question; record that it happened rather than hiding it.

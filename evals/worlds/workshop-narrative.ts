@@ -342,7 +342,8 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
         return stateJson(`${news.baseUrl}/state`);
       },
       recordRow: (row: NarrativeRow) => rows.push(row),
-      markScene(label: string) { if (filmRoot) markers.push({ label, at: Date.now() }); },
+      /** Film marker; optional data (e.g. on-screen element rects) lets the editor frame real UI instead of guessing. */
+      markScene(label: string, data?: Record<string, unknown>) { if (filmRoot) markers.push({ label, at: Date.now(), ...data }); },
       person,
       /** Day demo, off camera: an admin opens the morning-news connector to the whole team. */
       async grantTeamConnector() { return newsConnectionAccess({ orgWide: true, memberIds: [] }); },

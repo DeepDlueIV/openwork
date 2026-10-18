@@ -790,7 +790,14 @@ export async function removeOwnedSurfaceFiles(
       // warnings enabled so an incomplete scan cannot masquerade as no open files.
       execFile("lsof", ["+w", "+D", owned.profileDir], { encoding: "utf8", timeout: 5_000 }, (error, stdout, stderr) => {
         if (isRecord(error) && error.code === 1 && !stdout.trim() && !stderr.trim()) done();
-        else reject(new Error("Refusing Chrome profile cleanup: open files remain or the open-file check failed."));
+        else reject(new Error("Refusing Chrome profile cleanup: open files remain or the open-file check failed.", {
+          cause: new Error(`lsof inspection: ${JSON.stringify({
+            code: error ? error.code ?? "unknown" : 0,
+            signal: error?.signal ?? null,
+            stdout,
+            stderr,
+          })}`),
+        }));
       });
     });
     await confirmIdentity();

@@ -1,4 +1,5 @@
 import type { AppWeb } from "@openwork/env";
+import { buildMcpAppSandboxCsp, MCP_APP_SANDBOX_PROXY_HTML, parseMcpAppSandboxCsp } from "../../apps/server/src/mcp-app-sandbox.ts";
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -37,12 +38,13 @@ export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<un
       if (!delayBootstrap()) return command("Fetch.continueRequest", { requestId });
       // Network fault on the shipping proxy, not invented renderer state/logs:
       // defer only launch notifications so the real pre-result render is witnessed.
-      const original = await fetch(params.request.url, { signal: AbortSignal.timeout(10_000) });
-      const html = await original.text();
+      // Use the exact shipping primitive, never fetch a browser-supplied URL.
+      const html = MCP_APP_SANDBOX_PROXY_HTML;
+      const requestUrl = new URL(params.request.url);
       const relay = 'inner.contentWindow?.postMessage(event.data, "*");';
       const declaration = 'let resourceAssigned = false;';
       const report = 'window.parent.postMessage(event.data, hostTargetOrigin);';
-      if (!original.ok || ![relay, declaration, report].every(part => html.includes(part))) throw new Error("The shipping sandbox relay did not match the bootstrap fixture");
+      if (![relay, declaration, report].every(part => html.includes(part))) throw new Error("The shipping sandbox relay did not match the bootstrap fixture");
       // Hold real launch messages until the real generated runtime has reported
       // a pre-result render error. A fixed delay cannot prove that risky state.
       const delayed = html.replace(declaration, `${declaration} let heldLaunch = []; let bootstrapSeen = false;`)
@@ -59,8 +61,14 @@ export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<un
         }
         ${report}`);
       bootstrapDelayedDocuments++;
-      return command("Fetch.fulfillRequest", { requestId, responseCode: original.status,
-        responseHeaders: Array.from(original.headers).filter(([name]) => !["content-length", "content-encoding", "transfer-encoding"].includes(name)).map(([name, value]) => ({ name, value })),
+      return command("Fetch.fulfillRequest", { requestId, responseCode: 200,
+        responseHeaders: [
+          { name: "Content-Type", value: "text/html; charset=utf-8" },
+          { name: "Content-Security-Policy", value: buildMcpAppSandboxCsp(parseMcpAppSandboxCsp(requestUrl.searchParams.get("csp"))) },
+          { name: "Cache-Control", value: "no-store" },
+          { name: "Referrer-Policy", value: "strict-origin" },
+          { name: "X-Content-Type-Options", value: "nosniff" },
+        ],
         body: Buffer.from(delayed).toString("base64") });
     }
     const isRead = typeof params.request.url === "string" && new URL(params.request.url).pathname.endsWith("/mcp-apps/call");

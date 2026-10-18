@@ -49,7 +49,8 @@ test("a member opens and edits a Drive document while unavailable access stays b
     world.disableDocuments();
     await user.click({ role: "button", label: /^Files$/ });
     await user.click({ role: "button", label: "Refresh documents" });
-    await user.see({ text: "Documents is off for your workspace. An admin can turn it on." });
+    await user.see({ text: "Open tabs are locked. Recovery is kept in this tab for up to 15 minutes." });
+    expect(await probe.text()).toContain("Documents is off for your workspace. An admin can turn it on.");
     await user.notSee({ role: "textbox", label: "Document text" });
     world.enableDocuments();
     await user.click({ role: "button", label: "Check access and restore tabs" });

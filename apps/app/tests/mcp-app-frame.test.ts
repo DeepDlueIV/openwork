@@ -365,10 +365,10 @@ describe("Authored App presentation", () => {
     } finally { authorizeMcpAppAccess(key, version); resolve.mockRestore(); await host.dispose() }
   })
 
-  test.each([{ launch: false, sameResource: false }, { launch: false, sameResource: true }, { launch: true, sameResource: false }])("a retained summary requires both an App launch and matching resolved binding to reset denial ($launch/$sameResource)", async ({ launch, sameResource }) => {
+  test.each([{ launch: false, sameResource: false, denied: false }, { launch: false, sameResource: true, denied: false }, { launch: true, sameResource: false, denied: false }, { launch: false, sameResource: false, denied: true }])("a retained summary cannot promote unrelated discovery into App access state ($launch/$sameResource/$denied)", async ({ launch, sameResource, denied }) => {
     const host = await startupFixture()
     const part = authoredPart()
-    const origin = { client: host.client, workspaceId: `unverified-grant-${launch}-${sameResource}`, sessionId: "unverified-grant", readOnly: true, principalScope: "cloud:member:organization" }
+    const origin = { client: host.client, workspaceId: `unverified-grant-${launch}-${sameResource}-${denied}`, sessionId: "unverified-grant", readOnly: true, principalScope: "cloud:member:organization" }
     const uri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
     const otherUri = mcpAppResourceUri("cob_00000000000000000000000001", "cov_00000000000000000000000000")
     const key = mcpAppAccessKey(origin, uri)
@@ -376,6 +376,7 @@ describe("Authored App presentation", () => {
     const version = mcpAppAccessVersion(key)
     if (!launch) Reflect.deleteProperty(Reflect.get(Object(part.callProviderMetadata?.openwork), "mcpResult"), "_meta")
     const resolve = spyOn(host.client, "resolveMcpApp").mockResolvedValue({ app: fixture({ resourceUri: sameResource ? uri : otherUri, toolName: "open_app" }) })
+    if (denied) resolve.mockRejectedValue(new OpenworkServerError(403, "mcp_access_denied", "The unrelated tool cannot be opened"))
     try {
       expect(mcpAppTextFallback(part)).toContain("Review the project checklist")
       await host.renderElement(createElement(McpAppFrame, { part, origin }))

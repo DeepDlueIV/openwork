@@ -114,6 +114,24 @@ test("a member's saved fallback is masked after access is denied but retained du
     evidence.recordAssertionEvidence("Retry and panel remount do not clear a known denial without fresh authorization", `HTTP 401 after known denial; panel closed/reopened; cached transient response made no new resource read (${beforeRemount} before/${world.resolutions().length} after); fallback count=${available}`, available === 0 && world.resolutions().length === beforeRemount);
     await user.screenshot();
   });
+  await step("a full page reload still masks saved text when the server can only report a sign-in outage", async () => {
+    await world.releaseReply();
+    await user.see({ text: APP_REPLY });
+    const before = world.resolutions().length;
+    await user.reload();
+    await user.see({ role: "button", label: "Open preview" }, { timeoutMs: 20_000 });
+    await user.click({ role: "button", label: "Open preview" });
+    await user.see({ text: "Unavailable" });
+    await user.notSee({ text: APP_FALLBACK });
+    const available = await fallbackCount();
+    const frames = (await probe.dom("[data-built-app-preview] iframe")).elements.length;
+    expect(world.resolutions().length).toBeGreaterThan(before);
+    expect(world.resolutions().at(-1)?.scenario).toBe("auth-outage");
+    expect(available).toBe(0);
+    expect(frames).toBe(0);
+    evidence.recordAssertionEvidence("Persisted denial survives a new renderer document and a fresh non-authorizing response", `page reloaded; resource reads before=${before}, after=${world.resolutions().length}; latest HTTP401; fallback=${available}; iframes=${frames}`, available === 0 && frames === 0 && world.resolutions().length > before);
+    await user.screenshot();
+  });
   await step("fresh successful discovery restores the permitted view and fallback", async () => {
     world.scenario("warm");
     await user.click({ role: "button", label: /^Retry$/ });
@@ -123,6 +141,5 @@ test("a member's saved fallback is masked after access is denied but retained du
     expect(available).toBe(1);
     evidence.recordAssertionEvidence("Only a new allowed resource response restores the saved text", `fresh resource authorization and permitted read/recheck completed; fallback count=${available}`, available === 1);
     await user.screenshot();
-    await world.releaseReply();
   });
 });

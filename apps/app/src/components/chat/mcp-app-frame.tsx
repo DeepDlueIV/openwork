@@ -1158,7 +1158,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, acces
         (cause) => {
           live.reject(cause)
           if (cancelled) return
-          if (isMcpAppAccessDenial(cause)) denyMcpAppAccess(accessKey)
+          if (launch && builtMcpAppId(part) !== null && isMcpAppAccessDenial(cause)) denyMcpAppAccess(accessKey)
           onStateChangeRef.current?.("unavailable")
           checkpoints.push(`resolve-failed+${Math.round(performance.now() - startedAt)}ms`)
           if (launch || isActionableMcpAppResolutionError(cause)) {

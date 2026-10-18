@@ -14,7 +14,11 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
   const messages: Record<string, unknown>[] = [];
   const opened: string[] = [];
   const editorReads: string[] = [];
+  const documentWrites: string[] = [];
   let driveDenied = false;
+  let sessionExpired = false;
+  let principalId = "user_example";
+  let organizationId = "org_example";
   let listingFailure = false;
   let fileDenied = false;
   let documentsOff = false;
@@ -36,7 +40,7 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
           const documents = !documentsOff && referring.searchParams.get("documents") !== "off";
           const denied = driveDenied || referring.searchParams.get("access") === "denied";
           const json = (body: unknown, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
-          if (url.pathname === "/v1/workbot/me") return json({ name: "Alex", email: "alex@example.test", userId: "user_example", organizationId: "org_example", organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, canSchedule: false, sideChats: referring.searchParams.get("sideChats") === "on", denUrl: "https://workspace.example.test" });
+          if (url.pathname === "/v1/workbot/me") return json({ name: "Alex", email: "alex@example.test", userId: principalId, organizationId, organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, canSchedule: false, sideChats: referring.searchParams.get("sideChats") === "on", denUrl: "https://workspace.example.test" });
           if (url.pathname === "/v1/workbot") return json({ available: true, name: "Workbot", organizationName: "Example", status: "idle", turns, hasEarlier: false, filesEnabled: false });
           if (url.pathname === "/v1/workbot/chats") return json({ main: null, side: [{ id: "sidechat000000001", title: "Document questions", createdAt: Date.now(), updatedAt: Date.now() }] });
           if (url.pathname === "/v1/workbot/events") { res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.end(": fixture\n\n"); return; }
@@ -50,7 +54,10 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
             return json({ ok: true }, 202);
           }
           if (url.pathname.startsWith("/v1/workbot/documents")) {
+            const write = /\/files\/([^/]+)\/editor$/.exec(url.pathname);
+            if (req.method === "POST" && write) documentWrites.push(write[1]!);
             if (!documents) return json({ error: "workbot_documents_not_enabled" }, 403);
+            if (sessionExpired) return json({ error: "unauthorized" }, 401);
             if (denied) return json({ error: "needs_connection" }, 409);
             if (url.pathname.endsWith("/drive-files")) return listingFailure ? json({ error: "upstream_unavailable" }, 503) : json({ ok: true, files });
             const match = /\/files\/([^/]+)\/(metadata|editor)$/.exec(url.pathname);
@@ -79,6 +86,6 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
     const url = vite.resolvedUrls?.local[0];
     if (!url) throw new Error("Workbot fixture did not start");
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-workspace", startUrl: `${url}documents?assistant=off`, headless: true }));
-    return { web, url, messages: () => [...messages], opened: () => [...opened], editorReads: () => [...editorReads], revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; }, failListing: () => { listingFailure = true; }, restoreListing: () => { listingFailure = false; }, denyFile: () => { fileDenied = true; }, allowFile: () => { fileDenied = false; }, disableDocuments: () => { documentsOff = true; }, enableDocuments: () => { documentsOff = false; }, async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
+    return { web, url, messages: () => [...messages], opened: () => [...opened], editorReads: () => [...editorReads], documentWrites: () => [...documentWrites], expireSession: () => { sessionExpired = true; }, restoreSession: () => { sessionExpired = false; }, useOtherIdentity: () => { principalId = "user_other"; }, restoreIdentity: () => { principalId = "user_example"; }, useOtherOrganization: () => { organizationId = "org_other"; }, restoreOrganization: () => { organizationId = "org_example"; }, revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; }, failListing: () => { listingFailure = true; }, restoreListing: () => { listingFailure = false; }, denyFile: () => { fileDenied = true; }, allowFile: () => { fileDenied = false; }, disableDocuments: () => { documentsOff = true; }, enableDocuments: () => { documentsOff = false; }, async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
   } catch (error) { await resources.disposeAsync(); throw error; }
 }

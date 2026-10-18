@@ -51,7 +51,9 @@ export function createHost(me: Me): WorkbotHost {
       headers.set("Accept", "application/json")
       if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
       const response = await fetch(path, { ...init, headers, credentials: "same-origin", signal: init.signal ?? AbortSignal.timeout(timeoutMs) })
-      if (response.status === 401) signIn()
+      // Documents owns a bounded, locked recovery state. Replacing this page
+      // would discard it before the person can sign in through its separate link.
+      if (response.status === 401 && window.location.pathname !== "/documents") signIn()
       const payload: unknown = await response.json().catch(() => null)
       return { response, payload }
     },
@@ -68,6 +70,12 @@ export function createHost(me: Me): WorkbotHost {
     workspaceAssistant: me.workspaceAssistant,
     canSchedule: me.canSchedule,
     connectionsHref: me.denUrl ? `${me.denUrl}/dashboard/your-connections` : null,
+    get signInHref() { return `/auth/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}` },
+    async verifyDocumentIdentity() {
+      const current = await fetchMe()
+      return current !== null && current.userId !== null && current.organizationId !== null
+        && current.userId === me.userId && current.organizationId === me.organizationId
+    },
     sideChats: me.sideChats,
     identity: me.userId && me.organizationId ? { principalId: me.userId, organizationId: me.organizationId } : undefined,
   }

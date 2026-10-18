@@ -364,6 +364,8 @@ const connectionsSchema = z.object({
     app: z.enum(["gmail", "googleCalendar", "slack", "microsoft"]),
     ready: z.boolean(),
     connectUrl: z.string().nullable(),
+    nativeProviderKey: z.string().nullable().optional(),
+    connectMode: z.enum(["inline", "external", "admin"]).optional(),
   })),
 });
 export type WorkbotConnection = z.infer<typeof connectionsSchema>["connections"][number];
@@ -374,14 +376,13 @@ export type WorkbotConnection = z.infer<typeof connectionsSchema>["connections"]
  */
 export function useWorkbotConnections(input: { enabled: boolean; waiting: boolean }) {
   return useQuery({
-    queryKey: ["workbot", "connections"],
+    queryKey: ["workbot", "connections", workbotHost().identity?.organizationId, workbotHost().identity?.principalId],
     enabled: input.enabled,
     queryFn: async () => {
       const { response, payload } = await requestJson("/v1/workbot/connections", { method: "GET" }, 15_000);
       // Hosts without this route just have nothing to connect here.
-      if (!response.ok) return [];
-      const parsed = connectionsSchema.safeParse(payload);
-      return parsed.success ? parsed.data.connections : [];
+      if (!response.ok) throw new Error("Couldn't verify your connections. Try again.");
+      return connectionsSchema.parse(payload).connections;
     },
     refetchInterval: input.waiting ? 2_000 : false,
     refetchOnWindowFocus: true,

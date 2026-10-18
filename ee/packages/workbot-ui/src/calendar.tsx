@@ -1,5 +1,7 @@
 "use client";
 
+import { useWorkbotConnect, WorkbotConnectAction } from "./connect";
+
 import type { WorkbotViewContext } from "@openwork/types/workbot-context";
 import {
   addDays,
@@ -645,6 +647,7 @@ function weekdaysOnly(days: LocalDate[], automations: AutomationCalendarItem[], 
 export function WorkbotCalendar({ connectionsHref, assistantName, onContextChange }: { connectionsHref: string | null; assistantName: string; onContextChange?(context: WorkbotViewContext | null): void }) {
   const zone = timeZone();
   const sources = useCalendarSources();
+  const connect = useWorkbotConnect();
   const [now, setNow] = useState(() => Date.now());
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState<LocalDate>(() => localDateOf(Date.now(), zone));
@@ -735,7 +738,7 @@ export function WorkbotCalendar({ connectionsHref, assistantName, onContextChang
               return (
                 <span key={provider} className="flex items-center gap-1 text-[12px] leading-4 text-[#687076]" data-calendar-provider-status={provider} data-state={error.kind} title={error.message}>
                   <Lock size={11} strokeWidth={2} aria-hidden />
-                  {text && connectionsHref ? <a href={connectionsHref} target="_blank" rel="noreferrer" className="font-medium text-black underline-offset-2 hover:underline">{text}</a>
+                  {text && (error.kind === "not_connected" || error.kind === "auth_expired") ? <WorkbotConnectAction flow={connect} provider={provider === "google" ? "google-workspace" : "microsoft-365"} label={text} fallbackHref={connectionsHref} />
                     : text ? <span>{text}</span>
                     : <button type="button" onClick={() => void meetingQueries[provider].refetch()} className="font-medium text-black hover:underline">Couldn&apos;t load {provider === "google" ? "Google Calendar" : "Outlook"} · Try again</button>}
                 </span>

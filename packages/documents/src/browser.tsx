@@ -2,7 +2,7 @@
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { Clock, ChevronRight, ExternalLink, FileText, FileSpreadsheet, Image, Presentation, Folder, Grid2X2, Info, List, Lock, RefreshCw, Search, X } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { DocumentEditorTab } from "./editor"
 import { documentsAccessFailure, expiredDocumentRecovery, lockDocumentRecovery } from "./access"
 import { DocumentTabs, type DocumentTabControls, type DocumentTabControlsChange } from "./document-tabs"
@@ -22,6 +22,7 @@ export type DocumentsBrowserProps = {
   verifyScope?(): Promise<boolean>
   /** A retained host owner may be masked while its own sign-in is revalidated. */
   authorization?: "signin" | "blocked" | "disabled"
+  renderConnect?(connectionId?: string): ReactNode
   onDirtyChange?(dirty: boolean): void
   onContextChange?(context: DocumentsViewContext | null): void
   openDocument?: DocumentOpenRequest
@@ -50,7 +51,7 @@ export function DocumentsBrowser(props: DocumentsBrowserProps) {
   return <ScopedDocumentsBrowser key={JSON.stringify([props.scope, props.provider.id])} {...props} />
 }
 
-function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsHref, signInHref, verifyScope, authorization, onDirtyChange, onContextChange, openDocument }: DocumentsBrowserProps) {
+function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsHref, signInHref, verifyScope, authorization, renderConnect, onDirtyChange, onContextChange, openDocument }: DocumentsBrowserProps) {
   const policy = useRef({ enabled, authorization })
   policy.current = { enabled, authorization }
   const [resources, setResources] = useState<ReadonlyMap<string, DocumentItem>>(new Map())
@@ -265,7 +266,7 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
     </aside>
     <div className="ow-documents-workspace">
       <div className="ow-document-tabs-row" ref={tabsRow}><DocumentTabs items={editorEnabled ? orderedTabs.filter(item => !locks.has(item.id)) : []} activeId={activeTab} dirtyIds={dirtyIds} busyIds={busyIds} onSelect={setActiveTab} onClose={requestClose} onReorder={setTabOrder}/><div className="ow-document-actions" ref={setActionsHost}/></div>
-      {(accessLost || locks.size > 0) && <div className="ow-editor-message ow-documents-recovery" role="status" aria-busy={restoring}><Lock size={16} aria-hidden /><span>{flagOff ? "Documents is off for your workspace. An admin can turn it on." : needsSignIn ? "Sign in again to restore document access." : needsConnection ? recoveryUntil !== null ? "Google Drive needs a fresh connection." : "Connect Google Drive to browse and open your documents. Drive read permission is required." : "Some document access isn't confirmed."}</span>{needsSignIn && reauthenticateHref && <a href={reauthenticateHref} target="_blank" rel="noopener noreferrer">Sign in again</a>}{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">{locks.size > 0 ? "Reconnect Google Drive" : "Connect Google Drive"}</a>}{recoveryUntil !== null && locks.size > 0 && <span>Locked recovery is kept in this tab for up to 15 minutes.</span>}<button type="button" disabled={restoring} onClick={() => void restoreRecovery()}>{locks.size > 0 ? "Check access and restore tabs" : "Check browsing access"}</button>{recoveryError && <span>{recoveryError}</span>}</div>}
+      {(accessLost || locks.size > 0) && <div className="ow-editor-message ow-documents-recovery" role="status" aria-busy={restoring}><Lock size={16} aria-hidden /><span>{flagOff ? "Documents is off for your workspace. An admin can turn it on." : needsSignIn ? "Sign in again to restore document access." : needsConnection ? recoveryUntil !== null ? "Google Drive needs a fresh connection." : "Connect Google Drive to browse and open your documents. Drive read permission is required." : "Some document access isn't confirmed."}</span>{needsSignIn && reauthenticateHref && <a href={reauthenticateHref} target="_blank" rel="noopener noreferrer">Sign in again</a>}{needsConnection && (renderConnect ? renderConnect() : connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">{locks.size > 0 ? "Reconnect Google Drive" : "Connect Google Drive"}</a>)}{recoveryUntil !== null && locks.size > 0 && <span>Locked recovery is kept in this tab for up to 15 minutes.</span>}<button type="button" disabled={restoring} onClick={() => void restoreRecovery()}>{locks.size > 0 ? "Check access and restore tabs" : "Check browsing access"}</button>{recoveryError && <span>{recoveryError}</span>}</div>}
       {opened.filter(item => locks.has(item.id)).map(item => { const position = tabOrder.indexOf(item.id) + 1; return <div className="ow-editor-message ow-documents-recovery" role="group" aria-label={`Locked document ${position}`} key={item.id}><span>Locked document {position}</span><button type="button" disabled={restoring} aria-label={`Check access for locked document ${position}`} onClick={() => void restoreRecovery(item.id)}>Check access</button><button type="button" disabled={restoring} aria-label={`Discard locked document ${position}`} onClick={() => discardRecovery(item.id)}>Discard</button></div> })}
       {refreshFailed && activeTab !== "files" && <div className="ow-editor-message" role="status">Couldn't refresh documents. Your open document is unchanged.<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></div>}
     {enabled && openDocument && requested.isError && <div className="ow-documents-notice" role="status">Couldn't open this document. Check your Drive connection and access. <button type="button" onClick={() => void requested.refetch()}>Try again</button></div>}
@@ -291,7 +292,7 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
           {visible && selected && <aside className="ow-documents-detail" aria-label="Document details"><div className="ow-documents-detail-heading"><Info size={16} aria-hidden /><span>Details</span><button type="button" aria-label="Close document details" onClick={() => setSelected(null)}><X size={16} /></button></div><ItemIcon item={selected} /><h2>{selected.name}</h2><dl><dt>Type</dt><dd>{documentType(selected)}</dd><dt>Last modified</dt><dd>{date(selected.modifiedTime)}</dd><dt>Size</dt><dd>{size(selected.size)}</dd></dl>{selected.openUrl ? <a className="ow-documents-open" href={selected.openUrl} target="_blank" rel="noopener noreferrer">Open in {provider.label}<ExternalLink size={14} aria-hidden /></a> : <p>This file has no available link.</p>}</aside>}
         </div></>}
     </div>
-    {editor && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={editorEnabled && !locks.has(item.id)} active={editorEnabled && !locks.has(item.id) && activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onSavingChange={updateSaving} onResourceChange={resourceChanged} onControlsChange={registerControls} onClose={() => close(item.id)} />)}
+    {editor && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={editorEnabled && !locks.has(item.id)} active={editorEnabled && !locks.has(item.id) && activeTab === item.id} scope={scope} connectionsHref={connectionsHref} renderConnect={renderConnect} onDirtyChange={updateDirty} onSavingChange={updateSaving} onResourceChange={resourceChanged} onControlsChange={registerControls} onClose={() => close(item.id)} />)}
     </div>
   </section>
 }

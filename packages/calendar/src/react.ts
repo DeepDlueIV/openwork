@@ -21,13 +21,23 @@ export function useRunsInRangeQuery(input: {
   automations: readonly AutomationList["items"][number][] | undefined
   enabled: boolean
 }) {
-  return useQuery<RunsInRange>({
+  const query = useQuery<RunsInRange | { accessError: Error }>({
     queryKey: [...input.keyPrefix, "runs-range", input.range.start, input.range.end],
-    queryFn: () => readRunsInRange(input.source!, input.range, input.automations ?? []),
+    queryFn: async () => {
+      try {
+        return await readRunsInRange(input.source!, input.range, input.automations ?? [])
+      } catch (error) {
+        if (error instanceof Error && "status" in error && (error.status === 401 || error.status === 403)) return { accessError: error }
+        throw error
+      }
+    },
     enabled: input.enabled && input.source !== null && input.automations !== undefined,
     staleTime: 15_000,
-    refetchInterval: (query) => query.state.data?.runs.some((run) => ACTIVE.has(run.status)) ? CALENDAR_FAST_POLL_MS : CALENDAR_SLOW_POLL_MS,
+    refetchInterval: (query) => query.state.data && "runs" in query.state.data && query.state.data.runs.some((run) => ACTIVE.has(run.status)) ? CALENDAR_FAST_POLL_MS : CALENDAR_SLOW_POLL_MS,
   })
+  const accessError = query.data && "accessError" in query.data ? query.data.accessError : undefined
+  const data = query.data && !("accessError" in query.data) ? query.data : undefined
+  return { ...query, data, error: accessError ?? query.error, isError: accessError ? true : query.isError, isSuccess: accessError ? false : query.isSuccess, status: accessError ? "error" : query.status }
 }
 
 export function useMeetingsQuery(input: {

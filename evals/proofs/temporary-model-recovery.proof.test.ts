@@ -44,10 +44,11 @@ test("a member recovers a new chat without saving a personal default over later 
     await user.click("Change model");
     await user.click({ testId: `model-option-${world.providerID}-${world.replacement.id}` });
     await probe.eventually(selected, { within: 15_000, label: "the member's explicit choice", until: value => value.includes(world.replacement.name) });
-    await world.setOrganizationDefault(world.nextDefault.id);
+    await world.setOrganizationDefault(world.otherDefault.id);
     await user.reload();
     await user.see("composer", { editable: true });
-    expect(await selected()).toContain(world.replacement.name);
+    await probe.eventually(selected, { within: 30_000, label: "the member's saved workspace choice", until: value => value.includes(world.replacement.name) });
+    expect(await selected()).not.toContain(world.otherDefault.name);
     evidence.recordAssertionEvidence("Only the member's explicit picker choice becomes a workspace preference", `member picked ${world.replacement.name}; after organization refresh selected=${await selected()}`, (await selected()).includes(world.replacement.name));
     await user.screenshot();
   });

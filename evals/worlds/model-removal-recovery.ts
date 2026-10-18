@@ -104,7 +104,7 @@ async function createModelRemovalRecovery(seed: Seed, options?: { newChatDefault
   const resources = setup.move();
   return {
     app, den, first, second, old, replacement, providerID, organizationId, setOrganizationDefault,
-    nextDefault: models[1]!,
+    nextDefault: models[1]!, otherDefault: models[0]!,
     scenario(next: Scenario) { fixture.check(); scenario = next; },
     reads() { fixture.check(); return [...reads]; },
     async setRollout(enabled: boolean) {

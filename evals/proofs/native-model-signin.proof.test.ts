@@ -44,7 +44,12 @@ for (const worldFactory of [serverOwnedModelSignIn, liveOwnedModelSignIn]) {
     });
     await step("a real native model becomes available but a failed fresh read cannot falsely confirm the selection", async () => {
       await probe.eventually(() => world.memberAuthorizationReady(), { within: 30_000, label: "real Den accepts the signed OAuth identity", until: value => value });
-      await probe.eventually(() => world.nativeHasRequestedModel(), { within: 45_000, label: "the real native engine advertises the exact authorized alias", until: value => value });
+      try {
+        await probe.eventually(() => world.nativeHasRequestedModel(), { within: 45_000, label: "the real native engine advertises the exact authorized alias", until: value => value });
+      } catch (error) {
+        const diagnostic = await world.diagnostics().catch(() => ({ error: "native diagnostics unavailable" }));
+        throw new Error(`${error instanceof Error ? error.message : String(error)}; real host/provider witness=${JSON.stringify(diagnostic)}`);
+      }
       await user.see({ role: "button", label: "Refresh models" }, { timeoutMs: 45_000 });
       await user.see({ text: "Couldn't verify the current model list. Refresh models to check again." });
       expect(await selected()).toBe(original);

@@ -40,9 +40,9 @@ async function nativeModelSignIn(seed: Seed, live: boolean) {
   const members = record(org.body) && Array.isArray(org.body.members) ? org.body.members.filter(record) : [];
   const memberRow = members.find(item => record(item.user) && item.user.name === "Model Member");
   const memberId = text(memberRow?.id, "member ID");
-  async function create(name: string, providerId: string, modelId: string, oauth: boolean) {
+  async function create(name: string, providerId: string, modelId: string | null, oauth: boolean) {
     const response = await seed.api(den.admin, "/v1/inference-providers", { method: "POST", body: JSON.stringify({
-      name, providerId, modelIds: [modelId], memberIds: [memberId],
+      name, providerId, modelIds: modelId ? [modelId] : [], memberIds: [memberId],
       ...(oauth ? { credentialMode: "member", oauthClientId: fixtureOAuthClientId, oauthClientSecret: fixtureOAuthClientSecret,
         settings: { project: "fixture-project", location: "us-central1" } }
         : { credential: { kind: "api_key", secret: "synthetic-baseline-key" } }),
@@ -53,7 +53,10 @@ async function nativeModelSignIn(seed: Seed, live: boolean) {
     return { id: text(value.id, "provider ID"), setId: text(sets[0]?.id, "credential set") };
   }
   const baseline = await create("Baseline provider", "openai", "gpt-4o-mini", false);
-  const target = await create("Member provider", "google-vertex", "gemini-2.5-flash", true);
+  // Vertex Anthropic uses real Google member OAuth, then the Anthropic native
+  // adapter that the pinned host supports. This does not claim Gemini SDK support.
+  // Select an actual returned catalog alias instead of inventing an upstream ID.
+  const target = await create("Member provider", "google-vertex-anthropic", null, true);
   const memberRead = async (path: string) => {
     const response = await fetch(`${den.ref.apiUrl}${path}`, { headers: { authorization: `Bearer ${member.token}`, "x-openwork-org-id": organizationId }, cache: "no-store" });
     const body: unknown = await response.json();
@@ -163,6 +166,17 @@ async function nativeModelSignIn(seed: Seed, live: boolean) {
       const item = items.find(value => value.id === target.id);
       return Boolean(item && Array.isArray(item.models) && item.models.some(model => record(model) && model.id === targetModel.modelID)
         && Array.isArray(item.authorizationRequests) && !item.authorizationRequests.some(value => record(value) && value.credentialSetId === target.setId));
+    },
+    async diagnostics() {
+      const status = await host("/experimental/engine-v2-preview/status");
+      const inventory = await memberRead("/v1/inference-providers?scope=usable");
+      const providers = record(inventory) && Array.isArray(inventory.inferenceProviders) ? inventory.inferenceProviders.filter(record) : [];
+      const requested = providers.find(item => item.id === target.id);
+      return { nativeVersion, liveOwner: record(status) ? status.liveProviderSync : null,
+        skippedProviderIds: record(status) ? status.skippedProviderIds : null,
+        mirroredProviderIds: record(status) ? status.mirroredProviderIds : null,
+        projectedSdk: requested && record(requested.providerConfig) ? requested.providerConfig.npm : null,
+        nativeHasRequestedModel: await this.nativeHasRequestedModel(), ...provider.witness(), failedReads, oauthStarts };
     },
     witness() { edge.check(); return { ...provider.witness(), failedReads, oauthStarts }; },
     async [Symbol.asyncDispose]() { for (const cleanup of late.reverse()) await cleanup(); await resources.disposeAsync(); },

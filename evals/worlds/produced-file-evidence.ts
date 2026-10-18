@@ -44,7 +44,7 @@ async function nativeFileEvidence(seed: Seed, pathFree: boolean) {
   const hostToken = "produced-file-fixture-host";
   const workspacePath = seed.tmpPath(name);
   await mkdir(workspacePath, { recursive: true });
-  if (pathFree) await writeFile(join(workspacePath, "unrelated.md"), "# Unrelated reference\n");
+  if (pathFree) await writeFile(join(workspacePath, "a-unrelated.md"), "# Unrelated reference\n");
   const mock = seed.mock({ isolatedProcessEnv: true, agentWorkloads: [{
     promptMarker: producedFileV2Prompt, latestUserTurn: true,
     finalReply: pathFree ? "Voilà." : "Voilà. summary.md",

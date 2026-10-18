@@ -41,17 +41,21 @@ test("a person can find an unreported native output without mistaking conversati
   await step("the person explicitly browses and searches the current workspace", async () => {
     await user.click({ role: "button", label: "Browse workspace files" });
     await user.see({ role: "textbox", label: /^Search .* files$/ }, { timeoutMs: 30_000 });
-    await user.see({ role: "treeitem", label: /unrelated\.md/ }, { timeoutMs: 30_000 });
+    await user.see({ text: "Browser limits" }, { timeoutMs: 30_000 });
     await user.type({ role: "textbox", label: /^Search .* files$/ }, "summary");
-    await user.see({ role: "treeitem", label: /summary\.md/ }, { timeoutMs: 30_000 });
-    await user.notSee({ role: "treeitem", label: /unrelated\.md/ });
-    const trees = (await probe.dom("[data-workspace-file-tree]")).elements;
+    await user.see({ role: "textbox", label: /^Search .* files$/ }, { value: "summary" });
+    const trees = (await probe.dom('[data-workspace-file-tree]:not([data-workspace-file-count="0"])')).elements;
     expect(trees).toHaveLength(1);
-    evidence.recordAssertionEvidence("The existing scoped workspace catalog finds the unreported file", "Search summary shows summary.md in the real workspace tree; no command text was parsed", trees.length === 1 && (await world.summary()).includes("The requested summary."));
+    evidence.recordAssertionEvidence("The existing scoped workspace catalog is searched without parsing command text", "The protected catalog has loaded; search contains summary; the next step activates its matching file with trusted keyboard input", trees.length === 1 && (await world.summary()).includes("The requested summary."));
     await user.screenshot();
   });
   await step("the real file opens for preview and download without fabricating a turn association or launching an app", async () => {
-    await user.click({ role: "treeitem", label: /summary\.md/ });
+    // Pierre renders its rows in Shadow DOM, outside the testkit's ordinary
+    // target locator. Use the normal keyboard route: search -> Refresh -> row.
+    // Without search, the earlier a-unrelated.md row would open instead.
+    await user.press("Tab");
+    await user.press("Tab");
+    await user.press("Enter");
     await user.see({ text: "The requested summary." }, { timeoutMs: 30_000 });
     await user.see({ role: "button", label: "Referenced files (0)" });
     await user.click("Artifact actions");

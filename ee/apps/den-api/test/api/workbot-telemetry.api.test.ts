@@ -31,7 +31,8 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
   const call = (body: unknown, bearer = token, credential: string | null = service) => den.request(bearer, "POST", "/v1/workbot/telemetry", {
     body, headers: credential === null ? {} : { "x-openwork-workbot-service": credential },
   })
-  const signIn = { event: "signed_in", id: "first-successful-login-0001" }
+  const signedInAt = Date.now() - 1_000
+  const signIn = { event: "signed_in", id: "first-successful-login-0001", timestamp: signedInAt }
   assert.equal((await call(signIn, token, null)).status, 401)
   assert.equal((await call(signIn, token, "wrong")).status, 401)
   assert.equal((await call(signIn, "forged-token")).status, 401)
@@ -43,6 +44,7 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
   assert.equal(stored.length, 2)
   assert.deepEqual(new Set(stored.map((row) => row.member_id)), new Set([workspace.owner.memberId, teammate.memberId]))
   assert.equal(stored.every((row) => row.event_type === "workbot.signed_in"), true)
+  assert.equal(stored.every((row) => row.event_timestamp.getTime() === signedInAt), true, "sign-in time precedes the asynchronous readiness probe/write")
 
   const sessionId = workbotMainSession({ organizationId: workspace.orgId, memberId: workspace.owner.memberId })
   const timestamp = Date.now()

@@ -16435,6 +16435,7 @@ export class DenClient extends HeyApiClient {
         | {
             event: "signed_in";
             id: string;
+            timestamp?: number;
           }
         | {
             event: "accepted";

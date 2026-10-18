@@ -95,6 +95,8 @@ jobs:
         run: |
           pnpm --filter @openwork-ee/headless-runner test:conversation
           pnpm --filter @openwork-ee/headless-runner test:transfer
+      - name: Test Workbot sign-in and adoption boundary
+        run: pnpm --filter @openwork-ee/workbot test:auth
       - name: Test opt-in error reporting (runner and Workbot)
         run: |
           pnpm --filter @openwork-ee/headless-runner test:error-reporting

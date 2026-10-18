@@ -8,7 +8,7 @@ import { db } from "../db.js"
 
 /** Service-only facts. No text, names, email, prompts, tokens or arbitrary properties. */
 export const workbotTelemetrySchema = z.discriminatedUnion("event", [
-  z.object({ event: z.literal("signed_in"), id: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/) }).strict(),
+  z.object({ event: z.literal("signed_in"), id: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/), timestamp: z.number().int().nonnegative().optional() }).strict(),
   z.object({
     event: z.literal("accepted"), sessionId: z.string().regex(/^hs_wbs?_[a-f0-9]{40}$/),
     messageId: z.string().regex(/^(?:wb_hello|wb_[A-Za-z0-9_-]{8,64})$/),
@@ -96,7 +96,9 @@ export async function recordWorkbotEvent(actor: WorkbotTelemetryActor, type: str
 
 export async function recordWorkbotTelemetry(actor: WorkbotTelemetryActor, event: WorkbotTelemetry, readyCount: () => Promise<number | null>) {
   if (event.event === "signed_in") {
-    return recordWorkbotEvent(actor, "workbot.signed_in", event.id, { ready_count: await readyCount().catch(() => null) })
+    // Preserve the sign-in instant even when the readiness snapshot takes longer than the greeting.
+    const at = event.timestamp ?? Date.now()
+    return recordWorkbotEvent(actor, "workbot.signed_in", event.id, { ready_count: await readyCount().catch(() => null) }, at)
   }
   const greeting = event.messageId === "wb_hello"
   if (greeting && event.sessionId !== workbotMainSession(actor)) return

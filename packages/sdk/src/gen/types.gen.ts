@@ -34676,6 +34676,7 @@ export type RecordWorkbotTelemetryData = {
     | {
         event: "signed_in";
         id: string;
+        timestamp?: number;
       }
     | {
         event: "accepted";

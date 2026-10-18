@@ -147,7 +147,7 @@ export function createDen(options: { apiUrl: string; publicUrl: string; serviceT
         const response = await fetch(`${options.apiUrl}/v1/workbot/telemetry`, {
           method: "POST", redirect: "error",
           headers: { authorization: `Bearer ${accessToken}`, "x-openwork-workbot-service": options.serviceToken, "content-type": "application/json" },
-          body: JSON.stringify({ event: "signed_in", id }), signal: AbortSignal.timeout(2_000),
+          body: JSON.stringify({ event: "signed_in", id, timestamp: Date.now() }), signal: AbortSignal.timeout(2_000),
         })
         if (!response.ok) console.warn("[workbot] telemetry_delivery_failed", { status: response.status })
       } catch {

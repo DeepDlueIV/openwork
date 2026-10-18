@@ -15,6 +15,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
   let taskStopAttempts = 0;
   let sends = 0;
   let progressStage = 0;
+  let progressUpdatedAt = 0;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   resources.defer(() => { for (const timer of timers) clearTimeout(timer); });
   const streams = new Set<ServerResponse>();
@@ -44,7 +45,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
             if (unavailable) return json({ error: "unavailable" }, 503);
             res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.write("event: ready\ndata: {}\n\n");
             res.write(`data: ${JSON.stringify({ type: "text", messageId: "example", step: 1, delta: "The figures still need verification.", reset: true })}\n\n`);
-            streams.add(res); req.on("close", () => streams.delete(res)); return;
+            streams.add(res); res.on("close", () => streams.delete(res)); return;
           }
           if (url.pathname === "/v1/workbot") {
             if (unavailable) return json({ error: "unavailable" }, 503);
@@ -72,11 +73,11 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
             const turn = { messageId, status: "running", error: null, createdAt: Date.now(), updatedAt: Date.now() };
             snapshot.turns.push(turn); snapshot.status = "busy";
             snapshot.messages.push({ role: "user", messageId, text: "Check progress" });
-            const command = (index: number) => { progressStage = index * 2 - 1; snapshot.messages.push({ role: "assistant", messageId, text: "", createdAt: Date.now(), toolCalls: [{ id: `progress-${index}`, name: "bash", input: { description: `Checking section ${index}` } }] }); changed(); };
-            const result = (index: number) => { progressStage = index * 2; snapshot.messages.push({ role: "tool", messageId, name: "bash", callId: `progress-${index}`, isError: index === 3, createdAt: Date.now() }); changed(); };
+            const command = (index: number) => { progressStage = index * 2 - 1; progressUpdatedAt = Date.now(); snapshot.messages.push({ role: "assistant", messageId, text: "", createdAt: Date.now(), toolCalls: [{ id: `progress-${index}`, name: "bash", input: { description: `Checking section ${index}` } }] }); changed(); };
+            const result = (index: number) => { progressStage = index * 2; progressUpdatedAt = Date.now(); snapshot.messages.push({ role: "tool", messageId, name: "bash", callId: `progress-${index}`, isError: index === 3, createdAt: Date.now() }); changed(); };
             command(1);
-            for (const [delay, act] of [[600, () => result(1)], [1200, () => command(2)], [1800, () => result(2)], [2400, () => command(3)], [3000, () => result(3)]] satisfies Array<[number, () => void]>) timers.add(setTimeout(act, delay));
-            timers.add(setTimeout(() => { turn.status = "completed"; turn.updatedAt = Date.now(); snapshot.status = "idle"; snapshot.messages.push({ role: "assistant", messageId, text: "I couldn't verify every section.", toolCalls: [] }); changed(); }, 3800));
+            for (const [delay, act] of [[500, () => result(1)], [1000, () => command(2)], [1500, () => result(2)], [2000, () => command(3)], [2500, () => result(3)]] satisfies Array<[number, () => void]>) timers.add(setTimeout(act, delay));
+            timers.add(setTimeout(() => { turn.status = "completed"; turn.updatedAt = Date.now(); snapshot.status = "idle"; snapshot.messages.push({ role: "assistant", messageId, text: "I couldn't verify every section.", toolCalls: [] }); changed(); }, 3500));
             return json({ accepted: true }, 202);
           }
           return json({ error: "not_found" }, 404);
@@ -90,7 +91,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-activity", startUrl: url, headless: true }));
     return {
       web, url,
-      stopAttempts: () => stopAttempts, taskStopAttempts: () => taskStopAttempts, sends: () => sends, progressStage: () => progressStage,
+      stopAttempts: () => stopAttempts, taskStopAttempts: () => taskStopAttempts, sends: () => sends, progressStage: () => progressStage, progressUpdatedAt: () => progressUpdatedAt,
       disconnect() { unavailable = true; for (const stream of streams) stream.end(); streams.clear(); },
       restore() { unavailable = false; },
 

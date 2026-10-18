@@ -13,7 +13,7 @@ export async function engineUpgradePaused(seed: Seed) {
       OPENWORK_OPENCODE2_BIN: "/unavailable-fixture-engine/opencode2",
     },
   });
-  const workspace = await seed.workspace(app, seed.tmpPath("engine-upgrade-paused"));
+  const workspace = await seed.workspace(app, `${seed.tmpPath("project-notes")}/Project notes`);
   const session = await seed.session(app, { title: "Work continues while the upgrade is paused" });
   return { app, workspace, session };
 }

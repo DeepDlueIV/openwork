@@ -657,7 +657,7 @@ export default {
   "engine_migration.continue_in_background": "Continue using OpenWork",
   "engine_migration.done": "Done",
   "engine_migration.done_title": "Chats migrated to OpenCode v2",
-  "engine_migration.error_note": "Your copy progress is saved. Try again or restart OpenWork to resume. Your v1 chats aren't changed.",
+  "engine_migration.error_note": "Your copy progress is saved. Try again to continue. Your v1 chats aren't changed.",
   "engine_migration.error_title": "Migration didn't finish",
   "engine_migration.paused_title": "Chat upgrade paused",
   "engine_migration.current_engine": "Using OpenCode {engine}",

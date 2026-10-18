@@ -410,6 +410,13 @@ test("a paused automatic failure can become an explicitly consented manual migra
   expect(useEngineMigrationStore.getState().progress).toMatchObject({ view: "dialog", serverManaged: false, switchWhenDone: false });
   expect(document.querySelector('[data-testid="engine-migration-progress"]')).not.toBeNull();
   expect(client.switchOpencodeEngine).not.toHaveBeenCalled();
+  await act(async () => observeEngineMigration(client, { ...manual,
+    migration: { state: "error", imported: 1, skipped: 0, total: 2, error: "private conversion diagnostics" },
+  }));
+  const failedDialog = document.querySelector('[data-testid="engine-migration-progress"]');
+  expect(failedDialog?.querySelector('[data-slot="dialog-description"]')?.textContent).toBe("Using OpenCode v1");
+  expect(failedDialog?.querySelector("details")?.open).toBe(false);
+  expect(failedDialog?.querySelector("details")?.textContent).toContain("private conversion diagnostics");
 });
 
 test("a fresh forced v2 status refreshes routing without any migration UI or renderer switch", async () => {

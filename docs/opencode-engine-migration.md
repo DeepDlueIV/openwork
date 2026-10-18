@@ -34,8 +34,10 @@ retain the selected engine, durable error and backup receipt. Automatic retries
 only run on a later boot with a one-minute-to-one-day bounded exponential
 backoff; policy-off/status refreshes never restart a failed inactive sidecar.
 
-Desktop keeps a compact **Chat upgrade paused** notice with the verified current
-engine. **Review upgrade** discloses diagnostics and the earliest automatic retry
+Desktop keeps a one-line **Chat upgrade paused** notice with the verified current
+engine, clear of conversation content. This is host-wide recovery, not a per-chat
+agent approval; it never replaces a draft or inserts a consent card into a turn.
+**Review upgrade** discloses diagnostics and the earliest automatic retry
 time; closing it keeps the notice and chat usable. **Migrate chats** opens the
 existing manual consent, including while automatic policy is off. Force policy
 can supersede an optional invitation, never a manually requested consent. Only confirming
@@ -46,6 +48,7 @@ attempt is actually in flight, not after it has paused. **Restart OpenWork** is
 an explicit alternative, never an automatic global restart. Startup discovery
 restores a failed automatic receipt even when copying never started; host backoff
 and rollout policy still decide whether a later boot retries it automatically.
+Both automatic and manual failure dialogs keep raw errors under **Technical details**.
 Source chat changes during copying or v2 startup
 prevent the switch; a later attempt restores the pre-copy v2 baseline under
 the existing migration ownership lock before copying a fresh v1 snapshot.

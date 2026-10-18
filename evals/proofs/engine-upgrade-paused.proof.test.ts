@@ -29,7 +29,15 @@ test("a member keeps working with a visible paused upgrade and restart recovery"
     await user.see({ text: "Chat upgrade paused" });
     await user.see({ text: "Using OpenCode v1" });
     await user.notSee({ testId: "engine-migration-progress" });
-    evidence.recordAssertionEvidence("The actual host failed once and kept v1 selected", JSON.stringify(failed), failed.migration.state === "error" && !failed.chatRouting);
+    await user.see({ text: "Try one of these:" });
+    const layout = await probe.eventually(async () => {
+      const notice = (await probe.dom('[data-testid="engine-migration-banner"]')).elements[0];
+      const heading = (await probe.dom('[data-thread-history-complete="true"] p')).elements.find(element => element.text === "Try one of these:");
+      if (!notice || !heading) throw new Error("The notice and suggestions heading must both be visible");
+      return { noticeBottom: notice.rect.bottom, headingTop: heading.rect.top };
+    }, { within: 5_000, label: "the compact notice clears the conversation heading", until: value => value.noticeBottom <= value.headingTop });
+    expect(layout.noticeBottom).toBeLessThanOrEqual(layout.headingTop);
+    evidence.recordAssertionEvidence("The host kept v1 selected and the notice leaves chat content unobscured", `${JSON.stringify(failed)}; ${JSON.stringify(layout)}`, failed.migration.state === "error" && !failed.chatRouting && layout.noticeBottom <= layout.headingTop);
     await user.screenshot();
   });
 
@@ -92,6 +100,8 @@ test("a member keeps working with a visible paused upgrade and restart recovery"
     });
     await user.see({ testId: "engine-migration-progress" });
     await user.see({ role: "button", text: "Try again" });
+    await user.see({ text: "Technical details" });
+    expect((await probe.dom('[data-testid="engine-migration-progress"] details[open]')).elements).toHaveLength(0);
     await user.notSee({ testId: "engine-migration-recovery" });
     evidence.recordAssertionEvidence("Manual consent starts a distinct attempt without automatically switching engines", JSON.stringify(current), !current.chatRouting && current.automaticRetryAt === undefined && current.migration.startedAt !== failed?.migration.startedAt);
     await user.screenshot();

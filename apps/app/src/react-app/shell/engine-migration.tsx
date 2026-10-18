@@ -444,6 +444,19 @@ function MigrationConsentDialog(props: { consent: ConsentState }) {
   );
 }
 
+function MigrationErrorDetails(props: { error?: string }) {
+  if (!props.error) return null;
+  return (
+    <details className="group text-xs text-muted-foreground">
+      <summary className="flex cursor-pointer list-none items-center gap-1 select-none hover:text-foreground">
+        <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none" />
+        {t("engine_migration.technical_details")}
+      </summary>
+      <p className="mt-2 max-h-48 overflow-y-auto break-words whitespace-pre-wrap">{props.error}</p>
+    </details>
+  );
+}
+
 function AutomaticMigrationRecoveryDialog(props: { progress: ProgressState }) {
   const { progress } = props;
   const [restarting, setRestarting] = useState(false);
@@ -470,13 +483,7 @@ function AutomaticMigrationRecoveryDialog(props: { progress: ProgressState }) {
             {t("engine_migration.restart")}
           </Button>
         ) : null}
-        <details className="group text-xs text-muted-foreground">
-          <summary className="flex cursor-pointer list-none items-center gap-1 select-none hover:text-foreground">
-            <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none" />
-            {t("engine_migration.technical_details")}
-          </summary>
-          <p className="mt-2 break-words whitespace-pre-wrap">{progress.migration.error}</p>
-        </details>
+        <MigrationErrorDetails error={progress.migration.error} />
         <DialogFooter>
           <Button variant="outline" onClick={closeEngineMigrationProgress}>{t("engine_migration.keep_working")}</Button>
           <Button disabled={restarting} onClick={() => requestEngineMigration(progress.client)}>{t("engine_migration.migrate")}</Button>
@@ -507,7 +514,7 @@ function MigrationProgressDialog(props: { progress: ProgressState }) {
           <DialogDescription>
             {running ? `${migration.resumed ? `${t("engine_migration.resumed_note")} ` : ""}${t("engine_migration.progress_note")}`
               : migration.state === "completed" ? migratedSummary(migration)
-                : migration.error}
+                : t("engine_migration.current_engine", { engine: progress.selected })}
           </DialogDescription>
         </DialogHeader>
         {running ? <MigrationProgressBar migration={migration} /> : null}
@@ -519,6 +526,7 @@ function MigrationProgressDialog(props: { progress: ProgressState }) {
         {migration.state === "error" && progress.runningTasks > 0
           ? <RunningTasksAlert count={progress.runningTasks} body={t("engine_migration.running_tasks_retry")} />
           : migration.state === "error" ? <p className="text-xs text-muted-foreground">{t("engine_migration.error_note")}</p> : null}
+        {migration.state === "error" ? <MigrationErrorDetails error={migration.error} /> : null}
         <DialogFooter>
           {running ? (
             <Button variant="outline" onClick={continueEngineMigrationInBackground}>
@@ -552,7 +560,7 @@ function MigrationProgressDialog(props: { progress: ProgressState }) {
 }
 
 /** Both floating notices clear the actual chrome, including native offsets and taller route headers. */
-function MigrationFloatingRegion(props: PropsWithChildren) {
+function MigrationFloatingRegion(props: PropsWithChildren<{ compact?: boolean }>) {
   const regionRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const region = regionRef.current;
@@ -623,7 +631,12 @@ function MigrationFloatingRegion(props: PropsWithChildren) {
   return (
     <div
       ref={regionRef}
-      className="pointer-events-none fixed inset-x-0 top-[calc(max(var(--window-titlebar-height),var(--engine-migration-chrome-bottom,0px))+var(--spacing)*3)] z-[45] flex justify-center px-4"
+      className={cn(
+        "pointer-events-none fixed inset-x-0 z-[45] flex justify-center px-4",
+        props.compact
+          ? "top-[max(var(--window-titlebar-height),var(--engine-migration-chrome-bottom,0px))]"
+          : "top-[calc(max(var(--window-titlebar-height),var(--engine-migration-chrome-bottom,0px))+var(--spacing)*3)]",
+      )}
     >
       {props.children}
     </div>
@@ -638,19 +651,22 @@ function MigrationBanner(props: { progress: ProgressState }) {
     ? t("engine_migration.progress_copied", { done: formatCount(done), total: formatCount(migration.total) })
     : null;
   return (
-    <MigrationFloatingRegion>
+    <MigrationFloatingRegion compact={paused}>
       <div
         role="status"
         aria-live="polite"
         data-testid="engine-migration-banner"
-        className="pointer-events-auto flex max-w-xl items-center gap-3 rounded-2xl bg-popover px-4 py-3 text-popover-foreground shadow-[var(--dls-card-shadow)] ring-1 ring-foreground/5"
+        className={cn(
+          "pointer-events-auto flex max-w-xl items-center bg-popover text-popover-foreground shadow-[var(--dls-card-shadow)] ring-1 ring-foreground/5",
+          paused ? "gap-2 rounded-md px-3" : "gap-3 rounded-2xl px-4 py-3",
+        )}
       >
         {paused
           ? <TriangleAlert className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           : <LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />}
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{t(paused ? "engine_migration.paused_title" : "engine_migration.banner_title")}</p>
-          <p className="text-xs text-muted-foreground">{paused
+        <div className={cn("min-w-0 flex-1", paused && "flex items-center gap-2")}>
+          <p className={cn("font-medium", paused ? "truncate text-xs" : "text-sm")}>{t(paused ? "engine_migration.paused_title" : "engine_migration.banner_title")}</p>
+          <p className={cn("text-xs text-muted-foreground", paused && "whitespace-nowrap")}>{paused
             ? t("engine_migration.current_engine", { engine: props.progress.selected })
             : <>{count ? `${count}. ` : ""}{t("engine_migration.banner_note")}</>}</p>
         </div>

@@ -36,12 +36,12 @@ import { Dialog } from "@base-ui/react/dialog";
 import { AppMark } from "./files";
 import { useMeetingsQuery, useRunsInRangeQuery } from "@openwork/calendar/react";
 import type { AutomationList, AutomationModel, AutomationRun, AutomationSchedule } from "@openwork/types/automations";
-import { Check as CheckMark, ChevronLeft, ChevronRight, Cloud, Lock, Monitor, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Check as CheckMark, ChevronLeft, ChevronRight, Cloud, Lock, Monitor, Plus, RefreshCw, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { CreateAutomationCard, type CreateAnchor } from "./calendar-create";
 import { ModelPicker, ModelSummary } from "./model-picker";
 import { workbotHost } from "./host";
-import { calendarKey, useAutomationModels, useAutomationRuns, useCalendarAction, useCalendarSources, useRunReceipt, useWorkbotAutomation, useWorkbotAutomations, type AutomationChanges } from "./calendar-data";
+import { calendarMemberKey, useAutomationModels, useAutomationRuns, useCalendarAction, useCalendarSources, useRunReceipt, useWorkbotAutomation, useWorkbotAutomations, WorkbotCalendarError, type AutomationChanges } from "./calendar-data";
 import { visibleCalendarSelection, type CalendarSelection } from "./calendar-selection";
 
 /**
@@ -580,7 +580,7 @@ function AutomationPanel({ item, block, zone, onToast, fullHistory, onClose }: {
         <ul className="flex flex-col" data-calendar-past-runs>
           {history.slice(historyPage * historySize, (historyPage + 1) * historySize).map((entry) => <PastRun key={entry.id} run={entry} zone={zone} />)}
         </ul>
-        {history.length > 0 ? <p className="text-[12px] text-[var(--wb-muted)]">Showing {historyPage * historySize + 1}–{Math.min((historyPage + 1) * historySize, history.length)} of {history.length} loaded{runs.hasNextPage ? "; more runs available" : "; all runs loaded"}.</p> : null}
+        {history.length > 0 ? <p className="text-[12px] text-[var(--wb-muted)]">Showing {historyPage * historySize + 1}–{Math.min((historyPage + 1) * historySize, history.length)} of {history.length} loaded{runs.isError ? "; completeness unverified" : runs.hasNextPage ? "; more runs available" : "; all runs loaded"}.</p> : null}
         <div className="mt-2 flex gap-3 text-[12px] font-medium">
           {historyPage > 0 ? <button type="button" onClick={() => setHistoryPage((page) => page - 1)}>Previous runs</button> : null}
           {(historyPage + 1) * historySize < history.length ? <button type="button" onClick={() => setHistoryPage((page) => page + 1)}>Next runs</button> : runs.hasNextPage ? <button type="button" disabled={runs.isFetching} onClick={async () => {
@@ -597,7 +597,7 @@ function AutomationPanel({ item, block, zone, onToast, fullHistory, onClose }: {
           <button type="button" disabled={action.isPending || automation.state !== "active"} onClick={() => run("pause", "Paused")} className="h-8.5 flex-1 rounded-lg text-[13px] font-medium text-black shadow-[0_0_0_1px_#0116271F] hover:bg-[#F4F6F7] disabled:opacity-50">Pause</button>
         )}
         <button type="button" disabled={action.isPending} onClick={() => setEditing(true)} className="h-8.5 flex-1 rounded-lg text-[13px] font-medium text-black shadow-[0_0_0_1px_#0116271F] hover:bg-[#F4F6F7] disabled:opacity-60">Edit</button>
-        <button type="button" disabled={action.isPending || blocked} title={blocked ? "Fix what it needs first" : undefined} onClick={() => run("run", "Running now")} className="h-8.5 flex-1 rounded-lg bg-[#011627] text-[13px] font-medium text-[#E6EDF3] hover:opacity-90 disabled:opacity-50">Run now</button>
+        <button type="button" disabled={action.isPending || blocked} title={blocked ? "Fix what it needs first" : undefined} onClick={() => run("run", "Run requested")} className="h-8.5 flex-1 rounded-lg bg-[#011627] text-[13px] font-medium text-[#E6EDF3] hover:opacity-90 disabled:opacity-50">Run now</button>
       </div>
       {editing ? (
         <EditDialog
@@ -674,12 +674,13 @@ function weekdaysOnly(days: LocalDate[], automations: AutomationCalendarItem[], 
 export function WorkbotCalendar({ connectionsHref, assistantName, onContextChange }: { connectionsHref: string | null; assistantName: string; onContextChange?(context: WorkbotViewContext | null): void }) {
   const zone = timeZone();
   const sources = useCalendarSources();
+  const memberKey = calendarMemberKey();
   const [now, setNow] = useState(() => Date.now());
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState<LocalDate>(() => localDateOf(Date.now(), zone));
   const [layers, setLayers] = useState({ automations: true, meetings: true });
   const [historyIntent] = useState(() => new URLSearchParams(window.location.search).get("history"));
-  const [chosen, setChosen] = useState<{ selection: Selection; scope: string } | null>(null);
+  const [chosen, setChosen] = useState<{ selection: Selection; scope: string; wasVisible: boolean } | null>(null);
   const [directorySearch, setDirectorySearch] = useState("");
   const [directoryPage, setDirectoryPage] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -698,17 +699,17 @@ export function WorkbotCalendar({ connectionsHref, assistantName, onContextChang
   const range = useMemo(() => calendarRange(view, { year, month, day }, zone, 1), [day, month, view, year, zone]);
   const list = useWorkbotAutomations();
   const historyItem = useWorkbotAutomation(historyIntent);
-  const selectionScope = `${view}:${range.start}:${range.end}:${layers.automations}:${layers.meetings}`;
+  const selectionScope = `${view}:${range.start}:${range.end}:${layers.automations}:${layers.meetings}:${directorySearch.trim().toLocaleLowerCase()}:${list.accessDenied}`;
   const [intentScope] = useState(selectionScope);
-  const setSelection = (selection: Selection) => setChosen({ selection, scope: selectionScope });
+  const setSelection = (selection: Selection) => setChosen({ selection, scope: selectionScope, wasVisible: selection?.kind === "meeting" || (selection?.kind === "automation" && list.data?.items.some((entry) => entry.automation.id === selection.automationId) === true) });
   const directory = useMemo(() => (list.data?.items ?? []).filter((item) => item.automation.name.toLocaleLowerCase().includes(directorySearch.trim().toLocaleLowerCase())), [list.data, directorySearch]);
-  const runs = useRunsInRangeQuery({ keyPrefix: calendarKey, source: sources.runs, range, automations: list.data?.items, enabled: layers.automations });
-  const google = useMeetingsQuery({ keyPrefix: calendarKey, provider: "google", transport: sources.transport, range, enabled: layers.meetings });
-  const microsoft = useMeetingsQuery({ keyPrefix: calendarKey, provider: "microsoft", transport: sources.transport, range, enabled: layers.meetings });
+  const runs = useRunsInRangeQuery({ keyPrefix: memberKey, source: sources.runs, range, automations: list.data?.items, enabled: layers.automations });
+  const google = useMeetingsQuery({ keyPrefix: memberKey, provider: "google", transport: sources.transport, range, enabled: layers.meetings });
+  const microsoft = useMeetingsQuery({ keyPrefix: memberKey, provider: "microsoft", transport: sources.transport, range, enabled: layers.meetings });
   const meetingQueries = { google, microsoft };
 
   const allItems = useMemo(() => layers.automations && list.data
-    ? buildAutomationCalendarItems({ automations: directory, runs: runs.data?.runs ?? [], range, now })
+    ? buildAutomationCalendarItems({ automations: directory.slice(0, OVERVIEW_LIMIT), runs: runs.data?.runs ?? [], range, now })
     : [], [directory, layers.automations, list.data, now, range, runs.data]);
   // A dense range is an overview, not an unbounded DOM. Search and the directory retain access to every loaded Automation.
   const items = allItems.slice(0, OVERVIEW_LIMIT);
@@ -718,28 +719,40 @@ export function WorkbotCalendar({ connectionsHref, assistantName, onContextChang
     selection: chosen ? chosen.selection : historyIntent ? { kind: "automation", automationId: historyIntent, itemKey: null } : null,
     selectionScope: chosen ? chosen.scope : intentScope,
     scope: selectionScope,
-    automations: historyItem.data ? [...(list.data?.items ?? []), historyItem.data] : list.data?.items ?? [],
+    automations: !list.accessDenied && !chosen && historyItem.data && !historyItem.isError ? [...directory, historyItem.data] : directory,
     items, meetings, layers,
   });
-  // Once invalidated, a selection must not reappear when the member returns to an earlier range/layer.
-  useEffect(() => {
-    if ((chosen?.scope ?? intentScope) !== selectionScope) setChosen({ selection: null, scope: selectionScope });
-  }, [chosen, intentScope, selectionScope]);
+  // Cached reads stay visible while refreshing. Once a visible choice disappears, discard it before paint;
+  // unrelated provider requests must not let restoring the item resurrect detail or shared context.
+  // A newly created object's explicit intent may wait until its first inventory read arrives.
+  useLayoutEffect(() => {
+    const scopeChanged = (chosen?.scope ?? intentScope) !== selectionScope;
+    const disappeared = chosen?.selection && chosen.wasVisible && selection === null;
+    const rejectedIntent = !chosen && historyIntent && historyItem.error instanceof WorkbotCalendarError && (historyItem.error.status === 401 || historyItem.error.status === 403 || (historyItem.error.status === 404 && historyItem.error.code === "automation_not_found")) && !historyItem.isFetching;
+    if (scopeChanged || disappeared || rejectedIntent) setChosen({ selection: null, scope: selectionScope, wasVisible: false });
+    else if (chosen?.selection && !chosen.wasVisible && selection !== null) setChosen({ ...chosen, wasVisible: true });
+  }, [chosen, historyIntent, historyItem.error, historyItem.isFetching, intentScope, selection, selectionScope]);
 
   const days = view === "week" ? weekdaysOnly(range.days, items, meetings, zone) : range.days;
   const selectedItem = selection?.kind === "automation" ? list.data?.items.find((entry) => entry.automation.id === selection.automationId) ?? (historyItem.data?.automation.id === selection.automationId ? historyItem.data : null) : null;
   const selectedBlock = selection?.kind === "automation" ? items.find((item) => item.key === selection.itemKey) ?? null : null;
   const selectedMeeting = selection?.kind === "meeting" ? meetings.find((event) => event.key === selection.key) ?? null : null;
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (list.accessDenied) { onContextChange?.(null); return; }
     const selected = selectedMeeting
       ? { kind: "meeting" as const, provider: selectedMeeting.provider, id: selectedMeeting.providerEventId, title: selectedMeeting.title.slice(0, 512) || "Untitled event" }
       : selectedItem ? { kind: "automation" as const, id: selectedItem.automation.id, title: selectedItem.automation.name.slice(0, 512) || "Untitled automation" } : undefined;
     onContextChange?.({ kind: "calendar", view, start: range.start, end: range.end, timeZone: zone, ...(selected ? { selected } : {}) });
-  }, [onContextChange, selectedMeeting, selectedItem, view, range.start, range.end, zone]);
+  }, [list.accessDenied, onContextChange, selectedMeeting, selectedItem, view, range.start, range.end, zone]);
   const connected = PROVIDERS.filter((provider) => meetingQueries[provider].data);
   const meetingSource = connected.length === 2 ? "Google Calendar and Outlook" : connected[0] === "microsoft" ? "Outlook Calendar" : "Google Calendar";
   const label = view === "week" && days.length === 5 ? `${formatDate(days[0]!, "en-US", { month: "short", day: "numeric" })} – ${days[4]!.month === days[0]!.month ? formatDate(days[4]!, "en-US", { day: "numeric" }) : formatDate(days[4]!, "en-US", { month: "short", day: "numeric" })}` : formatRangeLabel(range, anchor, "en-US");
   const nowParts = zonedParts(now, zone);
+
+  if (list.accessDenied) return <div role="alert" className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-[13px] text-[var(--wb-muted)]">
+    <p>Calendar access is blocked. Sign in again or ask your organization administrator for access.</p>
+    <button type="button" disabled={list.isFetching} onClick={() => void list.refetch()} className="rounded px-3 py-2 font-medium text-[var(--wb-text)] shadow-[inset_0_0_0_1px_var(--wb-ring)] disabled:opacity-50">Retry</button>
+  </div>;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden" data-calendar-page>
@@ -765,6 +778,12 @@ export function WorkbotCalendar({ connectionsHref, assistantName, onContextChang
               >
                 <Plus size={12} strokeWidth={2} aria-hidden />New automation
               </button>
+              <button type="button" aria-label="Refresh calendar" disabled={list.isFetching || runs.isFetching} onClick={() => {
+                void list.refetch();
+                if (layers.automations) void runs.refetch();
+                if (layers.meetings) { void google.refetch(); void microsoft.refetch(); }
+                if (historyIntent) void historyItem.refetch();
+              }} className="grid size-7 place-items-center rounded-[7px] text-[var(--wb-muted)] hover:bg-[var(--wb-chip)] disabled:opacity-50"><RefreshCw size={14} /></button>
               <button type="button" data-calendar-today disabled={compareDates(anchor, { year: nowParts.year, month: nowParts.month, day: nowParts.day }) === 0} onClick={() => setAnchor(localDateOf(Date.now(), zone))} className="h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-[var(--wb-text)] shadow-[0_0_0_1px_var(--wb-ring)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] disabled:text-[var(--wb-muted)]">Today</button>
             </div>
           </div>
@@ -807,10 +826,10 @@ export function WorkbotCalendar({ connectionsHref, assistantName, onContextChang
           <div className="my-2 flex flex-wrap items-center gap-3">
             {directoryPage > 0 ? <button type="button" onClick={() => setDirectoryPage((page) => page - 1)}>Previous automations</button> : null}
             {(directoryPage + 1) * DIRECTORY_PAGE_SIZE < directory.length ? <button type="button" onClick={() => setDirectoryPage((page) => page + 1)}>Next automations</button> : null}
-            {list.hasNextPage ? <button type="button" disabled={list.isFetching} onClick={() => void list.fetchNextPage()}>{list.isFetchingNextPage ? "Checking automations…" : "Load more automations"}</button> : list.data ? <span>All automations loaded</span> : null}
+            {list.hasNextPage ? <button type="button" disabled={list.isFetching} onClick={() => void list.fetchNextPage()}>{list.isFetchingNextPage ? "Checking automations…" : "Load more automations"}</button> : list.data ? <span>{list.isError ? "Completeness unverified" : "All automations loaded"}</span> : null}
           </div>
         </details>
-        {allItems.length > items.length || allMeetings.length > meetings.length ? <p className="mb-2 text-[12px] text-[var(--wb-muted)]" data-calendar-overview-limit>Overview shows the first {OVERVIEW_LIMIT} entries per layer. Search the loaded calendar or choose a smaller range.</p> : null}
+        {directory.length > OVERVIEW_LIMIT || allItems.length > items.length || allMeetings.length > meetings.length ? <p className="mb-2 text-[12px] text-[var(--wb-muted)]" data-calendar-overview-limit>Overview uses the first {OVERVIEW_LIMIT} matching automations and {OVERVIEW_LIMIT} entries per layer. Search the loaded calendar or choose a smaller range.</p> : null}
         {list.hasNextPage && layers.automations ? <p className="mb-2 text-[12px] text-[var(--wb-muted)]" data-calendar-incomplete="automations">More automations are available. Load more in Find automations and history.</p> : null}
         {layers.automations && runs.data?.complete === false ? <p className="mb-2 text-[12px] text-[var(--wb-muted)]" data-calendar-incomplete="runs">Some runs may be missing from this range. Choose a smaller range or open an automation&apos;s full history.</p> : null}
         {layers.automations && runs.isError ? <p role="alert" className="mb-2 text-[12px] text-[var(--wb-muted)]">Couldn&apos;t verify runs for this range. <button type="button" onClick={() => void runs.refetch()} className="font-medium underline">Retry</button></p> : null}
@@ -829,7 +848,7 @@ export function WorkbotCalendar({ connectionsHref, assistantName, onContextChang
           <TimeGrid range={range} days={days} zone={zone} now={now} automations={items} meetings={meetings} list={list.data?.items ?? []} selection={selection} onSelect={setSelection} onCreateAt={setCreating} />
         )}
         {list.data && !list.hasNextPage && !list.isError && list.data.items.every((entry) => entry.automation.state === "archived") && layers.automations ? (
-          <p className="py-4 pl-16 text-[13px] text-[#687076]" data-calendar-empty>No automations yet. Ask in Home to set up something that repeats.</p>
+          <p className="py-4 pl-16 text-[13px] text-[#687076]" data-calendar-empty>No active automations. Ask in Home to set up something that repeats.</p>
         ) : null}
       </div>
       {selectedItem ? <AutomationPanel key={selectedItem.automation.id} item={selectedItem} block={selectedBlock} zone={zone} onToast={setToast} fullHistory={historyIntent === selectedItem.automation.id} onClose={() => setSelection(null)} />

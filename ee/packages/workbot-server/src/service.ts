@@ -391,8 +391,8 @@ export async function deleteWorkbotMessage(actor: WorkbotActor, id: string, deps
 }
 
 /**
- * Edits one of the person's messages: it and everything after it make way for the edited message, which Workbot
- * answers fresh, as if it had been sent that way.
+ * Appends an honest correction. The runner has no atomic replace operation: deleting first could lose history
+ * if sending failed. Keep every earlier turn and use the replacement's id for safe retries.
  */
 export async function editWorkbotMessage(
   actor: WorkbotActor,
@@ -400,13 +400,12 @@ export async function editWorkbotMessage(
   deps: WorkbotDeps,
 ) {
   if (!MESSAGE_ID.test(input.id) || !MESSAGE_ID.test(input.newId)) return { ok: false as const, code: "unknown_message" as const }
-  const removed = await clientOf(deps).deleteTurns(sessionOf(actor, input.chat ?? null), `${WORKBOT_MESSAGE_PREFIX}${input.id}`, {
-    andAfter: true,
-  })
-  if (!removed.ok && removed.status === 409) return { ok: false as const, code: "busy" as const }
-  if (!removed.ok && removed.status === 404) return { ok: false as const, code: "unknown_message" as const }
-  if (!removed.ok) throw new WorkbotUnavailableError("workbot_runner_unavailable")
-  return sendWorkbotMessage(actor, { id: input.newId, text: input.text, timeZone: input.timeZone, attachments: input.attachments, chat: input.chat ?? null, context: input.context }, deps)
+  const messageId = `${WORKBOT_MESSAGE_PREFIX}${input.id}`
+  const read = await clientOf(deps).readSession(sessionOf(actor, input.chat ?? null), { messageId, limit: 1, outputs: "none" })
+  if (!read.ok && read.status === 404) return { ok: false as const, code: "unknown_message" as const }
+  if (!read.ok) throw new WorkbotUnavailableError("workbot_runner_unavailable")
+  if (!read.value.turns.some(turn => turn.messageId === messageId)) return { ok: false as const, code: "unknown_message" as const }
+  return sendWorkbotMessage(actor, { id: input.newId, text: `Correction to an earlier message:\n${input.text}`, timeZone: input.timeZone, attachments: input.attachments, chat: input.chat ?? null, context: input.context }, deps)
 }
 
 /** A background task's page id: the id of the message that started it, then `.t<number>`. */

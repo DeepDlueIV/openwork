@@ -68,12 +68,10 @@ export function SentContext({ context }: { context?: WorkbotViewContext }) {
 }
 
 /** The composer stays in the workspace; the conversation is disclosed through an anchored Base UI popover. */
-export function WorkspaceAssistant({ name, context, includeContext, onIncludeContext, composer, conversation, onDocument, unavailable, sentCount, active }: { active: boolean; sentCount: number; name: string; context: WorkbotViewContext | null; includeContext: boolean; onIncludeContext(value: boolean): void; composer: ReactNode; conversation: ReactNode; onDocument(fileId: string): void; unavailable: boolean }) {
+export function WorkspaceAssistant({ name, context, includeContext, onIncludeContext, composer, conversation, onDocument, unavailable, active }: { active: boolean; name: string; context: WorkbotViewContext | null; includeContext: boolean; onIncludeContext(value: boolean): void; composer: ReactNode; conversation: ReactNode; onDocument(fileId: string): void; unavailable: boolean }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
   useEffect(() => { if (!active) setOpen(false); }, [active]);
-  const lastSentCount = useRef(sentCount);
-  useEffect(() => { if (active && sentCount > lastSentCount.current) setOpen(true); lastSentCount.current = sentCount; }, [active, sentCount]);
   return <div ref={anchor} className="fixed bottom-3 right-3 z-30 w-[min(26rem,calc(100vw-1.5rem))] sm:bottom-5 sm:right-5" data-workbot-workspace-assistant>
     <Popover.Root open={open} onOpenChange={setOpen}>
       <div className="mb-1 flex min-w-0 items-center justify-end gap-1.5">

@@ -1,7 +1,7 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { workbotViewContextSchema, type WorkbotViewContext } from "@openwork/types/workbot-context";
 import { errorMessage as getErrorMessage, hostFetch, workbotHost } from "./host";
@@ -106,22 +106,52 @@ export class WorkbotReadError extends Error {
 
 export const workbotQueryKey = ["workbot", "thread"] as const;
 
+type ThreadAccess = { denied: boolean; epoch: number };
+type ThreadRead = { thread: WorkbotThread; accessEpoch: number };
+
+/** A denial survives failed reads, paging and remounts. Only a new authorized thread read can lift it. */
+export function useWorkbotThreadAccess(chat: string | null) {
+  const host = workbotHost();
+  const organization = host.identity?.organizationId ?? "";
+  const principal = host.identity?.principalId ?? "";
+  const queryKey = useMemo(() => ["workbot", "thread-access", organization, principal, chat ?? "main"], [organization, principal, chat]);
+  const query = useQuery({
+    queryKey,
+    initialData: (): ThreadAccess => ({ denied: false, epoch: 0 }),
+    enabled: false,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
+  });
+  return { ...query, queryKey };
+}
+
 /**
  * The conversation's newest `turns` turns. While the live stream is connected it is re-read only when
  * the stream says something changed; without it, it polls quickly while an answer is in progress.
  */
 export function useWorkbotThread(input: { turns: number; awaiting: boolean; live: boolean }) {
   const chat = useWorkbotChat();
-  return useQuery({
-    queryKey: [...workbotQueryKey, chat ?? "main", input.turns],
-    queryFn: async () => {
+  const queryClient = useQueryClient();
+  const access = useWorkbotThreadAccess(chat);
+  const query = useQuery({
+    queryKey: [...workbotQueryKey, ...access.queryKey.slice(2), input.turns],
+    queryFn: async (): Promise<ThreadRead> => {
+      const accessEpoch = queryClient.getQueryData<ThreadAccess>(access.queryKey)?.epoch ?? 0;
       const { response, payload } = await requestJson(inChat(`/v1/workbot?turns=${input.turns}`, chat), { method: "GET" }, 30_000);
+      if (response.status === 401 || response.status === 403) {
+        queryClient.setQueryData<ThreadAccess>(access.queryKey, current => ({ denied: true, epoch: (current?.epoch ?? 0) + 1 }));
+      }
       if (!response.ok) throw new WorkbotReadError(getErrorMessage(payload, "Couldn't load the conversation."), response.status);
-      return threadSchema.parse(payload);
+      const thread = threadSchema.parse(payload);
+      // The shipped route reports a runner outage in a successful HTTP envelope, not necessarily a 503.
+      // It is not a new conversation snapshot: retain the last verified words and their verification time.
+      if (!thread.available && thread.reason === "workbot_runner_unavailable") throw new WorkbotReadError("Couldn't verify the conversation.", 503);
+      return { thread, accessEpoch };
     },
     placeholderData: keepPreviousData,
     refetchInterval: (query) => {
-      const data = query.state.data;
+      if (access.data.denied) return false;
+      const data = query.state.data?.thread;
       const busy = input.awaiting || (data?.available === true && data.status === "busy");
       if (input.live) return busy ? 10_000 : 60_000;
       return busy ? 1_500 : 20_000;
@@ -129,6 +159,13 @@ export function useWorkbotThread(input: { turns: number; awaiting: boolean; live
     refetchIntervalInBackground: false,
     retry: (attempt, error) => !(error instanceof WorkbotReadError && (error.status === 401 || error.status === 403)) && attempt < 2,
   });
+  useEffect(() => {
+    const read = query.data;
+    if (!access.data.denied || !query.isSuccess || query.isPlaceholderData || !read?.thread.available || read.accessEpoch !== access.data.epoch) return;
+    // The authorized snapshot is already committed to the cache before any concealed content can return.
+    queryClient.setQueryData<ThreadAccess>(access.queryKey, current => current?.epoch === read.accessEpoch ? { ...current, denied: false } : current);
+  }, [access.data, access.queryKey, query.isSuccess, query.isPlaceholderData, query.data, queryClient]);
+  return { ...query, data: query.data?.thread, accessDenied: access.data.denied };
 }
 
 /** Reply text streamed for one turn's model call `step`, before that call is stored. */
@@ -320,14 +357,17 @@ export function useRetryWorkbotMessage() {
   });
 }
 
+const confirmedStopSchema = z.object({ stopped: z.literal(true) });
+
 export function useStopWorkbot() {
   const queryClient = useQueryClient();
   const chat = useWorkbotChat();
   return useMutation({
     mutationFn: async () => {
       const { response, payload } = await requestJson(inChat("/v1/workbot/stop", chat), { method: "POST" }, 15_000);
-      if (!response.ok) throw new Error(getErrorMessage(payload, "Couldn't stop."));
+      if (!response.ok || !confirmedStopSchema.safeParse(payload).success) throw new Error(getErrorMessage(payload, "Couldn't confirm that Workbot stopped."));
     },
+    retry: false,
     onSettled: async () => queryClient.invalidateQueries({ queryKey: workbotQueryKey }),
   });
 }
@@ -465,8 +505,9 @@ export function useStopWorkbotTask() {
   return useMutation({
     mutationFn: async (taskId: string) => {
       const { response, payload } = await requestJson(inChat(`/v1/workbot/tasks/${encodeURIComponent(taskId)}/stop`, chat), { method: "POST" }, 15_000);
-      if (!response.ok) throw new Error(getErrorMessage(payload, "Couldn't stop it."));
+      if (!response.ok || !confirmedStopSchema.safeParse(payload).success) throw new Error(getErrorMessage(payload, "Couldn't confirm this task stopped."));
     },
+    retry: false,
     onSettled: async () => queryClient.invalidateQueries({ queryKey: workbotQueryKey }),
   });
 }

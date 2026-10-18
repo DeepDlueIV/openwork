@@ -15,8 +15,8 @@ import {
   useWorkbotChats,
   useWorkbotLive,
   useWorkbotThread,
+  useWorkbotThreadAccess,
   WorkbotChatProvider,
-  WorkbotReadError,
   workbotFilesKey,
   type LiveText,
   type WorkbotAttachment,
@@ -77,6 +77,7 @@ export function WorkbotScreen({ host }: { host: WorkbotHost }) {
   const [chat, openChat] = useChatLocation(sideChats, workspaceDrafts ? () => false : undefined);
   const [chatsOpen, setChatsOpen] = useState(false);
   const chats = useWorkbotChats(sideChats);
+  const access = useWorkbotThreadAccess(chat);
   const refetchChats = chats.refetch;
   // The list says when each chat was last used: it is read again each time it opens.
   useEffect(() => {
@@ -89,7 +90,7 @@ export function WorkbotScreen({ host }: { host: WorkbotHost }) {
     <WorkbotChatProvider value={chat}>
       {/* Each chat starts fresh: its own unsent messages, files to send and open file. */}
       <ChatScreen key={`${host.identity?.organizationId ?? ""}:${host.identity?.principalId ?? ""}:${chat ?? "main"}`} host={host} navigation={navigation} onDraftsChange={setWorkspaceDrafts} />
-      {sideChats ? (
+      {sideChats && !access.data.denied ? (
         <ChatsDrawer
           open={chatsOpen}
           onClose={() => setChatsOpen(false)}
@@ -153,11 +154,12 @@ function ChatScreen({ host, navigation, onDraftsChange }: { host: WorkbotHost; n
   // Messages replaced by an edit leave the page at once; the conversation catches up on its next read.
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const uploads = useUploads();
-  const accessDenied = thread.error instanceof WorkbotReadError && (thread.error.status === 401 || thread.error.status === 403);
+  const accessDenied = thread.accessDenied;
   const data = !accessDenied && thread.data?.available ? thread.data : null;
   // The open file at its newest version: when Workbot revises it, the preview follows (same id, newer updatedAt).
   const previewFile = useMemo(() => {
-    if (!preview || !data) return preview;
+    if (!data) return null;
+    if (!preview) return null;
     let newest = preview;
     for (const turn of data.turns) {
       for (const file of [...turn.outputs, ...turn.attachments]) {
@@ -166,7 +168,7 @@ function ChatScreen({ host, navigation, onDraftsChange }: { host: WorkbotHost; n
     }
     return newest;
   }, [preview, data]);
-  const activityFresh = !thread.isError && !stream.reconnecting;
+  const activityFresh = !thread.isError && thread.failureCount === 0 && !stream.reconnecting;
   const recovery = <>
     {data && !activityFresh ? <ConnectionStatus verifiedAt={thread.dataUpdatedAt} onRefresh={() => void thread.refetch()} /> : null}
     {stop.isError && (data?.status === "busy" || pending.some(entry => !entry.failed)) ? <ErrorLine action={{ label: "Try stopping again", onClick: () => stop.mutate() }}>Couldn't confirm that Workbot stopped. It may still be working.</ErrorLine> : null}
@@ -276,25 +278,25 @@ function ChatScreen({ host, navigation, onDraftsChange }: { host: WorkbotHost; n
       }}
       onSuggestion={text => submit(text)} starting={starting} intro={null} fresh={activityFresh}
     /> : null;
-    const composer = <>{recovery}<Composer name={name} busy={busy} stopping={stop.isPending} filesEnabled={filesEnabled}
+    const composer = <>{data ? recovery : null}<Composer concealed={!data} name={name} busy={busy} stopping={stop.isPending} filesEnabled={filesEnabled}
       uploads={uploads.uploads} onFiles={addFiles} onRemoveUpload={uploads.remove} onRetryUpload={uploads.retry}
       onSend={text => submit(text)} onStop={() => stop.mutate()} autoFocus={false} disabled={!data} /></>;
     const firstName = user?.name?.trim().split(/\s+/)[0] ?? null;
     const home = thread.isPending ? <div className="flex flex-1 items-center justify-center" aria-busy="true" aria-label="Loading conversation"><span className="h-5 w-40 rounded bg-[var(--wb-chip)]" /></div>
-      : !data ? <div className="flex flex-1 flex-col items-center justify-center gap-3 px-5 text-center text-[13px] text-[var(--wb-muted)]" role="status"><p>Couldn't load your conversation.</p><button type="button" className="rounded-lg px-3 py-2 underline focus-visible:shadow-[var(--wb-focus)]" onClick={() => void thread.refetch()}>Try again</button></div>
+      : !data ? <div className="flex flex-1 flex-col items-center justify-center gap-3 px-5 text-center text-[13px] text-[var(--wb-muted)]" role="status"><p>{accessDenied ? "Your access to this conversation couldn't be verified." : "Couldn't load your conversation."}</p><button type="button" className="rounded-lg px-3 py-2 underline focus-visible:shadow-[var(--wb-focus)]" onClick={() => void thread.refetch()}>Check again</button></div>
       : welcome === "showing" ? <Welcome name={name} firstName={firstName} onBegin={() => { if (start.isIdle) { setGreetingAwaited(true); start.mutate(); } }} onDone={() => setWelcome("done")} />
       : empty && side ? <SideChatStart name={name} organizationName={data.organizationName}>{composer}</SideChatStart>
       : empty && !starting ? <FirstOpen name={name} organizationName={data.organizationName} firstName={firstName} onSuggestion={text => submit(text)} error={start.isError ? <ErrorLine action={{ label: "Try again", onClick: () => { setGreetingAwaited(true); start.mutate(); } }}>{HELLO_FAILED}</ErrorLine> : null}>{composer}</FirstOpen>
       : <>{conversation}<div className="flex shrink-0 justify-center px-3 pb-4 pt-3"><div className={COLUMN}>{composer}</div></div></>;
     return <OpenFileContext.Provider value={setPreview}>
-      <WorkspaceNavigationContext.Provider value={host.workspaceAssistant && host.documents ? navigateDocument : null}>
+      <WorkspaceNavigationContext.Provider value={data && host.workspaceAssistant && host.documents ? navigateDocument : null}>
         <div className="workbot flex h-dvh flex-col bg-[var(--wb-bg)] antialiased" data-workbot-workspace>
           <WorkbotHeader name={name} organizationName={data?.organizationName ?? ""} userName={user?.name ?? null}
             files={filesEnabled ? <FilesButton open={filesOpen} onOpen={() => setFilesOpen(true)} /> : null}
-            chats={host.workspaceAssistant ? <WorkspaceMenu page={tab} onPage={setTab} onDocument={navigateDocument} drafts={documentsDirty} onChats={navigation?.openChats} /> : navigation ? <ChatsButton onOpen={navigation.openChats} /> : null}
+            chats={host.workspaceAssistant ? <WorkspaceMenu page={tab} onPage={setTab} onDocument={navigateDocument} drafts={documentsDirty} onChats={data ? navigation?.openChats : undefined} /> : navigation && data ? <ChatsButton onOpen={navigation.openChats} /> : null}
             nav={host.workspaceAssistant ? null : <WorkbotNav tab={tab} onTab={setTab} />}
             remove={navigation?.chat && data && data.turns.length > 0 ? <RemoveChatButton disabled={documentsDirty} chatId={navigation.chat} title={navigation.title} onRemoved={() => navigation.openChat(null)} /> : null}
-            title={navigation?.chat ? <SideChatTitle title={navigation.title} disabled={documentsDirty} onBack={() => navigation.openChat(null)} /> : undefined}
+            title={navigation?.chat && data ? <SideChatTitle title={navigation.title} disabled={documentsDirty} onBack={() => navigation.openChat(null)} /> : undefined}
           />
           <div className="flex min-h-0 min-w-0 flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -308,8 +310,8 @@ function ChatScreen({ host, navigation, onDraftsChange }: { host: WorkbotHost; n
           </div>
           {previewFile && <PreviewPanel file={previewFile} onClose={() => setPreview(null)} />}
           </div>
-          <div hidden={!host.workspaceAssistant || tab === "home"}><WorkspaceAssistant name={name} context={currentContext} includeContext={includeContext} onIncludeContext={setIncludeContext}
-            composer={composer} conversation={conversation} onDocument={navigateDocument} unavailable={!data} sentCount={pending.length} active={host.workspaceAssistant === true && tab !== "home"} /></div>
+          <div hidden={!host.workspaceAssistant || tab === "home"}><WorkspaceAssistant name={name} context={data ? currentContext : null} includeContext={includeContext} onIncludeContext={setIncludeContext}
+            composer={composer} conversation={conversation} onDocument={data ? navigateDocument : () => undefined} unavailable={!data} sentCount={data ? pending.length : 0} active={data !== null && host.workspaceAssistant === true && tab !== "home"} /></div>
           {filesEnabled && <FilesPanel open={filesOpen} onClose={() => setFilesOpen(false)} assistantName={name} onOpenFile={file => { setFilesOpen(false); setPreview(file); }} />}
         </div>
       </WorkspaceNavigationContext.Provider>
@@ -1562,6 +1564,8 @@ function OutputFiles({ files }: { files: WorkbotAttachment[] }) {
 
 function Composer(props: {
   name: string;
+  /** Keep unsent state mounted without exposing its DOM while conversation access is denied. */
+  concealed?: boolean;
   autoFocus?: boolean;
   disabled?: boolean;
   busy: boolean;
@@ -1584,7 +1588,7 @@ function Composer(props: {
     if (!node) return;
     node.style.height = "auto";
     node.style.height = `${Math.min(node.scrollHeight, 200)}px`;
-  }, [text]);
+  }, [text, props.concealed]);
 
   const sendNow = () => {
     if (!canSend || props.disabled) return;
@@ -1608,6 +1612,7 @@ function Composer(props: {
   // While an answer is in progress, a typed message is still sent (it is answered next); an empty box offers Stop.
   const showStop = props.busy && !canSend;
   const multiline = hasFiles || text.includes("\n") || text.length > 70;
+  if (props.concealed) return null;
 
   return (
     <div

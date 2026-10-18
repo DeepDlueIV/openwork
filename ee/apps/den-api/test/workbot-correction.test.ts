@@ -55,5 +55,6 @@ test("a refused correction keeps the original and all later turns; retry uses th
 test("an unknown original never sends or deletes anything", async () => {
   const runner = fixture()
   assert.deepEqual(await editWorkbotMessage(actor, { id: "unknown01", newId: "corrected1", text: "Use Friday" }, { client: runner.client, canSchedule: async () => false }), { ok: false, code: "unknown_message" })
-  assert.equal(runner.calls.some(call => call.method !== "GET"), false)
+  assert.equal(runner.calls.some(call => call.method === "POST"), false)
+  assert.deepEqual(runner.turns, ["wb_original1", "wb_followup1"])
 })

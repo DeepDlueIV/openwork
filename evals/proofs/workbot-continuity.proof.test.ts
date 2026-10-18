@@ -71,8 +71,8 @@ test("a member retries a refused correction without losing earlier messages or t
   });
   await step("after: Send again accepts the same correction once and preserves the original replies", async () => {
     await user.click({ role: "button", label: "Send again" });
-    await user.notSee({ role: "button", label: "Send again" });
     await user.see({ text: "Reply 231" });
+    await user.notSee({ role: "button", label: "Send again" });
     await user.see({ text: "Use Monday" });
     await user.see({ text: "Earlier question 2" });
     const attempts = await probe.eventually(() => world.attempts(), { within: 5000, label: "the same correction is retried", until: attempts => attempts.length === 2 });
@@ -104,8 +104,8 @@ test("a member retries a message after its file uploaded without uploading or se
   });
   await step("after: Send again reuses the message and saved file identities", async () => {
     await user.click({ role: "button", label: "Send again" });
-    await user.notSee({ role: "button", label: "Send again" });
     await user.see({ text: "Reply 231" });
+    await user.notSee({ role: "button", label: "Send again" });
     await user.see({ text: "Read my notes" });
     const attempts = await probe.eventually(() => world.attempts(), { within: 5000, label: "one retry is accepted", until: attempts => attempts.length === 2 });
     expect(attempts[1]?.id).toBe(attempts[0]?.id);
@@ -130,7 +130,9 @@ test("a member reaches an honest history limit instead of an inert Show earlier 
     for (const window of [60, 90, 120, 150, 180, 200]) {
       await user.click({ role: "button", label: "Show earlier messages" });
       await probe.eventually(() => world.windows(), { within: 5000, label: `history grows to ${window} messages`, until: windows => windows.includes(window) });
-      await user.notSee({ role: "button", label: "Loading earlier messages" });
+      await user.see(window === 200
+        ? { text: "Showing the latest 200 messages. Earlier messages aren't available here." }
+        : { role: "button", label: "Show earlier messages" });
     }
     evidence.recordAssertionEvidence("Each request grows the window until the supported limit", "30, 60, 90, 120, 150, 180, 200 requested", world.windows().includes(200));
     await user.screenshot();

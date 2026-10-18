@@ -37,6 +37,17 @@ choiceTest("a generic install link asks its recipient to sign in and choose thei
     evidence.recordAssertionEvidence("the chosen membership supplies the approved download", `selected organization=${world.organizationB.name}; obsolete token retained=${url.includes("token=")}`, selected && !url.includes("token="));
     await user.screenshot();
   });
+  await step("sharing the install link never promises a connected workspace or grants access", async () => {
+    await user.navigate(new URL("/dashboard", world.den.ref.webUrl).toString());
+    await user.see({ testId: "den-download-openwork" }, { timeoutMs: 60_000 });
+    await user.click({ testId: "den-download-openwork" });
+    await user.see({ text: /Recipients sign in and choose an organization they can access/ });
+    await user.notSee({ text: /already connected/ });
+    const generic = await probe.has("This link does not grant access.");
+    evidence.recordAssertionEvidence("the shared link describes its real scope", `sign-in and authorized organization choice disclosed; no-access-grant notice=${generic}`, generic);
+    expect(generic).toBe(true);
+    await user.screenshot();
+  });
 });
 
 test("a signed-in member can retry an unavailable installer without a timed success claim or hidden download step", async ({ world, user, probe, step, evidence }) => {
@@ -45,7 +56,7 @@ test("a signed-in member can retry an unavailable installer without a timed succ
     await user.see({ role: "heading", label: "Set up OpenWork Enterprise" }, { timeoutMs: 90_000 });
     const url = await probe.url();
     expect(url).not.toContain("token=");
-    evidence.recordAssertionEvidence("the install page has no reusable access token", `organization=Install recovery; obsolete token removed=${!url.includes("token=")}`, !url.includes("token="));
+    evidence.recordAssertionEvidence("the install page has no reusable access token", `authenticated organization install shown; obsolete token removed=${!url.includes("token=")}`, !url.includes("token="));
     await user.screenshot();
   });
   await step("an unavailable download stays requested with a visible retry instead of advancing", async () => {

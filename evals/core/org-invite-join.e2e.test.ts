@@ -85,7 +85,12 @@ test("OPE-82: cloud invitations retain identity and organization through authent
     const ownerActor = user.on(ownerSurface);
     await ownerActor.see({ text: person.email }, { timeoutMs: 90_000 });
     await ownerActor.see({ text: "Pending" });
-    await user.navigate(invite.link);
+    // A real desktop-requested invitation stops at membership confirmation;
+    // no native handoff is opened in this headless proof.
+    const desktopInvite = new URL(invite.link);
+    desktopInvite.searchParams.set("desktopAuth", "1");
+    desktopInvite.searchParams.set("desktopScheme", "openwork");
+    await user.navigate(desktopInvite.toString());
     await user.see({ text: person.email }, { timeoutMs: 90_000 });
     await user.type({ role: "textbox", label: /^name$/i }, person.name);
     await user.type({ role: "textbox", label: /^password$/i }, person.password);

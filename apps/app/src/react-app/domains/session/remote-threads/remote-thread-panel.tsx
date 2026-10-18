@@ -73,11 +73,13 @@ function RemoteThreadConversation({ entry, owner }: { entry: RemoteThreadEntry; 
     }
   }, [])
 
+  const clockIntervalMs = view.state === "running" && !view.lastChecked && !stopPending ? 1_000 : view.active || view.lastChecked ? 30_000 : null
   useEffect(() => {
-    if (view.state !== "running") return
-    const interval = window.setInterval(() => setNow(Date.now()), 1_000)
+    if (clockIntervalMs === null) return
+    setNow(Date.now())
+    const interval = window.setInterval(() => setNow(Date.now()), clockIntervalMs)
     return () => window.clearInterval(interval)
-  }, [view.state])
+  }, [clockIntervalMs])
 
   const read = useCallback(async function read(): Promise<void> {
     const state = reads.current
@@ -224,7 +226,7 @@ function RemoteThreadConversation({ entry, owner }: { entry: RemoteThreadEntry; 
             </div>
           ) : null}
           <span
-            className={cn("text-xs", view.waitingFor ? "font-medium text-amber-11" : "text-muted-foreground/70", view.state === "running" && !entry.stale && !stopPending && "ow-text-shimmer")}
+            className={cn("text-xs", view.waitingFor ? "font-medium text-amber-11" : "text-muted-foreground/70", view.state === "running" && !view.lastChecked && !stopPending && "ow-text-shimmer")}
             role="status"
             data-remote-thread-status=""
           >

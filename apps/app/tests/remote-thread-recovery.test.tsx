@@ -214,6 +214,17 @@ test("a guard refusing Stop for a different turn is not acknowledged as accepted
   expect(remoteThreadView(start, entry(), Date.now()).stopped).toBe(false)
 })
 
+test("a paused or bounded follower shows old live state as last known without stopping the task", () => {
+  useRemoteThreadStore.getState().update(start.key, (thread) => ({ ...thread, activeSince: 1_000, checkedAt: 11_000, stale: false }))
+  const old = remoteThreadView(start, entry(), 200_000)
+  expect(old.lastChecked).toContain("Couldn't verify")
+  expect(old.status).toBe("Working 10s")
+  expect(old.active).toBe(true)
+  expect(old.stopped).toBe(false)
+  useRemoteThreadStore.getState().update(start.key, (thread) => ({ ...thread, checkedAt: 200_000 }))
+  expect(remoteThreadView(start, entry(), 200_000).lastChecked).toBeNull()
+})
+
 test("a definitive sign-in rejection before a receipt is a failed action, not a permanently disabled Stop", async () => {
   response = async () => { throw new DenApiError(401, "unauthorized", "Sign in to check this task.") }
   await stopRemoteThread(entry(), "msg_original")

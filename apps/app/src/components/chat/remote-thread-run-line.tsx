@@ -43,11 +43,13 @@ export function RemoteThreadRunLine({ start, part, className }: { start: RemoteT
   const [now, setNow] = useState(() => Date.now())
   const view = remoteThreadView(start, entry, now)
   const ticking = view.state === "running" && !view.lastChecked && !stopPending
+  const clockIntervalMs = ticking ? 1_000 : view.active || view.lastChecked ? 30_000 : null
   useEffect(() => {
-    if (!ticking) return
-    const interval = window.setInterval(() => setNow(Date.now()), 1_000)
+    if (clockIntervalMs === null) return
+    setNow(Date.now())
+    const interval = window.setInterval(() => setNow(Date.now()), clockIntervalMs)
     return () => window.clearInterval(interval)
-  }, [ticking])
+  }, [clockIntervalMs])
 
   return (
     <div

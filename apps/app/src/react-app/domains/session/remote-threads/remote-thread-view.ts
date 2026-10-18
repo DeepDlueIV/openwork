@@ -24,6 +24,8 @@ export type RemoteThreadView = {
 }
 
 const STOPPED = /abort|interrupt|cancel/i
+/** A bounded/paused follower must not leave an indefinitely live-looking task. */
+const STATUS_FRESH_MS = 2 * 60_000
 
 export function remoteThreadView(start: RemoteThreadStart, entry: RemoteThreadEntry | null, now: number): RemoteThreadView {
   const status = entry?.status ?? null
@@ -36,7 +38,8 @@ export function remoteThreadView(start: RemoteThreadStart, entry: RemoteThreadEn
   const stopped = state === "error" && STOPPED.test(`${error?.code ?? ""} ${error?.message ?? ""}`)
   const waitingFor = state === "waiting" ? status?.waitingFor ?? "question" : null
   const since = entry?.activeSince ?? null
-  const elapsedAt = entry?.stale ? entry.checkedAt ?? now : now
+  const stale = Boolean(entry && (entry.stale || (state !== "idle" && state !== "error" && entry.checkedAt !== null && now - entry.checkedAt > STATUS_FRESH_MS)))
+  const elapsedAt = stale ? entry?.checkedAt ?? now : now
   const elapsed = since === null ? "" : formatElapsedSeconds(Math.max(0, Math.floor((elapsedAt - since) / 1000)))
   const line = state === "starting" ? t("session.remote_task_starting", { computer })
     : waitingFor === "permission" ? t("session.remote_task_permission", { computer })
@@ -55,7 +58,7 @@ export function remoteThreadView(start: RemoteThreadStart, entry: RemoteThreadEn
     waitingFor,
     stopped,
     status: stopLine ?? line,
-    lastChecked: entry?.stale ? entry.checkedAt ? `Couldn't verify · ${t("session.remote_task_last_checked", { time: formatRelativeTime(entry.checkedAt) })}` : "Couldn't verify this task" : null,
+    lastChecked: stale ? entry?.checkedAt ? `Couldn't verify · ${t("session.remote_task_last_checked", { time: formatRelativeTime(entry.checkedAt) })}` : "Couldn't verify this task" : null,
     active: state !== "idle" && state !== "error",
     started: Boolean(status?.sessionId ?? start.sessionId),
   }

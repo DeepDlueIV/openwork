@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { startMockMcp } from "@openwork/labs";
-import { streamFeedbackDistribution, summarizeStreamFeedback, type StreamFeedbackSample } from "../worlds/stream-feedback-summary.ts";
+import { inspectStreamFeedback, streamFeedbackDistribution, streamFeedbackStayedCollapsed, type StreamFeedbackSample } from "../worlds/stream-feedback-summary.ts";
 
 const sample = (kind: "text" | "reasoning", delay: number): StreamFeedbackSample => ({
   kind, token: kind, receivedAt: 10, domAt: 10 + delay, frameAt: 11 + delay, terminalAtFrame: false,
@@ -9,19 +9,51 @@ const sample = (kind: "text" | "reasoning", delay: number): StreamFeedbackSample
 describe("stream feedback evidence", () => {
   it("uses nearest rank and retains every sample including tail outliers", () => {
     expect(streamFeedbackDistribution([100, ...Array.from({ length: 19 }, (_, i) => i)])).toEqual({ n: 20, p50Ms: 9, p95Ms: 18, maxMs: 100 });
-    const summary = summarizeStreamFeedback([sample("text", 3), sample("reasoning", 8)]);
+    const summary = inspectStreamFeedback([sample("text", 3), sample("reasoning", 8)], 30).map(({ kind, dom, frame }) => ({ kind, dom, frame }));
     expect(summary).toEqual([
       { kind: "reasoning", dom: { n: 1, p50Ms: 8, p95Ms: 8, maxMs: 8 }, frame: { n: 1, p50Ms: 9, p95Ms: 9, maxMs: 9 } },
       { kind: "text", dom: { n: 1, p50Ms: 3, p95Ms: 3, maxMs: 3 }, frame: { n: 1, p50Ms: 4, p95Ms: 4, maxMs: 4 } },
     ]);
   });
 
-  it("rejects missing, post-completion, empty or negative observations instead of dropping them", () => {
+  it("retains missing, invalid and post-completion observations instead of dropping them", () => {
     for (const values of [[], [-1], [NaN], [Infinity]]) expect(() => streamFeedbackDistribution(values)).toThrow();
-    expect(() => summarizeStreamFeedback([sample("text", 3)])).toThrow();
-    expect(() => summarizeStreamFeedback([{ ...sample("reasoning", 8), frameAt: null }, sample("text", 3)])).toThrow();
-    expect(() => summarizeStreamFeedback([{ ...sample("reasoning", 8), terminalAtFrame: true }, sample("text", 3)])).toThrow();
-    expect(() => summarizeStreamFeedback([{ ...sample("reasoning", 8), frameAt: 11 }, sample("text", 3)])).toThrow();
+    expect(inspectStreamFeedback([], 30).every(report => report.received === 0 && report.frame === null)).toBe(true);
+    const report = inspectStreamFeedback([
+      { ...sample("reasoning", 8), token: "pending", frameAt: null },
+      { ...sample("reasoning", 8), token: "late", terminalAtFrame: true },
+      { ...sample("reasoning", 8), token: "invalid", frameAt: 11 },
+    ], 30)[0];
+    expect(report.received).toBe(3);
+    expect(report.censored.map(item => item.token)).toEqual(["pending"]);
+    expect(report.postCompletion).toEqual(["late"]);
+    expect(report.invalid).toEqual(["invalid"]);
+    expect(report.distributionScope).toContain("incomplete");
+  });
+
+  it("retains slow opening arrivals as pending/censored rather than improving the observed distribution", () => {
+    const pending = { ...sample("reasoning", 8), token: "during-opening", receivedAt: 100, domAt: null, frameAt: null, terminalAtFrame: null };
+    const report = inspectStreamFeedback([pending, sample("reasoning", 8), sample("text", 3)], 2100)[0];
+    expect(report.received).toBe(2);
+    expect(report.censored).toEqual([{ token: "during-opening", missingDom: true, missingFrame: true, atLeastMs: 2000 }]);
+    expect(report.distributionScope).toContain("incomplete");
+    expect(report.frame?.n).toBe(1);
+    const visible = inspectStreamFeedback([{ ...pending, domAt: 2110, frameAt: 2120, terminalAtFrame: false }], 2130)[0];
+    expect(visible.frame?.p95Ms).toBe(2020);
+    expect(visible.censored).toHaveLength(0);
+  });
+
+  it("rejects an automatic opening even if the final pre-click snapshot is collapsed", () => {
+    const closed = { at: 1, source: "frame", expanded: false, bodyVisible: false, receivedReasoning: 1 };
+    // Contextual typing keeps this fixture on the same trace protocol as the world.
+    expect(streamFeedbackStayedCollapsed([{ ...closed, source: "frame" }], false)).toBe(true);
+    expect(streamFeedbackStayedCollapsed([
+      { ...closed, source: "frame" }, { at: 2, source: "attribute-history", expanded: true, bodyVisible: false, receivedReasoning: 2 },
+      { ...closed, at: 3, source: "intent" },
+    ], false)).toBe(false);
+    expect(streamFeedbackStayedCollapsed([{ ...closed, source: "frame", bodyVisible: true }], false)).toBe(false);
+    expect(streamFeedbackStayedCollapsed([{ ...closed, source: "frame" }], true)).toBe(false);
+    expect(streamFeedbackStayedCollapsed([{ ...closed, source: "frame", receivedReasoning: 0 }], false)).toBe(false);
   });
 
   it("serves exact reasoning SSE deltas before the held answer through the shared HTTP provider", async () => {

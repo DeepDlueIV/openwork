@@ -25,7 +25,7 @@ export async function defaultModelAvailability(seed: Seed) {
   const inventory = await seed.api(den.admin, "/v1/org/default-model/options");
   if (!inventory.response.ok || !isRecord(inventory.body)) throw new Error("Could not read the real default-model options");
   const options = inventory.body;
-  const web = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/settings", headless: true, viewport: { width: 1440, height: 1000 } });
+  const web = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/org-settings", headless: true, viewport: { width: 1440, height: 1000 } });
   let scenario: Scenario = "partial";
   const reads: Scenario[] = [];
   const fixture = setup.use(await modelRemovalHttpFixture({ client: web.client, webUrl: den.ref.webUrl }, ["*/v1/org/default-model/options*"], url => {
@@ -36,7 +36,7 @@ export async function defaultModelAvailability(seed: Seed) {
     return { options: [], unavailableSources: scenario === "partial" ? ["provider"] : [] };
   }));
   const resources = setup.move();
-  return { web, den, settingsUrl: new URL("/dashboard/settings", den.ref.webUrl).toString(),
+  return { web, den, settingsUrl: new URL("/dashboard/org-settings", den.ref.webUrl).toString(),
     scenario(next: Scenario) { fixture.check(); scenario = next; },
     reads() { fixture.check(); return [...reads]; },
     [Symbol.asyncDispose]: () => resources.disposeAsync(),

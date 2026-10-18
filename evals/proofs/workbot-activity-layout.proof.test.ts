@@ -20,7 +20,7 @@ test("a member sees real command milestones without a jumping or artificially he
     await probe.eventually(async () => {
       const stage = world.progressStage();
       const updatedAt = world.progressUpdatedAt();
-      const cards = await probe.dom("[data-workbot-activity]");
+      const cards = await probe.dom('div[class~="max-w-[480px]"][class~="rounded-[14px]"]');
       const composer = await probe.dom("[data-workbot-composer]");
       const card = cards.elements.at(-1);
       const input = composer.elements[0];
@@ -45,7 +45,7 @@ test("a member sees real command milestones without a jumping or artificially he
   await step("the failed final command ends honestly and the answer appears without simulated typing", async () => {
     await user.see({ text: "I couldn't verify every section." });
     await user.see({ text: "Computer work couldn't finish" });
-    expect((await probe.dom("[data-workbot-activity]")).elements.at(-1)?.text).toContain("Computer work couldn't finish");
+    expect((await probe.dom('div[class~="max-w-[480px]"][class~="rounded-[14px]"]')).elements.at(-1)?.text).toContain("Computer work couldn't finish");
     expect((await probe.dom(".workbot-worker, .workbot-typing-dot")).elements).toHaveLength(0);
     evidence.recordAssertionEvidence("Failure is not converted to a success badge", "The full final answer is visible; computer work couldn't finish", (await probe.text()).includes("I couldn't verify every section."));
     await user.screenshot();

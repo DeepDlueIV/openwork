@@ -45,9 +45,11 @@ export function useAutomationsDenContext(): AutomationsDenContext {
     () => token ? createDenClient({ baseUrl: settings.baseUrl, token }) : null,
     [settings.baseUrl, token],
   )
-  const principalId = denAuth.verifiedIdentity?.principalId ?? denAuth.user?.id ?? null
+  // `user` may still describe the previous account while a replacement credential is being checked.
+  // Only the identity verified for the current credential may select or expose an inventory cache.
+  const principalId = denAuth.verifiedIdentity?.organizationId === organizationId ? denAuth.verifiedIdentity.principalId : null
   const queryRoot = useMemo(() => ["den", "automations", organizationId, settings.baseUrl, principalId] as const, [organizationId, principalId, settings.baseUrl])
-  return { client, organizationId, ready: denAuth.isSignedIn && Boolean(client && organizationId), queryRoot }
+  return { client, organizationId, ready: denAuth.isSignedIn && Boolean(client && organizationId && principalId), queryRoot }
 }
 
 type AutomationInventoryPage = AutomationList & { accessDenied?: boolean }
@@ -74,10 +76,10 @@ export function useAutomationListQuery(context: AutomationsDenContext) {
     refetchInterval: AUTOMATIONS_SLOW_POLL_MS,
   })
   const accessDenied = query.data?.pages.some((page) => page.accessDenied === true) ?? false
-  const data = useMemo(() => query.data && !accessDenied ? {
+  const data = useMemo(() => context.ready && query.data && !accessDenied ? {
     items: [...new Map(query.data.pages.flatMap((page) => page.items).map((item) => [item.automation.id, item])).values()],
     nextCursor: query.data.pages.at(-1)?.nextCursor ?? null,
-  } : undefined, [accessDenied, query.data])
+  } : undefined, [accessDenied, context.ready, query.data])
   return { ...query, data, accessDenied }
 }
 

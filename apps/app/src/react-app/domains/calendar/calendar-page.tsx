@@ -239,7 +239,7 @@ export function CalendarPage(props: {
       </Empty>
     )
   }
-  if (feature.isLoading || (enabled && listQuery.isLoading)) return <CalendarSkeleton />
+  if (!denContext.ready || feature.isLoading || (enabled && listQuery.isLoading)) return <CalendarSkeleton />
   if (!enabled) {
     return (
       <Empty className="pt-16" data-calendar-locked>

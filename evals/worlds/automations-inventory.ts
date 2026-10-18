@@ -5,7 +5,7 @@ import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 /** Real signed-in app-web pages share their production query cache. Only Den read responses are faulted. */
 export async function automationsInventory(seed: Seed) {
-  const { den, webPort } = await denForAppWeb(seed, { org: { name: "Inventory workspace", admin: { name: "Inventory Admin" } } });
+  const { den, webPort } = await denForAppWeb(seed, { web: false, org: { name: "Inventory workspace", admin: { name: "Inventory Admin" } } });
   await enableOrganizationCapabilities(seed, den.admin, { automationCalendar: true });
   const proxy = await seed.faultProxy(den);
   const now = Date.now();

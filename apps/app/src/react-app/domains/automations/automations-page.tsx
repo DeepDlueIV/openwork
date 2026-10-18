@@ -282,7 +282,7 @@ export function AutomationsPage(props: {
       </div>
     )
   }
-  if (listQuery.isLoading) return <LoadingState />
+  if (!ready || listQuery.isLoading) return <LoadingState />
   if (listQuery.accessDenied || (listQuery.error && !listQuery.data)) {
     return (
       <div className="mx-auto flex max-w-xl flex-col items-center gap-4 p-6 pt-16 text-center" role="alert">

@@ -14,9 +14,11 @@ test("a member keeps a cached calendar through a partial refresh but cannot see 
     await user.type({ placeholder: "Search loaded Automations" }, "Inventory brief 119");
     await user.see({ role: "heading", label: "Inventory brief 119" });
     expect((await probe.dom("[data-automation-id]")).elements).toHaveLength(1);
-    const requested = (await world.requests()).some(row => row.path.includes("cursor=page_100") && row.status === 200);
-    expect(requested).toBe(true);
-    evidence.recordAssertionEvidence("The real Automations page follows its cursor", "120 loaded; Inventory brief 119 found; one row mounted", requested);
+    const reads = await world.requests();
+    const requested = reads.some(row => row.path.includes("cursor=page_100") && row.status === 200);
+    const preflight = reads.some(row => row.method === "OPTIONS" && row.path.includes("/automations") && row.status === 204);
+    expect(requested && preflight).toBe(true);
+    evidence.recordAssertionEvidence("The real Automations page passes preflight and follows its cursor", "Production preflight accepted; 120 loaded; Inventory brief 119 found; one row mounted", requested && preflight);
     await user.screenshot();
     await user.type({ placeholder: "Search loaded Automations" }, "", { replace: true });
   });
@@ -50,18 +52,22 @@ test("a member keeps a cached calendar through a partial refresh but cannot see 
   await step("a later network failure cannot clear the authorization barrier", async () => {
     await world.unavailable();
     const before = (await world.requests()).length;
-    await user.click({ role: "button", label: "Retry" });
-    await probe.eventually(() => world.requests(), { within: 15000, label: "the denied inventory's retry reaches the unavailable continuation", until: rows => rows.slice(before).some(row => row.path.includes("cursor=page_100") && row.status === 503) });
+    await user.click({ role: "button", label: /^Calendar$/ });
+    await probe.eventually(() => world.requests(), { within: 15000, label: "Calendar's shared denied inventory reaches the unavailable continuation", until: rows => rows.slice(before).some(row => row.path.includes("cursor=page_100") && row.status === 503) });
     await probe.eventually(() => probe.dom('button:not(:disabled)'), { within: 15000, label: "the unavailable retry finishes without revealing cached content", until: value => value.elements.some(element => element.text === "Retry") });
-    await user.see({ role: "heading", label: "Automation access is blocked" });
+    await user.see({ role: "heading", label: "Calendar access is blocked" });
     await user.notSee({ text: /Inventory brief/ });
     await user.notSee({ text: /Summarize project note/ });
-    evidence.recordAssertionEvidence("403 followed by 503 remains denied, not stale-success", "Retry receives 503 after the denial; cached names and instructions remain absent", (await probe.dom("[data-automation-id]")).elements.length === 0);
+    await user.notSee({ role: "button", label: /Inventory team review/ });
+    evidence.recordAssertionEvidence("403 followed by 503 remains denied across the real pages", "Calendar's shared refresh receives 503 after the denial; cached automations, meetings and instructions remain absent", (await probe.dom("[data-calendar-grid]")).elements.length === 0);
     await user.screenshot();
   });
   await step("only a fresh authorized read restores the inventory", async () => {
     await world.authorize();
     await user.click({ role: "button", label: "Retry" });
+    await user.see({ role: "button", label: /Inventory brief 000/ });
+    await user.see({ role: "button", label: /Inventory team review/ });
+    await user.click({ role: "button", label: /^Automations$/ });
     await user.see({ text: "120 loaded; all Automations loaded" });
     await user.see({ role: "heading", label: "Inventory brief 000" });
     await user.notSee({ role: "heading", label: "Automation access is blocked" });

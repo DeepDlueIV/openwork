@@ -257,9 +257,17 @@ export function ComposerPlusMenu(props: ComposerPlusMenuProps) {
   };
 
   const reset = () => {
+    setRequestedPage({ scope: "", index: 0 });
     setView({ kind: "root" });
     setQuery("");
   };
+
+  useEffect(() => {
+    if (props.open) return;
+    setRequestedPage((current) => current.index === 0 && current.scope === "" ? current : { scope: "", index: 0 });
+    setView((current) => current.kind === "root" ? current : { kind: "root" });
+    setQuery("");
+  }, [props.open]);
 
   const close = () => {
     props.onOpenChange(false);
@@ -267,6 +275,7 @@ export function ComposerPlusMenu(props: ComposerPlusMenuProps) {
   };
 
   const navigate = (next: PlusMenuView) => {
+    setRequestedPage({ scope: "", index: 0 });
     setView(next);
     setQuery("");
     inputRef.current?.focus();
@@ -401,7 +410,7 @@ export function ComposerPlusMenu(props: ComposerPlusMenuProps) {
         className="flex max-h-[min(var(--available-height),28rem)] w-[380px] max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden rounded-[14px] bg-popover p-0 shadow-[var(--dls-shell-shadow)] ring-0 data-open:animate-none data-closed:animate-none dark:ring-0"
       >
         {/* Without `items`, Base UI keeps its old highlight index when rows reorder. */}
-        <Command mode="none" items={itemIds} value={query} onValueChange={(value) => setQuery(value)}>
+        <Command mode="none" items={itemIds} value={query} onValueChange={(value) => { if (value !== query) setRequestedPage({ scope: "", index: 0 }); setQuery(value); }}>
           <div className="flex h-11 shrink-0 items-center gap-1 border-b border-gray-3 px-1.5">
             {view.kind !== "root" ? (
               <button

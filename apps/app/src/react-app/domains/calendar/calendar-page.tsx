@@ -187,13 +187,13 @@ export function CalendarPage(props: {
   const organizationDefaultName = useCalendarDefaultModelName(denContext, enabled).data
   const listQuery = useAutomationListQuery(denContext)
   const automationItems = useMemo(() => listQuery.data?.items.slice(0, 100), [listQuery.data])
-  const runsQuery = useAutomationRunsInRange(denContext, range, automationItems, enabled && layers.automations)
+  const runsQuery = useAutomationRunsInRange(denContext, range, automationItems, enabled && layers.automations && !listQuery.accessDenied)
   const { busyAction, act } = useAutomationActions(denContext)
   const transport = useCalendarTransport(denContext)
   const orgConnections = useOrgMcpConnections()
   const presence = Object.fromEntries(PROVIDERS.map((provider) => [provider, calendarProviderPresence(provider, orgConnections.connections, orgConnections.loaded, transport)]))
-  const googleMeetings = useCalendarMeetings({ provider: "google", transport, organizationId, range, enabled: enabled && layers.meetings && presence.google?.presence === "available" })
-  const microsoftMeetings = useCalendarMeetings({ provider: "microsoft", transport, organizationId, range, enabled: enabled && layers.meetings && presence.microsoft?.presence === "available" })
+  const googleMeetings = useCalendarMeetings({ provider: "google", transport, organizationId, range, enabled: enabled && !listQuery.accessDenied && layers.meetings && presence.google?.presence === "available" })
+  const microsoftMeetings = useCalendarMeetings({ provider: "microsoft", transport, organizationId, range, enabled: enabled && !listQuery.accessDenied && layers.meetings && presence.microsoft?.presence === "available" })
   const meetingQueries = { google: googleMeetings, microsoft: microsoftMeetings }
 
   const calendarItems = useMemo(() => layers.automations && automationItems && runsQuery.data
@@ -203,7 +203,7 @@ export function CalendarPage(props: {
     ? PROVIDERS.filter((provider) => !hiddenProviders.has(provider)).flatMap((provider) => meetingQueries[provider].data?.events ?? [])
     : [], [googleMeetings.data, hiddenProviders, layers.meetings, microsoftMeetings.data])
 
-  const selectedAutomationId = selection?.kind === "automation" ? selection.automationId : null
+  const selectedAutomationId = !listQuery.accessDenied && selection?.kind === "automation" ? selection.automationId : null
   const selectedAutomation = automationItems?.find((item) => item.automation.id === selectedAutomationId) ?? null
   const selectedBlock = selection?.kind === "automation" ? calendarItems.find((item) => item.key === selection.itemKey) ?? null : null
   const selectedRuns = useAutomationRunsQuery(denContext, selectedAutomationId)
@@ -252,15 +252,15 @@ export function CalendarPage(props: {
       </Empty>
     )
   }
-  if (listQuery.error) {
+  if (listQuery.accessDenied || (listQuery.error && !listQuery.data)) {
     return (
       <div className="mx-auto flex max-w-xl flex-col items-center gap-4 p-6 pt-16 text-center" role="alert">
-        <AlertCircle className="size-8 text-destructive" aria-hidden="true" />
+        <AlertCircle className={`size-8 ${listQuery.accessDenied ? "text-muted-foreground" : "text-destructive"}`} aria-hidden="true" />
         <div>
-          <h2 className="font-medium">Automations could not be loaded</h2>
-          <p className="mt-2 text-sm text-muted-foreground">{describeAutomationError(listQuery.error)}</p>
+          <h2 className="font-medium">{listQuery.accessDenied ? "Calendar access is blocked" : "Automations could not be loaded"}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">{listQuery.accessDenied ? "Sign in again or ask your organization administrator for access." : describeAutomationError(listQuery.error)}</p>
         </div>
-        <Button variant="outline" onClick={() => void listQuery.refetch()}><RefreshCw />Retry</Button>
+        <Button variant="outline" disabled={listQuery.isFetching} onClick={() => void listQuery.refetch()}><RefreshCw />Retry</Button>
       </div>
     )
   }
@@ -271,6 +271,10 @@ export function CalendarPage(props: {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-calendar-page>
+      {listQuery.isError ? <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground" data-calendar-inventory-unverified>
+        <span>Couldn&apos;t refresh all Automations. Showing the last verified overview.</span>
+        <Button variant="link" size="xs" onClick={() => void listQuery.refetch()}>Retry</Button>
+      </div> : null}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2.5" data-calendar-toolbar>
         <Button variant="outline" size="sm" onClick={goToday}>Today</Button>
         <div className="flex items-center">

@@ -31,7 +31,7 @@ function item(index: number): AutomationList["items"][number] {
 
 function Inventory({ context }: { context: AutomationsDenContext }) {
   const list = useAutomationListQuery(context);
-  return <div><span data-loaded>{list.data?.items.length ?? 0}</span><span data-complete>{String(list.hasNextPage === false && list.data !== undefined)}</span>{list.isError ? <span>Could not verify more</span> : null}<button onClick={() => void list.fetchNextPage()}>Load more</button></div>;
+  return <div><span data-loaded>{list.data?.items.length ?? 0}</span><span data-complete>{String(list.hasNextPage === false && list.data !== undefined)}</span>{list.isError ? <span>Could not verify more</span> : null}{list.accessDenied ? <span>Access blocked</span> : null}<button onClick={() => void list.fetchNextPage()}>Load more</button><button data-refresh onClick={() => void list.refetch()}>Refresh</button></div>;
 }
 
 async function until(check: () => boolean) {
@@ -44,12 +44,12 @@ async function until(check: () => boolean) {
 
 test("a failed continuation preserves the first page and Retry reaches item 101 with its cursor", async () => {
   const requests: string[] = [];
-  let failNext = true;
+  let nextFailure: 401 | 403 | 503 | null = 503;
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://fixture");
     requests.push(url.search);
     response.setHeader("content-type", "application/json");
-    if (url.searchParams.has("cursor") && failNext) { response.statusCode = 503; response.end(JSON.stringify({ error: "unavailable" })); return; }
+    if (url.searchParams.has("cursor") && nextFailure !== null) { response.statusCode = nextFailure; response.end(JSON.stringify({ error: "unavailable" })); return; }
     response.end(JSON.stringify(url.searchParams.has("cursor") ? { items: [item(100)], nextCursor: null } : { items: Array.from({ length: 100 }, (_, i) => item(i)), nextCursor: "cursor_100" }));
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -67,11 +67,26 @@ test("a failed continuation preserves the first page and Retry reaches item 101 
     await act(async () => container.querySelector("button")?.click());
     await until(() => container.textContent?.includes("Could not verify more") === true);
     expect(container.querySelector("[data-loaded]")?.textContent).toBe("100");
-    failNext = false;
+    nextFailure = null;
     await act(async () => container.querySelector("button")?.click());
     await until(() => container.querySelector("[data-loaded]")?.textContent === "101");
     expect(container.querySelector("[data-complete]")?.textContent).toBe("true");
     expect(requests.filter(value => value.includes("cursor=cursor_100"))).toHaveLength(2);
+    for (const status of [401, 403]) {
+      nextFailure = status === 401 ? 401 : 403;
+      await act(async () => container.querySelector<HTMLButtonElement>("[data-refresh]")?.click());
+      await until(() => container.textContent?.includes("Access blocked") === true);
+      expect(container.querySelector("[data-loaded]")?.textContent).toBe("0");
+      nextFailure = 503;
+      await act(async () => container.querySelector<HTMLButtonElement>("[data-refresh]")?.click());
+      await until(() => container.textContent?.includes("Could not verify more") === true);
+      expect(container.textContent).toContain("Access blocked");
+      expect(container.querySelector("[data-loaded]")?.textContent).toBe("0");
+      nextFailure = null;
+      await act(async () => container.querySelector<HTMLButtonElement>("[data-refresh]")?.click());
+      await until(() => container.querySelector("[data-loaded]")?.textContent === "101");
+      expect(container.textContent).not.toContain("Access blocked");
+    }
   } finally {
     await act(async () => root.unmount());
     container.remove();

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react"
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { AutomationRun } from "@openwork/types/automations"
+import type { AutomationList, AutomationRun } from "@openwork/types/automations"
 
 import { createDenClient, DenApiError, readDenSettings, type DenClient } from "@/app/lib/den"
 import { toast } from "@/components/ui/sonner"
@@ -33,7 +33,7 @@ export type AutomationsDenContext = {
   organizationId: string | null
   /** Signed in with a client and an active organization. */
   ready: boolean
-  queryRoot: readonly ["den", "automations", string | null]
+  queryRoot: readonly ["den", "automations", string | null, ...(string | null)[]]
 }
 
 export function useAutomationsDenContext(): AutomationsDenContext {
@@ -45,28 +45,40 @@ export function useAutomationsDenContext(): AutomationsDenContext {
     () => token ? createDenClient({ baseUrl: settings.baseUrl, token }) : null,
     [settings.baseUrl, token],
   )
-  const queryRoot = useMemo(() => ["den", "automations", organizationId] as const, [organizationId])
+  const principalId = denAuth.verifiedIdentity?.principalId ?? denAuth.user?.id ?? null
+  const queryRoot = useMemo(() => ["den", "automations", organizationId, settings.baseUrl, principalId] as const, [organizationId, principalId, settings.baseUrl])
   return { client, organizationId, ready: denAuth.isSignedIn && Boolean(client && organizationId), queryRoot }
 }
+
+type AutomationInventoryPage = AutomationList & { accessDenied?: boolean }
 
 export function useAutomationListQuery(context: AutomationsDenContext) {
   const query = useInfiniteQuery({
     queryKey: [...context.queryRoot, "list"],
     initialPageParam: "",
-    queryFn: async ({ pageParam }) => {
-      const page = await context.client!.listAutomations(context.organizationId!, { limit: 100, ...(pageParam ? { cursor: pageParam } : {}) })
-      if (page.nextCursor === pageParam) throw new Error("The automation list did not advance. Try again.")
-      return page
+    queryFn: async ({ pageParam }): Promise<AutomationInventoryPage> => {
+      try {
+        const page = await context.client!.listAutomations(context.organizationId!, { limit: 100, ...(pageParam ? { cursor: pageParam } : {}) })
+        if (page.nextCursor === pageParam) throw new Error("The automation list did not advance. Try again.")
+        return page
+      } catch (error) {
+        // Cache the denial as a page, not only a transient query error. A later network failure must
+        // not uncover previously cached names/instructions in another observer (including Calendar).
+        // Only a successful authorized refetch replacing every page can remove this barrier.
+        if (error instanceof DenApiError && (error.status === 401 || error.status === 403)) return { items: [], nextCursor: null, accessDenied: true }
+        throw error
+      }
     },
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled: context.ready,
     refetchInterval: AUTOMATIONS_SLOW_POLL_MS,
   })
-  const data = useMemo(() => query.data ? {
+  const accessDenied = query.data?.pages.some((page) => page.accessDenied === true) ?? false
+  const data = useMemo(() => query.data && !accessDenied ? {
     items: [...new Map(query.data.pages.flatMap((page) => page.items).map((item) => [item.automation.id, item])).values()],
     nextCursor: query.data.pages.at(-1)?.nextCursor ?? null,
-  } : undefined, [query.data])
-  return { ...query, data }
+  } : undefined, [accessDenied, query.data])
+  return { ...query, data, accessDenied }
 }
 
 export function useAutomationDetailQuery(context: AutomationsDenContext, automationId: string | null) {

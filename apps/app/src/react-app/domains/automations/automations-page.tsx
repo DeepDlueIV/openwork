@@ -283,15 +283,15 @@ export function AutomationsPage(props: {
     )
   }
   if (listQuery.isLoading) return <LoadingState />
-  if (listQuery.error && !listQuery.data) {
+  if (listQuery.accessDenied || (listQuery.error && !listQuery.data)) {
     return (
       <div className="mx-auto flex max-w-xl flex-col items-center gap-4 p-6 pt-16 text-center" role="alert">
-        <AlertCircle className="size-8 text-destructive" aria-hidden="true" />
+        <AlertCircle className={`size-8 ${listQuery.accessDenied ? "text-muted-foreground" : "text-destructive"}`} aria-hidden="true" />
         <div>
-          <h2 className="font-medium">Automations unavailable</h2>
-          <p className="mt-2 text-sm text-muted-foreground">{describeError(listQuery.error)}</p>
+          <h2 className="font-medium">{listQuery.accessDenied ? "Automation access is blocked" : "Automations unavailable"}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">{listQuery.accessDenied ? "Sign in again or ask your organization administrator for access." : describeError(listQuery.error)}</p>
         </div>
-        <Button variant="outline" onClick={() => void listQuery.refetch()}><RefreshCw />Retry</Button>
+        <Button variant="outline" disabled={listQuery.isFetching} onClick={() => void listQuery.refetch()}><RefreshCw />Retry</Button>
       </div>
     )
   }

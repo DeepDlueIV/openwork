@@ -71,6 +71,36 @@ empty("a member browses and searches 0 skills in a bounded Library and menu", as
       const returned = await probe.eventually(() => probe.dom('[data-lexical-editor="true"]'), { within: 3000, label: "closing the menu returns focus after its exit transition", until: value => value.elements.some(element => element.focused) });
       expect(returned.elements.some(element => element.focused)).toBe(true);
     });
+    if (world.count > 20) await step("search, navigation and closing permanently reset menu paging", async () => {
+      const openSkills = async () => {
+        await user.click({ role: "button", label: "Add files, skills, connectors, and more" });
+        await user.click({ role: "option", label: /^Skills/ });
+      };
+      await openSkills();
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.type({ placeholder: "Search skills" }, "scale-skill-09999");
+      await user.see({ role: "option", label: /Scale skill 09999/i });
+      await user.type({ placeholder: "Search skills" }, "", { replace: true });
+      await user.see({ text: /1–20 of/ });
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.press("Escape");
+      await user.see({ role: "option", label: /^Skills/ });
+      await user.click({ role: "option", label: /^Skills/ });
+      await user.see({ text: /1–20 of/ });
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.press("Escape");
+      await user.press("Escape");
+      await probe.eventually(() => probe.dom('[data-lexical-editor="true"]'), { within: 3000, label: "closing finishes before reopening the menu", until: value => value.elements.some(element => element.focused) });
+      await openSkills();
+      await user.see({ text: /1–20 of/ });
+      const paging = (await probe.dom("[data-plus-menu-pages]")).elements[0]?.text ?? "";
+      expect(paging).toMatch(/^1–20 of/);
+      evidence.recordAssertionEvidence("No earlier page can silently revive", `After search/clear, back/reenter and close/reopen: ${paging}`, /^1–20 of/.test(paging));
+      await user.screenshot();
+    });
   });
 
 single("a member browses and searches 1 skills in a bounded Library and menu", async ({ world, user, probe, step, evidence }) => {
@@ -135,6 +165,36 @@ single("a member browses and searches 1 skills in a bounded Library and menu", a
       await user.press("Escape");
       const returned = await probe.eventually(() => probe.dom('[data-lexical-editor="true"]'), { within: 3000, label: "closing the menu returns focus after its exit transition", until: value => value.elements.some(element => element.focused) });
       expect(returned.elements.some(element => element.focused)).toBe(true);
+    });
+    if (world.count > 20) await step("search, navigation and closing permanently reset menu paging", async () => {
+      const openSkills = async () => {
+        await user.click({ role: "button", label: "Add files, skills, connectors, and more" });
+        await user.click({ role: "option", label: /^Skills/ });
+      };
+      await openSkills();
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.type({ placeholder: "Search skills" }, "scale-skill-09999");
+      await user.see({ role: "option", label: /Scale skill 09999/i });
+      await user.type({ placeholder: "Search skills" }, "", { replace: true });
+      await user.see({ text: /1–20 of/ });
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.press("Escape");
+      await user.see({ role: "option", label: /^Skills/ });
+      await user.click({ role: "option", label: /^Skills/ });
+      await user.see({ text: /1–20 of/ });
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.press("Escape");
+      await user.press("Escape");
+      await probe.eventually(() => probe.dom('[data-lexical-editor="true"]'), { within: 3000, label: "closing finishes before reopening the menu", until: value => value.elements.some(element => element.focused) });
+      await openSkills();
+      await user.see({ text: /1–20 of/ });
+      const paging = (await probe.dom("[data-plus-menu-pages]")).elements[0]?.text ?? "";
+      expect(paging).toMatch(/^1–20 of/);
+      evidence.recordAssertionEvidence("No earlier page can silently revive", `After search/clear, back/reenter and close/reopen: ${paging}`, /^1–20 of/.test(paging));
+      await user.screenshot();
     });
   });
 
@@ -201,6 +261,36 @@ small("a member browses and searches 20 skills in a bounded Library and menu", a
       const returned = await probe.eventually(() => probe.dom('[data-lexical-editor="true"]'), { within: 3000, label: "closing the menu returns focus after its exit transition", until: value => value.elements.some(element => element.focused) });
       expect(returned.elements.some(element => element.focused)).toBe(true);
     });
+    if (world.count > 20) await step("search, navigation and closing permanently reset menu paging", async () => {
+      const openSkills = async () => {
+        await user.click({ role: "button", label: "Add files, skills, connectors, and more" });
+        await user.click({ role: "option", label: /^Skills/ });
+      };
+      await openSkills();
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.type({ placeholder: "Search skills" }, "scale-skill-09999");
+      await user.see({ role: "option", label: /Scale skill 09999/i });
+      await user.type({ placeholder: "Search skills" }, "", { replace: true });
+      await user.see({ text: /1–20 of/ });
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.press("Escape");
+      await user.see({ role: "option", label: /^Skills/ });
+      await user.click({ role: "option", label: /^Skills/ });
+      await user.see({ text: /1–20 of/ });
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.press("Escape");
+      await user.press("Escape");
+      await probe.eventually(() => probe.dom('[data-lexical-editor="true"]'), { within: 3000, label: "closing finishes before reopening the menu", until: value => value.elements.some(element => element.focused) });
+      await openSkills();
+      await user.see({ text: /1–20 of/ });
+      const paging = (await probe.dom("[data-plus-menu-pages]")).elements[0]?.text ?? "";
+      expect(paging).toMatch(/^1–20 of/);
+      evidence.recordAssertionEvidence("No earlier page can silently revive", `After search/clear, back/reenter and close/reopen: ${paging}`, /^1–20 of/.test(paging));
+      await user.screenshot();
+    });
   });
 
 large("a member browses and searches 10000 skills in a bounded Library and menu", async ({ world, user, probe, step, evidence }) => {
@@ -265,5 +355,35 @@ large("a member browses and searches 10000 skills in a bounded Library and menu"
       await user.press("Escape");
       const returned = await probe.eventually(() => probe.dom('[data-lexical-editor="true"]'), { within: 3000, label: "closing the menu returns focus after its exit transition", until: value => value.elements.some(element => element.focused) });
       expect(returned.elements.some(element => element.focused)).toBe(true);
+    });
+    if (world.count > 20) await step("search, navigation and closing permanently reset menu paging", async () => {
+      const openSkills = async () => {
+        await user.click({ role: "button", label: "Add files, skills, connectors, and more" });
+        await user.click({ role: "option", label: /^Skills/ });
+      };
+      await openSkills();
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.type({ placeholder: "Search skills" }, "scale-skill-09999");
+      await user.see({ role: "option", label: /Scale skill 09999/i });
+      await user.type({ placeholder: "Search skills" }, "", { replace: true });
+      await user.see({ text: /1–20 of/ });
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.press("Escape");
+      await user.see({ role: "option", label: /^Skills/ });
+      await user.click({ role: "option", label: /^Skills/ });
+      await user.see({ text: /1–20 of/ });
+      await user.click({ role: "button", label: "Next results" });
+      await user.see({ text: /21–40 of/ });
+      await user.press("Escape");
+      await user.press("Escape");
+      await probe.eventually(() => probe.dom('[data-lexical-editor="true"]'), { within: 3000, label: "closing finishes before reopening the menu", until: value => value.elements.some(element => element.focused) });
+      await openSkills();
+      await user.see({ text: /1–20 of/ });
+      const paging = (await probe.dom("[data-plus-menu-pages]")).elements[0]?.text ?? "";
+      expect(paging).toMatch(/^1–20 of/);
+      evidence.recordAssertionEvidence("No earlier page can silently revive", `After search/clear, back/reenter and close/reopen: ${paging}`, /^1–20 of/.test(paging));
+      await user.screenshot();
     });
   });

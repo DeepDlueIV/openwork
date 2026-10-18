@@ -1,5 +1,7 @@
 "use client";
 
+import { createContext, useContext, type CSSProperties } from "react";
+
 /**
  * What the page needs from the app that hosts it (Den today): signed-in requests to the Workbot API, the person,
  * their connected apps, and where app logos come from. Workbot itself knows nothing about the host's sign-in.
@@ -45,6 +47,17 @@ export type WorkbotHost = {
   identity?: { principalId: string; organizationId: string }
 }
 
+const AuthorizationContext = createContext<WorkbotHost["documentAuthorization"]>(undefined)
+export const WorkbotAuthorizationProvider = AuthorizationContext.Provider
+
+/** Portals are outside the owner's DOM. Suspend their interaction/focus while
+ * retaining an already-open form's DOM and state for the same owner. */
+export function useRetainedSurface(open: boolean) {
+  const blocked = useContext(AuthorizationContext) !== undefined
+  const style: CSSProperties | undefined = blocked ? { display: "none" } : undefined
+  return { blocked, open: open && !blocked, portal: { keepMounted: open && blocked, hidden: blocked, inert: blocked, style } }
+}
+
 let current: WorkbotHost | null = null
 
 /** Set by WorkbotScreen before anything below it renders. */
@@ -59,8 +72,13 @@ export function workbotHost(): WorkbotHost {
 
 /** A raw request to a Workbot API path, signed in (streams and files). */
 export async function hostFetch(path: string, init: RequestInit = {}) {
-  const { url, headers, credentials } = await workbotHost().prepare(path)
+  const host = workbotHost()
+  const { url, headers, credentials } = await host.prepare(path)
   new Headers(init.headers).forEach((value, key) => headers.set(key, value))
+  if (host.identity) {
+    headers.set("x-openwork-client-user", host.identity.principalId)
+    headers.set("x-openwork-client-organization", host.identity.organizationId)
+  }
   return fetch(url, { ...init, headers, credentials })
 }
 

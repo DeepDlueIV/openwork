@@ -48,7 +48,13 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
   ];
   const folder = { id: "folder_private", name: "Team folder", mimeType: "application/vnd.google-apps.folder", modifiedTime: "2026-10-11T09:00:00Z", size: null, webViewLink: "https://drive.google.com/drive/folders/folder_private" };
   const secret = { ...files[0]!, id: "file_secret", name: "Folder secret.txt" };
-  const turns: Record<string, unknown>[] = [];
+  const conversations = new Map<string, Record<string, unknown>[]>();
+  const threadRequests: { actor: string; expectedUser: string | null }[] = [];
+  let holdOtherThread = false;
+  let pendingOtherThreads = 0;
+  const releaseOtherThreads: (() => void)[] = [];
+  const thread = (actor: string) => { const value = conversations.get(actor) ?? []; conversations.set(actor, value); return value; };
+  thread("user_other").push({ id: "other_account_turn", text: "Other account question", sentAt: Date.now(), finishedAt: Date.now(), status: "done", attachments: [], outputs: [], parts: [{ kind: "text", text: "Other account answer" }], modelSteps: 1, error: null });
   try {
     const vite = await createServer({
       configFile: fileURLToPath(new URL("../../ee/apps/workbot/vite.config.ts", import.meta.url)),
@@ -75,7 +81,15 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
             if (identityStatus !== 200) return json({ error: identityStatus === 401 ? "unauthorized" : "identity_unavailable" }, identityStatus);
             return json({ name: "Alex", email: "alex@example.test", userId: principalId, organizationId, organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, canSchedule: false, sideChats: referring.searchParams.get("sideChats") === "on", denUrl: "https://workspace.example.test" });
           }
-          if (url.pathname === "/v1/workbot") return json({ available: true, name: "Workbot", organizationName: "Example", status: "idle", turns, hasEarlier: false, filesEnabled: false });
+          const expectedUser = req.headers["x-openwork-client-user"];
+          const expectedOrganization = req.headers["x-openwork-client-organization"];
+          if ((expectedUser !== undefined || expectedOrganization !== undefined) && (expectedUser !== principalId || expectedOrganization !== organizationId)) return json({ error: "identity_changed" }, 401);
+          const actor = principalId;
+          if (url.pathname === "/v1/workbot") {
+            threadRequests.push({ actor, expectedUser: typeof expectedUser === "string" ? expectedUser : null });
+            if (actor === "user_other" && holdOtherThread) { pendingOtherThreads++; await new Promise<void>(resolve => releaseOtherThreads.push(resolve)); pendingOtherThreads--; }
+            return json({ available: true, name: "Workbot", organizationName: "Example", status: "idle", turns: thread(actor), hasEarlier: false, filesEnabled: false });
+          }
           if (url.pathname === "/v1/workbot/chats") return json({ main: null, side: [{ id: "sidechat000000001", title: "Document questions", createdAt: Date.now(), updatedAt: Date.now() }] });
           if (url.pathname === "/v1/workbot/events") { res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.end(": fixture\n\n"); return; }
           if (url.pathname === "/v1/workbot/messages" && req.method === "POST") {
@@ -84,7 +98,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
             if (!isRecord(input)) return json({ error: "invalid_request" }, 400);
             messages.push(input);
             const now = Date.now();
-            turns.push({ ...input, sentAt: now, finishedAt: now, status: "done", attachments: [], outputs: [], parts: [{ kind: "text", text: "I can read the saved version. [Budget notes](https://drive.google.com/file/d/file_budget/view) · [Restricted document](https://docs.google.com/document/d/file_private/edit)" }], modelSteps: 1, error: null });
+            thread(actor).push({ ...input, sentAt: now, finishedAt: now, status: "done", attachments: [], outputs: [], parts: [{ kind: "text", text: "I can read the saved version. [Budget notes](https://drive.google.com/file/d/file_budget/view) · [Restricted document](https://docs.google.com/document/d/file_private/edit)" }], modelSteps: 1, error: null });
             return json({ ok: true }, 202);
           }
           if (url.pathname.startsWith("/v1/workbot/documents")) {
@@ -146,9 +160,13 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-workspace", startUrl: `${url}documents?assistant=off`, headless: true }));
     const release = () => { holdFolder = false; for (const resolve of releaseFolders.splice(0)) resolve(); };
     resources.defer(release);
+    const releaseOther = () => { holdOtherThread = false; for (const resolve of releaseOtherThreads.splice(0)) resolve(); };
+    resources.defer(releaseOther);
     return {
       web, url, messages: () => [...messages], opened: () => [...opened], editorReads: () => [...editorReads], documentWrites: () => [...documentWrites],
       identityReads: () => [...identityReads], identityScopes: () => [...identityScopes], listingReads: () => [...listingReads], pendingFolders: () => pendingFolders,
+      threadRequests: () => [...threadRequests], pendingOtherThreads: () => pendingOtherThreads,
+      holdOtherThread: () => { holdOtherThread = true; }, releaseOtherThread: releaseOther,
       async documentReadStatus() { const response = await fetch(`${url}v1/workbot/documents/v1/documents/google-drive/files/file_brief/editor`); await response.arrayBuffer(); return response.status; },
       officeOpens: () => [...officeOpens], officeCloses: () => [...officeCloses], officeLaunches: () => [...officeLaunches],
       revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; },

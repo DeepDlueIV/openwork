@@ -39,7 +39,7 @@ for (const fault of [
       expect((await probe.dom("[data-workbot-retained-owner][hidden] .ow-office-frame")).elements).toHaveLength(1);
       await user.notSee({ role: "textbox", label: "Document text" });
       await user.notSee({ text: "Project brief.txt" });
-      evidence.recordAssertionEvidence("A parent identity failure cannot discard a still-authorized Office snapshot", `Identity response=${fault.status}; document response=${documentStatus}; Office close attempts before/after=${closes}/${world.officeCloses().length}; the mounted owner is hidden.`, documentStatus === 200 && world.officeCloses().length === closes);
+      evidence.recordAssertionEvidence("Parent revalidation does not invoke Office-session discard", `Identity response=${fault.status}; document response=${documentStatus}; Office close attempts before/after=${closes}/${world.officeCloses().length}; the mounted owner is hidden.`, documentStatus === 200 && world.officeCloses().length === closes);
       await user.screenshot();
     });
     await step("after: fresh identity and file checks restore the draft without reopening Office", async () => {
@@ -56,6 +56,41 @@ for (const fault of [
     });
   });
 }
+
+test("a different signed-in person cannot see a retained owner's open portal", async ({ world, user, probe, step, evidence }) => {
+  await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+  await step("before: the member has a draft and an open workspace navigation dialog", async () => {
+    await user.navigate(`${world.url}documents`);
+    await user.click({ role: "button", label: "Project brief.txt", nth: 0 });
+    await user.type({ role: "textbox", label: "Document text" }, "Private owner draft", { replace: true });
+    await user.click({ role: "button", label: "Open workspace navigation" });
+    await user.see({ role: "button", label: "Open Project brief.txt" });
+    evidence.recordAssertionEvidence("The portal really contains the original owner's metadata", "The navigation dialog is open with the document's filename", (await probe.dom('[role="dialog"]')).elements.length === 1);
+    await user.screenshot();
+  });
+  await step("after: a different account masks the portal as well as the retained document", async () => {
+    world.useOtherIdentity();
+    await world.reconnectAfterStaleMinute();
+    await user.see({ text: "The signed-in account or workspace changed. Retained documents are locked." });
+    await user.notSee({ role: "button", label: "Open Project brief.txt" });
+    await user.notSee({ role: "textbox", label: "Document text" });
+    expect((await probe.dom('[role="dialog"]')).elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("Portals cannot escape the masked owner's scope", "The dialog DOM is retained but invisible and inert; another account sees no cached filename or draft", world.identityScopes().some(value => value.principalId === "user_other" && value.status === 200));
+    await user.screenshot();
+  });
+  await step("after: the original account can use recovery without an old modal trapping it", async () => {
+    world.restoreIdentity();
+    await user.click({ role: "button", label: "Check sign-in" });
+    await user.see({ role: "button", label: "Close workspace navigation" });
+    await user.click({ role: "button", label: "Close workspace navigation" });
+    await user.notSee({ role: "button", label: "Close workspace navigation" });
+    await user.click({ role: "button", label: "Check access and restore tabs" });
+    await user.click({ role: "button", label: "Project brief.txt, unsaved changes" });
+    await user.see({ role: "textbox", label: "Document text" }, { value: "Private owner draft" });
+    evidence.recordAssertionEvidence("Restoration returns only the same owner's existing work", "The restored modal can close, the draft survives, and no document write was replayed", world.documentWrites().length === 0);
+    await user.screenshot();
+  });
+});
 
 test("a member cannot see a denied cached folder when a later refresh is only unavailable", async ({ world, user, probe, step, evidence }) => {
   await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
@@ -131,6 +166,55 @@ test("a member recovers an authorized draft without losing it to another denied 
     await user.see({ role: "button", label: "Analysis.xlsx" });
     await user.see({ role: "textbox", label: "Document text" }, { value: "Keep this authorized draft" });
     evidence.recordAssertionEvidence("Selective recovery never discards unrelated work", `Office open attempts increased ${before}→${world.officeOpens().length}; the authorized draft remains; writes=${world.documentWrites().length}. This establishes a missing session, not engine fidelity.`, world.officeOpens().length > before && world.documentWrites().length === 0);
+    await user.screenshot();
+  });
+});
+
+test("discarding retained recovery cannot give the next account the previous conversation cache", async ({ world, user, probe, step, evidence }) => {
+  const question = "Private original-account question";
+  await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+  await step("before: the original owner has a draft and a cached conversation", async () => {
+    await user.navigate(`${world.url}documents`);
+    await user.click({ role: "button", label: "Project brief.txt", nth: 0 });
+    await user.type({ role: "textbox", label: "Document text" }, "Private original-account draft", { replace: true });
+    await user.type({ role: "textbox", label: "Message Workbot" }, question);
+    await user.press("Enter");
+    await user.see({ text: /I can read the saved version/ });
+    await user.click({ role: "button", label: "Hide workspace chat" });
+    await user.click({ role: "button", label: "Open workspace navigation" });
+    await user.click({ role: "button", label: "Home" });
+    await user.see({ text: question });
+    evidence.recordAssertionEvidence("The old account's server-backed conversation is cached", "Its question is visible on Home after a real thread read; the draft has not been saved", world.messages().length === 1 && world.threadRequests().some(request => request.actor === "user_example"));
+    await user.screenshot();
+  });
+  await step("the member must confirm discarding local recovery before switching accounts", async () => {
+    world.holdOtherThread(); world.useOtherIdentity();
+    await world.reconnectAfterStaleMinute();
+    await user.see({ text: "The signed-in account or workspace changed. Retained documents are locked." });
+    await user.notSee({ text: question });
+    await user.click({ role: "button", label: "Discard retained changes" });
+    await user.see({ text: "This only forgets recovery in this browser. It neither changes saved files nor cancels requests already sent." });
+    await user.click({ role: "button", label: "Keep recovery" });
+    await user.see({ role: "button", label: "Discard retained changes" });
+    evidence.recordAssertionEvidence("Keeping recovery does not adopt the new account", "The original owner's recovery stays locked and no new account thread is read", world.threadRequests().every(request => request.actor !== "user_other"));
+    await user.screenshot();
+    await user.click({ role: "button", label: "Discard retained changes" });
+    await user.click({ role: "button", label: "Discard and switch" });
+  });
+  await step("after: while the new account's response is held, no old cached conversation is visible", async () => {
+    await probe.eventually(() => world.pendingOtherThreads(), { within: 5000, label: "the new account's actual thread response is held", until: count => count > 0 });
+    expect((await probe.dom('[aria-label="Loading conversation"]')).elements).toHaveLength(1);
+    await user.notSee({ text: question });
+    await user.notSee({ role: "textbox", label: "Document text" });
+    expect((await probe.dom("[data-workbot-retained-owner][hidden]")).elements).toHaveLength(0);
+    evidence.recordAssertionEvidence("The new owner cannot borrow the previous QueryClient", "The old owner is gone and the new Home shows a skeleton while its own read is pending", world.threadRequests().some(request => request.actor === "user_other" && request.expectedUser === "user_other") && world.documentWrites().length === 0);
+    await user.screenshot();
+  });
+  await step("after: the new account receives only its own conversation", async () => {
+    world.releaseOtherThread();
+    await user.see({ text: "Other account answer" });
+    await user.notSee({ text: question });
+    evidence.recordAssertionEvidence("Identity partitions survive the real response", "Only the second account's separately stored conversation is shown; no document write or message replay occurred", world.messages().length === 1 && world.documentWrites().length === 0);
     await user.screenshot();
   });
 });

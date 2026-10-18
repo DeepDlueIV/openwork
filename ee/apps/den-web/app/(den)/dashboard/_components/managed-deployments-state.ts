@@ -44,9 +44,9 @@ export function deploymentReadGateAfterFailure(current: DeploymentReadGate, resp
   const denied = responses.some(({ status, payload }) => status === 401 || status === 403
     || (status === 404 && typeof payload === "object" && payload !== null && "error" in payload
       && (payload.error === "organization_not_found" || payload.error === "org_not_found" || payload.error === "membership_removed")));
-  if (denied) return "access_denied";
+  if (denied || current === "access_denied") return "access_denied";
   if (responses.some(parentDeploymentsRefused)) return "feature_locked";
-  return current === "feature_locked" || current === "access_denied" ? current : "unavailable";
+  return current === "feature_locked" ? current : "unavailable";
 }
 
 /** Installation/update failures take precedence over the last known health. */

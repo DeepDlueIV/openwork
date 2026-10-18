@@ -88,6 +88,8 @@ test("authentication and scoped-access denials take precedence and keep content 
   for (const status of [401, 403]) assert.equal(deploymentReadGateAfterFailure("feature_locked", [parent, { status, payload: {} }]), "access_denied");
   assert.equal(deploymentReadGateAfterFailure("verified", [{ status: 404, payload: { error: "organization_not_found" } }]), "access_denied");
   assert.equal(deploymentReadGateAfterFailure("access_denied", [{ status: 500, payload: {} }]), "access_denied");
+  assert.equal(deploymentReadGateAfterFailure("access_denied", [parent]), "access_denied", "a later sibling feature refusal cannot downgrade an auth denial");
+  assert.equal(deploymentReadGateAfterFailure("verified", [{ status: 403, payload: null }]), "access_denied", "headers alone suffice when the body is unreadable");
 });
 
 test("approval and services started never stand in for verified health", () => {

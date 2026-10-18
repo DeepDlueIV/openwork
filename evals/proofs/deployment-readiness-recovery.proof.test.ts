@@ -57,6 +57,121 @@ guardTest("an owner keeps last-known observations while a real parent rollout re
   });
 });
 
+guardTest("a revoked reader loses cached deployment details immediately even while the other read hangs and rejects", async ({ world, user, probe, step, evidence }) => {
+  let startedAt = 0;
+  await step("before: the authorized reader sees a verified target and can prepare approval", async () => {
+    await user.see({ text: "Observed deployment" }, { timeoutMs: 60_000 });
+    const ready = await probe.dom('[data-deployment-read-state="verified"] [data-testid="deployment-prepare-install"]:not(:disabled)');
+    expect(ready.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("the denial starts with real cached details", `verified preparation controls=${ready.elements.length}`, ready.elements.length === 1);
+    await user.screenshot();
+  });
+  await step("after: a completed access refusal masks details without waiting for the hanging settings read", async () => {
+    startedAt = Date.now();
+    // The real renderer fetches both endpoints. Only settings is delayed beyond the shipped
+    // request deadline; the list answers 403. This is not a helper with two HTTP statuses.
+    await world.faults.faults.latency("/api/den/v1/managed-deployments/configuration", 45_000, { method: "GET", times: 2 });
+    await world.faults.faults.status("/api/den/v1/managed-deployments", 403, { method: "GET", times: 2, body: { error: "forbidden" } });
+    await user.see({ text: "Deployment access changed. Sign in again or ask an organization owner for access." }, { timeoutMs: 25_000 });
+    await user.notSee({ text: "Observed deployment" });
+    await user.notSee({ testId: "managed-deployment-detail" });
+    await user.notSee({ testId: "deployment-last-known" });
+    const requests = (await world.faults.requestLog()).filter((entry) => entry.at >= startedAt);
+    const refusals = requests.filter((entry) => entry.path === "/api/den/v1/managed-deployments" && entry.status === 403);
+    const timeouts = requests.filter((entry) => entry.path === "/api/den/v1/managed-deployments/configuration" && entry.status === 499);
+    const masked = await probe.dom('[data-deployment-read-state="access_denied"]');
+    expect(refusals.length).toBeGreaterThanOrEqual(1);
+    expect(timeouts).toHaveLength(0);
+    expect(masked.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("known access denial wins before the sibling settles", `completed list refusals=${refusals.length}; sibling timeouts so far=${timeouts.length}; masked surfaces=${masked.elements.length}`, refusals.length >= 1 && timeouts.length === 0 && masked.elements.length === 1);
+    await user.screenshot();
+  });
+  await step("the later network rejection cannot restore revoked observations", async () => {
+    const requests = await probe.eventually(() => world.faults.requestLog(), { within: 40_000, label: "the browser cancels the hanging settings request at its deadline", until: (value) => value.some((entry) => entry.at >= startedAt && entry.path === "/api/den/v1/managed-deployments/configuration" && entry.status === 499) });
+    await user.see({ text: "Deployment access changed. Sign in again or ask an organization owner for access." });
+    await user.notSee({ text: /Observed deployment|No deployments yet|feature_disabled/ });
+    const masked = await probe.dom('[data-deployment-read-state="access_denied"]');
+    const create = await probe.dom('[data-testid="managed-deployment-create"]:disabled');
+    const timeouts = requests.filter((entry) => entry.at >= startedAt && entry.path === "/api/den/v1/managed-deployments/configuration" && entry.status === 499);
+    expect(masked.elements).toHaveLength(1);
+    expect(create.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("a transport rejection does not erase the completed refusal", `actual browser timeouts=${timeouts.length}; masked surfaces=${masked.elements.length}; disabled creation=${create.elements.length}`, timeouts.length >= 1 && masked.elements.length === 1 && create.elements.length === 1);
+    await user.screenshot();
+  });
+  await step("fresh authorized list and settings reads are required to show details again", async () => {
+    await world.faults.faults.clear();
+    const restoredAt = Date.now();
+    await user.see({ text: "Observed deployment" }, { timeoutMs: 40_000 });
+    const ready = await probe.dom('[data-deployment-read-state="verified"] [data-testid="deployment-prepare-install"]:not(:disabled)');
+    const fresh = (await world.faults.requestLog()).filter((entry) => entry.at >= restoredAt && entry.method === "GET" && entry.status === 200);
+    const pair = fresh.some((entry) => entry.path === "/api/den/v1/managed-deployments") && fresh.some((entry) => entry.path === "/api/den/v1/managed-deployments/configuration");
+    expect(ready.elements).toHaveLength(1);
+    expect(pair).toBe(true);
+    evidence.recordAssertionEvidence("only a fresh successful pair restores access", `fresh matching read pair=${pair}; verified preparation controls=${ready.elements.length}`, pair && ready.elements.length === 1);
+    await user.screenshot();
+  });
+});
+
+guardTest("an owner keeps the real parent rollout lock when the sibling settings read rejects", async ({ world, user, probe, step, evidence }) => {
+  if (!world.operator) throw new Error("Missing local operator browser");
+  const operator = user.on(world.operator);
+  let startedAt = 0;
+  await step("before: the owner sees a verified target with preparation available", async () => {
+    await user.see({ text: "Observed deployment" }, { timeoutMs: 60_000 });
+    await operator.see({ testId: "admin-capability-managedDeployments" }, { timeoutMs: 60_000 });
+    const ready = await probe.dom('[data-deployment-read-state="verified"] [data-testid="deployment-prepare-install"]:not(:disabled)');
+    expect(ready.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("the target is verified before the mixed failure", `verified preparation controls=${ready.elements.length}`, ready.elements.length === 1);
+    await user.screenshot();
+  });
+  await step("after: the actual parent guard locks preparation while settings is still hanging", async () => {
+    startedAt = Date.now();
+    await world.faults.faults.latency("/api/den/v1/managed-deployments/configuration", 45_000, { method: "GET", times: 2 });
+    await operator.click({ testId: "admin-capability-managedDeployments" });
+    const refusal = await probe.eventually(() => probe.api(world.den.admin, "/v1/managed-deployments"), { within: 15_000, label: "the real local parent feature guard is off", until: (value) => value.response.status === 404 });
+    expect(refusal.body).toEqual({ error: "feature_disabled", feature: "managedDeployments" });
+    await user.see({ text: /Deployment preparation is turned off.*OpenWork operator/ }, { timeoutMs: 25_000 });
+    await user.see({ testId: "deployment-last-known" });
+    await user.see({ text: "Observed deployment" });
+    const requests = (await world.faults.requestLog()).filter((entry) => entry.at >= startedAt);
+    const real = requests.filter((entry) => entry.path === "/api/den/v1/managed-deployments" && entry.status === 404 && !entry.faulted);
+    const timeouts = requests.filter((entry) => entry.path === "/api/den/v1/managed-deployments/configuration" && entry.status === 499);
+    const disabled = await probe.dom('[data-deployment-read-state="feature_locked"] [data-testid="deployment-prepare-install"]:disabled');
+    expect(real.length).toBeGreaterThanOrEqual(1);
+    expect(timeouts).toHaveLength(0);
+    expect(disabled.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("the real parent refusal applies before the sibling settles", `uninjected parent refusals=${real.length}; sibling timeouts so far=${timeouts.length}; disabled preparation=${disabled.elements.length}`, real.length >= 1 && timeouts.length === 0 && disabled.elements.length === 1);
+    await user.screenshot();
+  });
+  await step("the settings timeout cannot downgrade the operator lock or mark installation failed", async () => {
+    const requests = await probe.eventually(() => world.faults.requestLog(), { within: 40_000, label: "the sibling settings fetch really rejects at its deadline", until: (value) => value.some((entry) => entry.at >= startedAt && entry.path === "/api/den/v1/managed-deployments/configuration" && entry.status === 499) });
+    await user.see({ testId: "managed-deployment-status" }, { text: "Last known: Not launched" });
+    await user.notSee({ text: /feature_disabled|No deployments yet|Install failed|Could not verify deployments/ });
+    const locked = await probe.dom('[data-deployment-read-state="feature_locked"]');
+    const disabled = await probe.dom('[data-testid="deployment-prepare-install"]:disabled');
+    const alerts = await probe.dom('[data-testid="managed-deployments-screen"] [role="alert"]');
+    const timeouts = requests.filter((entry) => entry.at >= startedAt && entry.path === "/api/den/v1/managed-deployments/configuration" && entry.status === 499);
+    expect(locked.elements).toHaveLength(1);
+    expect(disabled.elements).toHaveLength(1);
+    expect(alerts.elements).toHaveLength(0);
+    evidence.recordAssertionEvidence("transport failure preserves the neutral last-known lock", `actual browser timeouts=${timeouts.length}; locked surfaces=${locked.elements.length}; disabled preparation=${disabled.elements.length}; red alerts=${alerts.elements.length}`, timeouts.length >= 1 && locked.elements.length === 1 && disabled.elements.length === 1 && alerts.elements.length === 0);
+    await user.screenshot();
+  });
+  await step("only a fresh read pair after operator re-enablement restores preparation", async () => {
+    await world.faults.faults.clear();
+    const restoredAt = Date.now();
+    await operator.click({ testId: "admin-capability-managedDeployments" });
+    await user.click({ role: "button", label: "Check again" });
+    const ready = await probe.eventually(() => probe.dom('[data-deployment-read-state="verified"] [data-testid="deployment-prepare-install"]:not(:disabled)'), { within: 40_000, label: "fresh successful list and settings reads restore preparation", until: (value) => value.elements.length === 1 });
+    await user.notSee({ testId: "deployment-last-known" });
+    const fresh = (await world.faults.requestLog()).filter((entry) => entry.at >= restoredAt && entry.method === "GET" && entry.status === 200);
+    const pair = fresh.some((entry) => entry.path === "/api/den/v1/managed-deployments") && fresh.some((entry) => entry.path === "/api/den/v1/managed-deployments/configuration");
+    expect(pair).toBe(true);
+    evidence.recordAssertionEvidence("cached context and one success cannot lift the lock", `fresh matching read pair=${pair}; verified preparation controls=${ready.elements.length}`, pair && ready.elements.length === 1);
+    await user.screenshot();
+  });
+});
+
 test("an owner keeps a Google Cloud form through readiness failures and prepares approval without starting cloud services", async ({ world, user, probe, step, evidence }) => {
   await step("the owner can review billable cloud approval before preparing anything", async () => {
     await user.see({ text: /No deployments yet/ }, { timeoutMs: 60_000 });

@@ -20,7 +20,7 @@ import { getRequestError, requestJson } from "../../_lib/den-flow";
 import { getOrgAccessFlags, permissionLockReason } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { ConfirmDialog } from "./item-list";
-import { DeploymentReadinessError, deploymentActionError, deploymentPreparationLockMessage, deploymentReadGateAfterFailure, deploymentStatus, parentDeploymentsRefused, providerName, readinessMessage, type DeploymentReadGate, type DeploymentTone, type ProviderReadiness } from "./managed-deployments-state";
+import { DeploymentReadinessError, deploymentActionError, deploymentPreparationLockMessage, deploymentReadGateAfterFailure, deploymentStatus, parentDeploymentsRefused, providerName, readinessMessage, type DeploymentReadGate, type DeploymentReadResponse, type DeploymentTone, type ProviderReadiness } from "./managed-deployments-state";
 export { deploymentStatus } from "./managed-deployments-state";
 
 type Configuration = z.infer<typeof managedDeploymentConfigurationSchema>;
@@ -174,26 +174,40 @@ export function ManagedDeploymentsScreen() {
       pending = true;
       const verificationBarrier = readBarrier.current;
       clearTimeout(timer);
+      const responses: DeploymentReadResponse[] = [];
+      function applyFailure() {
+        if (stopped || generation.current !== current) return;
+        const next = deploymentReadGateAfterFailure(readGateRef.current, responses);
+        if (next === "access_denied") maskObservations();
+        updateReadGate(next);
+        setActionError(null);
+        setLoading(false);
+      }
+      async function read(path: string) {
+        const result = await requestJson(path, { method: "GET", cache: "no-store" }, 30_000, (response) => {
+          responses.push({ status: response.status, payload: null });
+          // Mask on receipt of auth headers, even if this body or the sibling hangs/fails.
+          if (response.status === 401 || response.status === 403) applyFailure();
+        });
+        responses.push({ status: result.response.status, payload: result.payload });
+        // A completed refusal takes effect immediately, not after the sibling settles.
+        if (!result.response.ok) applyFailure();
+        return result;
+      }
       try {
-        const [list, settings] = await Promise.all([
-          requestJson("/v1/managed-deployments", { method: "GET", cache: "no-store" }),
-          requestJson("/v1/managed-deployments/configuration", { method: "GET", cache: "no-store" }),
+        const [list, settings] = await Promise.allSettled([
+          read("/v1/managed-deployments"),
+          read("/v1/managed-deployments/configuration"),
         ]);
         if (stopped || generation.current !== current) return;
-        if (!list.response.ok || !settings.response.ok) {
-          const next = deploymentReadGateAfterFailure(readGateRef.current, [
-            { status: list.response.status, payload: list.payload },
-            { status: settings.response.status, payload: settings.payload },
-          ]);
-          if (next === "access_denied") maskObservations();
-          updateReadGate(next);
-          setActionError(null);
+        if (list.status !== "fulfilled" || settings.status !== "fulfilled" || !list.value.response.ok || !settings.value.response.ok) {
+          applyFailure();
           return;
         }
         // A read begun before an authoritative refusal cannot lift that lock.
         if (verificationBarrier !== readBarrier.current) return;
-        const parsed = managedDeploymentListSchema.parse(list.payload);
-        const parsedSettings = managedDeploymentConfigurationSchema.parse(settings.payload);
+        const parsed = managedDeploymentListSchema.parse(list.value.payload);
+        const parsedSettings = managedDeploymentConfigurationSchema.parse(settings.value.payload);
         if (!stopped && generation.current === current) {
           setDeployments(parsed.deployments);
           setConfiguration(parsedSettings);
@@ -202,7 +216,8 @@ export function ManagedDeploymentsScreen() {
           updateReadGate("verified");
         }
       } catch {
-        if (!stopped && generation.current === current) updateReadGate(deploymentReadGateAfterFailure(readGateRef.current, []));
+        // Parsing/transport failures never discard an already observed refusal.
+        applyFailure();
       } finally {
         pending = false;
         if (!stopped && generation.current === current) {

@@ -9,8 +9,8 @@ test("an owner searches every loaded role while lists and pickers keep only one 
     await step(`after: ${count} loaded custom roles use at most 50 mounted rows and search finds the last role`, async () => {
       await world.inventory(count);
       await user.reload();
-      if (count) await user.see("Role 00000", { timeoutMs: 90_000 });
-      else await user.see("No custom roles yet.", { timeoutMs: 90_000 });
+      if (count) await user.see({ text: "Role 00000" }, { timeoutMs: 90_000 });
+      else await user.see({ text: "No custom roles yet." }, { timeoutMs: 90_000 });
       const page = await probe.dom('[data-testid="role-row-custom"]');
       evidence.recordAssertionEvidence(`${count} roles are rendered as a bounded page`, `loaded inventory=${count}; mounted rows=${page.elements.length}`, page.elements.length === Math.min(count, 50));
       expect(page.elements).toHaveLength(Math.min(count, 50));
@@ -18,14 +18,14 @@ test("an owner searches every loaded role while lists and pickers keep only one 
       await user.screenshot();
       if (count > 50) {
         await user.click({ role: "button", label: "Next roles" });
-        await user.see("Role 00050");
+        await user.see({ text: "Role 00050" });
         expect((await probe.dom('[data-testid="role-row-custom"]')).elements).toHaveLength(50);
       }
       const needle = count ? `Role ${String(count - 1).padStart(5, "0")}` : "No matching role";
       const start = Date.now();
       await user.type({ placeholder: "Filter roles" }, needle, { replace: true });
-      if (count) await user.see({ testId: "role-row-custom" }, { text: needle });
-      else await user.see("No custom roles match your filter.");
+      if (count) await user.see({ text: needle });
+      else await user.see({ text: "No custom roles match your filter." });
       const found = await probe.dom('[data-testid="role-row-custom"]');
       evidence.recordAssertionEvidence(`input searches the full ${count}-role inventory`, `last-role matches=${found.elements.length}; input-to-result=${Date.now() - start}ms`, found.elements.length === (count ? 1 : 0));
       expect(found.elements).toHaveLength(count ? 1 : 0);
@@ -55,13 +55,13 @@ test("an owner searches every loaded role while lists and pickers keep only one 
     await user.navigate(world.url("/dashboard/members?tab=roles"));
     await world.failInventory();
     await user.reload();
-    await user.see("Couldn't verify the complete role list. Try again before choosing a role.");
+    await user.see({ text: "Couldn't verify the complete role list. Try again before choosing a role." });
     await user.notSee({ testId: "roles-custom-empty" });
     await user.notSee({ testId: "roles-completeness" });
     await user.screenshot();
     await world.restoreInventory();
     await user.click({ role: "button", label: "Try again" });
-    await user.see("Role 00000");
+    await user.see({ text: "Role 00000" });
     const restored = await probe.dom('[data-testid="role-row-custom"]');
     evidence.recordAssertionEvidence("retry restores a complete bounded inventory", `mounted rows after retry=${restored.elements.length}`, restored.elements.length === 50);
     expect(restored.elements).toHaveLength(50);
@@ -74,9 +74,9 @@ test("an owner reads elevated access and every source on a narrow screen, with a
     await world.inventory(1);
     await user.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
     await user.reload();
-    await user.see("Role 00000", { timeoutMs: 90_000 });
+    await user.see({ text: "Role 00000" }, { timeoutMs: 90_000 });
     await user.click({ label: "Teams with Role 00000: 3 sources" });
-    await user.see("Operations and support team");
+    await user.see({ text: "Operations and support team" });
     const view = await probe.dom('[data-testid="role-row-custom"]');
     evidence.recordAssertionEvidence("all role sources are readable without hover", `viewport=${view.viewportWidth}; document=${view.documentWidth}; disclosed rows=${view.elements.length}`, view.documentWidth <= view.viewportWidth && view.elements.length === 1);
     expect(view.documentWidth).toBeLessThanOrEqual(view.viewportWidth);
@@ -85,9 +85,9 @@ test("an owner reads elevated access and every source on a narrow screen, with a
   await step("a failed team-access read offers retry instead of asking the owner to reload", async () => {
     await world.accessFailure();
     await user.navigate(world.url(`/dashboard/members/teams/${world.teams[0].id}?tab=access`));
-    await user.see("Couldn't verify team access. Try again or ask an organization admin to check your access.");
+    await user.see({ text: "Couldn't verify team access. Try again or ask an organization admin to check your access." });
     await user.click({ role: "button", label: "Try again" });
-    await user.see("Shared editing tools");
+    await user.see({ text: "Shared editing tools" });
     const access = await probe.dom('[data-testid="team-plugin-access-row"]');
     evidence.recordAssertionEvidence("retry restores named sources and elevated roles", access.elements.map((entry) => entry.text).join("; "), access.elements.length === 2 && access.elements.every((entry) => entry.text.includes("Can manage")) && access.elements.some((entry) => entry.text.includes("Shared with this team")) && access.elements.some((entry) => entry.text.includes("Editorial resources and shared operations marketplace")));
     expect(access.elements).toHaveLength(2);

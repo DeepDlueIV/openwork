@@ -11,7 +11,7 @@ export function AccessSummary({ items, label, empty = "None" }: { items: readonl
   const currentPage = Math.min(page, Math.max(0, Math.ceil(names.length / 20) - 1));
   if (names.length < 2) return <span className="break-words">{names[0] ?? empty}</span>;
   return <details className="group min-w-0 text-left" data-testid="access-summary">
-    <summary aria-label={`${label}: ${names.length} sources`} className="flex min-w-0 cursor-pointer list-none items-start gap-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 [&::-webkit-details-marker]:hidden">
+    <summary data-testid="access-summary-trigger" aria-label={`${label}: ${names.length} sources`} className="flex min-w-0 cursor-pointer list-none items-start gap-1 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 [&::-webkit-details-marker]:hidden">
       <ChevronRight className="mt-0.5 size-3.5 shrink-0 transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
       <span className="min-w-0 break-words">{names[0]} <span className="whitespace-nowrap text-gray-500">+{names.length - 1}</span></span>
     </summary>

@@ -42,6 +42,7 @@ test("a member opens and edits a Drive document while unavailable access stays b
     await user.screenshot();
     world.restoreListing();
     await user.click({ role: "button", label: "Try again" });
+    await probe.eventually(() => probe.dom(".ow-documents-workspace > .ow-editor-message"), { within: 5000, label: "the successful refresh has removed the outage notice", until: layout => layout.elements.length === 0 });
     await user.notSee({ text: "Couldn't refresh documents. Your open document is unchanged." });
   });
   await step("turning the feature off locks a draft until fresh access is confirmed after restoration", async () => {

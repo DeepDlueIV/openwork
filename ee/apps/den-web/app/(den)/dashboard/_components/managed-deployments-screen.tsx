@@ -20,10 +20,11 @@ import { getRequestError, requestJson } from "../../_lib/den-flow";
 import { getOrgAccessFlags, permissionLockReason } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { ConfirmDialog } from "./item-list";
-import { DeploymentReadinessError, deploymentActionError, deploymentPreparationLockMessage, deploymentReadGateAfterFailure, deploymentStatus, parentDeploymentsRefused, providerName, readinessMessage, type DeploymentReadGate, type DeploymentReadResponse, type DeploymentTone, type ProviderReadiness } from "./managed-deployments-state";
+import { DeploymentReadinessError, deploymentActionError, deploymentPreparationLockMessage, deploymentReadGateAfterFailure, deploymentStatus, providerName, readinessMessage, type DeploymentReadGate, type DeploymentReadResponse, type DeploymentTone, type ProviderReadiness } from "./managed-deployments-state";
 export { deploymentStatus } from "./managed-deployments-state";
 
 type Configuration = z.infer<typeof managedDeploymentConfigurationSchema>;
+type DeploymentMutationRequest = (path: string, init: RequestInit) => Promise<Awaited<ReturnType<typeof requestJson>> | null>;
 type Launch = z.infer<typeof managedDeploymentLaunchSchema>;
 type Check = ManagedDeployment["health"]["checks"][number];
 type Tone = DeploymentTone;
@@ -157,11 +158,12 @@ export function ManagedDeploymentsScreen() {
   const available = configuration?.providers.some((entry) => entry.available && (entry.provider === "aws" || entry.provider === "gcp")) ?? false;
   const selected = deployments.find((entry) => entry.id === selectedId) ?? deployments[0] ?? null;
 
+  const maskObservations = useCallback(() => {
+    setDeployments([]); setConfiguration(null); setLoadedAt(null); setSelectedId(null); setLaunch(null); setDialogOpen(false); setDeploymentToRemove(null);
+  }, []);
+
   useEffect(() => {
     const current = ++generation.current;
-    function maskObservations() {
-      setDeployments([]); setConfiguration(null); setLoadedAt(null); setSelectedId(null); setLaunch(null); setDialogOpen(false); setDeploymentToRemove(null);
-    }
     maskObservations(); setActionError(null); setBusy(false);
     updateReadGate("pending");
     setLoading(Boolean(orgId && access.canViewDeployments));
@@ -228,8 +230,41 @@ export function ManagedDeploymentsScreen() {
     }
     refreshRef.current = refresh;
     void refresh();
-    return () => { stopped = true; clearTimeout(timer); if (refreshRef.current === refresh) refreshRef.current = null; };
-  }, [orgId, memberId, access.canViewDeployments, updateReadGate]);
+    return () => {
+      stopped = true; clearTimeout(timer);
+      // Invalidate mutation callbacks on both scope changes and unmount, not just the next mount.
+      if (generation.current === current) generation.current++;
+      if (refreshRef.current === refresh) refreshRef.current = null;
+    };
+  }, [orgId, memberId, access.canViewDeployments, maskObservations, updateReadGate]);
+
+  /** Every write stays pinned to its starting scope and uses the same denial precedence as reads. */
+  function beginMutation(): DeploymentMutationRequest {
+    const current = generation.current;
+    function observe(response: DeploymentReadResponse) {
+      if (generation.current !== current) return;
+      const refusal = deploymentReadGateAfterFailure("pending", [response]);
+      if (refusal !== "access_denied" && refusal !== "feature_locked") return;
+      const next = deploymentReadGateAfterFailure(readGateRef.current, [response]);
+      if (next === "access_denied") maskObservations();
+      setDeploymentToRemove(null);
+      updateReadGate(next);
+      setActionError(null);
+    }
+    return async (path, init) => {
+      if (generation.current !== current || readGateRef.current !== "verified") return null;
+      try {
+        const result = await requestJson(path, init, 30_000, (response) => observe({ status: response.status, payload: null }));
+        if (generation.current !== current) return null;
+        observe({ status: result.response.status, payload: result.payload });
+        return result;
+      } catch (failure) {
+        // Stale body/transport errors must not reopen recovery in a different scope either.
+        if (generation.current !== current) return null;
+        throw failure;
+      }
+    };
+  }
 
   function replace(item: ManagedDeployment) {
     setDeployments((previous) => previous.some((entry) => entry.id === item.id) ? previous.map((entry) => entry.id === item.id ? item : entry) : [...previous, item]);
@@ -238,20 +273,22 @@ export function ManagedDeploymentsScreen() {
   async function prepare(deployment: ManagedDeployment, kind: Launch["kind"]) {
     if (readGateRef.current !== "verified") return;
     const current = generation.current;
+    const barrier = readBarrier.current;
+    const request = beginMutation();
     setBusy(true); setActionError(null); setCopied(false);
     try {
       await runReauthableAction(kind === "install" ? `Prepare ${providerName(deployment.provider)} approval` : kind === "update" ? "Prepare update" : "Prepare retry", async () => {
-        const result = await requestJson(`/v1/managed-deployments/${deployment.id}/launch`, { method: "POST", body: JSON.stringify({ kind }) });
+        const result = await request(`/v1/managed-deployments/${deployment.id}/launch`, { method: "POST", body: JSON.stringify({ kind }) });
+        if (!result) return;
         if (!result.response.ok) {
-          if (parentDeploymentsRefused({ status: result.response.status, payload: result.payload })) updateReadGate("feature_locked");
           const recovery = deploymentActionError(result.payload, deployment.provider);
           throw recovery ? new DeploymentReadinessError(recovery) : getRequestError(result.payload, result.response, "Couldn't prepare the installer.");
         }
         const parsed = managedDeploymentLaunchSchema.parse(result.payload);
-        if (generation.current === current && readGateRef.current === "verified") { setLaunch(parsed); replace(parsed.deployment); }
+        if (generation.current === current && readBarrier.current === barrier && readGateRef.current === "verified") { setLaunch(parsed); replace(parsed.deployment); }
       });
     } catch (failure) {
-      if (generation.current === current) setActionError(failure instanceof Error ? failure : new Error("Couldn't prepare the installer."));
+      if (generation.current === current && readGateRef.current === "verified") setActionError(failure instanceof Error ? failure : new Error("Couldn't prepare the installer."));
     } finally {
       if (generation.current === current) setBusy(false);
     }
@@ -260,12 +297,15 @@ export function ManagedDeploymentsScreen() {
   async function remove(deployment: ManagedDeployment) {
     if (readGateRef.current !== "verified") return;
     const current = generation.current;
+    const barrier = readBarrier.current;
+    const request = beginMutation();
     setBusy(true); setActionError(null);
     try {
       await runReauthableAction("Remove deployment", async () => {
-        const result = await requestJson(`/v1/managed-deployments/${deployment.id}`, { method: "DELETE" });
+        const result = await request(`/v1/managed-deployments/${deployment.id}`, { method: "DELETE" });
+        if (!result) return;
         if (!result.response.ok) throw getRequestError(result.payload, result.response, "Couldn't remove the deployment.");
-        if (generation.current === current) { setDeployments((previous) => previous.filter((entry) => entry.id !== deployment.id)); setSelectedId(null); setLaunch(null); }
+        if (generation.current === current && readBarrier.current === barrier && readGateRef.current === "verified") { setDeployments((previous) => previous.filter((entry) => entry.id !== deployment.id)); setSelectedId(null); setLaunch(null); }
       });
     } finally {
       if (generation.current === current) setBusy(false);
@@ -330,7 +370,7 @@ export function ManagedDeploymentsScreen() {
         description: `This removes the deployment record and its pending approval from this workspace. ${providerName(deploymentToRemove.provider)} resources and charges are unchanged. This cannot be undone.`,
         action: "Remove",
       } : null} onConfirm={async () => { if (deploymentToRemove) await remove(deploymentToRemove); }} onClose={() => setDeploymentToRemove(null)} />
-      {configuration ? <CreateDeploymentDialog key={`${orgId}:${orgContext?.currentMember.id}`} open={dialogOpen} onOpenChange={setDialogOpen} configuration={configuration} blockedReason={blockedReason} onParentLock={() => updateReadGate("feature_locked")} runReauthableAction={runReauthableAction}
+      {configuration ? <CreateDeploymentDialog key={`${orgId}:${orgContext?.currentMember.id}`} open={dialogOpen} onOpenChange={setDialogOpen} configuration={configuration} blockedReason={blockedReason} beginMutation={beginMutation} runReauthableAction={runReauthableAction}
         onCreated={(item) => {
           setDialogOpen(false);
           if (readGateRef.current !== "verified") return;
@@ -453,9 +493,9 @@ function DeploymentDetail({ deployment, launch, busy, canManage, canPrepare, cop
   );
 }
 
-function CreateDeploymentDialog({ open, onOpenChange, configuration, blockedReason, onParentLock, runReauthableAction, onCreated }: {
+function CreateDeploymentDialog({ open, onOpenChange, configuration, blockedReason, beginMutation, runReauthableAction, onCreated }: {
   open: boolean; onOpenChange: (open: boolean) => void; configuration: Configuration;
-  blockedReason: string | null; onParentLock: () => void;
+  blockedReason: string | null; beginMutation: () => DeploymentMutationRequest;
   runReauthableAction: (label: string, action: () => Promise<void>) => Promise<void>; onCreated: (deployment: ManagedDeployment) => void;
 }) {
   // Snapshot the initial cloud once: polling a late lock must not switch the entered target to another cloud.
@@ -495,12 +535,14 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, blockedReas
       : { provider, name, domainName, ownerEmail, target: { accountId: accountId.trim(), region, route53ZoneId: zoneId.trim(), network } });
     if (!parsed.success) { setError(new Error(parsed.error.issues[0]?.message ?? "Check the deployment details.")); return; }
     if (!consent) { setError(new Error("Confirm the cloud account, permissions and costs first.")); return; }
+    const request = beginMutation();
     setBusy(true); setError(null);
     try {
       await runReauthableAction("Create deployment", async () => {
-        const result = await requestJson("/v1/managed-deployments", { method: "POST", body: JSON.stringify(parsed.data) });
+        if (!mounted.current) return;
+        const result = await request("/v1/managed-deployments", { method: "POST", body: JSON.stringify(parsed.data) });
+        if (!mounted.current || !result) return;
         if (!result.response.ok) {
-          if (parentDeploymentsRefused({ status: result.response.status, payload: result.payload })) onParentLock();
           const recovery = deploymentActionError(result.payload, provider);
           throw recovery ? new DeploymentReadinessError(recovery) : getRequestError(result.payload, result.response, "Couldn't create the deployment.");
         }

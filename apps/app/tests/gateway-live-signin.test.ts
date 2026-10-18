@@ -24,7 +24,7 @@ const provider = { cloudProviderId: "ipr_fixture", providerId: "ipr_fixture", cr
 const alias = { id: model.modelID, name: "Model", config: { id: model.modelID }, upstreamModelId: "catalog", modelGroupId: "group",
   modelGroupName: "Group", credentialSetId: "gcs_set", credentialSetName: "Set" };
 
-for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-native", "failed-auth", "changed-account", "aborted", "legacy-ready", "legacy-reloading"] ) {
+for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-native", "failed-auth", "changed-account", "aborted", "legacy-ready", "legacy-reloading", "provider-ready", "legacy-provider-ready", "legacy-provider-reloading"] ) {
   test(`live sign-in confirms only fresh authorization and the requested native identity: ${scenario}`, async () => {
     const requests: string[] = [];
     const controller = new AbortController();
@@ -37,7 +37,7 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
         mirroredProviderIds: [], skippedProviderIds: [], catalogModelIds: [] });
       if (path === "/cloud-provider-sync/run") return Response.json({ status: "applied" });
       if (path === "/cloud-provider-sync/status") return Response.json({ hasSession: true,
-        reloadPending: scenario === "legacy-reloading", skippedProviders: [],
+        reloadPending: scenario.endsWith("reloading"), skippedProviders: [],
         providers: [{ cloudProviderId: provider.cloudProviderId, providerId: provider.providerId, sourceProviderId: "openai", name: "Provider", modelIds: [model.modelID] }] });
       if (path === "/v1/llm-providers") return Response.json({ llmProviders: [] });
       if (path === "/v1/inference-providers") {
@@ -68,13 +68,13 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
     });
     try {
       let confirmed = false;
-      const requested = scenario === "wrong-model" ? { ...model, modelID: "gwm_other_set" } : model;
+      const requested = scenario.includes("provider-") ? undefined : scenario === "wrong-model" ? { ...model, modelID: "gwm_other_set" } : model;
       const target = scenario === "wrong-set" ? { ...provider, credentialSetId: "gcs_other" } : provider;
       const result = await connectGatewayProvider({ provider: target, signal: controller.signal,
         startOAuth: async () => ({ authorizationUrl: "https://auth.example.test" }), openUrl: () => {},
         resync: async () => { confirmed = await store.confirmGatewayProviderConnection(target, requested, controller.signal); },
         isConnected: () => confirmed, wait: async () => {}, attempts: 1 });
-      expect(result).toBe(scenario === "ready" || scenario === "legacy-ready");
+      expect(result).toBe(scenario === "ready" || scenario.endsWith("-ready"));
       expect(requests).toContain("PUT /den-session");
       if (scenario.startsWith("legacy")) {
         expect(requests).toContain("POST /cloud-provider-sync/run");

@@ -2402,7 +2402,9 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
     // Older engines still own materialized providers, reload state and scope.
     return result?.outcome === "handled_server_side" && (model
       ? isGatewayModelAvailable(provider, model)
-      : state.gatewayUsageProviderScope != null && isGatewaySetConnected(provider, state.importedCloudProviders));
+      : state.gatewayUsageProviderScope === scope.generation && verifiedGatewayUsageContext === context
+        && state.cloudProviderServerSync?.reloadPending === false
+        && isGatewaySetConnected(provider, state.importedCloudProviders));
   }
 
   async function startGatewayProviderOAuth(providerId: string, credentialSetId?: string, signal?: AbortSignal) {

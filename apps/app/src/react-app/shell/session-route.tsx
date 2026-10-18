@@ -1150,7 +1150,7 @@ export function SessionRoute() {
       if (!signal.aborted && !request) toast.error(describeRouteError(error));
       return false;
     }
-  }, [platform, refreshCloudProviderSync, sessionProviderAuthStore]);
+  }, [platform, sessionProviderAuthStore]);
   const refreshOrganizationModelAccess = useCallback(async () => {
     await refreshCloudProviderSync("manual");
   }, [refreshCloudProviderSync]);

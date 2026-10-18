@@ -21,9 +21,9 @@ test("an administrator keeps a saved default while availability is unknown and s
   await step("after: retrying the source restores the saved model's real name", async () => {
     world.scenario("ready");
     await user.click({ role: "button", label: "Try again" });
-    await probe.eventually(row, { within: 30_000, label: "the saved model name", until: value => value.includes("Model one") });
+    await user.see({ role: "combobox", label: "Default model" }, { value: "Model one", timeoutMs: 30_000 });
     expect(world.reads()).toContain("ready");
-    evidence.recordAssertionEvidence("Successful revalidation resolves the unchanged saved choice", `current row=${await row()}; real options response observed`, (await row()).includes("Model one"));
+    evidence.recordAssertionEvidence("Successful revalidation resolves the unchanged saved choice", "Visible default-model input verified as Model one; real options response observed", world.reads().includes("ready"));
     await user.screenshot();
   });
   await step("a failed options response still does not claim the saved model was removed", async () => {
@@ -42,7 +42,8 @@ test("an administrator keeps a saved default while availability is unknown and s
     await user.see({ text: "This saved model is not in the current list. Members who can't use the resolved default keep their desktop default. Choose another model." });
     await user.notSee({ text: "Its members start on the organization default" });
     expect(world.reads()).toContain("removed");
-    evidence.recordAssertionEvidence("Complete absence is distinguished from an unverifiable source", `all sources answered; saved choice remains visible; current row=${await row()}`, (await row()).includes("Saved model"));
+    await user.see({ role: "combobox", label: "Default model" }, { value: "Saved model" });
+    evidence.recordAssertionEvidence("Complete absence is distinguished from an unverifiable source", "All sources answered; saved choice remains visible as Saved model, without a fabricated name or fallback", world.reads().includes("removed"));
     await user.screenshot();
   });
   await step("saving a different organization default acknowledges only that setting, not every desktop chat", async () => {

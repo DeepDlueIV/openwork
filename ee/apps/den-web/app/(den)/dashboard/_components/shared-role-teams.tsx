@@ -40,6 +40,11 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const canManage = ready.access.canManagePermissions;
+  const listedRole = setsQuery.data?.find((role) => role.id === set.id);
+  const unavailable = setsQuery.isSuccess && !listedRole;
+  // Reconciliation reads this inventory. Its verified associations must also
+  // drive the visible rows, rather than an older detail projection.
+  const displayedTeams = setsQuery.isSuccess && listedRole ? permissionSetTeams(listedRole) : set.teams;
   const teams = orgContext?.teams ?? [];
   const roleByTeam = new Map<string, { id: string; name: string }>();
   for (const role of setsQuery.data ?? []) {
@@ -55,6 +60,7 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
   async function reconcile(entries: RoleAssignmentOutcome[], ids: readonly string[]) {
     const result = await setsQuery.refetch({ throwOnError: true });
     if (!result.isSuccess || !result.data) throw new Error("Couldn't verify current roles. No retry was sent.");
+    if (!result.data.some((role) => role.id === set.id && role.kind === "team")) throw new Error("This role is no longer in the active role list. No retry was sent.");
     const currentRoles = new Map<string, { id: string; name: string }>();
     for (const role of result.data) {
       if (role.kind !== "team") continue;
@@ -81,7 +87,7 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
 
   async function add(ids: string[], retry = false) {
     if (assigning || checking) throw new Error("The submitted teams are still being checked.");
-    if (!canManage || !setsQuery.isSuccess || !setsQuery.data) throw new Error("Couldn't verify permission to assign this role. Your selections are kept; try again after access is verified.");
+    if (!canManage || unavailable || !setsQuery.isSuccess || !setsQuery.data) throw new Error("Couldn't verify permission to assign this role. Your selections are kept; try again after access is verified.");
     if (ids.some((id) => outcomes.some((entry) => entry.id === id && (entry.status === "unconfirmed" || entry.status === "review")))) throw new Error("These teams need a current-role check or review. No assignment was replayed.");
     const submitted: RoleAssignmentOutcome[] = ids.map((id) => {
       const previous = outcomes.find((entry) => entry.id === id);
@@ -135,9 +141,9 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
     <div className="flex flex-col gap-3" data-testid="role-teams">
       {!canManage ? <DenNotice tone="neutral" message={permissionLockReason("permissions.manage")} /> : null}
       <ItemPanel>
-        {set.teams.length === 0 ? (
+        {unavailable ? <p className="px-5 py-4 text-[13px] text-gray-500">This role is not in the verified active role list. Assignment is blocked.</p> : displayedTeams.length === 0 ? (
           <p className="px-5 py-4 text-[13px] text-gray-500" data-testid="role-teams-empty">No team has this role.</p>
-        ) : set.teams.map((team) => {
+        ) : displayedTeams.map((team) => {
           const name = team.name ?? "A deleted team";
           const memberCount = teams.find((entry) => entry.id === team.id)?.memberIds.length;
           return (
@@ -152,7 +158,7 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
           );
         })}
         <div className="flex px-5 py-3">
-          <AddPicker kind="team" options={addable} disabled={!canManage || assigning || checking || !setsQuery.isSuccess} onAdd={add} triggerLabel="Assign role" actionLabel="Assign role" showConsequences />
+          <AddPicker kind="team" options={addable} disabled={!canManage || unavailable || assigning || checking || !setsQuery.isSuccess} onAdd={add} triggerLabel="Assign role" actionLabel="Assign role" showConsequences />
         </div>
       </ItemPanel>
       {setsQuery.isError ? <DenNotice tone="error" message="Couldn't verify the teams' current roles. Assignment is blocked until they are verified." action={<DenButton size="sm" variant="secondary" onClick={() => void setsQuery.refetch()}>Try again</DenButton>} /> : null}
@@ -166,7 +172,7 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
           </span>
         </li>)}</ul>
         <div className="flex flex-wrap gap-2">
-          {outcomes.some(canRetryRoleAssignment) ? <DenButton size="sm" variant="secondary" disabled={!canManage || assigning || checking || !setsQuery.isSuccess} onClick={() => void add(outcomes.filter(canRetryRoleAssignment).map((entry) => entry.id), true).catch((cause) => setCheckError(cause instanceof Error ? cause.message : "Couldn't retry rejected assignments."))}>Retry failed teams</DenButton> : null}
+          {outcomes.some(canRetryRoleAssignment) ? <DenButton size="sm" variant="secondary" disabled={!canManage || unavailable || assigning || checking || !setsQuery.isSuccess} onClick={() => void add(outcomes.filter(canRetryRoleAssignment).map((entry) => entry.id), true).catch((cause) => setCheckError(cause instanceof Error ? cause.message : "Couldn't retry rejected assignments."))}>Retry failed teams</DenButton> : null}
           {outcomes.some((entry) => entry.status === "unconfirmed" || entry.status === "review") ? <DenButton size="sm" variant="secondary" loading={checking} disabled={assigning} onClick={() => void checkCurrentRoles()}>Check current roles</DenButton> : null}
         </div>
         {checkError ? <DenNotice tone="error" message={checkError} /> : null}
@@ -176,6 +182,11 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
         team={removing}
         onClose={() => setRemoving(null)}
         onRemove={async (team) => {
+          if (!canManage || unavailable) throw new Error("This role's assignment must be verified before it can be removed.");
+          const current = await setsQuery.refetch({ throwOnError: true });
+          if (!active.current) return;
+          const role = current.data?.find((entry) => entry.id === set.id);
+          if (!role || !permissionSetTeams(role).some((entry) => entry.id === team.id)) throw new Error("This team no longer has this role. Review its current access; nothing was removed.");
           await setTeamRole.mutateAsync({ teamId: team.id, permissionSetId: null });
           if (!active.current) return;
           toast({

@@ -9,6 +9,7 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
   let keyboardWorked = false;
   let panelLabelled = false;
   let tabStops = 0;
+  const waitForSavedDraft = () => probe.eventually(() => probe.dom('[role="tabpanel"]:not([hidden]) [data-testid="agent-permissions-save-bar"]'), { within: 30_000, label: "the accepted save clears the visible draft bar", until: (result) => result.elements.length === 0 });
   await step("the owner edits commands and opens Browser without saving the command draft", async () => {
     await user.see({ role: "button", label: "Run commands" }, { timeoutMs: 90_000 });
     await user.click({ role: "button", label: "Run commands" });
@@ -36,6 +37,7 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
     await user.click({ role: "button", label: "Open websites" });
     await user.click({ role: "option", label: "Block" });
     await user.click({ role: "button", label: "Save changes" });
+    await waitForSavedDraft();
     await user.notSee({ testId: "agent-permissions-save-bar" });
     await user.click({ role: "tab", label: "Agents" });
     await user.see({ role: "button", label: "Run commands" }, { text: "Block" });
@@ -48,6 +50,7 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
   await step("after: the reviewed command draft saves without overwriting Browser", async () => {
     await user.click({ role: "button", label: "Keep my edits on latest settings" });
     await user.click({ role: "button", label: "Save changes" });
+    await waitForSavedDraft();
     await user.notSee({ testId: "agent-permissions-save-bar" });
     const policies = record((await probe.api(world.den.admin, "/v1/agent-permissions")).body);
     const settings = record(rows(policies.teams).find((entry) => entry.teamId === world.team)?.settings);
@@ -70,6 +73,7 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
     expect(rows.elements).toHaveLength(1);
     await user.screenshot();
     await user.click({ role: "button", label: "Save changes" });
+    await waitForSavedDraft();
     await user.notSee({ testId: "agent-permissions-save-bar" });
   });
   await step("a denied policy refresh masks cached settings through a later network failure", async () => {
@@ -116,6 +120,7 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
   await step("another team's settings and an ordinary member's access remain unchanged", async () => {
     await user.navigate(world.url(`/dashboard/members/teams/${world.other}?tab=agents`));
     await user.see({ role: "button", label: "Run commands" }, { text: "Allow" });
+    await waitForSavedDraft();
     await user.notSee({ testId: "agent-permissions-save-bar" });
     const refused = await probe.api(world.den.members.plain, "/v1/agent-permissions");
     evidence.recordAssertionEvidence("drafts and permissions stay scoped", `other team has no draft; member read HTTP ${refused.response.status}`, refused.response.status === 403);

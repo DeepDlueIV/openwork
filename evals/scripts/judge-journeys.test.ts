@@ -33,12 +33,12 @@ test("journeys use two asynchronous workers and drain all records despite failur
         active--;
       }
     });
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    await expect.poll(() => calls.length).toBe(2);
     // A slow first record must not block the other worker's queue.
     calls[1].finish(2);
-    await vi.waitFor(() => expect(calls).toHaveLength(3));
+    await expect.poll(() => calls.length).toBe(3);
     calls[2].finish(1);
-    await vi.waitFor(() => expect(calls).toHaveLength(4));
+    await expect.poll(() => calls.length).toBe(4);
     calls[3].finish(0);
     calls[0].finish(0);
     await expect(result).resolves.toEqual({ count: 4, result: "failure" });
@@ -91,9 +91,9 @@ test.each([0, 1, 2, null, "error"])("default subprocess runner waits for complet
   try {
     const dir = await record(directory, "one");
     const result = judgeJourneys(directory, "trusted");
-    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledExactlyOnceWith(
+    await expect.poll(() => spawnMock).toHaveBeenCalledExactlyOnceWith(
       "pnpm", ["--dir", "evals", "evidence:judge", "--", "--test-run", dir], { stdio: "inherit" },
-    ));
+    );
     if (status === "error") child.emit("error", new Error("spawn unavailable"));
     else child.emit("close", status);
     await expect(result).resolves.toEqual({

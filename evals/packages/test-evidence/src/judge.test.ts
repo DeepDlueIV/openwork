@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { judgeTestRun, type TestArtifact } from "./test-evidence.ts";
 import type { VisionRequest } from "./validate.ts";
 
@@ -49,7 +49,7 @@ function controlledJudge() {
   async function call(id: number, verdict = false) {
     const find = () => calls.find(call => call.req.png.toString() === `screen ${id}`
       && call.req.prompt.startsWith(verdict ? "Judge each" : "Objectively describe"));
-    await vi.waitFor(() => expect(find()).toBeDefined());
+    await expect.poll(find).toBeDefined();
     const found = find();
     if (!found) throw new Error("Expected judge call");
     return found;

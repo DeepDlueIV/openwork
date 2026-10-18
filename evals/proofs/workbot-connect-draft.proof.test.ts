@@ -13,6 +13,8 @@ test("a member reconnects Drive and explicitly restores their exact unsaved draf
     await user.click({ role: "button", label: "Connect Google Drive" });
     const consent = await probe.eventually(() => world.consent(), { within: 10_000, label: "the member reviews provider consent", until: value => Boolean(value) });
     await user.on(consent).click({ role: "button", label: "Approve access" });
+    await probe.eventually(() => world.ready(), { within: 10_000, label: "Den verifies the member's initial connection", until: value => value });
+    await user.click({ role: "button", label: "Check browsing access" });
     await user.see({ role: "button", label: /^Project brief\.txt$/, nth: 0 });
     await user.click({ role: "button", label: /^Project brief\.txt$/, nth: 0 });
     await user.see({ role: "textbox", label: "Document text" }, { value: "Saved project overview.\n" });

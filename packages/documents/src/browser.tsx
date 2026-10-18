@@ -1,10 +1,10 @@
 "use client"
 
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { Clock, ChevronRight, ExternalLink, FileText, FileSpreadsheet, Image, Presentation, Folder, Grid2X2, Info, List, Lock, RefreshCw, Search, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { DocumentEditorTab } from "./editor"
-import { documentsAccessFailure, DOCUMENT_RECOVERY_MS } from "./access"
+import { documentsAccessFailure, expiredDocumentRecovery, lockDocumentRecovery } from "./access"
 import { DocumentTabs, type DocumentTabControls, type DocumentTabControlsChange } from "./document-tabs"
 import type { DocumentsEditor } from "./model"
 import { documentType, type DocumentItem, type DocumentsProvider, type DocumentsViewContext, type DocumentOpenRequest } from "./index"
@@ -20,6 +20,8 @@ export type DocumentsBrowserProps = {
   signInHref?: string | null
   /** Freshly verify the authenticated identity still matches scope before revealing recovery. */
   verifyScope?(): Promise<boolean>
+  /** A retained host owner may be masked while its own sign-in is revalidated. */
+  authorization?: "signin" | "blocked" | "disabled"
   onDirtyChange?(dirty: boolean): void
   onContextChange?(context: DocumentsViewContext | null): void
   openDocument?: DocumentOpenRequest
@@ -48,9 +50,9 @@ export function DocumentsBrowser(props: DocumentsBrowserProps) {
   return <ScopedDocumentsBrowser key={JSON.stringify([props.scope, props.provider.id])} {...props} />
 }
 
-function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsHref, signInHref, verifyScope, onDirtyChange, onContextChange, openDocument }: DocumentsBrowserProps) {
-  const queryClient = useQueryClient()
-  const scopeKey = JSON.stringify(scope)
+function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsHref, signInHref, verifyScope, authorization, onDirtyChange, onContextChange, openDocument }: DocumentsBrowserProps) {
+  const policy = useRef({ enabled, authorization })
+  policy.current = { enabled, authorization }
   const [resources, setResources] = useState<ReadonlyMap<string, DocumentItem>>(new Map())
   const resourceChanged = useCallback((id: string, item: DocumentItem) => setResources(current => new Map(current).set(id, item)), [])
   const dirtyTabs = useRef(new Set<string>())
@@ -93,7 +95,7 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
     queryFn: ({ pageParam, signal }) => provider.list({ view, folderId: view === "recent" ? "root" : folder.id, query: search, cursor: pageParam || undefined, signal }),
     initialPageParam: "",
     getNextPageParam: page => page.nextCursor ?? undefined,
-    enabled,
+    enabled: enabled && !authorization,
     retry: false,
     staleTime: 0,
     refetchOnWindowFocus: true,
@@ -102,7 +104,7 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
   const recent = useQuery({
     queryKey: ["documents", ...scope, provider.id, "recent-sidebar"],
     queryFn: ({ signal }) => provider.list({ view: "recent", folderId: "root", query: "", signal }),
-    enabled: enabled && (view !== "recent" || !!search), retry: false, gcTime: 0, staleTime: 60_000,
+    enabled: enabled && !authorization && (view !== "recent" || !!search), retry: false, gcTime: 0, staleTime: 60_000,
     refetchOnWindowFocus: true,
   })
   const recentItems = view === "recent" && !search
@@ -133,30 +135,44 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
       if (!provider.get || !openDocument) throw new Error("This document provider cannot open links.")
       return provider.get(openDocument.fileId, signal)
     },
-    enabled: enabled && !!openDocument, retry: false, gcTime: 0,
+    enabled: enabled && !authorization && !!openDocument, retry: false, gcTime: 0,
     refetchOnWindowFocus: false,
   })
   const handled = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (!enabled || !requested.data || !openDocument || handled.current === openDocument.requestId) return
+    if (!enabled || authorization || !requested.data || !openDocument || handled.current === openDocument.requestId) return
     handled.current = openDocument.requestId
     open(requested.data)
   })
-  const accessFailure = documentsAccessFailure(query.error) ?? documentsAccessFailure(recent.error)
-  const flagOff = !enabled || accessFailure === "disabled"
-  const [recovery, setRecovery] = useState<{ until: number; reason: "signin" | "connection" | "blocked" | "disabled" } | null>(null)
+  const queryFailure = documentsAccessFailure(query.error)
+  const recentFailure = documentsAccessFailure(recent.error)
+  const accessFailure = !enabled ? "disabled" : authorization ?? queryFailure ?? recentFailure
+  const failureToken = !enabled ? "disabled" : authorization ?? (queryFailure ? query.error : recentFailure ? recent.error : null)
+  const [observedFailure, setObservedFailure] = useState<unknown>(null)
+  // Directory authorization is a fact, not the latest request's error state.
+  // No editors are needed for a denial to remain latched across later outages.
+  const [denial, setDenial] = useState<ReturnType<typeof documentsAccessFailure>>(null)
+  const [locks, setLocks] = useState<ReadonlyMap<string, number>>(new Map())
+  const locksRef = useRef(locks)
+  const updateLocks = useCallback((update: (current: ReadonlyMap<string, number>) => ReadonlyMap<string, number>) => {
+    const next = update(locksRef.current)
+    locksRef.current = next; setLocks(next)
+  }, [])
+  const recoveryUntil = locks.size ? Math.min(...locks.values()) : null
   const [restoring, setRestoring] = useState(false)
   const [recoveryError, setRecoveryError] = useState<string>()
-  const accessLost = accessFailure === "signin" || accessFailure === "connection" || accessFailure === "blocked" || recovery !== null
-  const editorEnabled = enabled && !flagOff && !accessLost
+  const unobservedFailure = failureToken !== null && failureToken !== observedFailure
+  const editorEnabled = enabled && !authorization && !unobservedFailure
+  const flagOff = !enabled || accessFailure === "disabled"
+  const accessLost = accessFailure !== null || denial !== null
   const activeItem = opened.find(item => item.id === activeTab)
   const activeFile = activeItem ? resources.get(activeTab) ?? activeItem : undefined
   const activeDirty = dirtyIds.has(activeTab)
   useEffect(() => {
-    onContextChange?.(!editorEnabled ? null : activeFile
+    onContextChange?.(!editorEnabled || locks.has(activeTab) ? null : activeFile
       ? { kind: "file", item: activeFile, unsaved: activeDirty }
-      : query.isError ? null : { kind: "files", view, folderId: folder.id, folderName: folder.name, query: search })
-  }, [editorEnabled, query.isError, activeFile, activeDirty, view, folder.id, folder.name, search, onContextChange])
+      : accessLost || query.isError ? null : { kind: "files", view, folderId: folder.id, folderName: folder.name, query: search })
+  }, [editorEnabled, locks, activeTab, accessLost, query.isError, activeFile, activeDirty, view, folder.id, folder.name, search, onContextChange])
   const submit = (event: FormEvent) => { event.preventDefault(); setSearch(draft.trim()); setSelected(null) }
   const requestClose = (id: string) => {
     if (busyIds.has(id)) return
@@ -173,68 +189,85 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
     setOpened(current => current.filter(item => item.id !== id))
     setResources(current => { const next = new Map(current); next.delete(id); return next })
     setTabOrder(current => current.filter(tab => tab !== id))
+    updateLocks(current => { const next = new Map(current); next.delete(id); return next })
     if (restoreFocus) requestAnimationFrame(() => tabsRow.current?.querySelector<HTMLButtonElement>(neighbor === "files" ? ".ow-document-tab-files" : `[data-document-id="${CSS.escape(neighbor)}"] .ow-document-tab-open`)?.focus())
     void query.refetch(); void recent.refetch()
   }
-  const discardRecovery = useCallback(() => {
-    setOpened([]); setResources(new Map()); setTabOrder([]); setActiveTab("files"); setSelected(null)
-    dirtyTabs.current.clear(); setDirtyIds(new Set()); setBusyIds(new Set()); closeControls.current.clear()
-    setRecovery(null); setRecoveryError(undefined)
-    onDirtyChange?.(false)
-    queryClient.removeQueries({ predicate: entry => entry.queryKey[0] === "documents"
-      && JSON.stringify(entry.queryKey.slice(1, scope.length + 1)) === scopeKey })
-  }, [queryClient, scopeKey, scope.length, onDirtyChange])
+  const discardRecovery = useCallback((id?: string) => {
+    const discarded = new Set(id ? [id] : expiredDocumentRecovery(locksRef.current))
+    if (discarded.size === 0) return
+    setOpened(current => current.filter(item => !discarded.has(item.id)))
+    setResources(current => new Map([...current].filter(([key]) => !discarded.has(key))))
+    setTabOrder(current => current.filter(key => !discarded.has(key)))
+    setActiveTab(current => discarded.has(current) ? "files" : current)
+    for (const key of discarded) { dirtyTabs.current.delete(key); closeControls.current.delete(key) }
+    setDirtyIds(new Set(dirtyTabs.current)); onDirtyChange?.(dirtyTabs.current.size > 0)
+    setBusyIds(current => new Set([...current].filter(key => !discarded.has(key))))
+    updateLocks(current => new Map([...current].filter(([key]) => !discarded.has(key))))
+    setRecoveryError(undefined)
+    // Unmounting only the discarded editors releases their gcTime:0 queries.
+    // Never clear the directory denial or another restored editor's cache here.
+  }, [updateLocks, onDirtyChange])
   useEffect(() => {
-    const reason = !enabled ? "disabled" : accessFailure
-    if (!reason) return
-    setSelected(null)
-    // Do not unmount editors here: Office unmount explicitly discards its encrypted draft.
-    if (opened.length) setRecovery(current => current ?? { until: Date.now() + DOCUMENT_RECOVERY_MS, reason })
-  }, [enabled, accessFailure, opened.length])
+    if (!accessFailure || failureToken === observedFailure) return
+    setObservedFailure(failureToken); setDenial(accessFailure); setSelected(null)
+    // Keep owners mounted, with bounded recovery separately for each file.
+    updateLocks(current => lockDocumentRecovery(current, opened.map(item => item.id)))
+  }, [accessFailure, failureToken, observedFailure, opened, updateLocks])
   useEffect(() => {
-    if (!recovery) return
-    const timer = setTimeout(discardRecovery, Math.max(0, recovery.until - Date.now()))
+    if (recoveryUntil === null) return
+    const timer = setTimeout(() => discardRecovery(), Math.max(0, recoveryUntil - Date.now()))
     return () => clearTimeout(timer)
-  }, [recovery, discardRecovery])
-  const restoreRecovery = async () => {
-    if (restoring || !recovery || !enabled) return
+  }, [recoveryUntil, discardRecovery])
+  const restoreRecovery = async (id?: string) => {
+    if (restoring) return
     setRestoring(true); setRecoveryError(undefined)
     const identityNotice = "Sign-in identity isn't confirmed. Use the same account, then check again."
     try {
       if (!verifyScope || !await verifyScope()) { setRecoveryError(identityNotice); return }
-      const result = await query.refetch()
-      if (result.isError) throw result.error
-      // A successful directory read never grants access to an individual cached file.
-      await Promise.all(opened.map(async item => {
+      const listings = await Promise.allSettled([query.refetch({ throwOnError: true }), recent.refetch({ throwOnError: true })])
+      // File reads are independent of directory availability and of each other.
+      const candidates = opened.filter(item => id ? item.id === id : locks.has(item.id))
+      const checked = await Promise.allSettled(candidates.map(async item => {
         const controls = closeControls.current.get(item.id)
-        if (!controls) throw new Error("Reopen your files to check access.")
+        if (!controls) throw new Error("This document hasn't opened yet.")
         await controls.checkAccess()
+        return item.id
       }))
-      if (Date.now() >= recovery.until) { discardRecovery(); return }
-      const recentResult = await recent.refetch()
-      if (recentResult.isError) throw recentResult.error
       if (!await verifyScope()) { setRecoveryError(identityNotice); return }
-      setRecovery(null)
+      if (!policy.current.enabled || policy.current.authorization) { setRecoveryError("Document access is still blocked. Check your workspace sign-in or ask an admin."); return }
+      discardRecovery() // Expire only overdue files, never another restored draft.
+      const restored = new Set(checked.flatMap(result => result.status === "fulfilled" && (locksRef.current.get(result.value) ?? 0) > Date.now() ? [result.value] : []))
+      updateLocks(current => new Map([...current].filter(([key]) => !restored.has(key))))
+      const [listing, sidebar] = listings
+      const freshListing = listing?.status === "fulfilled" && listing.value.isSuccess
+      const sidebarDenial = sidebar?.status === "rejected" && documentsAccessFailure(sidebar.reason)
+      if (freshListing && !sidebarDenial) setDenial(null)
+      if (checked.some(result => result.status === "rejected")) setRecoveryError(restored.size ? "Some documents are still locked. Restored tabs are available." : "Some documents are still locked. Check or discard them individually.")
+      else if (!freshListing || sidebarDenial) setRecoveryError(candidates.length ? "Open documents were checked. Browsing access is still unconfirmed." : "Browsing access is still unconfirmed.")
     } catch { setRecoveryError("Access isn't confirmed. Reconnect or ask your admin, then check again.") }
     finally { setRestoring(false) }
   }
-  const needsSignIn = accessFailure === "signin" || recovery?.reason === "signin"
-  const needsConnection = !needsSignIn && (accessFailure === "connection" || recovery?.reason === "connection")
+  const needsSignIn = accessFailure === "signin"
+  const needsConnection = accessFailure === "connection"
   const reauthenticateHref = signInHref ?? connectionsHref
   const blocked = accessLost || flagOff
   const visible = enabled && !flagOff && !query.isError && !accessLost
   const refreshFailed = !accessLost && !flagOff && (query.isError || recent.isError)
+  const lockedResources = new Set(opened.filter(item => locks.has(item.id)).map(item => (resources.get(item.id) ?? item).id))
+  const listedItems = items.filter(item => !lockedResources.has(item.id))
   return <section className="ow-documents" aria-label="Documents">
     <aside className="ow-documents-sidebar">
       <div className="ow-documents-source">Documents</div>
       <button type="button" className="ow-documents-location" aria-current={activeTab === "files" && view === "recent" ? "page" : undefined} onClick={() => { setView("recent"); setActiveTab("files"); setSearch(""); setDraft(""); setOrder("recent") }}><Clock size={16} strokeWidth={1.5} aria-hidden />Recent</button>
       <button type="button" className="ow-documents-location" aria-current={activeTab === "files" && view === "folder" ? "page" : undefined} onClick={() => navigate(0)}><Folder size={16} strokeWidth={1.5} aria-hidden />{provider.rootLabel}</button>
       <h2 className="ow-documents-recent-heading">Recent documents</h2>
-      {visible && recentItems.slice(0, 8).map(item => <button type="button" className="ow-documents-recent-file" key={item.id} onClick={() => open(item)}><ItemIcon item={item} /><span>{item.name}</span></button>)}
+      {visible && recentItems.filter(item => !lockedResources.has(item.id)).slice(0, 8).map(item => <button type="button" className="ow-documents-recent-file" key={item.id} onClick={() => open(item)}><ItemIcon item={item} /><span>{item.name}</span></button>)}
     </aside>
     <div className="ow-documents-workspace">
-      <div className="ow-document-tabs-row" ref={tabsRow}><DocumentTabs items={editorEnabled ? orderedTabs : []} activeId={activeTab} dirtyIds={dirtyIds} busyIds={busyIds} onSelect={setActiveTab} onClose={requestClose} onReorder={setTabOrder}/><div className="ow-document-actions" ref={setActionsHost}/></div>
-      {accessLost && <div className="ow-editor-message" role="status"><Lock size={16} aria-hidden />{flagOff ? "Documents is off for your workspace. An admin can turn it on." : needsSignIn ? "Sign in again to restore document access." : needsConnection ? recovery ? "Google Drive needs a fresh connection." : "Connect Google Drive to browse and open your documents. Drive read permission is required." : "Access to your documents isn't confirmed."}{needsSignIn && reauthenticateHref && <a href={reauthenticateHref} target="_blank" rel="noopener noreferrer">Sign in again</a>}{recovery && <><span>Open tabs are locked. Recovery is kept in this tab for up to 15 minutes.</span>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>}<button type="button" disabled={restoring || !enabled} onClick={() => void restoreRecovery()}>Check access and restore tabs</button><button type="button" disabled={restoring} onClick={discardRecovery}>Discard retained changes</button></>}{!recovery && <>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Connect Google Drive</a>}<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></>}{recoveryError && <span>{recoveryError}</span>}</div>}
+      <div className="ow-document-tabs-row" ref={tabsRow}><DocumentTabs items={editorEnabled ? orderedTabs.filter(item => !locks.has(item.id)) : []} activeId={activeTab} dirtyIds={dirtyIds} busyIds={busyIds} onSelect={setActiveTab} onClose={requestClose} onReorder={setTabOrder}/><div className="ow-document-actions" ref={setActionsHost}/></div>
+      {(accessLost || locks.size > 0) && <div className="ow-editor-message" role="status"><Lock size={16} aria-hidden />{flagOff ? "Documents is off for your workspace. An admin can turn it on." : needsSignIn ? "Sign in again to restore document access." : needsConnection ? recoveryUntil !== null ? "Google Drive needs a fresh connection." : "Connect Google Drive to browse and open your documents. Drive read permission is required." : "Some document access isn't confirmed."}{needsSignIn && reauthenticateHref && <a href={reauthenticateHref} target="_blank" rel="noopener noreferrer">Sign in again</a>}{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">{locks.size > 0 ? "Reconnect Google Drive" : "Connect Google Drive"}</a>}{recoveryUntil !== null && locks.size > 0 && <span>Locked recovery is kept in this tab for up to 15 minutes.</span>}<button type="button" disabled={restoring} onClick={() => void restoreRecovery()}>{locks.size > 0 ? "Check access and restore tabs" : "Check browsing access"}</button>{recoveryError && <span>{recoveryError}</span>}</div>}
+      {opened.filter(item => locks.has(item.id)).map(item => { const position = tabOrder.indexOf(item.id) + 1; return <div className="ow-editor-message" role="group" aria-label={`Locked document ${position}`} key={item.id}><span>Locked document {position}</span><button type="button" disabled={restoring} aria-label={`Check access for locked document ${position}`} onClick={() => void restoreRecovery(item.id)}>Check access</button><button type="button" disabled={restoring} aria-label={`Discard locked document ${position}`} onClick={() => discardRecovery(item.id)}>Discard</button></div> })}
       {!accessLost && flagOff && activeTab !== "files" && <div className="ow-editor-message" role="status">Documents is off for your workspace. An admin can turn it on.<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></div>}
       {refreshFailed && activeTab !== "files" && <div className="ow-editor-message" role="status">Couldn't refresh documents. Your open document is unchanged.<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></div>}
     {enabled && openDocument && requested.isError && <div className="ow-documents-notice" role="status">Couldn't open this document. Check your Drive connection and access. <button type="button" onClick={() => void requested.refetch()}>Try again</button></div>}
@@ -251,16 +284,16 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
         : query.isPending ? <div className="ow-documents-skeleton" aria-label="Loading documents" aria-busy="true">{Array.from({ length: 8 }, (_, index) => <div key={index} />)}</div>
         : <><div className="ow-documents-content">
           <div className="ow-documents-listing">
-            {layout === "list" ? <table><thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Last modified</th><th scope="col">Size</th></tr></thead><tbody>{items.map(item => <tr key={item.id} data-selected={selected?.id === item.id}><td><button type="button" className="ow-documents-file" onClick={() => open(item)}><ItemIcon item={item} /><span>{item.name}</span></button></td><td>{documentType(item)}</td><td>{date(item.modifiedTime)}</td><td>{size(item.size)}</td></tr>)}</tbody></table>
-              : <div className="ow-documents-grid">{items.map(item => <button type="button" key={item.id} className="ow-documents-tile" data-selected={selected?.id === item.id} onClick={() => open(item)}><ItemIcon item={item} /><strong>{item.name}</strong><span>{documentType(item)}</span></button>)}</div>}
-            {items.length === 0 && <div className="ow-documents-state"><Folder size={24} strokeWidth={1.5} /><p>{search ? "No documents match your search." : view === "recent" ? "No recent documents in Drive." : "This folder is empty."}</p></div>}
+            {layout === "list" ? <table><thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Last modified</th><th scope="col">Size</th></tr></thead><tbody>{listedItems.map(item => <tr key={item.id} data-selected={selected?.id === item.id}><td><button type="button" className="ow-documents-file" onClick={() => open(item)}><ItemIcon item={item} /><span>{item.name}</span></button></td><td>{documentType(item)}</td><td>{date(item.modifiedTime)}</td><td>{size(item.size)}</td></tr>)}</tbody></table>
+              : <div className="ow-documents-grid">{listedItems.map(item => <button type="button" key={item.id} className="ow-documents-tile" data-selected={selected?.id === item.id} onClick={() => open(item)}><ItemIcon item={item} /><strong>{item.name}</strong><span>{documentType(item)}</span></button>)}</div>}
+            {listedItems.length === 0 && <div className="ow-documents-state"><Folder size={24} strokeWidth={1.5} /><p>{lockedResources.size > 0 ? "Some documents are locked." : search ? "No documents match your search." : view === "recent" ? "No recent documents in Drive." : "This folder is empty."}</p></div>}
             {query.hasNextPage && <button type="button" className="ow-documents-more" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>Load more</button>}
             {query.data?.pages.some(page => page.incomplete) && <p className="ow-documents-notice" role="status">Google couldn't search every drive. Some files may be missing.</p>}
           </div>
           {visible && selected && <aside className="ow-documents-detail" aria-label="Document details"><div className="ow-documents-detail-heading"><Info size={16} aria-hidden /><span>Details</span><button type="button" aria-label="Close document details" onClick={() => setSelected(null)}><X size={16} /></button></div><ItemIcon item={selected} /><h2>{selected.name}</h2><dl><dt>Type</dt><dd>{documentType(selected)}</dd><dt>Last modified</dt><dd>{date(selected.modifiedTime)}</dd><dt>Size</dt><dd>{size(selected.size)}</dd></dl>{selected.openUrl ? <a className="ow-documents-open" href={selected.openUrl} target="_blank" rel="noopener noreferrer">Open in {provider.label}<ExternalLink size={14} aria-hidden /></a> : <p>This file has no available link.</p>}</aside>}
         </div></>}
     </div>
-    {editor && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={editorEnabled} active={editorEnabled && activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onSavingChange={updateSaving} onResourceChange={resourceChanged} onControlsChange={registerControls} onClose={() => close(item.id)} />)}
+    {editor && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={editorEnabled && !locks.has(item.id)} active={editorEnabled && !locks.has(item.id) && activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onSavingChange={updateSaving} onResourceChange={resourceChanged} onControlsChange={registerControls} onClose={() => close(item.id)} />)}
     </div>
   </section>
 }

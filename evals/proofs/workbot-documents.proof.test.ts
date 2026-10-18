@@ -85,7 +85,7 @@ test("a member recovers a draft after reconnecting only when file authorization 
     world.restoreDrive();
     world.denyFile();
     await user.click({ role: "button", label: "Check access and restore tabs" });
-    await user.see({ text: "Access isn't confirmed. Reconnect or ask your admin, then check again." });
+    await user.see({ text: "Some documents are still locked. Check or discard them individually." });
     await user.notSee({ role: "textbox", label: "Document text" });
     await user.notSee({ text: "Project brief.txt" });
     evidence.recordAssertionEvidence("File authorization is checked separately", "A successful list read and a denied file read keep the retained draft locked", (await probe.dom(".ow-editor-plain")).elements.length === 0);
@@ -101,7 +101,7 @@ test("a member recovers a draft after reconnecting only when file authorization 
   });
 });
 
-test("a member can renew an expired workspace sign-in without replacing a retained document", async ({ world, user, probe, step, evidence }) => {
+test("a member handles a document request needing sign-in without replacing its retained draft", async ({ world, user, probe, step, evidence }) => {
   await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
   await step("before: the member has an unsaved document in this workspace", async () => {
     await user.click({ role: "button", label: "Project brief.txt" });
@@ -126,13 +126,15 @@ test("a member can renew an expired workspace sign-in without replacing a retain
     world.restoreSession();
     world.useOtherIdentity();
     await user.click({ role: "button", label: "Check access and restore tabs" });
-    await user.see({ text: "Sign-in identity isn't confirmed. Use the same account, then check again." });
+    await user.see({ text: "The signed-in account or workspace changed. Retained documents are locked." });
     await user.notSee({ role: "textbox", label: "Document text" });
     await user.notSee({ text: "Project brief.txt" });
     world.restoreIdentity();
     world.useOtherOrganization();
-    await user.click({ role: "button", label: "Check access and restore tabs" });
-    await user.see({ text: "Sign-in identity isn't confirmed. Use the same account, then check again." });
+    await user.click({ role: "button", label: "Check sign-in" });
+    await probe.eventually(() => world.identityScopes(), { within: 5000, label: "the current sign-in is the original person in another workspace", until: values => values.some(value => value.principalId === "user_example" && value.organizationId === "org_other") });
+    await probe.eventually(() => probe.dom('main[aria-label="Workspace sign-in recovery"] button:not(:disabled)'), { within: 5000, label: "the different workspace's identity check has settled", until: layout => layout.elements.length === 1 });
+    await user.see({ text: "The signed-in account or workspace changed. Retained documents are locked." });
     await user.notSee({ role: "textbox", label: "Document text" });
     evidence.recordAssertionEvidence("Fresh identity is separate from file permissions", "The file service permits reads, but neither another person nor the same person in another workspace can restore the original draft", (await probe.dom(".ow-editor-plain")).elements.length === 0);
     await user.screenshot();
@@ -140,6 +142,8 @@ test("a member can renew an expired workspace sign-in without replacing a retain
   await step("after: restored sign-in still requires a fresh file check before the draft returns", async () => {
     world.restoreIdentity();
     world.restoreOrganization();
+    await user.click({ role: "button", label: "Check sign-in" });
+    await user.see({ role: "button", label: "Check access and restore tabs" });
     await user.click({ role: "button", label: "Check access and restore tabs" });
     await user.click({ role: "button", label: "Project brief.txt, unsaved changes" });
     await user.see({ role: "textbox", label: "Document text" }, { value: "Retained through sign-in" });

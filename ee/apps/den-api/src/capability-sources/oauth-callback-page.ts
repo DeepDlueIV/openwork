@@ -65,11 +65,17 @@ export function connectCallbackPage(input:
       .reference { margin-top: 18px; font-size: 13px; }
       code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
       @media (max-width: 640px) { main { padding: 40px 32px 48px; } h1 { margin-top: 40px; font-size: 30px; line-height: 38px; } }
-      @media (max-width: 380px) { body { padding: 32px 16px; } main { padding: 32px 24px; } }
+      @media (max-width: 380px) { body { padding: 32px 16px; } main { padding: 32px 24px; } }${workbotReturn ? `
+      .workbot-callback { --text-sm: 0.8125rem; --text-xl: 1.25rem; --spacing: 0.25rem; width: min(100%, 32rem); padding: calc(var(--spacing) * 6); }
+      .workbot-callback h1 { margin-top: calc(var(--spacing) * 6); font-size: var(--text-xl); line-height: 1.4; letter-spacing: -.015em; overflow-wrap: anywhere; }
+      .workbot-callback p { margin-top: calc(var(--spacing) * 4); font-size: var(--text-sm); line-height: 1.5; }
+      .workbot-callback .brand, .workbot-callback .status-row strong { font-size: var(--text-sm); }
+      .workbot-callback .status-row { margin-top: calc(var(--spacing) * 4); padding: calc(var(--spacing) * 3); }
+      .workbot-callback a { color: var(--dls-text-primary); text-underline-offset: .2em; }` : ""}
     </style>
   </head>
   <body>
-    <main role="${input.ok ? "status" : "alert"}" aria-live="${input.ok ? "polite" : "assertive"}">
+    <main${workbotReturn ? ' class="workbot-callback"' : ""} role="${input.ok ? "status" : "alert"}" aria-live="${input.ok ? "polite" : "assertive"}">
       <div class="brand"><svg aria-hidden="true"
   xmlns="http://www.w3.org/2000/svg"
   viewBox="0 0 834 649"

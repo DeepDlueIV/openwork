@@ -26,8 +26,16 @@ test("a member whose provider withholds access gets a safe Workbot callback and 
     await user.see({ role: "link", label: "Return to Workbot" });
     await user.notSee({ text: "https://www.googleapis.com/auth" });
     await user.notSee({ text: "You're connected" });
+    const desktopHeading = await probe.dom("main.workbot-callback h1");
+    expect(desktopHeading.elements[0]?.rect.height).toBeLessThanOrEqual(28.1);
     evidence.recordAssertionEvidence("The callback does not claim a connection or show provider scope errors", `ready=${await world.ready()}; token exchanges=${world.exchanges()}`, !await world.ready() && world.exchanges() === 1);
     await user.screenshot();
+    await user.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    const mobileHeading = await probe.dom("main.workbot-callback h1");
+    expect(mobileHeading.elements[0]?.rect.height).toBeLessThanOrEqual(56.1);
+    expect(mobileHeading.documentWidth).toBeLessThanOrEqual(mobileHeading.viewportWidth);
+    await user.screenshot();
+    await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
   });
   await step("after: Return to Workbot keeps Documents locked and offers a retry", async () => {
     await user.click({ role: "link", label: "Return to Workbot" });

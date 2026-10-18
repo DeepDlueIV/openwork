@@ -21,7 +21,13 @@ the configured origin prevents a previously signed return from being used.
 The signed Workbot completion page reports sign-in, not a ready connection,
 and offers a return to the original Workbot view for verification. Its failure
 copy gives a safe retry/admin action without rendering provider error prose.
-Ordinary non-Workbot completion pages keep their existing behavior.
+Ordinary non-Workbot completion pages keep their existing behavior. Only the
+Workbot variant uses the compact shared typography scale (20px heading, 13px
+body) and spacing tokens, including on narrow screens.
+
+If Workbot cannot identify a matching account, including with older Den metadata,
+it offers “Open connection settings”, not a Connect action or a claim that a
+grant is absent. Known connection-specific legacy links retain their flow.
 
 Completion sends only a finite outcome, attempt ID, and connection ID to the
 exact Workbot origin. Workbot accepts it only from the window it opened, at the

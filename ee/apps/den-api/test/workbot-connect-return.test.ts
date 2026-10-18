@@ -54,6 +54,20 @@ test("signed Workbot failures provide a safe next action instead of untrusted pr
   assert.equal(page.includes("return to OpenWork"), false)
 })
 
+test("compact token-based callback styling is scoped to signed Workbot returns", () => {
+  const page = connectCallbackPage({ ok: true, name: "Fixture" }, { origin: "https://workbot.example.test", returnPath: "/documents", requestId: randomUUID(), connectionId: "google-workspace" })
+  assert.ok(page.includes('<main class="workbot-callback" role="status"'))
+  assert.ok(page.includes("--text-sm: 0.8125rem; --text-xl: 1.25rem; --spacing: 0.25rem;"))
+  assert.ok(page.includes("font-size: var(--text-xl); line-height: 1.4;"))
+  assert.ok(page.includes("padding: calc(var(--spacing) * 6)"))
+  assert.ok(page.includes("color: var(--dls-text-primary)"))
+  assert.ok(page.indexOf(".workbot-callback h1") > page.indexOf("@media (max-width: 640px)"))
+  const generic = connectCallbackPage({ ok: true, name: "Fixture" })
+  assert.equal(generic.includes("workbot-callback"), false)
+  assert.ok(generic.includes("font-size: 38px;"))
+  assert.ok(generic.includes("font-size: 30px;"))
+})
+
 test("ordinary non-Workbot callback wording and diagnostic details remain unchanged", () => {
   const success = connectCallbackPage({ ok: true, name: "Fixture" })
   assert.ok(success.includes("<title>You're connected — OpenWork</title>"))

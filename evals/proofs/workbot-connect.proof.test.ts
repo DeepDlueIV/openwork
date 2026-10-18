@@ -6,6 +6,16 @@ const test = spec.world(workbotConnect, { timeout: 120_000, needs: { placement: 
 
 test("a member connects Drive from Documents without a dashboard detour or a false success", async ({ world, user, probe, step, evidence }) => {
   await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+  await step("an unverified account offers connection settings instead of promising Connect works here", async () => {
+    await user.navigate(`${world.url}documents?catalog=legacy`);
+    await user.see({ text: "Couldn't verify an account to connect here." });
+    await user.see({ role: "link", label: "Open connection settings" });
+    await user.notSee({ role: "button", label: "Connect Google Drive" });
+    await user.notSee({ role: "link", label: "Connect Google Drive" });
+    evidence.recordAssertionEvidence("Missing provider hints do not invent an actionable account or a grant failure", `connection starts=${world.starts()}; token exchanges=${world.exchanges()}`, world.starts() === 0 && world.exchanges() === 0);
+    await user.screenshot();
+    await user.navigate(`${world.url}documents`);
+  });
   await step("before: Documents needs the member's account", async () => {
     await user.see({ role: "button", label: "Connect Google Drive" });
     await user.notSee({ role: "button", label: /^Project brief\.txt$/, nth: 0 });
@@ -66,7 +76,15 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     await user.on(standalone).see({ text: "Return to Workbot to verify the connection." });
     await user.on(standalone).notSee({ text: "You're connected" });
     await user.on(standalone).notSee({ text: "You can close this window and return to OpenWork." });
+    const desktopHeading = await probe.on(standalone).dom("main.workbot-callback h1");
+    expect(desktopHeading.elements[0]?.rect.height).toBeLessThanOrEqual(28.1);
     await user.on(standalone).screenshot();
+    await user.on(standalone).resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    const mobileHeading = await probe.on(standalone).dom("main.workbot-callback h1");
+    expect(mobileHeading.elements[0]?.rect.height).toBeLessThanOrEqual(56.1);
+    expect(mobileHeading.documentWidth).toBeLessThanOrEqual(mobileHeading.viewportWidth);
+    await user.on(standalone).screenshot();
+    await user.on(standalone).resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
     await user.on(standalone).click({ role: "link", label: "Return to Workbot" });
     await user.on(standalone).see({ role: "button", label: /^Project brief\.txt$/, nth: 0 });
     const returned = await probe.on(standalone).url();

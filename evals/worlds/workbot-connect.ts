@@ -69,6 +69,11 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }) {
           let body = ""; for await (const chunk of req) body += chunk;
           if (url.pathname.endsWith("/connect/start")) starts++;
           const result = await den.request(token, req.method === "POST" ? "POST" : "GET", url.pathname + url.search, body ? { body: JSON.parse(body) } : {});
+          // Older Den responses omit provider identity hints; that is unverified, not proof a grant is absent.
+          const referring = new URL(req.headers.referer ?? workbotUrl);
+          if (url.pathname === "/v1/workbot/connections" && referring.searchParams.get("catalog") === "legacy") {
+            return json({ connections: list(field(result.body, "connections")).map(connection => ({ id: connection.id, name: connection.name, app: connection.app, ready: connection.ready, connectUrl: connection.connectUrl })) }, result.status);
+          }
           if (url.pathname.endsWith("/connect/start")) {
             const authorizeUrl = field(result.body, "authorizeUrl");
             latestAuthorizationState = typeof authorizeUrl === "string" ? new URL(authorizeUrl).searchParams.get("state") : null;

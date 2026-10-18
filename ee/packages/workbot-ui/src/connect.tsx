@@ -119,6 +119,9 @@ export function WorkbotConnectAction({ flow, provider, connectionId, label, fall
   const matches = flow.connections.data?.filter(connection => connectionId ? connection.id === connectionId : connection.nativeProviderKey === provider) ?? [];
   if (flow.connections.isPending) return <span role="status">Checking connection</span>;
   if (flow.connections.isError) return <span role="status">Couldn&apos;t verify your connections. <button type="button" onClick={() => void flow.connections.refetch()}>Try again</button></span>;
-  if (matches.length === 0) return fallbackHref ? <a href={fallbackHref} target="_blank" rel="noopener noreferrer">{label}</a> : <span role="status">An admin can grant access to this app.</span>;
+  if (matches.length === 0) return <span role="status" className="inline-flex flex-wrap items-center gap-2">
+    <span>Couldn&apos;t verify an account to connect here.</span>
+    {fallbackHref ? <a href={fallbackHref} target="_blank" rel="noopener noreferrer">Open connection settings</a> : <span>Ask an admin to review setup and access.</span>}
+  </span>;
   return <span className="inline-flex flex-wrap items-center gap-2">{matches.map(connection => <WorkbotConnectionButton key={connection.id} connection={connection} flow={flow} label={matches.length > 1 ? `${label}: ${connection.name}` : label} />)}</span>;
 }

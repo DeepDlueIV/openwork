@@ -1,9 +1,61 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { deploymentReadinessRecovery } from "../worlds/deployment-readiness-recovery.ts";
+import { deploymentParentReadLock, deploymentReadinessRecovery } from "../worlds/deployment-readiness-recovery.ts";
 import { isRecord, records } from "../worlds/library.ts";
 
 const test = spec.world(deploymentReadinessRecovery, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
+const guardTest = spec.world(deploymentParentReadLock, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
+
+guardTest("an owner keeps last-known observations while a real parent rollout refusal blocks preparation until fresh reads restore it", async ({ world, user, probe, step, evidence }) => {
+  if (!world.operator) throw new Error("Missing local operator browser");
+  const operator = user.on(world.operator);
+  await step("the owner first verifies an existing target without starting any cloud services", async () => {
+    await user.see({ text: "Observed deployment" }, { timeoutMs: 60_000 });
+    await operator.see({ testId: "admin-capability-managedDeployments" }, { timeoutMs: 60_000 });
+    const verified = await probe.eventually(() => probe.dom('[data-deployment-read-state="verified"]'), { within: 30_000, label: "the initial matching read pair is verified", until: (value) => value.elements.length === 1 });
+    const ready = await probe.dom('[data-testid="deployment-prepare-install"]:not(:disabled)');
+    expect(ready.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("the initial target comes from authorized reads", `verified surfaces=${verified.elements.length}; preparation controls enabled=${ready.elements.length}`, verified.elements.length === 1 && ready.elements.length === 1);
+    await user.screenshot();
+  });
+  await step("the operator turns off the real local parent feature and polling keeps observations as last known", async () => {
+    await operator.click({ testId: "admin-capability-managedDeployments" });
+    const blocked = await probe.eventually(() => probe.api(world.den.admin, "/v1/managed-deployments"), { within: 15_000, label: "the real parent route guard refuses reads", until: (value) => value.response.status === 404 });
+    expect(blocked.body).toEqual({ error: "feature_disabled", feature: "managedDeployments" });
+    await user.see({ text: /Deployment preparation is turned off.*OpenWork operator/ }, { timeoutMs: 35_000 });
+    await user.see({ testId: "deployment-last-known" });
+    await user.see({ text: "Observed deployment" });
+    await user.see({ testId: "managed-deployment-status" }, { text: "Last known: Not launched" });
+    await user.notSee({ text: /feature_disabled|No deployments yet|Install failed/ });
+    const disabled = await probe.dom('[data-testid="deployment-prepare-install"]:disabled');
+    const create = await probe.dom('[data-testid="managed-deployment-create"]:disabled');
+    const alerts = await probe.dom('[data-testid="managed-deployments-screen"] [role="alert"]');
+    expect(disabled.elements).toHaveLength(1);
+    expect(create.elements).toHaveLength(1);
+    expect(alerts.elements).toHaveLength(0);
+    const refusals = (await world.faults.requestLog()).filter((entry) => entry.method === "GET" && entry.path.startsWith("/api/den/v1/managed-deployments") && entry.status === 404 && !entry.faulted);
+    expect(refusals.length).toBeGreaterThanOrEqual(2);
+    evidence.recordAssertionEvidence("the known guard refusal is a neutral lock, not installation failure", `real uninjected guard refusals=${refusals.length}; disabled preparation=${disabled.elements.length}; disabled create=${create.elements.length}; red alerts=${alerts.elements.length}`, refusals.length >= 2 && disabled.elements.length === 1 && create.elements.length === 1 && alerts.elements.length === 0);
+    await user.screenshot();
+  });
+  await step("only fresh matching reads after operator re-enablement lift the lock", async () => {
+    const restoredAt = Date.now();
+    await operator.click({ testId: "admin-capability-managedDeployments" });
+    if (await probe.has("Check again")) await user.click({ role: "button", label: "Check again" });
+    const ready = await probe.eventually(() => probe.dom('[data-testid="deployment-prepare-install"]:not(:disabled)'), { within: 35_000, label: "fresh authorized data restores preparation", until: (value) => value.elements.length === 1 });
+    await user.notSee({ testId: "deployment-last-known" });
+    await user.see({ testId: "managed-deployment-status" }, { text: "Not launched" });
+    const requests = await world.faults.requestLog();
+    const fresh = requests.filter((entry) => entry.method === "GET" && entry.at >= restoredAt && entry.status === 200);
+    const list = fresh.some((entry) => entry.path === "/api/den/v1/managed-deployments");
+    const configuration = fresh.some((entry) => entry.path === "/api/den/v1/managed-deployments/configuration");
+    const launches = requests.filter((entry) => entry.method === "POST" && entry.path.endsWith("/launch"));
+    expect(list && configuration).toBe(true);
+    expect(launches).toHaveLength(0);
+    evidence.recordAssertionEvidence("cached context cannot unlock or launch a target", `fresh list=${list}; fresh configuration=${configuration}; restored preparation=${ready.elements.length}; launch requests=${launches.length}`, list && configuration && ready.elements.length === 1 && launches.length === 0);
+    await user.screenshot();
+  });
+});
 
 test("an owner keeps a Google Cloud form through readiness failures and prepares approval without starting cloud services", async ({ world, user, probe, step, evidence }) => {
   await step("the owner can review billable cloud approval before preparing anything", async () => {

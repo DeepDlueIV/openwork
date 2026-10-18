@@ -28,6 +28,27 @@ export function deploymentActionError(payload: unknown, provider: ProviderReadin
   return readinessMessage({ provider, available: false, reason });
 }
 
+export type DeploymentReadGate = "pending" | "verified" | "feature_locked" | "access_denied" | "unavailable";
+export type DeploymentReadResponse = { status: number; payload: unknown };
+export const deploymentPreparationLockMessage = "Deployment preparation is turned off for this workspace. Ask an OpenWork operator to enable deployments. Existing installations are not stopped by this lock.";
+
+/** Only the parent route guard is evidence of this rollout lock. */
+export function parentDeploymentsRefused({ status, payload }: DeploymentReadResponse): boolean {
+  return status === 404 && typeof payload === "object" && payload !== null
+    && "error" in payload && payload.error === "feature_disabled"
+    && "feature" in payload && payload.feature === "managedDeployments";
+}
+
+/** A partial/failed read cannot lift a known lock or restore content after an access denial. */
+export function deploymentReadGateAfterFailure(current: DeploymentReadGate, responses: DeploymentReadResponse[]): DeploymentReadGate {
+  const denied = responses.some(({ status, payload }) => status === 401 || status === 403
+    || (status === 404 && typeof payload === "object" && payload !== null && "error" in payload
+      && (payload.error === "organization_not_found" || payload.error === "org_not_found" || payload.error === "membership_removed")));
+  if (denied) return "access_denied";
+  if (responses.some(parentDeploymentsRefused)) return "feature_locked";
+  return current === "feature_locked" || current === "access_denied" ? current : "unavailable";
+}
+
 /** Installation/update failures take precedence over the last known health. */
 export function deploymentStatus(deployment: ManagedDeployment): { label: string; tone: DeploymentTone } {
   const run = deployment.run;

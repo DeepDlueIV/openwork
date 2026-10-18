@@ -1,9 +1,13 @@
 import { allocateFreePorts } from "@openwork/cdp";
 import { faultProxy, type Seed } from "@openwork/env";
+import { managedDeploymentSchema } from "@openwork/types/den/managed-deployments";
 import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
+export function deploymentReadinessRecovery(seed: Seed) { return deploymentFixture(seed, false); }
+export function deploymentParentReadLock(seed: Seed) { return deploymentFixture(seed, true); }
+
 /** Fixture publication coordinates are never fetched or executed. Only local target and handoff records are made. */
-export async function deploymentReadinessRecovery(seed: Seed) {
+async function deploymentFixture(seed: Seed, parentGuard: boolean) {
   await using setup = new AsyncDisposableStack();
   const [api, web] = await allocateFreePorts(2);
   if (!api || !web) throw new Error("Missing isolated deployment ports");
@@ -16,10 +20,23 @@ export async function deploymentReadinessRecovery(seed: Seed) {
       DEN_MANAGED_DEPLOYMENT_GCP_BUNDLE_SHA256: "a".repeat(64) },
     org: { name: "Deployment recovery", admin: { name: "Deployment owner" } },
   }));
-  await enableOrganizationCapabilities(seed, den.admin, { managedDeployments: true, managedDeploymentsGcp: true });
-  await faults.faults.status("/api/den/v1/managed-deployments", 404, { method: "POST", times: 1, body: { error: "feature_disabled" } });
-  await faults.faults.status("/api/den/v1/managed-deployments", 503, { method: "POST", times: 1, body: { error: "release_not_configured" } });
+  const orgId = await enableOrganizationCapabilities(seed, den.admin, { managedDeployments: true, managedDeploymentsGcp: true });
+  let deploymentId: string | null = null;
+  if (parentGuard) {
+    const recorded = await seed.api(den.admin, "/v1/managed-deployments", { method: "POST", body: JSON.stringify({
+      provider: "gcp", name: "Observed deployment", domainName: "observed.example.test", ownerEmail: "owner@example.test",
+      target: { projectId: "openwork-fixture", projectNumber: "123456789012", region: "us-central1", dnsZoneName: "example-test" },
+    }) });
+    if (!recorded.response.ok) throw new Error(`Record observation fixture: ${recorded.response.status}`);
+    deploymentId = managedDeploymentSchema.parse(recorded.body).id;
+  } else {
+    await faults.faults.status("/api/den/v1/managed-deployments", 404, { method: "POST", times: 1, body: { error: "feature_disabled" } });
+    await faults.faults.status("/api/den/v1/managed-deployments", 503, { method: "POST", times: 1, body: { error: "release_not_configured" } });
+  }
   const browser = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/deployments", headless: true, viewport: { width: 1440, height: 1400 } });
+  // A separate operator uses the real local admin API through its shipped UI.
+  // The parent-guard case has no injected GET/POST refusals.
+  const operator = parentGuard ? await seed.web({ den, signedInAs: den.admin, startPath: `/admin/organizations/${orgId}/features`, headless: true, viewport: { width: 1440, height: 1400 } }) : null;
   const owned = setup.move();
-  return { den, web: browser, faults, [Symbol.asyncDispose]: () => owned.disposeAsync() };
+  return { den, web: browser, operator, orgId, deploymentId, faults, [Symbol.asyncDispose]: () => owned.disposeAsync() };
 }

@@ -7,6 +7,25 @@ after(() => den.close())
 
 const input = { provider: "gcp", name: "Readiness fixture", domainName: "openwork.example.test", ownerEmail: "owner@example.test", target: { projectId: "openwork-fixture", projectNumber: "123456789012", region: "us-central1", dnsZoneName: "example-test" } }
 
+test("a real parent rollout refusal is distinct from scoped permission denial and restores only after enabling", async () => {
+  const org = await den.createOrg(await den.signUp("Parent Guard Owner"), "Parent guard fixture")
+  const owner = den.as(org.owner, org.orgId)
+  assert.equal((await den.setFeature(org.orgId, "managedDeployments", true)).status, 200)
+  for (const path of ["/v1/managed-deployments", "/v1/managed-deployments/configuration"]) assert.equal((await owner("GET", path)).status, 200)
+  assert.equal((await den.setFeature(org.orgId, "managedDeployments", false)).status, 200)
+  for (const path of ["/v1/managed-deployments", "/v1/managed-deployments/configuration"]) {
+    const blocked = await owner("GET", path)
+    assert.equal(blocked.status, 404, summary(blocked))
+    assert.deepEqual(blocked.body, { error: "feature_disabled", feature: "managedDeployments" })
+  }
+  const member = await den.newMember(org.owner, org.orgId, "Parent Guard Member")
+  const denied = await den.as(member, org.orgId)("GET", "/v1/managed-deployments")
+  assert.equal(denied.status, 403, summary(denied))
+  assert.notEqual(field(denied.body, "error"), "feature_disabled", "permission guard runs before the rollout guard")
+  assert.equal((await den.setFeature(org.orgId, "managedDeployments", true)).status, 200)
+  for (const path of ["/v1/managed-deployments", "/v1/managed-deployments/configuration"]) assert.equal((await owner("GET", path)).status, 200)
+})
+
 test("disabled and unpublished GCP installs return actionable recovery without making deployment records", async () => {
   const org = await den.createOrg(await den.signUp("Deployment Owner"), "Readiness fixture")
   assert.equal((await den.setFeature(org.orgId, "managedDeployments", true)).status, 200)

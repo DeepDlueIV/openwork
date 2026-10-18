@@ -10,9 +10,10 @@ import { ORG_SCOPE_HEADER } from "../_lib/org-scope";
 import { useDenFlow } from "../_providers/den-flow-provider";
 import { OrgSelectionScreen } from "../dashboard/_features/org-selection/org-selection-screen";
 import { DenButton } from "./ui/button";
+import { DenSkeleton } from "./ui/skeleton";
 import { getInstallConfigErrorMessage } from "../_lib/install-errors";
 import { LINK_STEP, parseGuideStep, type GuideStep } from "../_lib/install-guide";
-import { installDownloadHref, type InstallPlatform, installerFileName } from "../_lib/install-download";
+import { installDownloadHref, installPageUrl, type InstallPlatform, installerFileName } from "../_lib/install-download";
 import { isMobileUserAgent } from "../_lib/platform";
 import { InstallVisual } from "./install-visual";
 import { OnboardingShell } from "./onboarding-shell";
@@ -275,9 +276,11 @@ function InstallOrganizationPicker() {
   }
   if (selectedId) return <InstallGuide key={selectedId} organizationId={selectedId} />;
   if (orgs?.length) return <OrgSelectionScreen orgs={orgs} pending={pending} errorMessage={error} onPick={(slug) => void pick(slug)} onSignOut={() => void signOut()} />;
-  return <OnboardingShell state="install-loading" width="wide" background="surface"><section className="grid gap-4" aria-busy={!error && orgs === null}>
-    <h1 className="den-title-lg">{error ? "Organization check unavailable" : orgs ? "Join an organization to install" : "Checking your organizations"}</h1>
-    {error ? <><p className="den-copy" role="alert">{error}</p><DenButton onClick={() => setAttempt((value) => value + 1)}>Try again</DenButton></> : orgs ? <DenButton href="/organization">Create or join an organization</DenButton> : null}
+  return <OnboardingShell state="install-loading" width="wide" background="surface"><section className="grid gap-4" aria-busy={!error && orgs === null} aria-label={!error && orgs === null ? "Checking organization access" : undefined}>
+    {!error && orgs === null ? <><DenSkeleton className="h-8 w-64" /><DenSkeleton className="h-12 w-full" /><DenSkeleton className="h-12 w-full" /></> : <>
+      <h1 className="den-title-lg">{error ? "Organization check unavailable" : "Join an organization to install"}</h1>
+      {error ? <><p className="den-copy" role="alert">{error}</p><DenButton onClick={() => setAttempt((value) => value + 1)}>Try again</DenButton></> : <DenButton href="/organization">Create or join an organization</DenButton>}
+    </>}
   </section></OnboardingShell>;
 }
 
@@ -302,14 +305,7 @@ function InstallGuide({ organizationId }: { organizationId: string }) {
 
   useEffect(() => {
     setIsMobile(isMobileUserAgent());
-    // Install pages once carried a one-off token; it is ignored now, so drop
-    // it from the address before anyone copies and shares it again.
-    const url = new URL(window.location.href);
-    if (url.searchParams.has("token")) {
-      url.searchParams.delete("token");
-      window.history.replaceState(null, "", url);
-    }
-    setCurrentLink(url.toString());
+    setCurrentLink(installPageUrl());
     let cancelled = false;
     void detectPlatform().then((platform) => {
       if (!cancelled) setDetected(platform);

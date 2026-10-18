@@ -61,7 +61,7 @@ test("a signed-in member can retry an unavailable installer without a timed succ
   });
   await step("an unavailable download stays requested with a visible retry instead of advancing", async () => {
     requestedAt = Date.now();
-    await user.click({ testId: "install-download-primary" });
+    await user.click({ role: "link", label: "Apple Silicon (M1+)" });
     await user.see("Download requested");
     await user.see({ role: "link", label: "Retry download" });
     await user.notSee("Download started");

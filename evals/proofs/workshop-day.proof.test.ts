@@ -367,7 +367,11 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     }
     world.markScene("D15:activity");
     await user.on(world.recipientApp).screenshot();
-    const reasons = checks([[/was shared with you/i.test(activity), "Shared skill not in Nora's Activity"], [/ready to use/i.test(activity), `${connector} not in Nora's Activity`]]);
+    // Must be Lena's own skill: other items (e.g. organization plugins) can also be "shared with you".
+    const plugin = skillPluginId ? record(record(await world.readDenAs("owner", `/v1/plugins/${skillPluginId}`)).plugin ?? await world.readDenAs("owner", `/v1/plugins/${skillPluginId}`)) : {};
+    const skillName = String(plugin.name ?? "");
+    const sharedSkill = Boolean(skillName) && activity.toLowerCase().includes(`${skillName.toLowerCase()} was shared with you`);
+    const reasons = checks([[sharedSkill, `Lena's skill${skillName ? ` (${skillName})` : ""} not in Nora's Activity`], [/ready to use/i.test(activity), `${connector} not in Nora's Activity`]]);
     return { status: reasons.length ? "FAIL" : "PASS", reasons, latencyMs: Date.now() - started, operator: `Admin opened the ${connector} connector to the whole team (off camera)`, evidence: { activity: activity.slice(0, 600) } };
   });
 

@@ -3,6 +3,7 @@ import type { ServerResponse } from "node:http";
 import { createServer } from "vite";
 import type { Place, Seed } from "@openwork/env";
 import { chrome } from "@openwork/hosts";
+import { allocateFreePorts } from "@openwork/cdp";
 import { buildWorkbotTurns } from "../../ee/packages/workbot-server/src/thread.ts";
 import type { RunnerSnapshot } from "../../ee/packages/headless-protocol/src/client.ts";
 
@@ -33,9 +34,10 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
   };
   const changed = () => { for (const stream of streams) stream.write(`data: ${JSON.stringify({ type: "changed", messageId: "example" })}\n\n`); };
   try {
+    const [port] = await allocateFreePorts(1);
     const vite = await createServer({
       configFile: fileURLToPath(new URL("../../ee/apps/workbot/vite.config.ts", import.meta.url)),
-      server: { host: "127.0.0.1", port: 0, strictPort: false },
+      server: { host: "127.0.0.1", port, strictPort: true },
       plugins: [{ name: "workbot-activity-fixture", configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
           const url = new URL(req.url ?? "/", "http://fixture");
@@ -91,6 +93,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
     const url = vite.resolvedUrls?.local[0];
     if (!url) throw new Error("Workbot proof did not start");
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-activity", startUrl: url, headless: true }));
+    console.error(`[workbot-activity] web=${url} chromePid=${web.handle.pid ?? "remote"} cdp=${web.handle.cdpUrl}`);
     return {
       web, url,
       stopAttempts: () => stopAttempts, taskStopAttempts: () => taskStopAttempts, sends: () => sends, progressStage: () => progressStage, progressUpdatedAt: () => progressUpdatedAt,

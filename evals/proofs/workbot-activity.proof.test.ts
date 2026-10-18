@@ -8,7 +8,7 @@ test("a member sees unverified work, failed stop, and a last-known conversation 
   await user.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   await step("after: a failed computer command cannot claim it finished successfully", async () => {
     await user.see({ text: "The report has three sections." });
-    await user.see({ text: "Computer work couldn't finish" });
+    await user.see({ text: "Computer work couldn't finish" }, { timeoutMs: 5000 });
     const activity = await probe.dom('[data-workbot-activity][data-running="false"]');
     expect(activity.elements.length).toBeGreaterThan(0);
     const text = await probe.text();
@@ -76,7 +76,7 @@ test("a member recognizes an interrupted answer without an automatic prompt repl
   });
   await step("after: a runner interruption preserves the words and labels the answer incomplete", async () => {
     world.interruptAnswer();
-    await user.see({ text: "Interrupted. This answer may be incomplete." });
+    await user.see({ text: "Interrupted. This answer may be incomplete." }, { timeoutMs: 5000 });
     await user.see({ text: "The report has three sections." });
     await user.see({ text: "The figures still need verification." });
     evidence.recordAssertionEvidence("Interrupted is not running or completed", "The incomplete marker is visible and both answer parts remain", (await probe.text()).includes("Interrupted. This answer may be incomplete."));
@@ -84,7 +84,7 @@ test("a member recognizes an interrupted answer without an automatic prompt repl
   });
   await step("reopening the conversation reads its incomplete state without resending the message", async () => {
     await user.reload();
-    await user.see({ text: "Interrupted. This answer may be incomplete." });
+    await user.see({ text: "Interrupted. This answer may be incomplete." }, { timeoutMs: 5000 });
     await user.see({ text: "The report has three sections." });
     expect(world.sends()).toBe(0);
     evidence.recordAssertionEvidence("Reload only reads the conversation", "Zero message POSTs after interruption and reload", world.sends() === 0);

@@ -37,12 +37,15 @@ confirm access. Denial, expiry, missing scopes, and incomplete admin setup stay
 recoverable without exposing provider errors or tokens to chat.
 
 Unsaved document recovery is owned by the shared Documents browser, not by
-OAuth completion. Its scoped, memory-only lock lasts at most 15 minutes.
-Reconnect appears inside that locked state. Even after fresh Den readiness and
-a successful directory read, only **Check access and restore tabs** may reveal
-the retained work, after fresh matching identity and authorization for every
-open file. Denied consent does not discard drafts; restoration never replays a
-save. The sign-in recovery link and identity-isolation boundary are unchanged.
+OAuth completion. Each file's scoped, memory-only lock lasts at most 15 minutes,
+without extending on retry. Reconnect appears inside that locked state. Even
+after fresh Den readiness and a successful directory read, explicit **Check access
+and restore tabs** or an individual file's **Check access** must verify matching
+identity and that file's authorization before revealing its retained work.
+Authorized files can return independently; denied files stay masked, retryable
+and individually discardable. Denied consent does not discard drafts, and
+restoration never replays a save. The parent identity owner remains mounted but
+masked during revalidation; the separate sign-in recovery link is unchanged.
 
 A blocked popup offers an explicit same-tab action. A callback without an opener
 offers a return link to the signed Workbot path. When inline connect is off,

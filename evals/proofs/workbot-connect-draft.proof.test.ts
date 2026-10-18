@@ -29,7 +29,7 @@ test("a member reconnects Drive and explicitly restores their exact unsaved draf
     await user.click({ role: "button", label: /^Files$/ });
     await user.click({ role: "button", label: "Refresh documents" });
     await user.see({ text: "Google Drive needs a fresh connection." });
-    await user.see({ text: "Open tabs are locked. Recovery is kept in this tab for up to 15 minutes." });
+    await user.see({ text: "Locked recovery is kept in this tab for up to 15 minutes." });
     await user.see({ role: "button", label: "Reconnect Google Drive" });
     await user.see({ role: "button", label: "Check access and restore tabs" });
     await user.notSee({ role: "textbox", label: "Document text" });
@@ -57,7 +57,7 @@ test("a member reconnects Drive and explicitly restores their exact unsaved draf
     await probe.eventually(() => world.ready(), { within: 10_000, label: "Den confirms the fresh OAuth grant", until: value => value });
     await probe.eventually(() => world.directoryReads(), { within: 10_000, label: "the directory read succeeds after reconnect", until: values => values.at(-1) === 200 });
     await user.see({ role: "button", label: "Check access and restore tabs" });
-    await user.see({ text: "Open tabs are locked. Recovery is kept in this tab for up to 15 minutes." });
+    await user.see({ text: "Locked recovery is kept in this tab for up to 15 minutes." });
     await user.notSee({ role: "textbox", label: "Document text" });
     await user.notSee({ text: "Project brief.txt" });
     evidence.recordAssertionEvidence("A usable connection is not permission to bypass explicit draft restoration", `ready=${await world.ready()}; last directory status=${world.directoryReads().at(-1)}; writes=${world.documentWrites().length}`, await world.ready() && world.directoryReads().at(-1) === 200 && world.documentWrites().length === 0);
@@ -69,7 +69,7 @@ test("a member reconnects Drive and explicitly restores their exact unsaved draf
     await account.see({ text: "Authorization active; file allowed; member other" });
     const reads = world.editorReads().length;
     await user.click({ role: "button", label: "Check access and restore tabs" });
-    await user.see({ text: "Sign-in identity isn't confirmed. Use the same account, then check again." });
+    await user.see({ text: "The signed-in account or workspace changed. Retained documents are locked." });
     await user.notSee({ role: "textbox", label: "Document text" });
     expect(world.editorReads()).toHaveLength(reads);
     evidence.recordAssertionEvidence("Fresh identity fails before any retained file is revalidated or revealed", `other member file access=true; editor reads before/after=${reads}/${world.editorReads().length}; writes=${world.documentWrites().length}`, world.editorReads().length === reads && world.documentWrites().length === 0);
@@ -80,9 +80,12 @@ test("a member reconnects Drive and explicitly restores their exact unsaved draf
     await account.see({ text: "Authorization active; file allowed; member original" });
     await account.click({ role: "button", label: "Deny file access" });
     await account.see({ text: "Authorization active; file denied; member original" });
+    await user.click({ role: "button", label: "Check sign-in" });
+    await user.see({ role: "button", label: "Check access and restore tabs" });
+    await user.notSee({ role: "textbox", label: "Document text" });
     const reads = world.editorReads().length;
     await user.click({ role: "button", label: "Check access and restore tabs" });
-    await user.see({ text: "Access isn't confirmed. Reconnect or ask your admin, then check again." });
+    await user.see({ text: "Some documents are still locked. Check or discard them individually." });
     await user.notSee({ role: "textbox", label: "Document text" });
     expect(await world.ready()).toBe(true);
     expect(world.providerFileDenials()).toBeGreaterThan(0);

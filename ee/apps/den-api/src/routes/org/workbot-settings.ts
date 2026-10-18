@@ -87,7 +87,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
       responses: {
         200: jsonResponse("Workbot settings returned.", workbotSettingsDocumentSchema),
         401: jsonResponse("Authentication required.", unauthorizedSchema),
-        403: jsonResponse("The caller lacks the View OpenWork Models settings permission.", forbiddenSchema),
+        403: jsonResponse("The caller lacks both View OpenWork Models settings and Manage OpenWork Models.", forbiddenSchema),
         404: notFound,
       },
     }),

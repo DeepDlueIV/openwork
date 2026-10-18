@@ -106462,7 +106462,7 @@
             }
           },
           "403": {
-            "description": "The caller lacks the View OpenWork Models settings permission.",
+            "description": "The caller lacks both View OpenWork Models settings and Manage OpenWork Models.",
             "content": {
               "application/json": {
                 "schema": {

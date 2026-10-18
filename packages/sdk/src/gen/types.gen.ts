@@ -34187,7 +34187,7 @@ export type GetV1OrgWorkbotSettingsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * The caller lacks the View OpenWork Models settings permission.
+   * The caller lacks both View OpenWork Models settings and Manage OpenWork Models.
    */
   403: ForbiddenError;
   /**

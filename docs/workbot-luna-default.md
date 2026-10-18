@@ -110,6 +110,13 @@ The current runner uses one deployment model key unless a caller supplies its
 own. Its MCP token scopes connected-app access; that token is not a per-member
 inference credential or a spend allowance.
 
+**Organization admins can select any key-authorized catalog model**, including
+new workspace owners who already hold `inference.manage`. A Luna default does
+not restrict that choice and is not a spend cap. Before enabling Workbot
+globally, the deployment owner must scope the runner key's catalog/permissions
+to the intended GA models and confirm provider-side spend limits and alerts.
+These are owner/provider controls, not a new OpenWork billing guarantee.
+
 Existing protections are not durable monetary budgets:
 
 - Workbot's 30-message/10-minute/member throttle lives in a process-local Map;

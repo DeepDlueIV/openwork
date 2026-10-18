@@ -10,6 +10,7 @@ Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true)
 let enabled = false
 mock.module("../src/react-app/domains/session/sync/use-last-turn-model-footer-feature", () => ({
   useLastTurnModelFooterEnabled: () => enabled,
+  useLastTurnModelFooterFeature: () => {},
 }))
 const { PlatformProvider, createDefaultPlatform } = await import("../src/react-app/kernel/platform")
 const { MessageListProvider } = await import("../src/components/chat/message-list-provider")

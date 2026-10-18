@@ -1,13 +1,43 @@
+import { createServer as httpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
-import type { Place, Seed } from "@openwork/env";
+import type { Den, Place, Seed } from "@openwork/env";
+import { denFetch, type DenSession } from "@openwork/behaviors";
 import { chrome } from "@openwork/hosts";
 import { connect, debuggerUrlFor, listTargets, type Surface } from "@openwork/cdp";
-import { bootDen, field, list, startFakeHttpServer, text, type Den } from "../../ee/apps/den-api/test/api/harness.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function field(value: unknown, ...keys: string[]): unknown {
+  for (const key of keys) value = record(value) ? value[key] : undefined;
+  return value;
+}
+function list(value: unknown): Record<string, unknown>[] { return Array.isArray(value) ? value.filter(record) : []; }
+function text(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value) throw new Error(`${label} missing`);
+  return value;
+}
+
+/** Only the external OAuth/Drive service is synthetic; Den runs as its ordinary HTTP process. */
+async function startProvider(handler: (request: IncomingMessage, body: string, response: ServerResponse) => Promise<void>) {
+  const server = httpServer(async (request, response) => {
+    try {
+      let body = ""; for await (const chunk of request) body += chunk;
+      await handler(request, body, response);
+    } catch (error) { response.writeHead(500).end(String(error)); }
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Local provider has no port");
+  return { url: `http://127.0.0.1:${address.port}`, close: () => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }) };
+}
 
 /** Real Workbot UI, Den authorization/credentials/callbacks and a disposable MySQL database.
  * Only the outside provider and unrelated chat/runner responses are faked; no credentials leave localhost. */
-export async function workbotConnect(_seed: Seed, { place }: { place: Place }, options: { draftRecovery?: boolean } = {}) {
+export async function workbotConnect(seed: Seed, { place }: { place: Place }, options: { draftRecovery?: boolean } = {}) {
+  if (process.env.OPENWORK_EVAL_DEN_API_URL?.trim()) throw new Error("The account-connect proof requires a fresh disposable Den, not a reused server.");
   const resources = new AsyncDisposableStack();
   let den: Den | undefined;
   let token = "";
@@ -27,7 +57,12 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }, o
   const documentWrites: string[] = [];
   const savedText = "Saved project overview.\n";
   const grantedScope = "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/calendar.readonly" + (options.draftRecovery ? " https://www.googleapis.com/auth/drive" : "");
-  const provider = await startFakeHttpServer(async (request, body, response) => {
+  const requestDen = async (accessToken: string | null, method: "GET" | "POST", path: string, options: { body?: unknown; orgId?: string } = {}) => {
+    if (!den) throw new Error("Den has not started");
+    const result = await denFetch(den.ref, path, { method, redirect: "manual", headers: { ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}), ...(options.orgId ? { "x-openwork-org-id": options.orgId } : {}) }, ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }) });
+    return { ...result, status: result.response.status, headers: result.response.headers };
+  };
+  const provider = await startProvider(async (request, body, response) => {
     const url = new URL(request.url ?? "/", "http://fixture");
     if (url.pathname === "/authorize") {
       response.setHeader("content-type", "text/html");
@@ -90,7 +125,7 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }, o
       if (url.pathname === "/drive/v3/files") { response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ files: [{ id: "file_brief", name: "Project brief.txt", mimeType: "text/plain", modifiedTime: "2026-10-18T09:00:00Z", size: String(savedText.length), webViewLink: "https://drive.google.com/file/d/file_brief/view" }] })); return; }
     }
     if (url.pathname.startsWith("/v1/oauth-providers/") && den) {
-      const result = await den.request(null, "GET", url.pathname + url.search);
+      const result = await requestDen(null, "GET", url.pathname + url.search);
       response.writeHead(result.status, { "content-type": result.headers.get("content-type") ?? "text/html" }).end(result.text);
       return;
     }
@@ -107,7 +142,7 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }, o
         if (url.pathname === "/v1/workbot/me") {
           if (!options.draftRecovery) return json({ name: "Member Example", email: "member@example.test", userId: "fixture-member", organizationId: "fixture-org", organizationName: "Example workspace", enabled: true, calendar: true, documents: true, workspaceAssistant: true, canSchedule: false, sideChats: false, denUrl: provider.url });
           identityReads++;
-          const session = await den.request(useOtherIdentity ? otherToken : token, "GET", "/v1/workbot/session");
+          const session = await requestDen(useOtherIdentity ? otherToken : token, "GET", "/v1/workbot/session");
           if (session.status !== 200) return json(session.body, session.status);
           return json({ name: field(session.body, "user", "name"), email: field(session.body, "user", "email"), userId: field(session.body, "user", "id"), organizationId: field(session.body, "organization", "id"), organizationName: field(session.body, "organization", "name"), enabled: true, calendar: true, documents: true, workspaceAssistant: true, canSchedule: false, sideChats: false, denUrl: provider.url });
         }
@@ -117,7 +152,7 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }, o
           let body = ""; for await (const chunk of req) body += chunk;
           if (url.pathname.endsWith("/connect/start")) starts++;
           if (req.method === "POST" && url.pathname.startsWith("/v1/workbot/documents/")) documentWrites.push(`workbot:${url.pathname}`);
-          const result = await den.request(useOtherIdentity ? otherToken : token, req.method === "POST" ? "POST" : "GET", url.pathname + url.search, body ? { body: JSON.parse(body) } : {});
+          const result = await requestDen(useOtherIdentity ? otherToken : token, req.method === "POST" ? "POST" : "GET", url.pathname + url.search, body ? { body: JSON.parse(body) } : {});
           if (url.pathname.endsWith("/drive-files")) directoryReads.push(result.status);
           const openedFile = /\/files\/([^/]+)\/editor$/.exec(url.pathname);
           if (req.method === "GET" && openedFile?.[1]) editorReads.push({ fileId: openedFile[1], status: result.status });
@@ -139,27 +174,33 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }, o
     resources.defer(() => vite.close());
     await vite.listen();
     workbotUrl = text(vite.resolvedUrls?.local[0], "Workbot URL");
-    den = await bootDen({ env: { DEN_WORKBOT_URL: workbotUrl, DEN_API_PUBLIC_URL: provider.url, DEN_GOOGLE_API_BASE_URL: provider.url, DEN_GOOGLE_OAUTH_AUTHORIZE_URL: `${provider.url}/authorize`, DEN_GOOGLE_OAUTH_TOKEN_URL: `${provider.url}/token`, DEN_GOOGLE_OAUTH_USERINFO_URL: `${provider.url}/userinfo` } });
-    const currentDen = den;
-    resources.defer(() => currentDen.close());
-    const { owner, orgId } = await den.createOrg(await den.signUp("Member Example"), "Example workspace");
-    await den.setFeature(orgId, "workbot", true);
-    await den.setFeature(orgId, "workbotDocuments", true);
-    await den.setFeature(orgId, "workbotInlineConnect", true);
-    const configured = await den.as(owner, orgId)("POST", "/v1/oauth-providers/google-workspace/client", { clientId: "fixture-client", clientSecret: "fixture-secret", features: options.draftRecovery ? ["driveRead", "driveFull", "calendarRead"] : ["driveRead", "calendarRead"] });
+    // Use the supported process boundary: its ordinary Den dev command builds
+    // workspace assets from source. An in-process API-test import both depended
+    // on warm generated output and pulled the product graph into eval layers.
+    den = await seed.den({ web: false, org: { name: "Example workspace", admin: { name: "Member Example" }, members: options.draftRecovery ? { other: { name: "Other Member" } } : {} }, trustedOrigins: [provider.url, workbotUrl], env: { DEN_WORKBOT_URL: workbotUrl, DEN_API_PUBLIC_URL: provider.url, DEN_GOOGLE_API_BASE_URL: provider.url, DEN_GOOGLE_OAUTH_AUTHORIZE_URL: `${provider.url}/authorize`, DEN_GOOGLE_OAUTH_TOKEN_URL: `${provider.url}/token`, DEN_GOOGLE_OAUTH_USERINFO_URL: `${provider.url}/userinfo`, DEN_ALLOW_PRIVATE_MCP_URLS: "true", DEN_PLAN_GATING_ENABLED: "false", RESEND_API_KEY: "", SMTP_HOST: "", LOOPS_API_KEY: "", STRIPE_SECRET_KEY: "" } });
+    const owner = den.admin;
+    const orgId = await enableOrganizationCapabilities(seed, owner, { workbot: true, workbotDocuments: true, workbotInlineConnect: true });
+    const call = (session: DenSession, method: "GET" | "POST", path: string, body?: unknown) => requestDen(session.token, method, path, { orgId, body });
+    const mint = async (session: DenSession) => {
+      const issued = await call(session, "POST", "/v1/mcp/token", { scopes: ["mcp:read", "mcp:write"] });
+      if (issued.status !== 200) throw new Error(`Workbot token: ${issued.status} ${issued.text}`);
+      return text(field(issued.body, "token"), "Workbot token");
+    };
+    const configured = await call(owner, "POST", "/v1/oauth-providers/google-workspace/client", { clientId: "fixture-client", clientSecret: "fixture-secret", features: options.draftRecovery ? ["driveRead", "driveFull", "calendarRead"] : ["driveRead", "calendarRead"] });
     if (configured.status !== 200) throw new Error(configured.text);
-    token = await den.mintMcpToken(owner, orgId);
+    token = await mint(owner);
     if (options.draftRecovery) {
-      const other = await den.newMember(owner, orgId, "Other Member");
-      otherToken = await den.mintMcpToken(other, orgId);
+      const other = den.members.other;
+      if (!other) throw new Error("The other member was not provisioned");
+      otherToken = await mint(other);
       // This second real Den member also has file access, but may never reveal the first member's retained draft.
-      const started = await den.as(other, orgId)("GET", "/v1/oauth-providers/google-workspace/connect/start");
+      const started = await call(other, "GET", "/v1/oauth-providers/google-workspace/connect/start");
       if (started.status !== 200) throw new Error(started.text);
       const authorize = new URL(text(field(started.body, "authorizeUrl"), "seed authorization"));
       const callback = new URL(text(authorize.searchParams.get("redirect_uri"), "seed callback"));
       callback.searchParams.set("state", text(authorize.searchParams.get("state"), "seed state"));
       callback.searchParams.set("code", "approve");
-      const connected = await den.request(null, "GET", callback.pathname + callback.search);
+      const connected = await requestDen(null, "GET", callback.pathname + callback.search);
       if (connected.status !== 200) throw new Error(connected.text);
     }
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-connect", startUrl: `${workbotUrl}documents`, headless: true }));
@@ -170,8 +211,8 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }, o
       web, url: workbotUrl, accountWeb,
       starts: () => starts, exchanges: () => exchanges,
       documentWrites: () => [...documentWrites], editorReads: () => [...editorReads], directoryReads: () => [...directoryReads], identityReads: () => identityReads, refreshFailures: () => refreshFailures, providerFileDenials: () => providerFileDenials,
-      async otherMemberCanRead() { return (await currentDen.request(otherToken, "GET", "/v1/workbot/documents/v1/documents/google-drive/files/file_brief/editor")).status === 200; },
-      async ready() { const result = await currentDen.request(token, "GET", "/v1/workbot/connections"); return list(field(result.body, "connections")).some(connection => connection.ready === true); },
+      async otherMemberCanRead() { return (await requestDen(otherToken, "GET", "/v1/workbot/documents/v1/documents/google-drive/files/file_brief/editor")).status === 200; },
+      async ready() { const result = await requestDen(token, "GET", "/v1/workbot/connections"); return list(field(result.body, "connections")).some(connection => connection.ready === true); },
       // Attach only to the real provider window opened by the user's click. No page state is read or written.
       async consent(standalone = false): Promise<Surface> {
         const targets = await listTargets(web.handle.cdpUrl);

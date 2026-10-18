@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { workbotConnect } from "../worlds/workbot-connect.ts";
 
-const test = spec.world(workbotConnect, { timeout: 120_000, needs: { placement: "local" }, resources: { surfaces: [], services: [] } });
+const test = spec.world(workbotConnect, { timeout: 120_000, needs: { placement: "local" }, resources: { surfaces: [], services: ["den"] } });
 
 test("a member whose provider withholds access gets a safe Workbot callback and same-tab return", async ({ world, user, probe, step, evidence }) => {
   await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });

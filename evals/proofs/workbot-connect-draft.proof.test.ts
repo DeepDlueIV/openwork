@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { workbotDraftConnect } from "../worlds/workbot-connect.ts";
 
-const test = spec.world(workbotDraftConnect, { timeout: 180_000, needs: { placement: "local" }, resources: { surfaces: [], services: [] } });
+const test = spec.world(workbotDraftConnect, { timeout: 180_000, needs: { placement: "local" }, resources: { surfaces: [], services: ["den"] } });
 const draft = "Draft retained through OAuth recovery.\nDo not save this automatically.";
 
 test("a member reconnects Drive and explicitly restores their exact unsaved draft only after fresh identity and file checks", async ({ world, user, probe, step, evidence }) => {

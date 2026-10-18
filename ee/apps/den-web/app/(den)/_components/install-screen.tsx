@@ -229,7 +229,7 @@ export function InstallScreen() {
 }
 
 async function selectInstallOrganization(organizationId: string) {
-  const { response, payload } = await requestJson("/api/auth/organization/set-active", {
+  const { response, payload } = await requestJson("/v1/me/active-organization", {
     method: "POST", body: JSON.stringify({ organizationId }),
   }, 12000);
   if (!response.ok) throw new Error(getErrorMessage(payload, "Could not select this organization. Try again."));

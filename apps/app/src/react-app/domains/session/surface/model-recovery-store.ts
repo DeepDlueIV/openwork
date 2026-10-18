@@ -6,6 +6,8 @@ export type ModelRecovery = {
   replacement: ModelRef & { title?: string };
   returned: boolean;
   dismissed: boolean;
+  /** New-chat recovery is temporary, and expires when its configured default changes. */
+  defaultSelectionKey?: string;
 };
 
 type RecoveryState = {
@@ -35,6 +37,17 @@ export const useModelRecoveryStore = create<RecoveryState>((set) => ({
     return { byChat };
   }),
 }));
+
+/** A recovery never becomes a personal workspace preference or masks a later org default. */
+export function temporaryRecoveredDefault(
+  configured: { model: ModelRef | null; variant: string | null },
+  recovery: ModelRecovery | undefined,
+  defaultSelectionKey: string,
+): { model: ModelRef | null; variant: string | null } {
+  return recovery?.defaultSelectionKey === defaultSelectionKey
+    ? { model: recovery.replacement, variant: null }
+    : configured;
+}
 
 export function modelRecoveryChatKey(scope: string, sessionId?: string | null) {
   return JSON.stringify([scope, sessionId ?? "new-task"]);

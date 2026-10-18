@@ -49,7 +49,7 @@ function record() { useModelRecoveryStore.getState().record(key, { previous, rep
 test("confirmed removal names both models and Change opens the composer picker", async () => {
   record();
   const view = await mount();
-  expect(view.host.textContent).toContain("Claude Opus 4.5 was removed by your organization · Using Claude Sonnet 4.5 ·");
+  expect(view.host.textContent).toContain("Claude Opus 4.5 was removed by your organization · Using Claude Sonnet 4.5 for this chat ·");
   expect(view.host.textContent).not.toMatch(/ipr_|gwm_/);
   expect(view.host.querySelector('[role="status"]')).not.toBeNull();
   await view.click("Change");

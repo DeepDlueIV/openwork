@@ -479,8 +479,7 @@ function AutomaticMigrationRecoveryDialog(props: { progress: ProgressState }) {
     <Dialog open onOpenChange={(open) => { if (!open) closeEngineMigrationProgress(); }}>
       <DialogContent data-testid="engine-migration-recovery">
         <DialogHeader>
-          <DialogTitle>{t("engine_migration.paused_title")}</DialogTitle>
-          <DialogDescription>{t("engine_migration.current_engine", { engine: progress.selected })}</DialogDescription>
+          <DialogTitle>{t("engine_migration.paused_title_on", { engine: progress.selected })}</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           {progress.automaticRetryAt === undefined
@@ -518,13 +517,14 @@ function MigrationProgressDialog(props: { progress: ProgressState }) {
           <DialogTitle>
             {running ? t("engine_migration.progress_title")
               : migration.state === "completed" ? t("engine_migration.done_title")
-                : t("engine_migration.error_title")}
+                : t("engine_migration.error_title_on", { engine: progress.selected })}
           </DialogTitle>
-          <DialogDescription>
-            {running ? `${migration.resumed ? `${t("engine_migration.resumed_note")} ` : ""}${t("engine_migration.progress_note")}`
-              : migration.state === "completed" ? migratedSummary(migration)
-                : t("engine_migration.current_engine", { engine: progress.selected })}
-          </DialogDescription>
+          {running || migration.state === "completed" ? (
+            <DialogDescription>
+              {running ? `${migration.resumed ? `${t("engine_migration.resumed_note")} ` : ""}${t("engine_migration.progress_note")}`
+                : migratedSummary(migration)}
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
         {running ? <MigrationProgressBar migration={migration} /> : null}
         {migration.state === "completed" && migration.notCopied?.length ? (

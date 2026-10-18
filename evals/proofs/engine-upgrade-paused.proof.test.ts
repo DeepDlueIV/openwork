@@ -53,9 +53,11 @@ test("a member keeps working with a visible paused upgrade and restart recovery"
   await step("reviewing recovery discloses the later restart without running another copy", async () => {
     await user.click({ role: "button", text: "Review upgrade" });
     await user.see({ testId: "engine-migration-recovery" });
+    await user.see({ role: "heading", text: "Chat upgrade paused on OpenCode v1" });
+    expect((await probe.dom('[data-testid="engine-migration-recovery"] [data-slot="dialog-description"]')).elements).toHaveLength(0);
     await user.see({ role: "button", text: "Restart OpenWork" });
     await user.see({ text: "Technical details" });
-    await user.notSee({ role: "button", text: "Try again" });
+    await user.notSee({ role: "button", text: "Retry migration" });
     const current = upgradeStatus.parse((await probe.desktopApi("/experimental/engine-v2-preview/status")).body);
     expect(current.automaticRetryAt).toBe(failed?.automaticRetryAt);
     expect(current.migration.error).toBe(failed?.migration.error);
@@ -99,7 +101,9 @@ test("a member keeps working with a visible paused upgrade and restart recovery"
       until: value => value.migration.state === "error" && value.automaticRetryAt === undefined && value.migration.startedAt !== failed?.migration.startedAt,
     });
     await user.see({ testId: "engine-migration-progress" });
-    await user.see({ role: "button", text: "Try again" });
+    await user.see({ role: "heading", text: "Migration didn't finish on OpenCode v1" });
+    expect((await probe.dom('[data-testid="engine-migration-progress"] [data-slot="dialog-description"]')).elements).toHaveLength(0);
+    await user.see({ role: "button", text: "Retry migration" });
     await user.see({ text: "Technical details" });
     expect((await probe.dom('[data-testid="engine-migration-progress"] details[open]')).elements).toHaveLength(0);
     await user.notSee({ testId: "engine-migration-recovery" });

@@ -357,6 +357,8 @@ test("a durable forced failure stays compact and never automatically retries in-
   await act(async () => review.click());
   const dialog = document.querySelector('[data-testid="engine-migration-recovery"]');
   expect(dialog?.textContent).toContain("on a later restart");
+  expect(dialog?.querySelector('[data-slot="dialog-title"]')?.textContent).toBe("Chat upgrade paused on OpenCode v1");
+  expect(dialog?.querySelector('[data-slot="dialog-description"]')).toBeNull();
   expect(dialog?.querySelector("details")?.open).toBe(false);
   expect(useEngineMigrationStore.getState().consent).toBeNull();
   expect(client.migrateOpencodeHistory).not.toHaveBeenCalled();
@@ -414,7 +416,9 @@ test("a paused automatic failure can become an explicitly consented manual migra
     migration: { state: "error", imported: 1, skipped: 0, total: 2, error: "private conversion diagnostics" },
   }));
   const failedDialog = document.querySelector('[data-testid="engine-migration-progress"]');
-  expect(failedDialog?.querySelector('[data-slot="dialog-description"]')?.textContent).toBe("Using OpenCode v1");
+  expect(failedDialog?.querySelector('[data-slot="dialog-title"]')?.textContent).toBe("Migration didn't finish on OpenCode v1");
+  expect(failedDialog?.querySelector('[data-slot="dialog-description"]')).toBeNull();
+  expect(Array.from(failedDialog?.querySelectorAll("button") ?? []).some(button => button.textContent === "Retry migration")).toBe(true);
   expect(failedDialog?.querySelector("details")?.open).toBe(false);
   expect(failedDialog?.querySelector("details")?.textContent).toContain("private conversion diagnostics");
 });

@@ -31,6 +31,8 @@ export type WorkbotHost = {
   connectionsHref?: string | null
   /** The person can start side chats next to their main chat (on while Workbot is on). Off when unset. */
   sideChats?: boolean
+  /** Copy-only sharing; does not create invitations or grant membership. */
+  shareWorkbot?: { enabled: boolean }
   /** Authenticated identity for permission-protected model-setting caches; absent on older hosts. */
   identity?: { principalId: string; organizationId: string }
 }

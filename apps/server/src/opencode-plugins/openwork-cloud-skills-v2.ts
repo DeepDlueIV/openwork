@@ -20,11 +20,15 @@ type CatalogSkill = Catalog["skills"][number];
 
 type NativeSkill = { id: string; name: string; description: string; path: string; content: string };
 type Registration = { dispose(): Promise<void> };
-type PromptEvent = { readonly sessionID: string; prompt: { text: string; skills?: Array<{ id: string }> } };
+type InstructionFile = { uri: string; name: string; description: string };
+type PromptEvent = {
+  readonly sessionID: string;
+  prompt: { text: string; skills?: Array<{ id: string }>; files?: Array<{ uri: string; name?: string; description?: string }> };
+  metadata?: Record<string, unknown> | null;
+};
 export type CloudSkillContext = {
   options: { url: string; token: string };
   skill: {
-    list(): Promise<{ data: ReadonlyArray<Pick<NativeSkill, "id" | "content">> }>;
     transform(callback: (editor: { get(id: string): unknown; add(skill: NativeSkill): void }) => void): Promise<Registration>;
     reload(): Promise<void>;
   };
@@ -123,18 +127,14 @@ export function discoverySkills(value: unknown): NativeSkill[] {
     DISCOVERY_BUDGET_CHARS, DISCOVERY_DESCRIPTION_CHARS, discoveryContent);
 }
 
-/**
- * Native mode (Den's nativeCloudSkills rollout): each skill is a native skill
- * with its full description and its authorized SKILL.md, verified against the
- * digest Den published. A skill whose body could not be read or verified keeps
- * the discovery note, so it still works through get_skill.
- */
-export function nativeSkills(catalog: Catalog, contents: ReadonlyMap<string, string>): NativeSkill[] {
-  return budgeted(catalog.skills.filter(skill => skill.modelDiscovery === true), NATIVE_BUDGET_CHARS, NATIVE_DESCRIPTION_CHARS, skill => {
-    if (skill.setup) return setupContent(skill, skill.setup);
-    const body = skill.digest ? contents.get(skill.digest) : undefined;
-    return body ?? discoveryContent(skill);
-  });
+/** Full descriptions, but discovery-only registry content. The pinned engine
+ * resolves skill IDs after async prompt preparation; a mutable registry body
+ * cannot pin the authorized snapshot. Selected instructions instead travel in
+ * immutable inline text attachments, using the engine's existing file primitive.
+ * Unselected skills still load their current instructions through get_skill. */
+export function nativeSkills(catalog: Catalog): NativeSkill[] {
+  return budgeted(catalog.skills.filter(skill => skill.modelDiscovery === true), NATIVE_BUDGET_CHARS, NATIVE_DESCRIPTION_CHARS,
+    skill => skill.setup ? setupContent(skill, skill.setup) : discoveryContent(skill));
 }
 
 export function sha256Digest(text: string): string {
@@ -188,9 +188,6 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
   let fingerprint = "[]";
   let closed = false;
   let refreshing = false;
-  // Verified SKILL.md bodies by digest, in memory only. A body is re-read only
-  // when Den publishes a new digest, and dropped as soon as Den stops listing it.
-  const contents = new Map<string, string>();
   const controller = new AbortController();
   let registration: Registration | undefined;
   let promptHook: Registration | undefined;
@@ -205,12 +202,12 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
     return response.ok ? await response.json() : null;
   };
 
-  // Publish metadata immediately, then replace discovery notes as individual
-  // bodies arrive. A prompt never waits for the full catalog to hydrate.
+  // Publish bounded metadata immediately. Never place private bodies in the
+  // mutable native registry or hydrate unselected catalog entries.
   let publishing = Promise.resolve();
   const publish = () => {
     publishing = publishing.catch(() => {}).then(async () => {
-      const next = native ? nativeSkills(catalog, contents) : discoverySkills(catalog);
+      const next = native ? nativeSkills(catalog) : discoverySkills(catalog);
       const key = JSON.stringify(next);
       if (closed || key === fingerprint) return;
       skills = next;
@@ -220,7 +217,9 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
         await current?.dispose();
       } else if (!registration) {
         const current = await context.skill.transform(editor => {
-          for (const skill of skills) if (!editor.get(skill.id)) editor.add(skill);
+          // This namespace belongs to the Cloud plugin. A stale definition
+          // must not retain private instructions under a discovery-only ID.
+          for (const skill of skills) editor.add(skill);
         });
         if (closed) { await current.dispose(); return; }
         registration = current;
@@ -232,45 +231,38 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
     return publishing;
   };
 
-  type ReadJob = { digest: string; run(): Promise<void>; done: Promise<void> };
+  const stillListed = (snapshot: CloudSkillSnapshot) => {
+    const skill = catalog.skills.find(entry => skillId(entry) === snapshot.id);
+    const current = skill && skillSnapshot(skill);
+    return native && !closed && current !== undefined && sameCloudSkillSnapshot(current, snapshot);
+  };
+  type ReadJob = { run(): Promise<void> };
   const pending: ReadJob[] = [];
-  const reading = new Map<string, ReadJob>();
   let activeReads = 0;
   const drain = () => {
     while (!closed && activeReads < MAX_CONCURRENT_READS && pending.length) {
       const job = pending.shift();
       if (!job) break;
       activeReads++;
-      void job.run().catch(() => {}).finally(() => { activeReads--; reading.delete(job.digest); drain(); });
+      void job.run().catch(() => {}).finally(() => { activeReads--; drain(); });
     }
   };
-  const hydrate = (skill: CatalogSkill, urgent = false): Promise<void> => {
-    const { digest, url } = skill;
-    if (closed || !digest || !url || skill.setup || contents.has(digest)) return Promise.resolve();
-    const existing = reading.get(digest);
-    if (existing) {
-      // A selected skill jumps ahead of queued catalog reads, not ahead of
-      // the two network requests already running. No second fetch per digest.
-      const index = pending.indexOf(existing);
-      if (urgent && index > 0) { pending.splice(index, 1); pending.unshift(existing); }
-      return existing.done;
-    }
-    let finish: () => void = () => {};
-    const done = new Promise<void>(resolve => { finish = resolve; });
-    const job: ReadJob = { digest, done, async run() {
+  const hydrate = (snapshot: CloudSkillSnapshot): Promise<string | undefined> => {
+    if (!stillListed(snapshot) || pending.length >= MAX_SKILLS) return Promise.resolve(undefined);
+    // Fetch only selected instructions, freshly for every admission. Neither a
+    // verified digest nor an earlier in-flight read is a reusable access grant.
+    let finish: (body?: string) => void = () => {};
+    const done = new Promise<string | undefined>(resolve => { finish = resolve; });
+    const job: ReadJob = { async run() {
+      let body: string | undefined;
       try {
-        if (closed || !native || !catalog.skills.some(entry => entry.digest === digest && entry.url === url && !entry.setup)) return;
-        const result = z.object({ content: z.string() }).safeParse(await call("openwork_skill_read", { url }).catch(() => null));
-        // A late read cannot restore instructions removed by a refresh/kill.
-        if (!closed && native && catalog.skills.some(entry => entry.digest === digest && entry.url === url && !entry.setup)
-          && result.success && sha256Digest(result.data.content) === digest) {
-          contents.set(digest, result.data.content);
-          await publish();
-        }
-      } finally { finish(); }
+        if (!stillListed(snapshot)) return;
+        const result = z.object({ content: z.string() }).safeParse(await call("openwork_skill_read", { url: snapshot.url }).catch(() => null));
+        if (stillListed(snapshot) && result.success && sha256Digest(result.data.content) === snapshot.digest
+          && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(result.data.content)) body = result.data.content;
+      } finally { finish(body); }
     } };
-    reading.set(digest, job);
-    if (urgent) pending.unshift(job); else pending.push(job);
+    pending.push(job);
     drain();
     return done;
   };
@@ -280,6 +272,9 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
     if (promptHook || !context.session) return;
     const session = context.session;
     promptHook = await session.hook("prompt", async event => {
+      // Only this hook mints instruction provenance after real authorization.
+      // Caller-supplied metadata must not claim that an old file was loaded.
+      if (event.metadata) delete event.metadata.openworkCloudSkills;
       const attached = new Set((event.prompt.skills ?? []).map(skill => skill.id));
       const explicit = [...attached].filter(id => id.startsWith(CLOUD_SKILL_ID_PREFIX));
       // Only an explicit Cloud attachment needs the cold catalog promise.
@@ -298,10 +293,8 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
         return skill && snapshot ? [{ skill, snapshot }] : [];
       });
       if (selected.length !== ids.length) throw unavailable();
-      await Promise.all(selected.map(({ skill }) => hydrate(skill, true)));
-      if (!native || closed) throw unavailable();
-      if (selected.some(({ snapshot }) => !contents.has(snapshot.digest))) throw unavailable();
-      await publish();
+      const bodies = await Promise.all(selected.map(({ snapshot }) => hydrate(snapshot)));
+      if (bodies.some(body => body === undefined) || !native || closed) throw unavailable();
       // Bind the permission operation to the exact loadable identity/body, not
       // just a listed name or our older location-local catalog. Authorization is
       // last: a slow hydration cannot outlive a newer setup/identity decision.
@@ -317,16 +310,25 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
       const authorized = permission.authorized;
       if (!authorized || authorized.length !== expected.length
         || authorized.some((snapshot, index) => !sameCloudSkillSnapshot(snapshot, expected[index]))) throw unavailable();
-      // A transform from another plugin, or a local refresh during the bridge
-      // call, must not substitute a different body under the authorized ID.
-      const { data: registered } = await context.skill.list();
-      if (!native || closed || authorized.some(snapshot => {
-        const local = catalog.skills.find(skill => skillId(skill) === snapshot.id);
-        const current = local && skillSnapshot(local);
-        const entry = registered.find(skill => skill.id === snapshot.id);
-        return !current || !sameCloudSkillSnapshot(current, snapshot) || !entry || sha256Digest(entry.content) !== snapshot.digest;
-      })) throw unavailable();
-      event.prompt.skills = [...(event.prompt.skills ?? []), ...mentioned.map(id => ({ id }))];
+      if (authorized.some(snapshot => !stillListed(snapshot))) throw unavailable();
+      const attachments = selected.map(({ skill, snapshot }, index) => {
+        const body = bodies[index];
+        if (body === undefined || sha256Digest(body) !== snapshot.digest) throw unavailable();
+        const name = oneLine(skill.title || skill.name, 128).replace(/[\u0000-\u001f\u007f]/g, "") || skill.name;
+        const fileName = `Skill - ${name.slice(0, 96).replace(/[<>:"/\\|?*]/g, "-")}.md`;
+        // A fixed text heading avoids media sniffing the Markdown body as SVG,
+        // HTML or another media type. Both raw and carrier digests are recorded.
+        const text = `# Skill instructions\n\n${body}`;
+        const file: InstructionFile = Object.freeze({ uri: `data:text/plain;base64,${Buffer.from(text, "utf8").toString("base64")}`,
+          name: fileName, description: `Verified skill instructions for ${name}` });
+        return { file, provenance: { ...snapshot, name, fileName, fileIndex: (event.prompt.files?.length ?? 0) + index, attachmentDigest: sha256Digest(text) } };
+      });
+      // Skill IDs are mutable references on the pinned engine. Do not leave a
+      // Cloud ID for it to reread after other hooks or asynchronous file reads.
+      // The native inline-file primitive persists and sends these exact bytes.
+      event.prompt.skills = (event.prompt.skills ?? []).filter(skill => !skill.id.startsWith(CLOUD_SKILL_ID_PREFIX));
+      event.prompt.files = [...(event.prompt.files ?? []), ...attachments.map(attachment => attachment.file)];
+      event.metadata = { ...event.metadata, openworkCloudSkills: attachments.map(attachment => attachment.provenance) };
     });
   };
 
@@ -340,15 +342,12 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
       native = incoming.delivery === "native";
       // Apply listing budgets BEFORE fetching any bodies, including visibility,
       // count and description cost. Unselected catalog entries cost no reads.
-      const selected = new Set((native ? nativeSkills(incoming, new Map()) : discoverySkills(incoming)).map(skill => skill.id));
+      const selected = new Set((native ? nativeSkills(incoming) : discoverySkills(incoming)).map(skill => skill.id));
       catalog = { ...incoming, skills: incoming.skills.filter(skill => skill.modelDiscovery === true && selected.delete(skillId(skill))) };
-      const wanted = new Set(native ? catalog.skills.flatMap(skill => skill.digest && !skill.setup ? [skill.digest] : []) : []);
-      for (const digest of contents.keys()) if (!wanted.has(digest)) contents.delete(digest);
       await publish();
-      if (native) for (const skill of catalog.skills) void hydrate(skill).catch(() => {});
     } catch {
-      // Cloud readiness is never a prerequisite to chatting. Discovery entries
-      // carry no body; native bodies are dropped as soon as Den stops listing them.
+      // Ordinary chat never depends on Cloud readiness. Registries contain
+      // discovery metadata only; selected bodies are fetched freshly per prompt.
     } finally {
       refreshing = false;
     }
@@ -363,9 +362,7 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
     clearInterval(timer);
     controller.abort();
     skills = [];
-    contents.clear();
     for (const job of pending.splice(0)) void job.run();
-    reading.clear();
     await publishing.catch(() => {});
     await promptHook?.dispose();
     await registration?.dispose();

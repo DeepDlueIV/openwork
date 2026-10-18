@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
@@ -68,11 +68,42 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     if (!inference.ready) return blocked(inference.reason, inference.metadata);
     redactions.push(inference.provider.options.apiKey);
     setupStage = "owned native Den";
+    // Day demo: a real local Automation runner (ee/apps/headless-runner) so a created cloud Automation actually runs.
+    const runnerPort = day ? await allocateFreePort() : 0;
+    const runnerToken = day ? `workshop-runner-${randomUUID()}-${randomUUID()}` : "";
+    if (runnerToken) redactions.push(runnerToken);
     const clearEnv = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]));
-    const ownedEnv = { ...clearEnv, PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_CACHE_HOME: join(root, "cache"), NODE_OPTIONS: "", RESEND_API_KEY: "", SMTP_HOST: "", DEN_AUTOMATIONS_ENABLED: "true", DEN_AUTOMATIONS_RUNTIME_ENABLED: "true", DEN_BOOTSTRAP_ADMIN_EMAILS: "", ...(day && process.env.OPENWORK_WORKSHOP_DAY_APPS === "1" ? { DEN_APP_MCP_SERVERS_ENABLED: "true" } : {}) };
+    const ownedEnv = { ...clearEnv, PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_CACHE_HOME: join(root, "cache"), NODE_OPTIONS: "", RESEND_API_KEY: "", SMTP_HOST: "", DEN_AUTOMATIONS_ENABLED: "true", DEN_AUTOMATIONS_RUNTIME_ENABLED: "true", DEN_BOOTSTRAP_ADMIN_EMAILS: "", ...(day && process.env.OPENWORK_WORKSHOP_DAY_APPS === "1" ? { DEN_APP_MCP_SERVERS_ENABLED: "true" } : {}), ...(day ? { DEN_HEADLESS_RUNNER_URL: `http://127.0.0.1:${runnerPort}`, DEN_HEADLESS_RUNNER_TOKEN: runnerToken } : {}) };
     const recipientPort = await allocateFreePort();
     const { den, webPort } = await denForAppWeb(seed, { web: true, trustedOrigins: [`http://127.0.0.1:${recipientPort}`], env: ownedEnv, org: { name: "Acme Robotics", admin: { name: person.name, email: person.email }, members: { teammate: { name: "Nora Patel", email: "nora@acme.test" }, outsider: { name: "Zoe Kim", email: "zoe@acme.test" } } } });
     redactions.push(den.admin.token, den.admin.password, den.members.teammate!.token, den.members.teammate!.password);
+    if (day) {
+      setupStage = "owned local Automation runner and org model";
+      // The eval model becomes an organization model so Automations can use it (Den re-validates on create).
+      const providerResult = await denFetch(den.admin, "/v1/llm-providers", { method: "POST", headers: { authorization: `Bearer ${den.admin.token}` }, body: JSON.stringify({
+        name: inference.provider.name, source: "custom", allMembers: true, memberIds: [], teamIds: [], apiKey: inference.provider.options.apiKey,
+        customConfig: { id: inference.providerId, name: inference.provider.name, npm: "@ai-sdk/openai-compatible", options: { baseURL: inference.baseUrl }, env: ["WORKSHOP_PROXY_KEY"],
+          models: [{ id: inference.modelId, name: Object.values(inference.provider.models)[0]?.name ?? inference.modelId, tool_call: true }] },
+      }) });
+      if (providerResult.response.status !== 201) throw new Error(`Could not register the workshop model with Den: HTTP ${providerResult.response.status}`);
+      const runnerRoot = join(root, "runner"); await mkdir(runnerRoot, { recursive: true });
+      const runnerCwd = join(REPO, "ee/apps/headless-runner");
+      const runner = spawn(join(runnerCwd, "node_modules/.bin/tsx"), ["src/server.ts"], { cwd: runnerCwd, stdio: ["ignore", "pipe", "pipe"], env: {
+        PATH: process.env.PATH, HOME: root, NODE_OPTIONS: "--conditions=development",
+        HEADLESS_API_TOKEN: runnerToken, HEADLESS_PORT: String(runnerPort), HEADLESS_DB_PATH: join(runnerRoot, "headless.sqlite"),
+        HEADLESS_MODEL_PROTOCOL: "openai", HEADLESS_MODEL_BASE_URL: inference.baseUrl, HEADLESS_MODEL: inference.modelId,
+        HEADLESS_MODEL_API_KEY: inference.provider.options.apiKey, HEADLESS_MCP_URL: `${den.ref.apiUrl}/mcp/agent`, HEADLESS_TURN_TIMEOUT_MS: "300000",
+      } });
+      let runnerLog = ""; runner.stdout?.on("data", (chunk) => { runnerLog = (runnerLog + chunk).slice(-4000); }); runner.stderr?.on("data", (chunk) => { runnerLog = (runnerLog + chunk).slice(-4000); });
+      resources.defer(async () => { runner.kill("SIGTERM"); await delay(500); });
+      const deadline = Date.now() + 60_000;
+      while (Date.now() < deadline) {
+        if (runner.exitCode !== null) throw new Error(`Automation runner exited: ${runnerLog.slice(-600)}`);
+        if (await fetch(`http://127.0.0.1:${runnerPort}/health`).then((r) => r.ok).catch(() => false)) break;
+        await delay(500);
+      }
+      if (!(await fetch(`http://127.0.0.1:${runnerPort}/health`).then((r) => r.ok).catch(() => false))) throw new Error(`Automation runner did not start: ${runnerLog.slice(-600)}`);
+    }
     setupStage = "owned synthetic services";
     const uiPort = await allocateFreePort();
     const uiOrigin = `http://127.0.0.1:${uiPort}`;

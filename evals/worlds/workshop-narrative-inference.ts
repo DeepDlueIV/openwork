@@ -15,7 +15,10 @@ export async function startNarrativeInference(name: string, stack: AsyncDisposab
     key = secret.stdout.trim();
     if (!key || key === "*not found*") throw new Error("missing");
   } catch { return { ready: false as const, reason: `Missing scoped ${profile.credentialEnv}; no provider fallback`, metadata }; }
-  const proxy = await startWorkshopInferenceProxy(stack, profile, key, { maxRequests: 220, maxOutputTokens: 8192, maxTotalOutputTokens: 131072, maxInputBytes: 2 * 1024 * 1024, maxTotalInputBytes: 32 * 1024 * 1024, lifetimeMs: 35 * 60_000, requestTimeoutMs: 180_000 });
+  const proxy = await startWorkshopInferenceProxy(stack, profile, key, (process.env.OPENWORK_WORKSHOP_DAY === "1"
+    // Day demo: one longer session incl. a real Automation run on the local runner (Chat Completions, same pinned model).
+    ? { maxRequests: 360, maxOutputTokens: 8192, maxTotalOutputTokens: 393216, maxInputBytes: 2 * 1024 * 1024, maxTotalInputBytes: 64 * 1024 * 1024, lifetimeMs: 75 * 60_000, requestTimeoutMs: 180_000, allowRunnerChatCompletions: true }
+    : { maxRequests: 220, maxOutputTokens: 8192, maxTotalOutputTokens: 131072, maxInputBytes: 2 * 1024 * 1024, maxTotalInputBytes: 32 * 1024 * 1024, lifetimeMs: 35 * 60_000, requestTimeoutMs: 180_000 }));
   key = "";
   const tools = [{ type: "function", name: "workshop_probe", description: "Return the explicit protocol-check result; no business action.", strict: true, parameters: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } }];
   const body = profile.route === "/responses"
@@ -38,7 +41,7 @@ export async function startNarrativeInference(name: string, stack: AsyncDisposab
   }
   const verified = { ...metadata, httpStatus: status, toolCall, preflightElapsedMs: Date.now() - started, preflightWitnesses: structuredClone(proxy.witnesses), limits: proxy.limits };
   if (status !== 200 || !toolCall) return { ready: false as const, reason: "Exact-model real tool-call preflight was not verified; no fallback", metadata: verified };
-  return { ready: true as const, providerId: proxy.providerId, provider: proxy.provider, modelId: proxy.modelId, variant: proxy.variant ?? null, metadata: verified, observations: () => structuredClone(proxy.witnesses), abortAfter: proxy.abortAfter,
+  return { ready: true as const, providerId: proxy.providerId, provider: proxy.provider, baseUrl: proxy.baseUrl, modelId: proxy.modelId, variant: proxy.variant ?? null, metadata: verified, observations: () => structuredClone(proxy.witnesses), abortAfter: proxy.abortAfter,
     async settle(timeoutMs = 10000) { const deadline = Date.now() + timeoutMs; while (Date.now() < deadline && proxy.witnesses.some((entry) => entry.status === "started")) await delay(25); if (proxy.witnesses.some((entry) => entry.status === "started")) throw new Error("Owned inference did not settle after the product turn"); },
   };
 }

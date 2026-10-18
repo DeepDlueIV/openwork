@@ -161,7 +161,7 @@ export interface WorkshopInferenceWitness {
   /** Cost reported by the upstream usage payload, not independently reconciled against an invoice. */
   reportedCostUsd: number | null;
   /** A request body proves priority was requested, not which UI variant produced it. */
-  variantEvidence: "priority-request-body" | "not-fast";
+  variantEvidence: "priority-request-body" | "not-fast" | "automation-runner-chat-completions";
 }
 
 export interface WorkshopInferenceProxyOptions {
@@ -175,6 +175,8 @@ export interface WorkshopInferenceProxyOptions {
   requestTimeoutMs?: number;
   /** Test transport only; production callers omit this. The target URL remains pinned. */
   upstreamFetch?: typeof fetch;
+  /** Also accept OpenAI Chat Completions from the local Automation runner (same pinned model and upstream). */
+  allowRunnerChatCompletions?: boolean;
 }
 
 /** Real paid upstream, but no paid key is ever put in provider config or a child environment.
@@ -222,6 +224,10 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
       finishReason: null, functionCalls: [],
     };
     // Unauthenticated traffic does not get to fill the in-memory witness ledger.
+    if (request.method === "GET" && request.url === "/v1/models" && options.allowRunnerChatCompletions && request.headers.authorization === `Bearer ${syntheticKey}`) {
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: [{ id: profile.model, object: "model", owned_by: "workshop" }] }));
+      return;
+    }
     if (request.headers.authorization !== `Bearer ${syntheticKey}`) {
       response.writeHead(401, { "content-type": "application/json" }).end('{"error":{"message":"Workshop synthetic authentication required"}}');
       return;
@@ -236,7 +242,10 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
     if (witnesses.length >= limits.maxRequests) { reject(429, "request-budget-exhausted"); return; }
     witnesses.push(witness);
     if (stopped || Date.now() - started >= limits.lifetimeMs) { reject(410, "world-inference-lifetime-exhausted"); return; }
-    if (request.method !== "POST" || request.url !== `/v1${profile.route}`) { reject(400, "wrong-protocol-route"); return; }
+    const runnerChat = Boolean(options.allowRunnerChatCompletions) && profile.route !== "/chat/completions" && request.url === "/v1/chat/completions";
+    const route: WorkshopModelProfile["route"] = runnerChat ? "/chat/completions" : profile.route;
+    witness.route = `${profile.upstream}${route}`;
+    if (request.method !== "POST" || (request.url !== `/v1${profile.route}` && !runnerChat)) { reject(400, "wrong-protocol-route"); return; }
     const chunks: Buffer[] = [];
     let size = 0;
     try {
@@ -251,12 +260,12 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
       witness.requestedServiceTier = typeof body.service_tier === "string" ? body.service_tier : null;
       witness.requestedReasoningEffort = record(body.reasoning) && typeof body.reasoning.effort === "string" ? body.reasoning.effort
         : typeof body.reasoning_effort === "string" ? body.reasoning_effort : null;
-      if (profile.serviceTier && body.service_tier !== profile.serviceTier) { reject(400, "missing-priority-Fast-request-option"); return; }
-      if (!profile.serviceTier && body.service_tier !== undefined) { reject(400, "unexpected-service-tier-for-Qwen"); return; }
+      if (profile.serviceTier && !runnerChat && body.service_tier !== profile.serviceTier) { reject(400, "missing-priority-Fast-request-option"); return; }
+      if ((!profile.serviceTier || runnerChat) && body.service_tier !== undefined) { reject(400, "unexpected-service-tier-for-Qwen"); return; }
       if (body.background === true || body.previous_response_id !== undefined || body.conversation !== undefined) { reject(400, "stored-or-background-inference-not-permitted"); return; }
       if (Array.isArray(body.tools) && body.tools.some((tool) => !record(tool) || tool.type !== "function")) { reject(400, "hosted-upstream-tools-not-permitted"); return; }
-      witness.variantEvidence = profile.serviceTier ? "priority-request-body" : "not-fast";
-      const tokenField = profile.route === "/responses" ? "max_output_tokens" : "max_tokens";
+      witness.variantEvidence = runnerChat ? "automation-runner-chat-completions" : profile.serviceTier ? "priority-request-body" : "not-fast";
+      const tokenField = route === "/responses" ? "max_output_tokens" : "max_tokens";
       const requested = body[tokenField] ?? body.max_completion_tokens;
       if (requested !== undefined && (!Number.isSafeInteger(requested) || typeof requested !== "number" || requested <= 0)) { reject(400, "invalid-output-token-bound"); return; }
       witness.requestedMaxOutputTokens = typeof requested === "number" ? requested : null;
@@ -265,8 +274,8 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
       // Token bounds may be tightened, but Fast and reasoning are NEVER injected or modified.
       body[tokenField] = allowance;
       delete body.max_completion_tokens;
-      if (profile.route === "/responses") body.store = false;
-      if (profile.route === "/chat/completions" && body.stream === true) body.stream_options = { include_usage: true };
+      if (route === "/responses") body.store = false;
+      if (route === "/chat/completions" && body.stream === true) body.stream_options = { include_usage: true };
       witness.forwardedMaxOutputTokens = allowance;
       if (active >= limits.maxConcurrentRequests) { reject(429, "world-concurrent-request-budget-exhausted"); return; }
       inputBytes += size;
@@ -344,7 +353,7 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
         }
       }
       try {
-        upstream = await transport(`${profile.upstream}${profile.route}`, {
+        upstream = await transport(`${profile.upstream}${route}`, {
           method: "POST", redirect: "error", signal: controller.signal,
           headers: { authorization: `Bearer ${paidKey}`, "content-type": "application/json" }, body: JSON.stringify(body),
         });
@@ -366,7 +375,7 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
           const data = line.slice(5).trim();
           if (data === "[DONE]") {
             chatDone = true;
-            if (profile.route === "/chat/completions") witness.terminalEvent = "[DONE]";
+            if (route === "/chat/completions") witness.terminalEvent = "[DONE]";
           } else { try { observe(JSON.parse(data), true); } catch { /* no raw events retained */ } }
         }
         const reader = upstream.body.getReader();
@@ -389,7 +398,7 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
         pending += decoder.decode();
         if (!streaming) { try { observe(JSON.parse(pending), false); } catch { /* preserve unavailable usage */ } }
         // EOF is transport evidence, not a successful protocol terminal. Forward bytes unchanged.
-        const completed = profile.route === "/responses" ? responsesCompleted && witness.responseStatus === "completed"
+        const completed = route === "/responses" ? responsesCompleted && witness.responseStatus === "completed"
           : chatFinished && (!streaming || chatDone);
         witness.status = upstreamFailed ? "upstream-error" : completed ? "completed" : "interrupted";
         if (upstreamFailed) witness.rejection = "upstream-protocol-failure";

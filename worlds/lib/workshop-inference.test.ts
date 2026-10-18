@@ -320,3 +320,37 @@ test("Qwen selection is exact and does not inherit GPT Fast", () => {
   assert.equal(assertWorkshopModel(profile, { models: [{ id: "qwen-alias", upstreamModelId: profile.model, config: {} }] }).id, "qwen-alias");
   assert.throws(() => assertWorkshopModel(profile, { models: [{ id: "qwen3-other", upstreamModelId: "qwen/qwen3-32b", config: {} }] }), /BLOCKED/);
 });
+
+test("Automation runner Chat Completions is opt-in, pinned to the same model and never gets Fast injected", async () => {
+  const profile = workshopModelProfile(["--model-profile", "gpt-sol-fast"]);
+  for (const allow of [false, true]) {
+    await using stack = new AsyncDisposableStack();
+    const forwarded: { url: string; body: Record<string, unknown> }[] = [];
+    const proxy = await startWorkshopInferenceProxy(stack, profile, "paid-runner-fixture", {
+      allowRunnerChatCompletions: allow,
+      upstreamFetch: async (url, init) => {
+        forwarded.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+        return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "ok" } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }), { headers: { "content-type": "application/json" } });
+      },
+    });
+    const auth = { authorization: `Bearer ${proxy.provider.options.apiKey}`, "content-type": "application/json" };
+    const models = await fetch(`${proxy.baseUrl}/models`, { headers: auth });
+    const chat = await fetch(`${proxy.baseUrl}/chat/completions`, { method: "POST", headers: auth, body: JSON.stringify({ model: profile.model, messages: [{ role: "user", content: "hi" }] }) });
+    const wrongModel = await fetch(`${proxy.baseUrl}/chat/completions`, { method: "POST", headers: auth, body: JSON.stringify({ model: "gpt-4.1", messages: [] }) });
+    if (!allow) {
+      assert.equal(chat.status, 400);
+      assert.equal(forwarded.length, 0);
+      continue;
+    }
+    assert.equal(models.status, 200);
+    assert.equal(((await models.json()) as { data: { id: string }[] }).data[0]?.id, profile.model);
+    assert.equal(chat.status, 200);
+    assert.equal(wrongModel.status, 400);
+    assert.equal(forwarded.length, 1);
+    assert.equal(forwarded[0]?.url, "https://api.openai.com/v1/chat/completions");
+    assert.equal(forwarded[0]?.body.service_tier, undefined);
+    const witness = proxy.witnesses.find((entry) => entry.status === "completed");
+    assert.equal(witness?.variantEvidence, "automation-runner-chat-completions");
+    assert.equal(witness?.route, "https://api.openai.com/v1/chat/completions");
+  }
+});

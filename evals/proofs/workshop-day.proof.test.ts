@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { evaluateOnSurface } from "@openwork/cdp";
+import { browserScript, evaluateOnSurface } from "@openwork/cdp";
 import { workshopNarrative } from "../worlds/workshop-narrative.ts";
 import { workshopTurnTerminal as terminal } from "../worlds/workshop-turn-diagnostics.ts";
 
@@ -38,13 +38,36 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
   const ids = (messages: unknown) => new Set(list(messages).map((message) => record(record(message).info).id));
 
   /** One human turn in the composer; optional new session. Returns snapshots around it. */
-  async function turn(id: string, prompt: string, options: { session?: string } = {}) {
+  /** Picks a Library skill from the composer's "/" menu (what a person does to run a saved skill). */
+  async function pickSkill(match: RegExp) {
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline) {
+      await appUser.type("composer", "/", { replace: true });
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const picked = await evaluateOnSurface(world.app, browserScript((pattern: string) => {
+        const options = Array.from(document.querySelectorAll('[role="listbox"][aria-label="Commands"] [role="option"]'));
+        const option = options.find((element) => /Skill/.test(element.textContent ?? "") && new RegExp(pattern, "i").test(element.textContent ?? ""));
+        if (!option) return "";
+        option.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); (option as HTMLElement).click();
+        return option.textContent ?? "";
+      }, [match.source])).catch(() => "");
+      if (picked) return String(picked);
+      // New skills reach the composer on its next refresh; focus is one of its triggers.
+      await evaluateOnSurface(world.app, () => { window.dispatchEvent(new Event("focus")); document.dispatchEvent(new Event("visibilitychange")); }).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+    await appUser.type("composer", "", { replace: true });
+    return "";
+  }
+  async function turn(id: string, prompt: string, options: { session?: string; skill?: RegExp } = {}) {
     if (options.session) await appAgent.createSession(options.session);
     const before = await world.observe();
     const since = ids(before.messages);
     const inferenceStart = before.inference.length;
+    const pickedSkill = options.skill ? await pickSkill(options.skill) : "";
+    if (pickedSkill) world.markScene(`${id}:skill-picked`);
     const started = Date.now();
-    await appUser.type("composer", prompt, { replace: true });
+    await appUser.type("composer", prompt, { replace: !pickedSkill });
     await appUser.click("Run task");
     world.markScene(`${id}:prompt`);
     const stopFollow = world.followLatest();
@@ -78,7 +101,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
       after = await world.observe();
     }
     const latencyMs = Date.now() - started;
-    return { before, after, since, completed, latencyMs, askedQuestion, answer: assistantText(after.messages, since), tools: toolNames(after.messages, since), requests: after.inference.slice(inferenceStart) };
+    return { before, after, since, completed, latencyMs, askedQuestion, pickedSkill, answer: assistantText(after.messages, since), tools: toolNames(after.messages, since), requests: after.inference.slice(inferenceStart) };
   }
   async function show(id: string, url: string, expectText: string, label = expectText) {
     await services.navigate(url);
@@ -109,61 +132,61 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
   const verdict = (reasons: string[], completed: boolean) => (!completed ? "FAIL" : reasons.length ? "FAIL" : "PASS") as Row["status"];
   const checks = (pairs: Array<[boolean, string]>) => pairs.filter(([ok]) => !ok).map(([, reason]) => reason);
 
-  // ── Morning: the brief Lena set up last week (setup shown later as "how it's set up").
-  const setupPrompt = "Every weekday at 9am, put a short news brief for France, the US, Germany and Japan in my OneDrive and leave me a draft email with the highlights.";
-  let automationInstructions = "";
-  await scene("D0", "Set up the morning brief (shown later)", async () => {
+  // ── Morning: the brief Lena set up (shown as "how it's set up"), then its first real run.
+  const setupPrompt = "Every weekday at 9am, put a short news brief for France, the US, Germany and Japan in a draft email for me.";
+  let automationId = "";
+  await scene("D0", "Set up the morning brief as an Automation", async () => {
     const t = await turn("D0", setupPrompt, { session: "Morning brief" });
-    const jobs = list(ms(t.after.news).jobs).map(record);
-    // OpenWork's own answer to "every weekday at 9" is an Automation proposal card; Lena reviews and creates it.
-    // The card sits inside the collapsed "Worked for …" steps, so open them the way a person would.
+    // The proposal card sits inside the collapsed "Worked for …" steps; open them the way a person would.
     await evaluateOnSurface(world.app, () => { const toggle = Array.from(document.querySelectorAll("button,summary,[role=button]")).filter((element) => /^Worked for/.test(element.textContent?.trim() ?? "")).at(-1); (toggle as HTMLElement | undefined)?.click(); return Boolean(toggle); }).catch(() => false);
     await new Promise((resolve) => setTimeout(resolve, 1000));
     await evaluateOnSurface(world.app, () => { document.querySelector("[data-openwork-automation-proposal]")?.scrollIntoView({ block: "center" }); return true; }).catch(() => false);
     await new Promise((resolve) => setTimeout(resolve, 800));
-    const card = await evaluateOnSurface(world.app, () => { const node = document.querySelector("[data-openwork-automation-proposal]"); return node ? { instructions: node.querySelector("p.whitespace-pre-wrap")?.textContent ?? "", schedule: node.textContent ?? "" } : null; });
-    let created = "";
-    if (card) {
-      automationInstructions = card.instructions;
-      world.markScene("D0:proposal");
-      await appUser.click({ role: "button", label: "Create Automation" }).catch(() => undefined);
-      const deadline = Date.now() + 20_000;
-      while (Date.now() < deadline && !created) {
-        created = String(await evaluateOnSurface(world.app, () => document.querySelector("[data-openwork-automation-proposal]")?.getAttribute("data-automation-created") ?? ""));
-        if (!created) await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-      world.markScene("D0:created");
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+    const card = await evaluateOnSurface(world.app, () => { const node = document.querySelector("[data-openwork-automation-proposal]"); return node ? { text: node.textContent ?? "", resolution: node.getAttribute("data-automation-model-resolution") ?? "" } : null; });
+    world.markScene("D0:proposal");
+    if (card) await appUser.click({ role: "button", label: "Create Automation" }).catch(() => undefined);
+    const deadline = Date.now() + 30_000;
+    while (card && Date.now() < deadline && !automationId) {
+      automationId = String(await evaluateOnSurface(world.app, () => document.querySelector("[data-openwork-automation-proposal]")?.getAttribute("data-automation-created") ?? ""));
+      if (!automationId) await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    const reasons = checks([[jobs.length > 0 || Boolean(card), "Neither an Automation proposal nor a schedule"], [Boolean(created) || jobs.length > 0, "Automation was proposed but could not be created"], [!newItems(files(t.before), files(t.after)).some((file) => /brief|news/i.test(String(file.name))), "Brief was produced before 09:00"]]);
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: setupPrompt, evidence: { path: card ? "OpenWork Automation" : "news scheduler", automationId: created, schedule: card?.schedule.slice(0, 300), jobs: jobs.map((job) => job.id) } };
+    world.markScene("D0:created");
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const stored = automationId ? record(await world.readDenAs("owner", `/v1/automations/${encodeURIComponent(automationId)}`)) : {};
+    const reasons = checks([[Boolean(card), "No Automation proposal"], [Boolean(automationId), `Create Automation did not succeed (model resolution: ${card?.resolution ?? "none"})`], [/9|09/.test(text(stored)), "Saved Automation has no 9am schedule"], [!newItems(mails(t.before), mails(t.after)).some((mail) => /brief|news/i.test(String(mail.subject))), "Brief was produced before it was due"]]);
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: setupPrompt, evidence: { automationId, modelResolution: card?.resolution, schedule: text(record(stored.automation ?? stored).schedule).slice(0, 200) } };
   });
-  await scene("D1", "09:00 the brief arrives", async () => {
-    let instructions = automationInstructions;
-    let operator = "Simulated 09:00 run: the created Automation's own instructions were run once in a new session (cloud Automation runner not available locally)";
-    if (!instructions) {
-      const clock = record(await world.advanceNewsClock());
-      const event = list(clock.events).map(record).find((item) => item.status === "due");
-      const job = event ? list(clock.jobs).map(record).find((item) => item.id === event.jobId) : undefined;
-      instructions = typeof job?.instructions === "string" ? job.instructions : "";
-      operator = "Simulated clock advanced to 09:00; the model's own saved job text was dispatched";
+  await scene("D1", "The Automation runs (Run now) and the brief arrives", async () => {
+    if (!automationId) return { status: "BLOCKED", reasons: ["No Automation to run"], latencyMs: 0 };
+    const before = await world.observe();
+    const started = Date.now();
+    await appUser.click({ role: "button", label: "Open Automation" });
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    world.markScene("D1:automations");
+    await appUser.click({ role: "button", label: "Run now" });
+    world.markScene("D1:run-now");
+    let run: Json = {};
+    const deadline = Date.now() + 360_000;
+    while (Date.now() < deadline) {
+      const runs = list(record(await world.readDenAs("owner", `/v1/automations/${encodeURIComponent(automationId)}/runs`)).items ?? record(await world.readDenAs("owner", `/v1/automations/${encodeURIComponent(automationId)}/runs`)).runs).map(record);
+      run = runs[0] ?? {};
+      if (["succeeded", "failed", "cancelled", "error"].includes(String(run.status))) break;
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     }
-    if (!instructions) return { status: "BLOCKED", reasons: ["Nothing scheduled to run"], latencyMs: 0, operator };
-    const dispatch = `${instructions}\n\n(Scheduled run: it is now 09:00 America/Los_Angeles on Friday 2026-10-16.)`;
-    const t = await turn("D1", dispatch, { session: "Morning brief · 09:00" });
-    const digest = newItems(files(t.before), files(t.after)).find((file) => ["France", "Germany", "Japan"].every((country) => String(record(file.preview).text ?? "").includes(country)));
-    const draft = newItems(mails(t.before), mails(t.after)).find((mail) => mail.isDraft === true);
-    const reasons = checks([[Boolean(digest), "No brief with the four countries saved in OneDrive"], [Boolean(draft), "No draft email"], [sentNothing(t.before, t.after), "Mail was sent"]]);
-    if (digest) await show("D1", `${world.urls.oneDrive}?item=${encodeURIComponent(String(digest.id))}`, String(digest.name));
+    world.markScene("D1:run-done");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    world.markScene("D1:run-visible");
+    const after = await world.observe();
+    const draft = newItems(mails(before), mails(after)).find((mail) => mail.isDraft === true && ["France", "Germany", "Japan"].every((country) => text(mail.body).includes(country)));
+    const reasons = checks([[run.status === "succeeded", `Automation run ${String(run.status ?? "not found")}`], [Boolean(draft), "No draft brief covering France, Germany and Japan"], [sentNothing(before, after), "Mail was sent"]]);
     if (draft) await show("D1", `${world.urls.outlook}?message=${encodeURIComponent(String(draft.id))}`, "Edit draft", "draft");
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, operator, evidence: { digest: digest?.name, draft: draft?.subject } };
+    return { status: reasons.length ? "FAIL" : "PASS", reasons, latencyMs: Date.now() - started, operator: "Run now clicked in the Automations page (instead of waiting for 09:00)", evidence: { runStatus: run.status, runId: run.id, draft: draft?.subject } };
   });
-  const followPrompt = "Anything in there that matters for Blue Harbor or Northwind?";
+  const followPrompt = "Anything in this morning's brief that matters for Blue Harbor or Northwind?";
   await scene("D2", "Ask about the brief", async () => {
-    const t = await turn("D2", followPrompt);
-    const writes = list(ms(t.after.microsoft).audit).length - list(ms(t.before.microsoft).audit).length;
-    const reasons = checks([[t.answer.trim().length > 40, "No useful answer"], [sentNothing(t.before, t.after), "Mail was sent"]]);
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: followPrompt, evidence: { serviceCalls: writes } };
+    const t = await turn("D2", followPrompt, { session: "Morning brief follow-up" });
+    const reasons = checks([[t.answer.trim().length > 40, "No useful answer"], [/blue harbor|northwind/i.test(t.answer), "Answer doesn't relate to her customers"], [sentNothing(t.before, t.after), "Mail was sent"]]);
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: followPrompt };
   });
 
   // ── Organise the day.
@@ -206,16 +229,16 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const reasons = checks([[Boolean(created), "create_skill was not called"], [text(library) !== libraryBefore, "Library unchanged"], [Boolean(pluginId), "No skill plugin id returned"]]);
     return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: skillPrompt, evidence: { pluginId } };
   });
-  const reusePrompt = "Northwind is asking the same thing for moving totes from the dock to the line. Use my comparison skill.";
+  const reusePrompt = "Northwind is asking the same thing for moving totes from the dock to the line.";
   await scene("D6", "Second customer, using the skill", async () => {
-    const t = await turn("D6", reusePrompt, { session: "Northwind comparison" });
+    const t = await turn("D6", reusePrompt, { session: "Northwind comparison", skill: /compar/ });
     const usedSkill = t.tools.some((name) => /get_skill/.test(name));
     const deck = newItems(files(t.before), files(t.after)).find((file) => /\.pptx$/i.test(String(file.name)));
     const check = await pptxCheck(deck, t.after.sessionId, [/Atlas\s*2/i, /Atlas\s*Lift/i]);
     const reply = newItems(mails(t.before), mails(t.after)).find((mail) => mail.isDraft === true && mail.conversationId === "thread-northwind");
     const reasons = checks([[usedSkill, "The saved skill was not loaded"], [check.ok, check.reason], [Boolean(reply), "No draft reply in the Northwind thread"], [sentNothing(t.before, t.after), "Mail was sent"]]);
     if (deck) await show("D6", `${world.urls.oneDrive}?item=${encodeURIComponent(String(deck.id))}`, String(deck.name));
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: reusePrompt, evidence: { usedSkill, firstMs: firstComparisonMs, secondMs: t.latencyMs, deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: `${t.pickedSkill ? "[/skill] " : ""}${reusePrompt}`, evidence: { usedSkill, pickedSkill: t.pickedSkill.slice(0, 120), faster: t.latencyMs < firstComparisonMs, firstMs: firstComparisonMs, secondMs: t.latencyMs, deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
   });
   const sharePrompt = "Nice. Share that skill with Nora.";
   await scene("D7", "Share the skill with Nora", async () => {

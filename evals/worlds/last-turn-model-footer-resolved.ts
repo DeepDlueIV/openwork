@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Seed } from "@openwork/env";
 import { denForAppWeb, signedInAppWeb } from "./signed-in-app-web.ts";
 import { seededOrganizationId } from "./organization-capabilities.ts";
@@ -35,7 +36,9 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   }
   const gatewayName = gatewayModel.name;
   const gatewayIdentity = { providerID: provider.id, id: gatewayModel.id };
+  const hostToken = randomUUID();
   const { app, workspace } = await signedInAppWeb(seed, {
+    env: { OPENWORK_HOST_TOKEN: hostToken, VITE_OPENWORK_HOST_TOKEN: hostToken },
     name: "last-turn-model-footer-resolved", den, webPort, headless: true, engine: "v2",
     workspacePath: seed.tmpPath("last-turn-model-footer-resolved"),
   });

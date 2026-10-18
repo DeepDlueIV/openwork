@@ -110,7 +110,9 @@ test("an owner reads elevated access and every source on a narrow screen, with a
     const org = record((await probe.api(world.den.admin, "/v1/org")).body);
     const member = rows(org.members).find((entry) => entry.id === world.teamMemberId);
     const levels = await probe.dom('[data-testid="member-effective-role"]');
-    const safe = member?.role === "member" && member.effectiveRole === "admin" && levels.elements.some((entry) => entry.text === "Admin");
+    const inherited = rows(member?.adminTeams).some((team) => team.id === world.teams[0].id);
+    const adminTeam = rows(org.teams).find((team) => team.id === world.teams[0].id);
+    const safe = member?.role === "member" && inherited && adminTeam?.grantsOrganizationAdmin === true && levels.elements.some((entry) => entry.text === "Admin");
     evidence.recordAssertionEvidence("the collapsed level uses effective access, not the first source label", `direct role=${String(member?.role)}; effective role=${String(member?.effectiveRole)}; collapsed levels=${levels.elements.map((entry) => entry.text).join(", ")}`, safe);
     expect(safe).toBe(true);
     await user.screenshot();
@@ -152,13 +154,14 @@ legacyTest("an owner can change Member to Admin by keyboard with role features o
     await user.press("ArrowDown");
     await user.press("Enter");
     await user.see({ role: "button", label: "Role for Restricted Member" }, { text: "Admin" });
-    const field = await probe.dom('button[aria-label="Role for Restricted Member"]');
+    const field = await probe.eventually(() => probe.dom('button[aria-label="Role for Restricted Member"]'), { within: 5_000, label: "the role popup returns keyboard focus", until: (result) => result.elements.some((entry) => entry.focused) });
     evidence.recordAssertionEvidence("keyboard selection commits Admin with focus restored", `selected=${field.elements[0]?.text}; field focused=${field.elements[0]?.focused}`, field.elements[0]?.text === "Admin" && field.elements[0]?.focused === true);
     expect(field.elements[0]?.focused).toBe(true);
     await user.screenshot();
   });
   await step("saving changes only the direct organization role, with no team write", async () => {
     await user.click({ testId: "member-role-save" });
+    await probe.eventually(() => probe.dom('[data-testid="member-role-editor"]'), { within: 30_000, label: "the accepted direct-role save closes its editor", until: (result) => result.elements.length === 0 });
     await user.notSee({ testId: "member-role-editor" });
     const org = record((await probe.api(world.den.admin, "/v1/org")).body);
     const role = rows(org.members).find((entry) => entry.id === targetId)?.role;

@@ -157,7 +157,7 @@ Nothing on celld changes, so pointing the URLs back is the rollback.
 | Variable | Default | |
 |---|---|---|
 | `HEADLESS_API_TOKEN` | required | Service token for callers, ≥32 chars |
-| `HEADLESS_MODEL_PROTOCOL` | required | `anthropic` or `openai` |
+| `HEADLESS_MODEL_PROTOCOL` | required | `anthropic`, `openai` (Chat Completions) or `openai-responses` (Responses API; for OpenAI models that only take tools there) |
 | `HEADLESS_MODEL_BASE_URL` | required | e.g. `https://gateway.openworklabs.com/api/v1/providers/ipr_…` |
 | `HEADLESS_MODEL` | required | Default model alias (`gwm_…`) |
 | `HEADLESS_MODEL_API_KEY` | unset | Fallback key for single-tenant use; callers normally send their own |

@@ -29,7 +29,7 @@ const configSchema = z.object({
   HEADLESS_API_TOKEN: z.string().min(32, "HEADLESS_API_TOKEN must be at least 32 characters"),
   HEADLESS_PORT: z.coerce.number().int().min(1).max(65_535).default(8795),
   HEADLESS_DB_PATH: z.string().min(1).default("./data/headless.sqlite"),
-  HEADLESS_MODEL_PROTOCOL: z.enum(["anthropic", "openai"]),
+  HEADLESS_MODEL_PROTOCOL: z.enum(["anthropic", "openai", "openai-responses"]),
   HEADLESS_MODEL_BASE_URL: safeUrl,
   HEADLESS_MODEL: z.string().min(1),
   HEADLESS_MODEL_API_KEY: z.string().min(1).optional(),
@@ -100,7 +100,7 @@ export type Config = {
   port: number
   dbPath: string
   model: {
-    protocol: "anthropic" | "openai"
+    protocol: "anthropic" | "openai" | "openai-responses"
     baseUrl: string
     model: string
     defaultApiKey?: string

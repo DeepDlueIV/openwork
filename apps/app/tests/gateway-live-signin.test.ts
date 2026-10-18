@@ -24,13 +24,13 @@ const provider = { cloudProviderId: "ipr_fixture", providerId: "ipr_fixture", cr
 const alias = { id: model.modelID, name: "Model", config: { id: model.modelID }, upstreamModelId: "catalog", modelGroupId: "group",
   modelGroupName: "Group", credentialSetId: "gcs_set", credentialSetName: "Set" };
 
-for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-native", "failed-auth", "changed-account", "aborted", "legacy-ready", "legacy-reloading", "provider-ready", "legacy-provider-ready", "legacy-provider-reloading", "legacy-fresh-failed", "legacy-provider-empty", "live-stale-row-ready"] ) {
+for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-native", "failed-auth", "changed-account", "aborted", "legacy-ready", "legacy-reloading", "provider-ready", "legacy-provider-ready", "legacy-provider-reloading", "legacy-fresh-failed", "legacy-provider-empty", "live-stale-row-ready", "live-stale-row-failed"] ) {
   test(`live sign-in confirms only fresh authorization and the requested native identity: ${scenario}`, async () => {
     const requests: string[] = [];
     const controller = new AbortController();
     let faultActive = true;
     let oauthStarts = 0;
-    let nativeLive = !scenario.startsWith("legacy") && scenario !== "live-stale-row-ready";
+    let nativeLive = !scenario.startsWith("legacy") && !scenario.startsWith("live-stale-row-");
     let liveStartRequestIndex = 0;
     const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init);
@@ -41,7 +41,7 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
         mirroredProviderIds: [], skippedProviderIds: [], catalogModelIds: [] });
       if (path === "/cloud-provider-sync/run") return Response.json({ status: "applied" });
       if (path === "/cloud-provider-sync/status") return Response.json({ hasSession: true,
-        reloadPending: scenario.endsWith("reloading"), skippedProviders: scenario === "live-stale-row-ready"
+        reloadPending: scenario.endsWith("reloading"), skippedProviders: scenario.startsWith("live-stale-row-")
           ? [provider, { ...provider, credentialSetId: "gcs_other" }].map(entry => ({ ...entry, reason: "member_auth_required" })) : [],
         providers: [{ cloudProviderId: provider.cloudProviderId, providerId: provider.providerId, sourceProviderId: "openai", name: "Provider", modelIds: [model.modelID] }] });
       if (path === "/v1/llm-providers") return Response.json({ llmProviders: [] });
@@ -54,7 +54,7 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
           authorizationRequests: scenario === "locked" ? [{ credentialSetId: "gcs_set", name: "Set", authUrl: "https://auth.example.test", models: [alias] }] : [] }] });
       }
       if (path === "/opencode2/api/model") {
-        if (scenario === "legacy-fresh-failed" && faultActive) return Response.json({ error: "Unavailable" }, { status: 503 });
+        if (["legacy-fresh-failed", "live-stale-row-failed"].includes(scenario) && faultActive) return Response.json({ error: "Unavailable" }, { status: 503 });
         return Response.json({ data: faultActive && ["stale-native", "legacy-provider-empty"].includes(scenario)
           ? [] : [{ id: model.modelID, providerID: model.providerID, name: "Model" }] });
       }
@@ -76,11 +76,13 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
       markOpencodeConfigReloadRequired: () => {},
     });
     try {
-      if (scenario === "live-stale-row-ready") {
+      if (scenario.startsWith("live-stale-row-")) {
+        faultActive = false;
         await store.runCloudProviderSync("manual");
         expect(Object.keys(store.getSnapshot().cloudProviderServerSync?.skippedProviders ?? {})).toHaveLength(2);
         nativeLive = true;
         liveStartRequestIndex = requests.length;
+        faultActive = true;
       }
       if (scenario === "legacy-fresh-failed") {
         faultActive = false;
@@ -95,10 +97,15 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
         startOAuth: async () => { oauthStarts += 1; return { authorizationUrl: "https://auth.example.test" }; }, openUrl: () => {},
         resync: async () => { confirmed = await store.confirmGatewayProviderConnection(target, requested, controller.signal); },
         isConnected: () => confirmed, wait: async () => {}, attempts: 1 });
-      const verificationFailure = ["stale-native", "failed-auth", "legacy-fresh-failed", "legacy-provider-empty"].includes(scenario);
+      const verificationFailure = ["stale-native", "failed-auth", "legacy-fresh-failed", "legacy-provider-empty", "live-stale-row-failed"].includes(scenario);
       if (verificationFailure) {
         await expect(completion).rejects.toBeInstanceOf(GatewayModelVerificationError);
         expect(confirmed).toBe(false);
+        if (scenario === "live-stale-row-failed") {
+          const skipped = store.getSnapshot().cloudProviderServerSync?.skippedProviders ?? {};
+          expect(skipped[`${provider.cloudProviderId}:${provider.credentialSetId}`]).toBeDefined();
+          expect(skipped[`${provider.cloudProviderId}:gcs_other`]).toBeDefined();
+        }
         // Recover by verification only, never starting OAuth again.
         faultActive = false;
         expect(await store.confirmGatewayProviderConnection(target, requested, controller.signal)).toBe(true);
@@ -113,7 +120,7 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
       } else {
         expect(requests).toContain("GET /v1/inference-providers");
         expect(requests.slice(liveStartRequestIndex).some((request) => request.includes("/cloud-provider-sync/run"))).toBe(false);
-        if (scenario === "live-stale-row-ready") {
+        if (scenario.startsWith("live-stale-row-")) {
           const skipped = store.getSnapshot().cloudProviderServerSync?.skippedProviders ?? {};
           expect(skipped[`${provider.cloudProviderId}:${provider.credentialSetId}`]).toBeUndefined();
           expect(skipped[`${provider.cloudProviderId}:gcs_other`]).toBeDefined();

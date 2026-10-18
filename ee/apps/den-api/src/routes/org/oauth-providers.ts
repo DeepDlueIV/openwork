@@ -720,7 +720,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
       }
 
       void recordWorkbotConnection({ organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId }, {
-        state, connectionId: credentialProviderId, appId: provider.providerId,
+        attemptId: statePayload.nonce, connectionId: credentialProviderId, appId: provider.providerId,
       })
       return c.html(connectCallbackPage({ ok: true, name: provider.displayName }))
     },

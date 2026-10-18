@@ -1656,7 +1656,7 @@ async function handleExternalMcpOAuthCallback(input: {
     }
   }
   if (readiness?.status === "ready") void recordWorkbotConnection({ organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId }, {
-    state, connectionId: connection.id, appId: "external_mcp",
+    attemptId: statePayload.nonce, connectionId: connection.id, appId: "external_mcp",
   })
   return mcpOAuthCallbackHtml(connectCallbackPage({ ok: true, name: connection.name }))
 }

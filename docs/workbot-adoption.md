@@ -66,8 +66,9 @@ prevent an already-running greeting's terminal outcome from being recorded.
 Only `telemetry_event.source = 'workbot'` contributes. No message, session,
 profile, user, or organization-name tables are read. All identities in the
 report are organization/member ids; there are no names, emails, prompts,
-responses, attachment names, context bodies, tokens, OAuth state values, or
-runner session ids.
+responses, attachment names, context bodies, tokens, signed OAuth state, or
+runner session ids. Connection correlation uses only the public transaction nonce;
+it is not a credential and is never used to authorize anything.
 
 | Event | Meaning / deduplication |
 | --- | --- |
@@ -79,8 +80,9 @@ runner session ids.
 | `workbot.turn_completed` | A successful user turn, emitted server-side; the greeting has its separate completion event. Model facts describe the reported answer or an explicitly marked configured fallback. |
 | `connection.connected` | A successful OAuth grant, deduplicated per OAuth state. Not merely an OAuth redirect/start. |
 
-`session_id` is an opaque **per-event correlation** (`wb:<sha256 hex>`), not a
-conversation/runner id. Join a dimension on all of `(org_id, source, session_id)`.
+`session_id` is an opaque **per-event correlation** (`wb:<sha256 hex>` for
+Workbot lifecycle facts, `wb:oauth:<public transaction UUID>` for connections),
+not a conversation/runner id. Join a dimension on all of `(org_id, source, session_id)`.
 The fixed facts are in `telemetry_session_dimension` with
 `dimension_type = 'workbot'`; value/label identify the event (a value may be a
 slug). Do not join on label or assume these events share a session id.

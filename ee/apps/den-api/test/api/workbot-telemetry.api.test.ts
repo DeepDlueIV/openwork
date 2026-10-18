@@ -197,6 +197,7 @@ test("only a completed and verified OAuth grant records a later app connection",
     const stored = await events(workspace.orgId)
     assert.equal(stored.length, 1)
     assert.equal(stored[0].event_type, "connection.connected")
+    assert.match(stored[0].session_id ?? "", /^wb:oauth:[0-9a-f-]{36}$/)
     assert.equal(stored[0].member_id, workspace.owner.memberId)
     assert.equal((await den.request(null, "GET", `${callback.pathname}${callback.search}`)).status, 400)
     assert.equal((await events(workspace.orgId)).length, 1)

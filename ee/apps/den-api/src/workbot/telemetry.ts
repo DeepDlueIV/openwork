@@ -54,20 +54,29 @@ export function workbotMainSession(actor: WorkbotTelemetryActor) {
 /** Stable primary keys, including under parallel tabs and HTTP retries; no schema change or check-then-insert race. */
 export function workbotEventIdentity(actor: WorkbotTelemetryActor, type: string, key: string) {
   const hash = createHash("sha256").update(JSON.stringify([actor.organizationId, actor.memberId, type, key])).digest("hex")
-  let value = BigInt(`0x${hash.slice(0, 32)}`)
+  return { id: eventIdFromHex(hash.slice(0, 32)), sessionId: `wb:${hash}` }
+}
+
+/** Encode 128 public identifier bits as a TypeID; this is not credential/password storage. */
+function eventIdFromHex(hex: string) {
+  let value = BigInt(`0x${hex}`)
   const alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
   let suffix = ""
   for (let index = 0; index < 26; index += 1) {
     suffix = alphabet[Number(value & 31n)] + suffix
     value >>= 5n
   }
-  return { id: normalizeDenTypeId("telemetryEvent", `tev_${suffix}`), sessionId: `wb:${hash}` }
+  return normalizeDenTypeId("telemetryEvent", `tev_${suffix}`)
 }
 
 /** Best effort, atomically paired with its bounded facts. First sightings never overwrite earlier counts. */
 export async function recordWorkbotEvent(actor: WorkbotTelemetryActor, type: string, key: string, facts: Facts = {}, timestamp = Date.now()) {
+  return writeWorkbotEvent(actor, type, workbotEventIdentity(actor, type, key), facts, timestamp)
+}
+
+async function writeWorkbotEvent(actor: WorkbotTelemetryActor, type: string, identity: ReturnType<typeof workbotEventIdentity>, facts: Facts, timestamp: number) {
   try {
-    const { id, sessionId } = workbotEventIdentity(actor, type, key)
+    const { id, sessionId } = identity
     const at = new Date(timestamp)
     await db.transaction(async (tx) => {
       await tx.insert(TelemetryEventTable).values({
@@ -115,7 +124,10 @@ export async function recordWorkbotTelemetry(actor: WorkbotTelemetryActor, event
   }, event.timestamp)
 }
 
-/** Called only after the OAuth callback has persisted the member's grant; repeated state callbacks deduplicate. */
-export async function recordWorkbotConnection(actor: WorkbotTelemetryActor, input: { state: string; connectionId: string; appId: string }) {
-  return recordWorkbotEvent(actor, "connection.connected", input.state, { connection_id: input.connectionId, app_id: input.appId })
+/** Only the public transaction nonce leaves OAuth. Never hash, store or accept its signed state/token. */
+export async function recordWorkbotConnection(actor: WorkbotTelemetryActor, input: { attemptId: string; connectionId: string; appId: string }) {
+  const nonce = z.uuid().safeParse(input.attemptId)
+  if (!nonce.success) return
+  const identity = { id: eventIdFromHex(nonce.data.replace(/-/g, "")), sessionId: `wb:oauth:${nonce.data}` }
+  return writeWorkbotEvent(actor, "connection.connected", identity, { connection_id: input.connectionId, app_id: input.appId }, Date.now())
 }

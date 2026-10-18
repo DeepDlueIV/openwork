@@ -582,6 +582,7 @@ export function createEngineV2Preview(options: {
   let autoUpgradeRetry = initialState.autoUpgradeRetry;
   const autoUpgradeAbort = new AbortController();
   let autoUpgradeJob: Promise<void> | undefined;
+  let autoUpgradeInFlight = false;
   let migration: EngineV2MigrationStatus = resumeMigration
     ? { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0, resumed: true }
     : initialState.historyCopyResult ?? { state: "idle", imported: 0, skipped: 0, total: 0 };
@@ -791,7 +792,7 @@ export function createEngineV2Preview(options: {
     return {
       engineOrigin, engineForced,
       ...(engineChangedAt === undefined ? {} : { engineChangedAt }),
-      forceUpgradePending: automaticHistoryCopy || (forceUpgrade && !chatRouting && autoUpgradeJob !== undefined),
+      forceUpgradePending: automaticHistoryCopy || (forceUpgrade && !chatRouting && (autoUpgradeInFlight || autoUpgradeRetry !== undefined)),
       ...(autoUpgradeRetry ? { automaticRetryAt: autoUpgradeRetry.retryAt } : {}),
       enabled,
       migration: { ...migration },
@@ -1189,22 +1190,32 @@ export function createEngineV2Preview(options: {
 
   function migrateHistory(): EngineV2PreviewStatus {
     if (migration.state === "running") return status();
-    if (autoUpgradeJob !== undefined || automaticHistoryCopy || autoUpgradeRetry !== undefined) {
-      throw new ApiError(409, "engine_upgrade_host_managed", "Automatic chat upgrade is paused or pending. Restart OpenWork to retry when upgrades are enabled and the cooldown has ended.");
+    if (autoUpgradeInFlight) {
+      throw new ApiError(409, "engine_upgrade_host_managed", "An automatic chat upgrade is still pending. Wait for it to pause or finish before starting a manual migration.");
     }
-    return runMigration(false);
+    // Explicit consent is a new manual operation, not an automatic retry.
+    // Retire automatic ownership, but keep the source, backups and checkpoints.
+    automaticHistoryCopy = false;
+    automaticHistoryRevision = undefined;
+    autoUpgradeRetry = undefined;
+    return runMigration(v1HistoryCopyStartedAt !== undefined);
   }
 
   function runMigration(resumed: boolean, automatic = false): EngineV2PreviewStatus {
     const startedAt = new Date().toISOString();
     const marker = resumed ? { resumed } : {};
-    migration = { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0, startedAt, ...marker };
+    const previousReceipt = migration;
+    migration = { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0, startedAt, ...marker,
+      ...(migration.backupPath ? { backupPath: migration.backupPath } : {}) };
     const abort = new AbortController();
     migrationAbort = abort;
     migrationJob = (async () => {
       let completed: EngineV2MigrationStatus | undefined;
       let persistedCompletion = false;
       try {
+        // Journal an explicitly accepted manual recovery before doing work, so
+        // an interrupted automatic checkpoint now resumes as user-owned work.
+        if (!automatic) await persistState(previousReceipt);
         const source = opencodeV1DatabasePath();
         const resolved = await resolveBinary(config);
         enabled = true;
@@ -1248,7 +1259,7 @@ export function createEngineV2Preview(options: {
       // Errors retain both the start marker and SQLite checkpoints. Restart
       // resumes instead of making partially copied history available in v2.
       if (!persistedCompletion) await persistState().catch((error) => warn(`Migration state: ${errorMessage(error)}`));
-      if (v1HistoryCopyStartedAt === undefined && enabled && !stopping && !automatic) {
+      if (v1HistoryCopyStartedAt === undefined && enabled && !stopping && !automatic && migration.state !== "error") {
         allowRunning = true;
         await start().catch(recordStartError);
       }
@@ -1257,6 +1268,7 @@ export function createEngineV2Preview(options: {
   }
 
   async function autoUpgrade(): Promise<boolean> {
+    autoUpgradeInFlight = true;
     const attemptStartedAt = new Date().toISOString();
     let attemptedCopy = false;
     try {
@@ -1349,6 +1361,8 @@ export function createEngineV2Preview(options: {
       options.autoUpgradeError?.(message);
       await persistState().catch((error) => warn(`Automatic upgrade state: ${errorMessage(error)}`));
       return false;
+    } finally {
+      autoUpgradeInFlight = false;
     }
   }
 
@@ -1381,7 +1395,12 @@ export function createEngineV2Preview(options: {
     // background attempt. Off preserves the selected engine and its history.
     if (forceUpgrade && !config.readOnly && !chatRouting && !autoUpgradeJob) {
       autoUpgradeJob = autoUpgrade().then(success => { if (success) autoUpgradeJob = undefined; });
-    } else if (enabled && !automaticHistoryCopy && engineOrigin !== "reverted" && !(forceUpgrade && !chatRouting)) void start().catch(recordStartError);
+    } else if (enabled && !automaticHistoryCopy && engineOrigin !== "reverted" && !(forceUpgrade && !chatRouting)
+      // Policy-off/status refreshes must not restart an unused, failed v2
+      // sidecar behind the automatic cooldown. Explicit manual actions can.
+      && (chatRouting || (!autoUpgradeInFlight && autoUpgradeRetry === undefined && migration.state !== "error"))) {
+      void start().catch(recordStartError);
+    }
   }
   if (!options.deferStart) startWhenReady();
   return { start: startWhenReady, setForcePolicy, migrateHistory, status, setEnabled, setChatRouting, requireV1HistoryCopied, describeUncopiedChat, connection, ensureWorkspaceReady, refreshProviders, setLiveProviderSync, syncWorkspaceMcp, settleWorkspaceMcp, warmWorkspace, settleWorkspaceSkills, stop };

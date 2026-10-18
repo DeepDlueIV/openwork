@@ -48,13 +48,47 @@ test("boot never blocks: unreadable v1 history stays on v1 with a durable error 
       assert.ok((persisted.autoUpgradeRetry?.retryAt ?? 0) > Date.now());
       assert.equal(persisted.historyCopyResult?.state, "error");
       assert.equal(engine.status().automaticRetryAt, persisted.autoUpgradeRetry?.retryAt);
-      assert.throws(() => engine.migrateHistory(), { status: 409, code: "engine_upgrade_host_managed" });
       engine.start();
       engine.setForcePolicy({ upgrade: true });
       engine.setForcePolicy({ upgrade: true });
       await new Promise(resolve => setTimeout(resolve, 20));
       assert.equal(errors.length, 1, "status reads and policy refreshes cannot retry in the same boot");
       assert.equal(engine.status().automaticRetryAt, persisted.autoUpgradeRetry?.retryAt);
+    } finally { await engine.stop(); }
+  });
+});
+
+test("policy off does not restart a failed sidecar, but explicit manual recovery can", { skip: process.platform === "win32" }, async () => {
+  await profile(async (config, dir) => {
+    const binary = join(dir, "failed-engine");
+    const counter = `${binary}.attempts`;
+    writeFileSync(binary, '#!/bin/sh\nif [ "$1" = "serve" ]; then printf "started\\n" >> "$0.attempts"; fi\nexit 1\n', { mode: 0o700 });
+    process.env.OPENWORK_OPENCODE2_BIN = binary;
+    const starts = () => readFileSync(counter, "utf8").trim().split("\n").length;
+    const engine = createEngineV2Preview({ config, autoUpgradeIdle: async () => true });
+    try {
+      const deadline = Date.now() + 10_000;
+      while (readEngineV2PreviewState(config).autoUpgradeRetry === undefined && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(starts(), 1, "witness: the automatic attempt actually spawned a failing process");
+      const retryAt = engine.status().automaticRetryAt;
+      assert.ok(retryAt);
+      for (let turn = 0; turn < 2; turn++) {
+        engine.setForcePolicy({ upgrade: false });
+        engine.start();
+        await new Promise(resolve => setTimeout(resolve, 250));
+        assert.equal(starts(), 1, "off/status/boot refreshes must not bypass the failed attempt's cooldown");
+      }
+      assert.equal(engine.status().automaticRetryAt, retryAt);
+      assert.equal(engine.migrateHistory().migration.state, "running", "explicit manual consent is not an automatic retry");
+      const manualDeadline = Date.now() + 10_000;
+      while ((engine.status().migration.state === "running" || starts() < 2) && Date.now() < manualDeadline) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(starts(), 2, "one explicit manual action spawns exactly one new attempt");
+      assert.equal(engine.status().automaticRetryAt, undefined);
+      assert.equal(engine.status().forceUpgradePending, false);
+      engine.setForcePolicy({ upgrade: false });
+      await new Promise(resolve => setTimeout(resolve, 250));
+      assert.equal(starts(), 2, "the failed manual attempt is not restarted by policy observation either");
+      assert.equal(engine.status().chatRouting, false);
     } finally { await engine.stop(); }
   });
 });
@@ -100,6 +134,36 @@ test("interactive migration errors still allow an explicit retry without automat
       assert.equal(engine.status().automaticRetryAt, undefined);
       assert.equal(engine.migrateHistory().migration.state, "running", "manual recovery remains explicit and usable");
     } finally { await engine.stop(); }
+  });
+});
+
+test("manual consent can recover a durable automatic failure with policy off and retain its backup receipt", async () => {
+  await profile(async (config, dir) => {
+    config.engineAutoUpgrade = false;
+    config.engineForcePolicy = true;
+    const backupPath = join(dir, "retained-backup.db");
+    writeFileSync(backupPath, "retained backup bytes");
+    writeFileSync(join(dir, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: false,
+      automaticHistoryCopy: true, automaticHistoryRevision: "saved-source-revision",
+      autoUpgradeRetry: { attempts: 2, retryAt: Date.now() + 60_000 },
+      historyCopyResult: { state: "error", error: "Automatic attempt paused", imported: 0, skipped: 0, total: 1, backupPath },
+    }));
+    const engine = createEngineV2Preview({ config });
+    try {
+      assert.equal(engine.migrateHistory().migration.state, "running");
+      const deadline = Date.now() + 10_000;
+      while (engine.status().migration.state === "running" && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(engine.status().migration.state, "error", "the unavailable fixture binary still reports a real manual failure");
+      assert.equal(engine.status().automaticRetryAt, undefined);
+      assert.equal(engine.status().forceUpgradePending, false);
+      assert.equal(engine.status().migration.backupPath, backupPath);
+      assert.equal(readFileSync(backupPath, "utf8"), "retained backup bytes");
+    } finally { await engine.stop(); }
+    const saved = readEngineV2PreviewState(config);
+    assert.equal(saved.automaticHistoryCopy, undefined);
+    assert.equal(saved.automaticHistoryRevision, undefined);
+    assert.equal(saved.autoUpgradeRetry, undefined);
+    assert.equal(saved.historyCopyResult?.backupPath, backupPath);
   });
 });
 

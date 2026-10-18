@@ -15,7 +15,7 @@ interface EngineStatus {
   chatRouting: boolean;
   running: boolean;
   automaticRetryAt?: number;
-  migration: { state: string; imported: number; total: number; backupPath?: string };
+  migration: { state: string; imported: number; total: number; backupPath?: string; startedAt?: string };
 }
 
 export async function failedEngineForcePolicy(seed: Seed) {
@@ -97,7 +97,7 @@ async function engineForcePolicyWorld(seed: Seed, options: { unavailableV2?: boo
     async manualRetry(): Promise<{ status: number; body: string }> {
       const response = await request("/experimental/engine-v2-preview/migrate", {
         method: "POST", body: JSON.stringify({ confirm: true, allowActiveSessions: true }),
-      }, 409);
+      });
       return { status: response.status, body: await response.text() };
     },
     async setOrganizationPolicy(upgrade: boolean): Promise<void> {

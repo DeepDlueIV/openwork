@@ -53,6 +53,8 @@ export type EngineMigrationMode = "migrate" | "upgrade";
 type ConsentState = {
   client: EngineMigrationClient;
   mode: EngineMigrationMode;
+  /** Only an optional invitation, not a manual command, may be superseded by force policy. */
+  offered?: boolean;
   /** Tasks the v1 engine is still running; copying them mid-turn needs an explicit choice. */
   runningTasks: number;
   submitting: boolean;
@@ -170,13 +172,16 @@ function updateProgress(patch: Partial<ProgressState>) {
 }
 
 /** Open the migration consent. A migration that is already running is shown instead. */
-export function requestEngineMigration(client: EngineMigrationClient, mode: EngineMigrationMode = "migrate") {
+export function requestEngineMigration(client: EngineMigrationClient, mode: EngineMigrationMode = "migrate", options: { offered?: boolean } = {}) {
   const { progress } = useEngineMigrationStore.getState();
-  if (progress?.migration.state === "running" || (progress?.serverManaged && progress.migration.state === "error")) {
+  if (progress?.migration.state === "running") {
     showEngineMigrationProgress();
     return;
   }
-  useEngineMigrationStore.setState({ consent: { client, mode, runningTasks: 0, submitting: false, error: null } });
+  useEngineMigrationStore.setState({
+    consent: { client, mode, offered: options.offered === true, runningTasks: 0, submitting: false, error: null },
+    ...(progress?.serverManaged ? { progress: { ...progress, view: "banner" } } : {}),
+  });
   // The consent is usable immediately; the server refuses (409) a migration
   // started before this check lands, which surfaces the same warning.
   void client.getEngineActivity().then(
@@ -202,7 +207,7 @@ function presentMigration(
       client,
       migration,
       selected: selectedChatEngine(status),
-      view: switchWhenDone ? view : (state.progress?.view ?? view),
+      view: switchWhenDone || state.progress?.serverManaged ? view : (state.progress?.view ?? view),
       retrying: false,
       runningTasks: 0,
       switchWhenDone: switchWhenDone || state.progress?.switchWhenDone === true,
@@ -217,8 +222,8 @@ export async function confirmEngineMigration() {
   try {
     const status = await consent.client.migrateOpencodeHistory({ allowActiveSessions: consent.runningTasks > 0 });
     useEngineMigrationStore.setState({ consent: null });
-    // Only the flag-gated invitation uses upgrade mode. Manual migrations and
-    // reload discovery retain their dialog and explicit engine-switch decision.
+    // Accepted upgrades switch after copying; plain manual migrations and
+    // reload discovery retain their explicit engine-switch decision.
     presentMigration(consent.client, status, consent.mode === "upgrade" ? "banner" : "dialog", consent.mode === "upgrade");
   } catch (cause) {
     const running = refusedForRunningTasks(cause);
@@ -237,7 +242,7 @@ export function observeEngineMigration(client: EngineMigrationClient, status: En
     || status.engineForced === true || status.engineOrigin === "forced" || status.automaticRetryAt !== undefined;
   if (progress) {
     updateProgress({
-      migration, selected: selectedChatEngine(status), automaticRetryAt: status.automaticRetryAt,
+      migration, selected: selectedChatEngine(status), automaticRetryAt: status.automaticRetryAt, serverManaged,
       ...(serverManaged ? {
         serverManaged: true, switchWhenDone: false,
         ...(!progress.serverManaged ? { view: "banner" } : {}),
@@ -272,7 +277,13 @@ export function closeEngineMigrationProgress() {
 
 export async function retryEngineMigration(allowActiveSessions = false) {
   const progress = useEngineMigrationStore.getState().progress;
-  if (!progress || progress.retrying || progress.serverManaged) return;
+  if (!progress || progress.retrying) return;
+  if (progress.serverManaged) {
+    // Retrying a paused automatic attempt is a new, consented manual copy.
+    // Merely observing/reopening its failure never starts another attempt.
+    requestEngineMigration(progress.client);
+    return;
+  }
   updateProgress({ retrying: true });
   try {
     const status = await progress.client.migrateOpencodeHistory({ allowActiveSessions });
@@ -454,6 +465,11 @@ function AutomaticMigrationRecoveryDialog(props: { progress: ProgressState }) {
             ? t("engine_migration.automatic_retry")
             : t("engine_migration.automatic_retry_after", { time: new Date(progress.automaticRetryAt).toLocaleString() })}
         </p>
+        {window.__OPENWORK_ELECTRON__?.shell?.relaunch ? (
+          <Button variant="link" size="sm" className="h-auto justify-self-start p-0 text-muted-foreground" disabled={restarting} onClick={() => void restart()}>
+            {t("engine_migration.restart")}
+          </Button>
+        ) : null}
         <details className="group text-xs text-muted-foreground">
           <summary className="flex cursor-pointer list-none items-center gap-1 select-none hover:text-foreground">
             <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none" />
@@ -463,9 +479,7 @@ function AutomaticMigrationRecoveryDialog(props: { progress: ProgressState }) {
         </details>
         <DialogFooter>
           <Button variant="outline" onClick={closeEngineMigrationProgress}>{t("engine_migration.keep_working")}</Button>
-          {window.__OPENWORK_ELECTRON__?.shell?.relaunch ? (
-            <Button disabled={restarting} onClick={() => void restart()}>{t("engine_migration.restart")}</Button>
-          ) : null}
+          <Button disabled={restarting} onClick={() => requestEngineMigration(progress.client)}>{t("engine_migration.migrate")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -806,7 +820,7 @@ function useDesktopEngineForcePolicy(features: EngineUpgradeFeatures) {
     if (!isDesktopRuntime() || !ready) return;
     if (upgrade) {
       useEngineMigrationStore.setState((state) =>
-        state.consent?.mode === "upgrade" && !state.consent.submitting ? { consent: null } : state);
+        state.consent?.offered && !state.consent.submitting ? { consent: null } : state);
     }
     let cancelled = false;
     let timer: number | undefined;
@@ -909,7 +923,7 @@ function EngineUpgradeNotice(props: { candidate: UpgradeCandidate; onLater: () =
           <Button type="button" size="xs" variant="ghost" onClick={props.onLater}>
             {t("engine_migration.upgrade_later")}
           </Button>
-          <Button type="button" size="xs" onClick={() => requestEngineMigration(props.candidate.client, "upgrade")}>
+          <Button type="button" size="xs" onClick={() => requestEngineMigration(props.candidate.client, "upgrade", { offered: true })}>
             {t("engine_migration.upgrade")}
           </Button>
         </div>
@@ -947,7 +961,7 @@ export function EngineMigrationOverlay(props: { discoverRunningMigration?: boole
           onLater={() => { snoozeUpgrade(); setSnoozedUntil(readUpgradeSnooze()); }}
         />
       ) : null}
-      {consent && !(consent.mode === "upgrade" && features.upgrade)
+      {consent && !(consent.offered && features.upgrade)
         ? <MigrationConsentDialog consent={consent} /> : null}
       {progress?.view === "dialog" ? (progress.serverManaged && progress.migration.state === "error"
         ? <AutomaticMigrationRecoveryDialog progress={progress} />

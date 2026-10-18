@@ -27,21 +27,25 @@ files on disk would not keep them readable on v1. V2 stays selected and starts
 normally on later boots while the rollout is off. A fresh forced selection can
 fall back on its first failed start only before a v2 database exists; an existing
 v2 database may contain new history and is never silently rerouted on a later
-startup failure. Explicit manual engine choices
-retain their existing ownership and consent semantics, including when a pending
-automatic attempt fails after a manual choice. Policy updates do not
-abort a copy or a running task. Failures keep v1 selected, retain a durable error
-and backup receipt, and retry only on a later boot with a one-minute-to-one-day
-bounded exponential backoff. Desktop keeps a compact **Chat upgrade paused**
-notice with the verified current engine instead of dismissing a forced failure.
-**Review upgrade** discloses diagnostics and the earliest retry time; closing it
-keeps the notice and chat usable. **Restart OpenWork** is explicit and does not
-call the migration API in the current process. The host also refuses an
-interactive retry of its pending/paused automatic copy with 409
-`engine_upgrade_host_managed`, so another surface cannot duplicate the attempt.
-Manual migration retries keep their existing behavior. Startup discovery restores a
-failed automatic receipt, even when the copy never started. Host backoff and
-rollout policy still decide whether the later boot attempts a retry.
+startup failure. Explicit manual engine choices retain their ownership and
+consent semantics, including when a pending automatic attempt fails after a
+manual choice. Policy updates do not abort a copy or a running task. Failures
+retain the selected engine, durable error and backup receipt. Automatic retries
+only run on a later boot with a one-minute-to-one-day bounded exponential
+backoff; policy-off/status refreshes never restart a failed inactive sidecar.
+
+Desktop keeps a compact **Chat upgrade paused** notice with the verified current
+engine. **Review upgrade** discloses diagnostics and the earliest automatic retry
+time; closing it keeps the notice and chat usable. **Migrate chats** opens the
+existing manual consent, including while automatic policy is off. Force policy
+can supersede an optional invitation, never a manually requested consent. Only confirming
+that consent starts a new manual operation: it retires automatic ownership while
+preserving the source, backup and resumable checkpoints. The host refuses a
+concurrent copy with 409 `engine_upgrade_host_managed` only while an automatic
+attempt is actually in flight, not after it has paused. **Restart OpenWork** is
+an explicit alternative, never an automatic global restart. Startup discovery
+restores a failed automatic receipt even when copying never started; host backoff
+and rollout policy still decide whether a later boot retries it automatically.
 Source chat changes during copying or v2 startup
 prevent the switch; a later attempt restores the pre-copy v2 baseline under
 the existing migration ownership lock before copying a fresh v1 snapshot.

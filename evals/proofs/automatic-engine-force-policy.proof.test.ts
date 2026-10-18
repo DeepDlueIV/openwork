@@ -33,25 +33,41 @@ failure("a member keeps using the original chat after an automatic upgrade fails
     await user.type("composer", continuedWorkPrompt);
     await user.press("Enter");
     await user.see({ text: continuedWorkText }, { timeoutMs: 60_000 });
-    const messages = await world.messages();
+    const messages = await probe.eventually(() => world.messages(), {
+      within: 20_000, label: "the original engine has durably stored the streamed reply", until: value => value.includes(continuedWorkText),
+    });
     expect(messages).toContain(continuedWorkText);
     const status = await world.status();
     expect(status.chatRouting).toBe(false);
     evidence.recordAssertionEvidence("The selected original engine persists new work while the upgrade is paused", messages.slice(-500), !status.chatRouting && messages.includes(continuedWorkText));
     await user.screenshot();
   });
-  await step("reloading and refreshing policy keep the failure without a duplicate attempt", async () => {
-    await world.setOrganizationPolicy(true);
+  await step("turning automatic policy off retains the paused receipt and the member's new work", async () => {
+    await world.setOrganizationPolicy(false);
     await user.reload();
     await user.see({ text: retainedHistoryText });
     await user.see({ text: continuedWorkText });
-    const retry = await world.manualRetry();
-    expect(retry.status).toBe(409);
-    expect(retry.body).toContain("engine_upgrade_host_managed");
     const status = await world.status();
     expect(status.automaticRetryAt).toBe(retryAt);
     expect(status.migration.state).toBe("error");
-    evidence.recordAssertionEvidence("The same failure and cooldown survive use; a duplicate copy is refused", `${JSON.stringify(status)}; retry HTTP ${retry.status} ${retry.body}`, !status.chatRouting && status.migration.state === "error" && status.automaticRetryAt === retryAt && retry.status === 409 && retry.body.includes("engine_upgrade_host_managed"));
+    evidence.recordAssertionEvidence("Policy off retains the failed receipt and current engine", JSON.stringify(status), !status.chatRouting && status.migration.state === "error" && status.automaticRetryAt === retryAt);
+    await user.screenshot();
+  });
+  await step("an explicitly confirmed manual migration remains available while automatic policy is off", async () => {
+    const previous = await world.status();
+    const retry = await world.manualRetry();
+    expect(retry.status).toBe(200);
+    const accepted: { migration: { state: string }; automaticRetryAt?: number } = JSON.parse(retry.body);
+    expect(accepted.migration.state).toBe("running");
+    expect(accepted.automaticRetryAt).toBeUndefined();
+    const status = await probe.eventually(() => world.status(), {
+      within: 20_000, label: "the explicit manual attempt has its own receipt",
+      until: value => value.migration.state === "error" && value.automaticRetryAt === undefined && value.migration.startedAt !== previous.migration.startedAt,
+    });
+    await user.reload();
+    await user.see({ text: retainedHistoryText });
+    await user.see({ text: continuedWorkText });
+    evidence.recordAssertionEvidence("One confirmed manual attempt is accepted without hiding the chat", `HTTP ${retry.status}; ${JSON.stringify(status)}`, retry.status === 200 && !status.chatRouting && status.automaticRetryAt === undefined && status.migration.startedAt !== previous.migration.startedAt);
     await user.screenshot();
   });
 });
@@ -94,7 +110,9 @@ test("a member keeps a new v2 chat readable when automatic engine policy turns o
     await user.see({ text: newV2HistoryText }, { timeoutMs: 60_000 });
     sessionId = (await probe.hash()).match(/\/session\/([^/?#]+)/)?.[1] ?? "";
     expect(sessionId).not.toBe("");
-    const current = await world.messages(sessionId);
+    const current = await probe.eventually(() => world.messages(sessionId), {
+      within: 20_000, label: "the v2-only reply is durably stored before policy changes", until: value => value.includes(newV2HistoryText),
+    });
     const original = await world.originalMessages(sessionId);
     expect(current).toContain(newV2HistoryText);
     expect(original).not.toContain(newV2HistoryText);

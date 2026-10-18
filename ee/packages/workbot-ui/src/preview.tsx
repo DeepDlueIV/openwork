@@ -245,9 +245,9 @@ function SlidesOutline({ text }: { text: string }) {
   if (slides.length === 0) return <DocumentText text={text} />;
   return (
     <ol className="flex flex-col gap-4 p-6">
-      {slides.map((slide, index) => (
+      {slides.map((slide) => (
         <li key={slide.part} className="flex flex-col gap-1.5 border-b border-[var(--wb-hairline)] pb-4">
-          <span className="text-[11px] font-medium tabular-nums text-[var(--wb-muted)]">Slide {index + 1} · extracted text</span>
+          <span className="text-[11px] font-medium text-[var(--wb-muted)]">Extracted slide text</span>
           <p className="whitespace-pre-wrap break-words text-[14px] leading-6 text-[var(--wb-text)]">{slide.body}</p>
         </li>
       ))}

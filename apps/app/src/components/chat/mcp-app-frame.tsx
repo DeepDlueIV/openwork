@@ -1144,7 +1144,11 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, acces
           setApp(resolved)
           setPreviewActions(undefined)
           if (resolved) {
-            authorizeMcpAppAccess(accessKey, observedAccessVersion)
+            // Generic tool discovery is not authorization for a retained App
+            // summary. Require its App-specific launch and exact resolved binding.
+            if (launch && builtMcpAppId(part) !== null && resolved.resourceUri === launch.resourceUri && resolved.toolName === launch.toolName) {
+              authorizeMcpAppAccess(accessKey, observedAccessVersion)
+            }
             live.resolve({ origin, app: resolved })
           } else {
             onStateChangeRef.current?.("unavailable")

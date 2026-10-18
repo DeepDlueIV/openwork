@@ -286,7 +286,7 @@ describe("Authored App presentation", () => {
     const part = authoredPart()
     const origin = { client: host.client, workspaceId: `fallback-access-${code}`, sessionId: "session-access", readOnly: true }
     const resourceUri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
-    const app = fixture({ resourceUri })
+    const app = fixture({ resourceUri, toolName: "open_app" })
     const resolve = spyOn(host.client, "resolveMcpApp").mockResolvedValue({ app })
     const render = (nextPart = part, nextOrigin = origin) => host.renderElement(createElement(McpAppFrame, { part: nextPart, origin: nextOrigin }))
     const fallback = () => host.container.querySelector("[data-mcp-app-fallback]")
@@ -363,6 +363,27 @@ describe("Authored App presentation", () => {
       expect(mcpAppAccessVersion(key)).toBe(version)
       expect(host.container.querySelector("[data-mcp-app-fallback]")).toBeNull()
     } finally { authorizeMcpAppAccess(key, version); resolve.mockRestore(); await host.dispose() }
+  })
+
+  test.each([{ launch: false, sameResource: false }, { launch: false, sameResource: true }, { launch: true, sameResource: false }])("a retained summary requires both an App launch and matching resolved binding to reset denial ($launch/$sameResource)", async ({ launch, sameResource }) => {
+    const host = await startupFixture()
+    const part = authoredPart()
+    const origin = { client: host.client, workspaceId: `unverified-grant-${launch}-${sameResource}`, sessionId: "unverified-grant", readOnly: true, principalScope: "cloud:member:organization" }
+    const uri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
+    const otherUri = mcpAppResourceUri("cob_00000000000000000000000001", "cov_00000000000000000000000000")
+    const key = mcpAppAccessKey(origin, uri)
+    denyMcpAppAccess(key)
+    const version = mcpAppAccessVersion(key)
+    if (!launch) Reflect.deleteProperty(Reflect.get(Object(part.callProviderMetadata?.openwork), "mcpResult"), "_meta")
+    const resolve = spyOn(host.client, "resolveMcpApp").mockResolvedValue({ app: fixture({ resourceUri: sameResource ? uri : otherUri, toolName: "open_app" }) })
+    try {
+      expect(mcpAppTextFallback(part)).toContain("Review the project checklist")
+      await host.renderElement(createElement(McpAppFrame, { part, origin }))
+      expect(resolve).toHaveBeenCalledTimes(1)
+      expect(mcpAppAccessVersion(key)).toBe(version)
+      expect(host.container.querySelector("[data-mcp-app-fallback]")).toBeNull()
+      expect(host.container.querySelector("iframe")).toBeNull()
+    } finally { resolve.mockRestore(); await host.dispose(); authorizeMcpAppAccess(key, version) }
   })
 
   test("does not mistake generic tool prose or a mismatched revision for authored fallback", () => {

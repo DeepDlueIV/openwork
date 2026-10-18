@@ -10,8 +10,11 @@ test("a member sees last-known background work when checks fail and useful recov
     await user.type("composer", world.report.prompt);
     await user.click("Run task");
     await user.see({ text: world.report.started }, { timeoutMs: 60_000 });
+    await user.see("Run task", { timeoutMs: 30_000 });
     await user.see({ text: "1 running background task" });
-    const shimmers = (await probe.dom("[data-background-tasks-line] .ow-text-shimmer")).elements.length;
+    const shimmers = await probe.eventually(async () => (await probe.dom("[data-background-tasks-line] .ow-text-shimmer")).elements.length, {
+      within: 10_000, intervalMs: 100, label: "the count takes the finished turn's status line", until: (count) => count === 1,
+    });
     expect(shimmers).toBe(1);
     evidence.recordAssertionEvidence("Confirmed background work has exactly one live shimmer", `status shimmers: ${shimmers}`, shimmers === 1);
     await user.screenshot();

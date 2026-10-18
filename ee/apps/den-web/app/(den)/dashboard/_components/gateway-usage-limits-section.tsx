@@ -218,7 +218,7 @@ function DeletedLimitNote({ orgId, orgSlug, policy }: { orgId: string; orgSlug: 
   return (
     <div role="status" className="flex flex-wrap items-center gap-2 text-[13px] text-gray-700" data-testid="gateway-limit-deleted">
       <span className="h-1.5 w-1.5 rounded-full bg-gray-400" aria-hidden="true" />
-      <span>Deleted {policy.name}. It no longer applies to anyone.</span>
+      <span>Removed {policy.name}. It no longer applies to anyone.</span>
       <DenButton variant="ghost" size="sm" className="h-auto px-1 py-0 text-[13px] underline underline-offset-4" loading={mutation.isPending}
         data-testid="gateway-limit-undo"
         onClick={() => mutation.mutate({ type: "restore", policy: { id: policy.id, revision: policy.revision } }, { onSuccess: () => router.replace(getAiGatewayLimitsRoute(orgSlug)) })}>

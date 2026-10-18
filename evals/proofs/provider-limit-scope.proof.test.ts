@@ -31,6 +31,9 @@ offTest("turning provider limits off restores an all-provider default without de
     await user.click({ role: "link", label: "Edit Saved provider limit" });
     await user.see({ role: "combobox", label: "Provider" }, { value: "Saved model provider", timeoutMs: 60_000 });
     await user.see({ testId: "gateway-limit-provider-off" });
+    await user.see({ text: /Ask an OpenWork operator to turn provider limits on/ });
+    const locks = await probe.dom('[data-testid="gateway-limit-provider-off"] svg');
+    expect(locks.elements).toHaveLength(1);
     const disabled = await probe.dom('[data-testid="gateway-limit-provider"] input:disabled');
     const read = await probe.api(world.den.admin, "/v1/gateway/usage-limit-policies");
     const retained = isRecord(read.body) ? records(read.body.policies).find((entry) => entry.id === world.policyId) : null;

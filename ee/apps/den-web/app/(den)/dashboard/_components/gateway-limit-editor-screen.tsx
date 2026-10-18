@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
-import { Globe, Layers, Plus, Trash2, User, Users } from "lucide-react";
+import { Globe, Layers, LockKeyhole, Plus, Trash2, User, Users } from "lucide-react";
 import {
   gatewayUsagePolicyWriteSchema, gatewayUsageTimeframes,
   type GatewayUsageLimitPolicy, type GatewayUsagePolicyWrite, type GatewayUsageTimeframe,
@@ -191,7 +191,7 @@ function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members, prov
       await mutation.mutateAsync({ type: "archive", policy: { id: latest.id, revision: latest.revision } });
       router.push(getAiGatewayLimitsRoute(orgSlug, latest.id));
     } catch (removeError) {
-      setError(removeError instanceof Error ? removeError : new Error("Could not delete this limit."));
+      setError(removeError instanceof Error ? removeError : new Error("Could not remove this limit."));
       setBusy(false);
     }
   }
@@ -282,7 +282,7 @@ function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members, prov
                     <DenInput aria-label={`Amount ${timeframePeriods[timeframe]}`} inputMode="decimal" value={row.value} maxLength={32} aria-invalid={Boolean(issue)} data-testid={`gateway-limit-amount-${timeframe}`}
                       onChange={(event) => setAmounts((current) => ({ ...current, [timeframe]: { ...current[timeframe], value: event.target.value } }))} />
                   </label>
-                ) : <span className="w-32 text-[12px] text-gray-400">Off</span>}
+                ) : <span className="w-32 text-[12px] text-gray-500">Off</span>}
               </li>
             );
           })}
@@ -319,7 +319,7 @@ function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members, prov
       <DenStickyActionBar summary={<span>{whoLabel || "No one yet"}{draft.limits.length ? ` · ${draft.limits.map((limit) => `${limit.costUsd ? `$${limit.costUsd}` : "—"} ${timeframePeriods[limit.timeframe]}`).join(", ")}` : ""}</span>}>
         {policy ? (
           <DenButton variant="secondary" disabled={blocked} data-testid="gateway-limit-delete" onClick={() => void remove()}>
-            <Trash2 className="h-4 w-4" aria-hidden="true" />Delete limit
+            <Trash2 className="h-4 w-4" aria-hidden="true" />Remove
           </DenButton>
         ) : null}
         <Link href={getAiGatewayLimitsRoute(orgSlug)} className={buttonVariants({ variant: "secondary" })}>Cancel</Link>
@@ -356,7 +356,7 @@ function ProviderCard({ orgId, headingId, value, onChange, enabled }: {
           onChange={(next) => onChange(next === DEFAULT_PROVIDER ? null : next)} />
       </div>
       {providers.isPending || providers.isFetching ? <p role="status" className="mt-2 text-[12px] text-gray-500">Checking provider choices. The saved scope is unchanged.</p> : providers.isError ? <DenNotice className="mt-2" tone="error" message="Could not verify provider choices. The saved scope is unchanged." action={<DenButton variant="secondary" onClick={() => void providers.refetch()}>Retry providers</DenButton>} /> : value && !providers.data.some((provider) => provider.id === value) ? <p role="status" className="mt-2 text-[12px] text-gray-500">The saved provider is not in your current list. Keep its scope or choose another provider.</p> : null}
-      {!enabled ? <p className="mt-2 text-[12px] text-gray-500" data-testid="gateway-limit-provider-off">Limits per provider are turned off for this organization, so default limits apply instead.</p>
+      {!enabled ? <div className="mt-2" data-testid="gateway-limit-provider-off"><DenNotice tone="neutral" presentation="inline" icon={LockKeyhole} message="Limits per provider are turned off, so default limits cover all providers. Ask an OpenWork operator to turn provider limits on." /></div>
         : value ? <p className="mt-2 text-[12px] text-gray-500">People with this limit stop counting this provider toward the default limit.</p> : null}
     </section>
   );

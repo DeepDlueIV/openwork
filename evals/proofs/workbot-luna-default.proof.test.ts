@@ -15,6 +15,7 @@ available("an owner enables the explicit Luna default and keeps their saved mode
   });
   await step("the owner enables the Luna rollout for this workspace", async () => {
     await user.navigate(world.featureUrl);
+    await user.click({ role: "tab", label: "Features" });
     await user.click({ testId: "admin-capability-workbotLunaDefault" });
     await user.see({ testId: "admin-capability-source-workbotLunaDefault" }, { text: "Set for this organization" });
     const enabled = (await probe.dom('[data-testid="admin-capability-workbotLunaDefault"][aria-checked="true"]')).elements.length === 1;
@@ -43,6 +44,7 @@ available("an owner enables the explicit Luna default and keeps their saved mode
   });
   await step("turning off the rollout keeps the organization's saved model", async () => {
     await user.navigate(world.featureUrl);
+    await user.click({ role: "tab", label: "Features" });
     await user.click({ testId: "admin-capability-workbotLunaDefault" });
     await user.see({ testId: "admin-capability-source-workbotLunaDefault" }, { text: "Set for this organization" });
     await user.navigate(world.settingsUrl);

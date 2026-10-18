@@ -10,7 +10,7 @@ test("a member recovers a new chat without saving a personal default over later 
   const selected = async () => (await probe.dom('button[aria-label="Change model"]')).elements.map(element => element.text).join(" ");
   await step("before: a new chat inherits the organization model without a personal choice", async () => {
     await user.reload();
-    await user.click({ role: "button", label: /^New task$/ });
+    await user.click({ role: "button", label: /^New session$/ });
     await probe.eventually(selected, { within: 30_000, label: "the organization default", until: value => value.includes(world.old.name) });
     await user.see("composer", { editable: true });
     evidence.recordAssertionEvidence("The organization default is selected before the member chooses a model", `selected=${await selected()}`, (await selected()).includes(world.old.name));

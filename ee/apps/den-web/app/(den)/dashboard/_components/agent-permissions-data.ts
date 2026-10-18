@@ -10,6 +10,7 @@ import { getErrorMessage, getRequestError, requestJson } from "../../_lib/den-fl
 import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
 import { getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { PERMISSION_READ_STALE_TIME } from "./permissions-query-keys";
 
 const AGENT_PERMISSIONS_PATH = "/v1/agent-permissions";
 
@@ -77,6 +78,7 @@ export function useAgentPermissions(orgId: string, enabled = true) {
     queryKey: key,
     enabled: enabled && canRead,
     retry: false,
+    staleTime: PERMISSION_READ_STALE_TIME,
     refetchOnWindowFocus: false,
     refetchOnMount: "always",
     queryFn: async ({ signal }) => {

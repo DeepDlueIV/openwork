@@ -1351,7 +1351,7 @@ export function SessionRoute() {
     return () => window.clearTimeout(timer);
   }, [modelAvailabilityGate, resolveCatalogModelAvailability]);
   const catalogAvailability = resolveCatalogModelAvailability(activeComposerModel);
-  const organizationRemovalConfirmed = useModelRemovalConfirmation({
+  const modelRemovalConfirmation = useModelRemovalConfirmation({
     model: activeComposerModel,
     missing: catalogAvailability.status === "unavailable" && catalogAvailability.reason !== "provider_blocked",
     ready: !loading && cloudProviderSyncReady && !providerListQuery.isError
@@ -1369,6 +1369,7 @@ export function SessionRoute() {
       }).status === "unavailable";
     },
   });
+  const organizationRemovalConfirmed = modelRemovalConfirmation.confirmed;
   const resolveModelAvailability = useCallback((model: ModelRef | null): ModelAvailability => {
     const verdict = resolveCatalogModelAvailability(model);
     if (verdict.status !== "unavailable" || verdict.reason === "provider_blocked") return verdict;
@@ -1436,8 +1437,10 @@ export function SessionRoute() {
     const entitled = new Set(entitledModelOptions.filter((option) => !option.disabled).map((option) => `${option.providerID}/${option.modelID}`));
     const connected = new Set(runtimeModelOptions(cloudProviderList ?? providerListQuery.data)
       .map((option) => `${option.providerID}/${option.modelID}`));
+    const assigned = new Set(modelRemovalConfirmation.assignedModels.map((model) => `${model.providerID}/${model.modelID}`));
     const candidates = modelPicker.actionOptions.filter((option) => !option.disabled && !option.gatewayAuthorization
-      && entitled.has(`${option.providerID}/${option.modelID}`) && connected.has(`${option.providerID}/${option.modelID}`));
+      && entitled.has(`${option.providerID}/${option.modelID}`) && connected.has(`${option.providerID}/${option.modelID}`)
+      && (!isCloudManagedProviderKey(option.providerID) || assigned.has(`${option.providerID}/${option.modelID}`)));
     const previous = activeComposerModel
       ? rememberedModelTitles.get(`${activeComposerModel.providerID}/${activeComposerModel.modelID}`) ?? activeComposerModel : null;
     const chooseReplacement = modelRemovalRecovery ? closestAvailableModel : nextAvailableModel;
@@ -1457,7 +1460,7 @@ export function SessionRoute() {
         action: { label: "Change", onClick: () => window.dispatchEvent(new CustomEvent(openComposerModelPickerEvent, { detail: { sessionId: targetSessionId ?? undefined } })) },
       });
     }
-  }, [activityRouteActive, activeComposerModel, activeComposerTargetsSession, changeNewTaskModel, cloudProviderList, cloudProviderSyncReady, denAuth.isSignedIn, entitledModelOptions, entitledOrgDefaultModel, providerListQuery.data, organizationModelsEmpty, resolveModelAvailability, selectedModelUnavailableKey, selectedSessionId, workspaceDefault, organizationRemovalConfirmed, modelRemovalRecovery, recoveryChatKey, modelPicker.actionOptions, rememberedModelTitles]);
+  }, [activityRouteActive, activeComposerModel, activeComposerTargetsSession, changeNewTaskModel, cloudProviderList, cloudProviderSyncReady, denAuth.isSignedIn, entitledModelOptions, entitledOrgDefaultModel, providerListQuery.data, organizationModelsEmpty, resolveModelAvailability, selectedModelUnavailableKey, selectedSessionId, workspaceDefault, organizationRemovalConfirmed, modelRemovalRecovery, recoveryChatKey, modelPicker.actionOptions, rememberedModelTitles, modelRemovalConfirmation.assignedModels]);
 
   // Optimistic model selection: a remembered model is treated as valid until
   // the availability gate CONFIRMS it absent (selectedModelUnavailable).

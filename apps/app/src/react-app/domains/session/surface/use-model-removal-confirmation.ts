@@ -8,6 +8,8 @@ import { confirmedOrganizationRemoval } from "./model-removal";
 import { MODEL_UNAVAILABLE_CONFIRMATION_MS } from "./model-availability";
 import { useModelRecoveryStore } from "./model-recovery-store";
 
+const EMPTY_MODELS: readonly ModelRef[] = [];
+
 /** An engine catalog is a transport snapshot, never evidence that an org removed access. */
 export function useModelRemovalConfirmation(input: {
   model: ModelRef | null;
@@ -21,7 +23,7 @@ export function useModelRemovalConfirmation(input: {
   const settings = readDenSettings();
   const token = settings.authToken?.trim() ?? "";
   const organizationId = settings.activeOrgId?.trim() ?? "";
-  const [confirmed, setConfirmed] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<{ modelKey: string; assignedModels: readonly ModelRef[] } | null>(null);
   const modelKey = input.model ? modelRefKey(input.model) : null;
   const current = useRef(input);
   current.current = input;
@@ -59,8 +61,11 @@ export function useModelRemovalConfirmation(input: {
           if (cancelled) return;
           const after = await client.getModelRemovalInventory(organizationId);
           if (cancelled) return;
-          setConfirmed(confirmedOrganizationRemoval({ model: selected, before, after,
-            engineSettled: current.current.ready, engineMissing: stillMissing }) ? modelKey : null);
+          const removed = confirmedOrganizationRemoval({ model: selected, before, after,
+            engineSettled: current.current.ready, engineMissing: stillMissing });
+          const locked = new Set(after.lockedModels.map(modelRefKey));
+          setConfirmed(removed && modelKey ? { modelKey,
+            assignedModels: after.models.filter((model) => !locked.has(modelRefKey(model))) } : null);
         }
       } catch {
         // Offline, sign-in failures, old Den versions and partial inventories are all unknown.
@@ -73,5 +78,6 @@ export function useModelRemovalConfirmation(input: {
   }, [auth.isSignedIn, token, organizationId, settings.baseUrl, input.scope, input.chatKey,
     input.missing, input.ready, modelKey, recovery?.previous.providerID, recovery?.previous.modelID]);
 
-  return Boolean(input.missing && input.ready && modelKey && confirmed === modelKey);
+  const verified = Boolean(input.missing && input.ready && modelKey && confirmed?.modelKey === modelKey);
+  return { confirmed: verified, assignedModels: verified ? confirmed?.assignedModels ?? EMPTY_MODELS : EMPTY_MODELS };
 }

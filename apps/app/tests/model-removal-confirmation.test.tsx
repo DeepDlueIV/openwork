@@ -34,8 +34,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 function Probe() {
-  const confirmed = useModelRemovalConfirmation(input);
-  return <output>{String(confirmed)}</output>;
+  const result = useModelRemovalConfirmation(input);
+  return <output data-assigned-models={result.assignedModels.map((model) => model.modelID).join(",")}>{String(result.confirmed)}</output>;
 }
 async function render(patch: Partial<Input> = {}) {
   input = { ...input, ...patch };
@@ -110,6 +110,17 @@ test("requires two absent reads and waits for the settled engine refetch", async
   expect(host.textContent).toBe("true");
   expect(inventory.mock.calls).toEqual([["org-a"], ["org-a"]]);
   expect(den.createDenClient).toHaveBeenCalledWith({ baseUrl: settings.baseUrl, token: "member-token", requireCompleteInventory: true });
+});
+
+test("replacement eligibility comes from the second authoritative read, never stale engine identities", async () => {
+  const locked = { providerID: "ipr_assigned", modelID: "gwm_locked" };
+  const noLongerAssigned = { providerID: "ipr_assigned", modelID: "gwm_stale_engine" };
+  inventory.mockResolvedValueOnce({ models: [replacement, noLongerAssigned], lockedModels: [] });
+  inventory.mockResolvedValueOnce({ models: [replacement, locked], lockedModels: [locked] });
+  await render();
+  await advance(grace);
+  expect(host.textContent).toBe("true");
+  expect(host.querySelector("output")?.getAttribute("data-assigned-models")).toBe(replacement.modelID);
 });
 
 test("an engine refetch that finds the model prevents removal", async () => {

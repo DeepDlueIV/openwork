@@ -75,7 +75,7 @@ test("a member recovers a draft after reconnecting only when file authorization 
     await user.click({ role: "button", label: "Refresh documents" });
     await user.see({ text: "Google Drive needs a fresh connection." });
     await user.notSee({ role: "textbox", label: "Document text" });
-    await user.see({ role: "link", label: "Reconnect Google Drive" });
+    await user.see({ role: "button", label: "Reconnect Google Drive" });
     await user.notSee({ text: "Project brief.txt" });
     await user.notSee({ text: "Budget notes.txt" });
     await user.notSee({ text: "Revised project overview" });

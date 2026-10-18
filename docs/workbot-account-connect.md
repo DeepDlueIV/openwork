@@ -36,6 +36,14 @@ account connected: Den's fresh connection readiness and resource reads must
 confirm access. Denial, expiry, missing scopes, and incomplete admin setup stay
 recoverable without exposing provider errors or tokens to chat.
 
+Unsaved document recovery is owned by the shared Documents browser, not by
+OAuth completion. Its scoped, memory-only lock lasts at most 15 minutes.
+Reconnect appears inside that locked state. Even after fresh Den readiness and
+a successful directory read, only **Check access and restore tabs** may reveal
+the retained work, after fresh matching identity and authorization for every
+open file. Denied consent does not discard drafts; restoration never replays a
+save. The sign-in recovery link and identity-isolation boundary are unchanged.
+
 A blocked popup offers an explicit same-tab action. A callback without an opener
 offers a return link to the signed Workbot path. When inline connect is off,
 the existing specific-connection Den link remains available, honestly labelled

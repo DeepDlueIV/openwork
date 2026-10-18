@@ -90,6 +90,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
             if (actor === "user_other" && holdOtherThread) { pendingOtherThreads++; await new Promise<void>(resolve => releaseOtherThreads.push(resolve)); pendingOtherThreads--; }
             return json({ available: true, name: "Workbot", organizationName: "Example", status: "idle", turns: thread(actor), hasEarlier: false, filesEnabled: false });
           }
+          if (url.pathname === "/v1/workbot/connections") return json({ connections: [{ id: "google-workspace", name: "Google Workspace", app: "gmail", nativeProviderKey: "google-workspace", ready: !denied, connectMode: "external", connectUrl: "https://workspace.example.test/dashboard/your-connections?connectionId=google-workspace" }] });
           if (url.pathname === "/v1/workbot/chats") return json({ main: null, side: [{ id: "sidechat000000001", title: "Document questions", createdAt: Date.now(), updatedAt: Date.now() }] });
           if (url.pathname === "/v1/workbot/events") { res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.end(": fixture\n\n"); return; }
           if (url.pathname === "/v1/workbot/messages" && req.method === "POST") {

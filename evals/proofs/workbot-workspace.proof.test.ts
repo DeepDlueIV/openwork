@@ -103,7 +103,7 @@ test("a member asks about an open document and calendar without losing a draft",
     await user.navigate(`${world.url}documents?access=denied`);
     await user.see({ text: "Connect Google Drive to browse and open your documents. Drive read permission is required." });
     await user.notSee({ role: "textbox", label: "Document text" });
-    await user.see({ role: "link", label: "Connect Google Drive" });
+    await user.see({ role: "button", label: "Connect Google Drive" });
     evidence.recordAssertionEvidence("No document is exposed without a Drive connection", "The connection state replaces the document list", (await probe.dom(".ow-editor-plain")).elements.length === 0);
     await user.screenshot();
   });

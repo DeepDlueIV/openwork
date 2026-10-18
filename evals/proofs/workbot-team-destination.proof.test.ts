@@ -19,6 +19,15 @@ test("a team link opens its own workspace even when Den has another one active",
     evidence.recordAssertionEvidence("The settings page belongs to the linked workspace", "Linked workspace is active; Workbot settings is visible; link hint was consumed", !(await probe.url()).includes("workbotOrganizationId"));
     await user.screenshot();
   });
+  await step("the app management link also opens its own workspace", async () => {
+    await user.navigate(`${world.den.ref.webUrl}/dashboard/mcp-connections?workbotOrganizationId=${world.otherId}`);
+    await user.see({ role: "button", label: /Other workspace/ }, { timeoutMs: 90_000 });
+    await user.navigate(`${world.den.ref.webUrl}/dashboard/mcp-connections?workbotOrganizationId=${world.linkedId}`);
+    await user.see({ role: "button", label: /Linked workspace/ }, { timeoutMs: 90_000 });
+    await user.see({ role: "heading", label: "Connectors" });
+    evidence.recordAssertionEvidence("App management uses the same exact workspace boundary", "Linked workspace is selected and its Connectors page is visible", !(await probe.url()).includes("workbotOrganizationId"));
+    await user.screenshot();
+  });
   await step("an unavailable workspace does not fall back to either member workspace", async () => {
     await user.navigate(`${world.den.ref.webUrl}/dashboard/workbot-settings?workbotOrganizationId=org_unavailable`);
     await user.see({ text: "This Workbot workspace is unavailable. Open Workbot and check your team access." }, { timeoutMs: 90_000 });

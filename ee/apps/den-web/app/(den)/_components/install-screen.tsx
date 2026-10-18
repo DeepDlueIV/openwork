@@ -478,7 +478,7 @@ function InstallGuide({ organizationId }: { organizationId: string }) {
               </div>
             ) : (
               <div className="grid gap-5 text-left">
-                <DownloadPlatformGrid groups={downloadGroups} />
+                <DownloadPlatformGrid groups={downloadGroups} openInNewTab />
                 {/* Reload so the auth provider reads the desktop handoff parameters on mount. */}
                 <a className="den-button-secondary w-fit" href={DESKTOP_SIGN_IN_PATH}>
                   I already installed OpenWork
@@ -533,6 +533,7 @@ function InstallGuide({ organizationId }: { organizationId: string }) {
             >
                   <DownloadPlatformGrid
                     groups={downloadGroups}
+                    openInNewTab
                     recommendedTestId="install-download-primary"
                     onDownload={(option: DownloadPlatformOption) => beginDownload(option.label, option.href)}
                     variant="flat"

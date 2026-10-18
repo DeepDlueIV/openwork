@@ -753,6 +753,33 @@ export async function preserveEngineLogs(handle: SurfaceHandle, logsDir: string)
   return kept;
 }
 
+/** Only container mounts on other devices and outside the profile can be exempted. */
+export function unrelatedLinuxProfileMounts(mountinfo: string, profileDir: string, device: bigint): string[] {
+  const major = ((device >> 8n) & 0xfffn) | ((device >> 32n) & 0xfffff000n);
+  const minor = (device & 0xffn) | ((device >> 12n) & 0xffffff00n);
+  const profileDevice = `${major}:${minor}`;
+  const within = (path: string, parent: string) => parent === "/" || path === parent || path.startsWith(`${parent}/`);
+  const mounts = mountinfo.trim().split("\n").map(line => {
+    const fields = line.split(" ");
+    const separator = fields.indexOf("-");
+    const id = fields[2];
+    const encoded = fields[4];
+    const type = fields[separator + 1];
+    if (separator < 6 || !id || !/^\d+:\d+$/.test(id) || !encoded?.startsWith("/") || !type) {
+      throw new Error("Cannot scope Chrome profile inspection: invalid Linux mount information.");
+    }
+    const path = encoded.replace(/\\([0-7]{3})/g, (_match: string, octal: string) => String.fromCharCode(Number.parseInt(octal, 8)));
+    return { device: id, path, type };
+  });
+  if (!mounts.some(mount => mount.device === profileDevice && within(profileDir, mount.path))) {
+    throw new Error("Cannot scope Chrome profile inspection: profile filesystem is unconfirmed.");
+  }
+  return mounts.filter(mount => (mount.type === "overlay" || mount.type === "nsfs")
+    && mount.device !== profileDevice
+    && !within(profileDir, mount.path) && !within(mount.path, profileDir))
+    .map(mount => mount.path);
+}
+
 /** Final fixtures may release Chrome data; ordinary stop/restart must retain it. */
 export async function removeOwnedSurfaceFiles(
   handle: SurfaceHandle,
@@ -785,13 +812,27 @@ export async function removeOwnedSurfaceFiles(
       console.warn("[openwork/evals] Chrome profile retained: open-file inspection is unavailable on this platform.");
       return;
     }
+    const inspectionArgs = ["+w", "+D", owned.profileDir];
+    if (process.platform === "linux") {
+      const profile = await stat(owned.profileDir, { bigint: true });
+      const mounts = unrelatedLinuxProfileMounts(await readFile("/proc/self/mountinfo", "utf8"), owned.realProfileDir, profile.dev);
+      for (const path of mounts) {
+        try { await lstat(path); } catch (error) {
+          // Linux lsof stats all mounts, even for +D. Docker's root-only mounts
+          // can be inaccessible to this user. Exempt only proven other devices
+          // outside this profile, never profile descendants or same-device aliases.
+          if (errorCode(error) === "EACCES" || errorCode(error) === "EPERM") inspectionArgs.push("-e", path);
+        }
+      }
+    }
     await new Promise<void>((done, reject) => {
       // -t implicitly suppresses warnings, including unreadable subtrees. Keep
       // warnings enabled so an incomplete scan cannot masquerade as no open files.
-      execFile("lsof", ["+w", "+D", owned.profileDir], { encoding: "utf8", timeout: 5_000 }, (error, stdout, stderr) => {
+      execFile("lsof", inspectionArgs, { encoding: "utf8", timeout: 5_000 }, (error, stdout, stderr) => {
         if (isRecord(error) && error.code === 1 && !stdout.trim() && !stderr.trim()) done();
         else reject(new Error("Refusing Chrome profile cleanup: open files remain or the open-file check failed.", {
           cause: new Error(`lsof inspection: ${JSON.stringify({
+            args: inspectionArgs,
             code: error ? error.code ?? "unknown" : 0,
             signal: error?.signal ?? null,
             stdout,

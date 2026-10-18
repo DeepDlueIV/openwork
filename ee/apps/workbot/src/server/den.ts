@@ -130,7 +130,7 @@ export function createDen(options: { apiUrl: string; publicUrl: string; serviceT
   return {
     discover,
     /** Where to send the browser to sign in; Den returns it to /auth/callback with a code. */
-    async authorizeUrl(input: { state: string; verifier: string }) {
+    async authorizeUrl(input: { state: string; verifier: string; chooseWorkspace?: boolean }) {
       const { authorizationEndpoint, resource } = await discover()
       const url = new URL(authorizationEndpoint)
       url.search = new URLSearchParams({
@@ -141,6 +141,8 @@ export function createDen(options: { apiUrl: string; publicUrl: string; serviceT
         state: input.state,
         code_challenge: pkceChallenge(input.verifier),
         code_challenge_method: "S256",
+        // Explicit workspace changes must not silently reuse the active workspace's existing grant.
+        ...(input.chooseWorkspace ? { prompt: "consent" } : {}),
         resource,
       }).toString()
       return url.toString()

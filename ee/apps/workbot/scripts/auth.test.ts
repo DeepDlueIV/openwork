@@ -22,11 +22,15 @@ function world(options: { secret?: string; telemetryFails?: boolean } = {}) {
   const signIns: Array<{ token: string; id: string }> = []
   let clock = 1_000_000
   const calls = { refresh: [] as string[], revoke: [] as string[] }
+  const workspaceChoices: boolean[] = []
   let refreshes = 0
   let refreshOutcome: "ok" | "signed_out" = "ok"
   let releaseRefresh: (() => void) | null = null
   const den: DenAuth = {
-    authorizeUrl: async ({ state }) => `https://den.test/authorize?state=${state}`,
+    authorizeUrl: async ({ state, chooseWorkspace }) => {
+      workspaceChoices.push(chooseWorkspace === true)
+      return `https://den.test/authorize?state=${state}`
+    },
     exchangeCode: async (): Promise<Tokens> => ({ accessToken: accessToken(0), refreshToken: "refresh-0", expiresAt: clock + 45 * 60_000 }),
     session: async () => who,
     recordSignIn: async (token, id) => {
@@ -54,6 +58,7 @@ function world(options: { secret?: string; telemetryFails?: boolean } = {}) {
     instance,
     calls,
     signIns,
+    workspaceChoices,
     advance: (ms: number) => { clock += ms },
     failRefresh: () => { refreshOutcome = "signed_out" },
     release: async () => {
@@ -131,6 +136,15 @@ test("a sign-in only finishes in the browser that started it, with its state, wi
   assert.equal((await app.request("/auth/login?return=//evil.test")).headers.get("location")?.startsWith("https://den.test/"), true)
   w.advance(11 * 60_000)
   assert.equal((await app.request(`/auth/callback?state=${state}&code=c`, { headers: { cookie: `__Host-workbot-login=${loginCookie}` } })).status, 400)
+})
+
+test("only an explicit workspace-choice link asks Den to reopen the workspace decision", async () => {
+  const w = world()
+  const app = w.instance()
+  await app.request("/auth/login")
+  await app.request("/auth/login?workspace=choose")
+  await app.request("/auth/login?workspace=other")
+  assert.deepEqual(w.workspaceChoices, [false, true, false])
 })
 
 test("workspace sign-in preserves a local destination but never returns to another site", async () => {

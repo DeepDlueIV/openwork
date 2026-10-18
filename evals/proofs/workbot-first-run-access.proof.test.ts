@@ -18,7 +18,7 @@ test("a member in a disabled workspace gets a real next action, while an enabled
     await user.see({ text: "Ask your workspace owner or platform administrator to turn on Workbot for this workspace." });
     await user.see({ role: "link", label: "Choose another workspace" });
     await user.notSee({ role: "link", label: "Open workspace feature settings" });
-    const action = await probe.dom('a[href="/auth/login"]');
+    const action = await probe.dom('a[href="/auth/login?workspace=choose"]');
     evidence.recordAssertionEvidence("The member gets workspace choice, not an inaccessible admin control", "Choose another workspace points to Workbot's real sign-in route", action.elements.length === 1);
     await user.screenshot();
   });

@@ -4,7 +4,7 @@ import { workbotFirstRun } from "../worlds/workbot-first-run.ts";
 
 const test = spec.world(workbotFirstRun, {
   timeout: 600_000,
-  needs: { commands: ["bun", "pnpm"], placement: "local" },
+  needs: { commands: ["bun", "pnpm", "redis-server"], placement: "local" },
   resources: { surfaces: ["web"], services: ["den", "mock"] },
 });
 
@@ -55,7 +55,7 @@ test("a new person verifies their email, creates a workspace and returns directl
     await user.screenshot();
   });
   await step("the returning person chooses the same workspace without authorizing a third-party app", async () => {
-    await user.navigate(`${world.url}/auth/login`);
+    await user.navigate(`${world.url}/auth/login?workspace=choose`);
     await user.see({ role: "heading", label: "Choose a workspace" }, { timeoutMs: 60_000 });
     await user.see({ text: world.workspaceName });
     await user.notSee({ text: "Requested access" });

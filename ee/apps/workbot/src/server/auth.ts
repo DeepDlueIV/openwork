@@ -160,7 +160,7 @@ export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCo
       const login = { state, verifier, returnTo: safeReturnPath(c.req.query("return")), createdAt: now() }
       setCookie(c, loginCookie, sealer.seal(LOGIN_PURPOSE, login), { ...cookieOptions, maxAge: LOGIN_TTL_MS / 1000 })
       try {
-        return c.redirect(await den.authorizeUrl({ state, verifier }), 302)
+        return c.redirect(await den.authorizeUrl({ state, verifier, chooseWorkspace: c.req.query("workspace") === "choose" }), 302)
       } catch (error) {
         console.error("[workbot] sign-in unavailable", { error: error instanceof Error ? error.message : "unknown" })
         reportError("sign_in_unavailable", error)

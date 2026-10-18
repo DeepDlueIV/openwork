@@ -14,9 +14,9 @@ export function WorkspaceAccess({ me }: { me: Me }) {
         {me.canEnableWorkbot && features ? (
           <a href={features} className="rounded-lg bg-[var(--wb-ink)] px-4 py-2.5 text-center text-sm font-medium text-[var(--wb-on-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--wb-ink)]">Open workspace feature settings</a>
         ) : (
-          <a href="/auth/login" className="rounded-lg bg-[var(--wb-ink)] px-4 py-2.5 text-center text-sm font-medium text-[var(--wb-on-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--wb-ink)]">Choose another workspace</a>
+          <a href="/auth/login?workspace=choose" className="rounded-lg bg-[var(--wb-ink)] px-4 py-2.5 text-center text-sm font-medium text-[var(--wb-on-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--wb-ink)]">Choose another workspace</a>
         )}
-        {me.canEnableWorkbot && features ? <a href="/auth/login" className="text-sm underline underline-offset-4">Choose another workspace</a> : null}
+        {me.canEnableWorkbot && features ? <a href="/auth/login?workspace=choose" className="text-sm underline underline-offset-4">Choose another workspace</a> : null}
       </section>
     </main>
   )

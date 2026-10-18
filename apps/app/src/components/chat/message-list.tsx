@@ -1720,7 +1720,7 @@ function MessageGroup({
       {lastTextMessage && !isStreaming && (
         <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 md:px-8", !modelFooterEnabled && "transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", !modelFooterEnabled && (forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0"))}>
           <div className={cn(modelFooterEnabled ? "flex items-center gap-2" : "contents", modelFooterEnabled && "transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", modelFooterEnabled && (forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0"))}>
-          <MessageActions className="flex gap-0">
+          <MessageActions data-testid="reply-actions" className="flex gap-0">
             <CopyMessageButton messages={renderableItems.map((item) => item.message)} />
             {lastRealItem ? (
               <>

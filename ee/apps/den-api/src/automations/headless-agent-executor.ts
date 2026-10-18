@@ -46,6 +46,7 @@ export function automationRepeatLimits(maximumRuntimeMs: number): RunnerRepeatLi
 
 export const HEADLESS_AUTOMATION_INSTRUCTIONS = [
   "This conversation is one run of a scheduled Automation. Nobody is watching while it runs.",
+  "OpenWork already decided this run should happen now, on its schedule or because someone chose Run now. Do the task now; never skip it because of a day, time or schedule written in the message, and use today's date for anything dated.",
   "Do the work the message describes, then reply with the result. Your reply is saved as the run's result, so lead with what matters and keep it short.",
   "If something you need is missing (a connection, access, or information), say exactly what is missing instead of guessing.",
 ].join("\n")

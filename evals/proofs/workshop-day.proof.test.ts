@@ -123,7 +123,9 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
   }
   const record_ = (row: Row) => { rows.push(row); world.markScene(`${row.id}:end:${row.status}`); console.log(`[day ${profile}] ${row.id} ${row.status} ${Math.round(row.latencyMs / 1000)}s ${row.reasons.join("; ").slice(0, 200)}`); };
   let lastSessionPath = "";
+  const only = process.env.OPENWORK_WORKSHOP_DAY_ONLY?.split(",").map((value) => value.trim()).filter(Boolean);
   async function scene(id: string, title: string, body: () => Promise<Omit<Row, "id" | "title">>) {
+    if (only?.length && !only.includes(id)) return;
     await step(`${id}: ${title}`, async () => {
       world.markScene(`${id}:start`);
       const here = String(await evaluateOnSurface(world.app, () => location.pathname + location.search).catch(() => ""));
@@ -191,7 +193,12 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     await new Promise((resolve) => setTimeout(resolve, 3000));
     world.markScene("D1:run-visible");
     const after = await world.observe();
-    const draft = newItems(mails(before), mails(after)).find((mail) => mail.isDraft === true && ["France", "Germany", "Japan"].every((country) => text(mail.body).includes(country)));
+    const draft = newItems(mails(before), mails(after)).find((mail) => mail.isDraft === true && [/france/i, /germany/i, /japan/i].every((country) => country.test(text(mail.body))));
+    const runnerErrors = after.inference.slice(before.inference.length).filter((request) => request.status !== "completed").map((request) => ({ route: request.route, status: request.status, http: request.httpStatus, rejection: request.rejection, upstream: request.upstreamError }));
+    const newDrafts = newItems(mails(before), mails(after)).filter((mail) => mail.isDraft === true).map((mail) => ({ subject: mail.subject, body: text(mail.body).slice(0, 300) }));
+    const newsCalls = list(ms(after.news).audit).length - list(ms(before.news).audit).length;
+    console.log(`[day ${profile}] D1 run ${JSON.stringify({ status: run.status, summary: String(run.resultSummary ?? run.result_summary ?? run.summary ?? "").slice(0, 600), newDrafts, newsCalls, mailAudit: list(ms(after.microsoft).audit).slice(list(ms(before.microsoft).audit).length).map((entry) => record(entry).name) }).slice(0, 2500)}`);
+    if (run.status !== "succeeded" || runnerErrors.length) console.log(`[day ${profile}] D1 runner diagnostics ${JSON.stringify({ status: run.status, error: run.error, runnerErrors, runnerRequests: after.inference.length - before.inference.length }).slice(0, 2500)}`);
     const reasons = checks([[run.status === "succeeded", `Automation run ${String(run.status ?? "not found")}`], [Boolean(draft), "No draft brief covering France, Germany and Japan"], [sentNothing(before, after), "Mail was sent"]]);
     if (draft) await show("D1", `${world.urls.outlook}?message=${encodeURIComponent(String(draft.id))}`, "Edit draft", "draft");
     // Back to the chat, where the rest of the day happens.

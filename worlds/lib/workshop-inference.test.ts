@@ -321,7 +321,7 @@ test("Qwen selection is exact and does not inherit GPT Fast", () => {
   assert.throws(() => assertWorkshopModel(profile, { models: [{ id: "qwen3-other", upstreamModelId: "qwen/qwen3-32b", config: {} }] }), /BLOCKED/);
 });
 
-test("Automation runner Chat Completions is opt-in, pinned to the same model and never gets Fast injected", async () => {
+test("Automation runner Chat Completions is opt-in and translated to /responses for the pinned model", async () => {
   const profile = workshopModelProfile(["--model-profile", "gpt-sol-fast"]);
   for (const allow of [false, true]) {
     await using stack = new AsyncDisposableStack();
@@ -330,12 +330,19 @@ test("Automation runner Chat Completions is opt-in, pinned to the same model and
       allowRunnerChatCompletions: allow,
       upstreamFetch: async (url, init) => {
         forwarded.push({ url: String(url), body: JSON.parse(String(init?.body)) });
-        return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "ok" } }], usage: { prompt_tokens: 3, completion_tokens: 1 } }), { headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ id: "resp_1", status: "completed", output: [
+          { type: "reasoning", summary: [] },
+          { type: "function_call", call_id: "call_1", name: "mail_create_draft", arguments: "{\"subject\":\"Brief\"}" },
+        ], usage: { input_tokens: 30, output_tokens: 7 } }), { headers: { "content-type": "application/json" } });
       },
     });
     const auth = { authorization: `Bearer ${proxy.provider.options.apiKey}`, "content-type": "application/json" };
     const models = await fetch(`${proxy.baseUrl}/models`, { headers: auth });
-    const chat = await fetch(`${proxy.baseUrl}/chat/completions`, { method: "POST", headers: auth, body: JSON.stringify({ model: profile.model, messages: [{ role: "user", content: "hi" }] }) });
+    const chat = await fetch(`${proxy.baseUrl}/chat/completions`, { method: "POST", headers: auth, body: JSON.stringify({
+      model: profile.model, stream: true, max_completion_tokens: 512,
+      messages: [{ role: "system", content: "Be brief." }, { role: "user", content: "Make the brief" }, { role: "assistant", content: null, tool_calls: [{ id: "call_0", type: "function", function: { name: "news_list", arguments: "{}" } }] }, { role: "tool", tool_call_id: "call_0", content: "[]" }],
+      tools: [{ type: "function", function: { name: "mail_create_draft", description: "Draft", parameters: { type: "object", properties: { subject: { type: "string" } } } } }],
+    }) });
     const wrongModel = await fetch(`${proxy.baseUrl}/chat/completions`, { method: "POST", headers: auth, body: JSON.stringify({ model: "gpt-4.1", messages: [] }) });
     if (!allow) {
       assert.equal(chat.status, 400);
@@ -343,16 +350,25 @@ test("Automation runner Chat Completions is opt-in, pinned to the same model and
       continue;
     }
     assert.equal(models.status, 200);
-    assert.equal(((await models.json()) as { data: { id: string }[] }).data[0]?.id, profile.model);
-    assert.equal(chat.status, 200);
     assert.equal(wrongModel.status, 400);
+    assert.equal(chat.status, 200);
+    const stream = await chat.text();
+    assert.match(stream, /"tool_calls":\[\{"index":0,"id":"call_1","type":"function","function":\{"name":"mail_create_draft"/);
+    assert.match(stream, /"finish_reason":"tool_calls"/);
+    assert.match(stream, /data: \[DONE\]/);
     assert.equal(forwarded.length, 1);
-    assert.equal(forwarded[0]?.url, "https://api.openai.com/v1/chat/completions");
-    assert.equal(forwarded[0]?.body.service_tier, undefined);
-    assert.equal(typeof forwarded[0]?.body.max_completion_tokens, "number");
-    assert.equal(forwarded[0]?.body.max_tokens, undefined);
+    const upstream = forwarded[0]!;
+    assert.equal(upstream.url, "https://api.openai.com/v1/responses");
+    assert.equal(upstream.body.model, profile.model);
+    assert.equal(upstream.body.instructions, "Be brief.");
+    assert.equal(upstream.body.store, false);
+    assert.equal(upstream.body.service_tier, undefined);
+    assert.equal(upstream.body.max_output_tokens, 512);
+    assert.deepEqual((upstream.body.input as Record<string, unknown>[]).map((item) => item.type ?? item.role), ["user", "function_call", "function_call_output"]);
+    assert.deepEqual((upstream.body.tools as Record<string, unknown>[])[0], { type: "function", name: "mail_create_draft", description: "Draft", parameters: { type: "object", properties: { subject: { type: "string" } } }, strict: false });
     const witness = proxy.witnesses.find((entry) => entry.status === "completed");
     assert.equal(witness?.variantEvidence, "automation-runner-chat-completions");
-    assert.equal(witness?.route, "https://api.openai.com/v1/chat/completions");
+    assert.equal(witness?.inputTokens, 30);
+    assert.match(String(witness?.route), /\/responses \(translated for Automation runner\)$/);
   }
 });

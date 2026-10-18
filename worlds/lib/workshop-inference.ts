@@ -160,6 +160,8 @@ export interface WorkshopInferenceWitness {
   estimatedUsd: number | null;
   /** Cost reported by the upstream usage payload, not independently reconciled against an invoice. */
   reportedCostUsd: number | null;
+  /** Upstream error classification only (type/code/param and a short message), never request content or credentials. */
+  upstreamError?: { type: string | null; code: string | null; param: string | null; message: string | null };
   /** A request body proves priority was requested, not which UI variant produced it. */
   variantEvidence: "priority-request-body" | "not-fast" | "automation-runner-chat-completions";
 }
@@ -177,6 +179,59 @@ export interface WorkshopInferenceProxyOptions {
   upstreamFetch?: typeof fetch;
   /** Also accept OpenAI Chat Completions from the local Automation runner (same pinned model and upstream). */
   allowRunnerChatCompletions?: boolean;
+}
+
+type ChatMessage = { role?: unknown; content?: unknown; tool_calls?: unknown; tool_call_id?: unknown };
+function chatText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((part) => record(part) && typeof part.text === "string" ? part.text : "").join("");
+  return "";
+}
+/** Chat Completions request → Responses request (stateless, store=false). */
+export function chatToResponses(body: Record<string, unknown>, maxOutputTokens: number) {
+  const instructions: string[] = [];
+  const input: unknown[] = [];
+  for (const message of (Array.isArray(body.messages) ? body.messages : []) as ChatMessage[]) {
+    const role = String(message.role ?? "");
+    if (role === "system" || role === "developer") { instructions.push(chatText(message.content)); continue; }
+    if (role === "user") { input.push({ role: "user", content: [{ type: "input_text", text: chatText(message.content) }] }); continue; }
+    if (role === "assistant") {
+      const text = chatText(message.content);
+      if (text) input.push({ role: "assistant", content: [{ type: "output_text", text }] });
+      for (const call of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
+        if (!record(call) || !record(call.function)) continue;
+        input.push({ type: "function_call", call_id: String(call.id), name: String(call.function.name), arguments: typeof call.function.arguments === "string" ? call.function.arguments : JSON.stringify(call.function.arguments ?? {}) });
+      }
+      continue;
+    }
+    if (role === "tool") input.push({ type: "function_call_output", call_id: String(message.tool_call_id), output: chatText(message.content) });
+  }
+  const tools = (Array.isArray(body.tools) ? body.tools : []).flatMap((tool) => record(tool) && record(tool.function)
+    ? [{ type: "function", name: tool.function.name, description: tool.function.description ?? "", parameters: tool.function.parameters ?? { type: "object", properties: {} }, strict: false }] : []);
+  return { model: body.model, input, ...(instructions.length ? { instructions: instructions.join("\n\n") } : {}), ...(tools.length ? { tools } : {}), max_output_tokens: maxOutputTokens, store: false, stream: false,
+    ...(typeof body.reasoning_effort === "string" ? { reasoning: { effort: body.reasoning_effort } } : {}) };
+}
+/** Responses result → Chat Completions completion and equivalent stream chunks. */
+export function responsesToChat(result: Record<string, unknown>, model: string) {
+  let text = "";
+  const calls: { id: string; type: "function"; function: { name: string; arguments: string } }[] = [];
+  for (const item of Array.isArray(result.output) ? result.output : []) {
+    if (!record(item)) continue;
+    if (item.type === "message" && Array.isArray(item.content)) for (const part of item.content) if (record(part) && typeof part.text === "string") text += part.text;
+    if (item.type === "function_call") calls.push({ id: String(item.call_id ?? item.id), type: "function", function: { name: String(item.name), arguments: typeof item.arguments === "string" ? item.arguments : "{}" } });
+  }
+  const incomplete = result.status === "incomplete";
+  const finishReason = calls.length ? "tool_calls" : incomplete ? "length" : "stop";
+  const usageIn = record(result.usage) ? result.usage : {};
+  const usage = { prompt_tokens: Number(usageIn.input_tokens ?? 0), completion_tokens: Number(usageIn.output_tokens ?? 0), total_tokens: Number(usageIn.input_tokens ?? 0) + Number(usageIn.output_tokens ?? 0) };
+  const id = `chatcmpl-${String(result.id ?? "workshop").slice(0, 40)}`; const created = Math.floor(Date.now() / 1000);
+  const completion = { id, object: "chat.completion", created, model, choices: [{ index: 0, finish_reason: finishReason, message: { role: "assistant", content: text || null, ...(calls.length ? { tool_calls: calls } : {}) } }], usage };
+  const chunks = [
+    { id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta: { role: "assistant", content: text || "", ...(calls.length ? { tool_calls: calls.map((call, index) => ({ index, ...call })) } : {}) }, finish_reason: null }] },
+    { id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta: {}, finish_reason: finishReason }] },
+    { id, object: "chat.completion.chunk", created, model, choices: [], usage },
+  ];
+  return { completion, chunks, finishReason: finishReason as "stop" | "tool_calls" | "length" };
 }
 
 /** Real paid upstream, but no paid key is ever put in provider config or a child environment.
@@ -354,6 +409,54 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
           if (typeof details.reasoning_tokens === "number") witness.reasoningTokens = details.reasoning_tokens;
         }
       }
+      // The Automation runner speaks Chat Completions, but this model only takes function tools on /responses.
+      // Like OpenWork's inference gateway, translate the request and answer formats; model and content unchanged.
+      if (runnerChat && profile.route === "/responses") {
+        try {
+          const translated = chatToResponses(body, allowance);
+          witness.route = `${profile.upstream}/responses (translated for Automation runner)`;
+          const upstreamResponse = await transport(`${profile.upstream}/responses`, {
+            method: "POST", redirect: "error", signal: controller.signal,
+            headers: { authorization: `Bearer ${paidKey}`, "content-type": "application/json" }, body: JSON.stringify(translated),
+          });
+          witness.httpStatus = upstreamResponse.status;
+          const raw = await upstreamResponse.text();
+          let parsed: unknown = null; try { parsed = JSON.parse(raw); } catch { /* handled below */ }
+          if (!upstreamResponse.ok || !record(parsed)) {
+            witness.status = "upstream-error";
+            const error = record(parsed) && record(parsed.error) ? parsed.error : {};
+            const text = (value: unknown) => typeof value === "string" ? value.replaceAll(paidKey, "[key]").slice(0, 200) : null;
+            witness.upstreamError = { type: text(error.type), code: text(error.code), param: text(error.param), message: text(error.message) };
+            response.writeHead(502, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: `Workshop upstream HTTP ${upstreamResponse.status}; private response omitted` } }));
+            return;
+          }
+          observe(parsed, false);
+          const chat = responsesToChat(parsed, profile.model);
+          witness.status = parsed.status === "completed" ? "completed" : "interrupted";
+          witness.finishReason = chat.finishReason;
+          if (body.stream === true) {
+            response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+            for (const chunk of chat.chunks) response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+            response.end("data: [DONE]\n\n");
+            witness.terminalEvent = "[DONE]";
+          } else {
+            response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" }).end(JSON.stringify(chat.completion));
+          }
+        } catch {
+          witness.status = "interrupted";
+          if (!response.headersSent) response.writeHead(502, { "content-type": "application/json" }).end('{"error":{"message":"Workshop upstream interrupted; private details omitted"}}');
+          else response.destroy();
+        } finally {
+          clearTimeout(timer); response.off("close", disconnected); controllers.delete(witness.sequence); active--;
+          if (witness.outputTokens !== null) outputReserved -= Math.max(0, allowance - witness.outputTokens);
+          witness.elapsedMs = Date.now() - requestStart;
+          if (witness.inputTokens !== null && witness.outputTokens !== null) {
+            witness.estimatedUsd = (witness.inputTokens * 4 + witness.outputTokens * 20) / 1_000_000;
+            witness.costStatus = "estimated-not-billed";
+          }
+        }
+        return;
+      }
       try {
         upstream = await transport(`${profile.upstream}${route}`, {
           method: "POST", redirect: "error", signal: controller.signal,
@@ -362,8 +465,14 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
         witness.httpStatus = upstream.status;
         if (!upstream.ok || !upstream.body) {
           witness.status = "upstream-error";
-          // Never relay upstream error bodies: they can echo credentials or prompt data.
-          await upstream.body?.cancel();
+          // Never relay upstream error bodies: they can echo credentials or prompt data. Keep only the classification.
+          try {
+            const raw = (await upstream.text()).slice(0, 8192);
+            const parsed: unknown = JSON.parse(raw);
+            const error = record(parsed) && record(parsed.error) ? parsed.error : {};
+            const text = (value: unknown) => typeof value === "string" ? value.replaceAll(paidKey, "[key]").slice(0, 200) : null;
+            witness.upstreamError = { type: text(error.type), code: text(error.code), param: text(error.param), message: text(error.message) };
+          } catch { witness.upstreamError = { type: null, code: null, param: null, message: null }; }
           response.writeHead(502, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: `Workshop upstream HTTP ${upstream.status}; private response omitted` } }));
           return;
         }

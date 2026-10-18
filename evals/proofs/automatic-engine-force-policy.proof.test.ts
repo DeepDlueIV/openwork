@@ -1,11 +1,56 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { automaticEngineForcePolicy, retainedHistoryText, newV2HistoryText, newV2Prompt } from "../worlds/automatic-engine-force-policy.ts";
+import { automaticEngineForcePolicy, failedEngineForcePolicy, retainedHistoryText, newV2HistoryText, newV2Prompt, continuedWorkPrompt, continuedWorkText } from "../worlds/automatic-engine-force-policy.ts";
 
 const test = spec.world(automaticEngineForcePolicy, {
   timeout: 240_000,
   resources: { surfaces: ["appWeb"], services: ["mock"] },
   needs: { commands: ["bun", "opencode"] },
+});
+const failure = spec.world(failedEngineForcePolicy, {
+  timeout: 180_000,
+  resources: { surfaces: ["appWeb"], services: ["mock"] },
+  needs: { commands: ["bun", "opencode"] },
+});
+
+failure("a member keeps using the original chat after an automatic upgrade fails", async ({ world, user, probe, step, evidence }) => {
+  let retryAt: number | undefined;
+  await step("before: an unavailable new engine leaves the existing note readable on v1", async () => {
+    await world.setOrganizationPolicy(true);
+    const status = await probe.eventually(() => world.status(), {
+      within: 20_000, label: "the host retains a failed upgrade receipt", until: value => value.migration.state === "error",
+    });
+    expect(status.chatRouting).toBe(false);
+    expect(status.automaticRetryAt).toBeGreaterThan(Date.now());
+    retryAt = status.automaticRetryAt;
+    await user.reload();
+    await user.see({ text: retainedHistoryText });
+    expect(await world.messages()).toContain(retainedHistoryText);
+    evidence.recordAssertionEvidence("A real failed engine start keeps the original chat selected", JSON.stringify(status), status.migration.state === "error" && !status.chatRouting);
+    await user.screenshot();
+  });
+  await step("after: the member sends and reads a new reply on the current engine", async () => {
+    await user.type("composer", continuedWorkPrompt);
+    await user.press("ENTER");
+    await user.see({ text: continuedWorkText }, { timeoutMs: 60_000 });
+    const messages = await world.messages();
+    expect(messages).toContain(continuedWorkText);
+    const status = await world.status();
+    expect(status.chatRouting).toBe(false);
+    evidence.recordAssertionEvidence("The selected original engine persists new work while the upgrade is paused", messages.slice(-500), !status.chatRouting && messages.includes(continuedWorkText));
+    await user.screenshot();
+  });
+  await step("reloading and refreshing policy keep the failure without a duplicate attempt", async () => {
+    await world.setOrganizationPolicy(true);
+    await user.reload();
+    await user.see({ text: retainedHistoryText });
+    await user.see({ text: continuedWorkText });
+    const status = await world.status();
+    expect(status.automaticRetryAt).toBe(retryAt);
+    expect(status.migration.state).toBe("error");
+    evidence.recordAssertionEvidence("The same durable failure and cooldown survive continued use", JSON.stringify(status), !status.chatRouting && status.migration.state === "error" && status.automaticRetryAt === retryAt);
+    await user.screenshot();
+  });
 });
 
 test("a member keeps reading the same chat when automatic engine policy turns on and off", async ({ world, user, probe, step, evidence }) => {

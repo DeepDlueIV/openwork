@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Seed } from "@openwork/env";
 import { configureProvider } from "./chat.ts";
+import { browserScript } from "@openwork/cdp";
 
 export const newV2HistoryText = "This reply was written only after switching to OpenCode v2.";
 export const newV2Prompt = "Add the new engine checkpoint to this project note.";
+export const continuedWorkPrompt = "Continue the project note on the current engine.";
+export const continuedWorkText = "The original engine still handles this work.";
 export const retainedHistoryText = "Keep this project note readable when the organization changes its engine policy.";
 
 interface EngineStatus {
@@ -12,18 +15,31 @@ interface EngineStatus {
   chatRouting: boolean;
   running: boolean;
   version?: string;
+  automaticRetryAt?: number;
   migration: { state: string; imported: number; total: number; backupPath?: string };
 }
 
+export async function failedEngineForcePolicy(seed: Seed) {
+  return engineForcePolicyWorld(seed, { unavailableV2: true });
+}
+
 export async function automaticEngineForcePolicy(seed: Seed) {
+  return engineForcePolicyWorld(seed);
+}
+
+async function engineForcePolicyWorld(seed: Seed, options: { unavailableV2?: boolean } = {}) {
   const token = randomUUID();
   const hostToken = randomUUID();
   const app = await seed.appWeb({
     name: "automatic-engine-force-policy",
     workspacePath: seed.tmpPath("automatic-engine-force-policy"),
     engine: "v1",
-    mocks: { agent: seed.mock({ isolatedProcessEnv: true, agentWorkloads: [{ promptMarker: newV2Prompt, finalReply: newV2HistoryText, steps: [] }] }) },
+    mocks: { agent: seed.mock({ isolatedProcessEnv: true, agentWorkloads: [
+      { promptMarker: newV2Prompt, finalReply: newV2HistoryText, steps: [] },
+      { promptMarker: continuedWorkPrompt, finalReply: continuedWorkText, steps: [] },
+    ] }) },
     env: {
+      ...(options.unavailableV2 ? { OPENWORK_OPENCODE2_BIN: "/unavailable-fixture-engine/opencode2" } : {}),
       OPENWORK_TOKEN: token,
       OPENWORK_HOST_TOKEN: hostToken,
       OPENWORK_ENGINE_V2_PREVIEW: "",
@@ -40,18 +56,18 @@ export async function automaticEngineForcePolicy(seed: Seed) {
       options: { baseURL: `${model.url}/v1`, apiKey: "sk-local-history" }, models: { "history-model": { name: "History model" } } } },
   }, "v1");
   const session = await seed.session(app, { title: "A project note that survives engine policy changes" });
-  async function request(path: string, init: RequestInit = {}) {
-    const response = await fetch(`${app.openworkUrl}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "x-openwork-host-token": hostToken,
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
-    });
-    if (!response.ok) throw new Error(`${init.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`);
-    return response;
+  async function request(path: string, init: { method?: string; body?: string } = {}) {
+    // App-web's host URL is sandbox-loopback on remote placements. Use the
+    // browser's network, not the runner's localhost. This escape hatch calls
+    // shipping authenticated HTTP APIs only; it never reads/writes UI state.
+    const result = await seed.evalIn(app, browserScript(async (url, token, hostToken, init) => {
+      const response = await fetch(url, { ...init, headers: {
+        Authorization: `Bearer ${token}`, "x-openwork-host-token": hostToken, "Content-Type": "application/json",
+      } });
+      return { status: response.status, text: await response.text() };
+    }, [`${app.openworkUrl}${path}`, token, hostToken, init]), { awaitPromise: true, timeoutMs: 30_000 });
+    if (result.status < 200 || result.status >= 300) throw new Error(`${init.method ?? "GET"} ${path}: ${result.status} ${result.text}`);
+    return new Response(result.status === 204 ? null : result.text, { status: result.status });
   }
   const sessionPath = `/workspace/${workspace.workspaceId}/opencode/session/${session.sessionId}`;
   // The real v1 prompt API supports noReply: arrange persisted user history

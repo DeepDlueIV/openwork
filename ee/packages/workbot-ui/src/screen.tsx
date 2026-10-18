@@ -167,7 +167,7 @@ function ChatScreen({ host, navigation, onDraftsChange }: { host: WorkbotHost; n
   const activityFresh = !thread.isError && !stream.reconnecting;
   const recovery = <>
     {data && !activityFresh ? <ConnectionStatus verifiedAt={thread.dataUpdatedAt} onRefresh={() => void thread.refetch()} /> : null}
-    {stop.isError ? <ErrorLine action={{ label: "Try stopping again", onClick: () => stop.mutate() }}>Couldn't confirm that Workbot stopped. It may still be working.</ErrorLine> : null}
+    {stop.isError && (data?.status === "busy" || pending.some(entry => !entry.failed)) ? <ErrorLine action={{ label: "Try stopping again", onClick: () => stop.mutate() }}>Couldn't confirm that Workbot stopped. It may still be working.</ErrorLine> : null}
   </>;
   const filesEnabled = data?.filesEnabled ?? false;
   const addFiles = uploads.add;
@@ -1516,7 +1516,7 @@ function TaskCard({ task, onRetry, canRetry = true }: { task: WorkbotTask; onRet
         ) : null
       }
     />
-    {stop.isError ? <ErrorLine action={{ label: "Try stopping again", onClick: () => stop.mutate(task.id) }}>Couldn't confirm this task stopped. It may still be working.</ErrorLine> : null}</>
+    {stop.isError && open ? <ErrorLine action={{ label: "Try stopping again", onClick: () => stop.mutate(task.id) }}>Couldn't confirm this task stopped. It may still be working.</ErrorLine> : null}</>
   );
 }
 

@@ -71,7 +71,7 @@ export function CredentialPromptCards({ part }: { part: DynamicToolUIPart }) {
   const fulfilled = (key: string, saved: boolean) => {
     const current = progress.current
     // A completion from a previous account must not resume the new account's task.
-    if (current.scope !== scope) return
+    if (current.scope !== scope || !current.required.has(key)) return
     current.ready.add(key)
     current.requested ||= saved
     if (!current.requested || current.resumed || ![...current.required].every((target) => current.ready.has(target))) return

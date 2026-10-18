@@ -20,7 +20,10 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }) {
       response.setHeader("content-type", "text/html");
       const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
       const fields = [...url.searchParams].map(([name, value]) => `<input type="hidden" name="${escape(name)}" value="${escape(value)}">`).join("");
-      response.end(`<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local provider consent</title><body style="font:16px system-ui;padding:32px"><h1>Connect your account</h1><p>Allow OpenWork to read your Drive files.</p><form action="/consent">${fields}<button name="outcome" value="approve">Approve access</button> <button name="outcome" value="deny">Decline access</button> <button name="outcome" value="partial">Grant incomplete access</button> <button name="outcome" value="expired">Use expired consent</button></form></body></html>`);
+      const standalone = new URL(url.pathname + url.search, provider.url);
+      standalone.searchParams.set("presentation", "standalone");
+      // Real browser navigation with noopener models a provider that severs the opener. The callback itself is not mocked.
+      response.end(`<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local provider consent</title><body style="font:16px system-ui;padding:32px"><h1>Connect your account</h1><p>Allow OpenWork to read your Drive files.</p><form action="/consent">${fields}<button name="outcome" value="approve">Approve access</button> <button name="outcome" value="deny">Decline access</button> <button name="outcome" value="partial">Grant incomplete access</button> <button name="outcome" value="expired">Use expired consent</button></form><p><a href="${escape(standalone.toString())}" target="_blank" rel="noopener">Continue in a separate tab</a></p></body></html>`);
       return;
     }
     if (url.pathname === "/consent") {
@@ -92,9 +95,9 @@ export async function workbotConnect(_seed: Seed, { place }: { place: Place }) {
       starts: () => starts, exchanges: () => exchanges,
       async ready() { const result = await currentDen.request(token, "GET", "/v1/workbot/connections"); return list(field(result.body, "connections")).some(connection => connection.ready === true); },
       // Attach only to the real provider window opened by the user's click. No page state is read or written.
-      async consent(): Promise<Surface> {
+      async consent(standalone = false): Promise<Surface> {
         const targets = await listTargets(web.handle.cdpUrl);
-        const target = targets.find(target => target.type === "page" && target.url.startsWith(`${provider.url}/authorize`));
+        const target = targets.find(target => target.type === "page" && target.url.startsWith(`${provider.url}/authorize`) && (new URL(target.url).searchParams.get("presentation") === "standalone") === standalone);
         if (!target) throw new Error("The provider consent window did not open");
         const client = await connect(debuggerUrlFor(web.handle.cdpUrl, target));
         await client.send("Page.enable");

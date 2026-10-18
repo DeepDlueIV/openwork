@@ -55,6 +55,45 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     evidence.recordAssertionEvidence("The real readiness read rejects the partial grant", `ready=${await world.ready()}; token exchanges=${world.exchanges()}`, !await world.ready() && world.exchanges() === 2);
     await user.screenshot();
   });
+  await step("a partial grant without an opener shows a safe Workbot retry instead of provider prose", async () => {
+    await user.click({ role: "button", label: "Connect Google Drive" });
+    const consent = await probe.eventually(() => world.consent(), { within: 10_000, label: "the provider opens consent", until: value => Boolean(value) });
+    await user.on(consent).click({ role: "link", label: "Continue in a separate tab" });
+    const standalone = await probe.eventually(() => world.consent(true), { within: 10_000, label: "provider consent opens without an opener", until: value => Boolean(value) });
+    await user.on(standalone).resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+    await user.on(standalone).click({ role: "button", label: "Grant incomplete access" });
+    await user.on(standalone).see({ role: "heading", label: "Connection not verified" });
+    await user.on(standalone).see({ text: "Try Connect again in Workbot. If it still fails, ask an admin to review this app's permissions." });
+    await user.on(standalone).notSee({ text: "https://www.googleapis.com/auth" });
+    await user.on(standalone).screenshot();
+    await user.on(standalone).click({ role: "link", label: "Return to Workbot" });
+    await user.on(standalone).see({ role: "button", label: "Connect Google Drive" });
+    expect(await world.ready()).toBe(false);
+    evidence.recordAssertionEvidence("The actual partial-grant callback gives safe recovery and never unlocks Drive", `ready=${await world.ready()}; URL=${await probe.on(standalone).url()}`, !await world.ready());
+    await user.on(standalone).screenshot();
+    await user.click({ role: "button", label: "Cancel" });
+  });
+  await step("a callback without an opener reports sign-in and returns to the same Documents view", async () => {
+    await user.click({ role: "button", label: "Connect Google Drive" });
+    const consent = await probe.eventually(() => world.consent(), { within: 10_000, label: "the provider opens consent", until: value => Boolean(value) });
+    await user.on(consent).click({ role: "link", label: "Continue in a separate tab" });
+    const standalone = await probe.eventually(() => world.consent(true), { within: 10_000, label: "provider consent opens without an opener", until: value => Boolean(value) });
+    await user.on(standalone).resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+    await user.on(standalone).click({ role: "button", label: "Approve access" });
+    await user.on(standalone).see({ role: "heading", label: "Signed in to Google Workspace" });
+    await user.on(standalone).see({ text: "Return to Workbot to verify the connection." });
+    await user.on(standalone).notSee({ text: "You're connected" });
+    await user.on(standalone).notSee({ text: "You can close this window and return to OpenWork." });
+    await user.on(standalone).screenshot();
+    await user.on(standalone).click({ role: "link", label: "Return to Workbot" });
+    await user.on(standalone).see({ role: "button", label: /^Project brief\.txt$/, nth: 0 });
+    const returned = await probe.on(standalone).url();
+    expect(returned).toBe(`${world.url}documents`);
+    evidence.recordAssertionEvidence("The real callback uses Workbot wording and an explicit same-tab return", `Returned to ${returned}; ready=${await world.ready()}; starts=${world.starts()}`, returned === `${world.url}documents` && await world.ready());
+    await user.on(standalone).screenshot();
+    // The original consent window was intentionally left open; cancelling it must not revoke the verified grant.
+    await user.click({ role: "button", label: "Cancel" });
+  });
   await step("after: reconnecting with full access opens the real Drive list in place", async () => {
     await user.click({ role: "button", label: "Connect Google Drive" });
     const consent = await probe.eventually(() => world.consent(), { within: 10_000, label: "the member reconnects the same account", until: value => Boolean(value) });
@@ -63,7 +102,7 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     await user.notSee({ role: "button", label: "Connect Google Drive" });
     expect(await probe.url()).toContain("/documents");
     expect(await world.ready()).toBe(true);
-    evidence.recordAssertionEvidence("Connected is confirmed by Den, without leaving Documents", `ready=${await world.ready()}; starts=${world.starts()}; token exchanges=${world.exchanges()}; URL=${await probe.url()}`, await world.ready() && world.starts() === 5 && world.exchanges() === 3);
+    evidence.recordAssertionEvidence("Connected is confirmed by Den, without leaving Documents", `ready=${await world.ready()}; starts=${world.starts()}; token exchanges=${world.exchanges()}; URL=${await probe.url()}`, await world.ready() && world.starts() === 7 && world.exchanges() === 5);
     await user.screenshot();
   });
   await step("Welcome reports the same account as Connected only after the verified grant", async () => {
@@ -72,7 +111,7 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     await user.click({ role: "button", label: "Get started" });
     await user.see({ text: "You're all connected" });
     await user.see({ text: /^Connected$/ });
-    evidence.recordAssertionEvidence("Welcome uses the verified connection rather than the popup result", `ready=${await world.ready()}; starts=${world.starts()}`, await world.ready() && world.starts() === 5);
+    evidence.recordAssertionEvidence("Welcome uses the verified connection rather than the popup result", `ready=${await world.ready()}; starts=${world.starts()}`, await world.ready() && world.starts() === 7);
     await user.screenshot();
   });
 });

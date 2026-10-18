@@ -18,6 +18,11 @@ PKCE, issuer, and credential-persistence validation remains in place. A callback
 may finish after the flag is killed, but no new inline flow can start. Changing
 the configured origin prevents a previously signed return from being used.
 
+The signed Workbot completion page reports sign-in, not a ready connection,
+and offers a return to the original Workbot view for verification. Its failure
+copy gives a safe retry/admin action without rendering provider error prose.
+Ordinary non-Workbot completion pages keep their existing behavior.
+
 Completion sends only a finite outcome, attempt ID, and connection ID to the
 exact Workbot origin. Workbot accepts it only from the window it opened, at the
 expected callback origin, for its current attempt. A message never marks an

@@ -87,6 +87,7 @@ import {
   isCloudProviderOutOfSync,
   isGatewayModelReady,
   isGatewaySetConnected,
+  gatewayConnectProviderKey,
   GatewayModelVerificationError,
   type GatewayConnectProvider,
   resolveCloudProviderCredentials,
@@ -2406,6 +2407,14 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
         && allowed(candidate));
       if (!candidates.length) return false;
       if (!candidates.some((candidate) => present(catalog, candidate))) throw new GatewayModelVerificationError();
+      // A live owner does not republish legacy skipped-provider metadata. Retire
+      // only this freshly verified authorization row, or reselecting the now
+      // usable native model would ask the member to log in again.
+      const key = gatewayConnectProviderKey(provider);
+      mutateState((current) => !current.cloudProviderServerSync?.skippedProviders[key] ? current : {
+        ...current, cloudProviderServerSync: { ...current.cloudProviderServerSync,
+          skippedProviders: Object.fromEntries(Object.entries(current.cloudProviderServerSync.skippedProviders).filter(([id]) => id !== key)) },
+      });
       return true;
     }
     // Legacy imports prove authorization, not that a cached native catalog is

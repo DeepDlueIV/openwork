@@ -62,6 +62,10 @@ for (const worldFactory of [serverOwnedModelSignIn, liveOwnedModelSignIn]) {
       await user.click("Change model");
       const checked = await probe.dom(`${world.row(world.targetModel)}[data-checked="true"]`);
       expect(checked.elements).toHaveLength(1);
+      expect(checked.elements[0]?.text).not.toContain("Sign-in required");
+      // Reselecting the verified native option must not reopen stale Login.
+      await user.click({ testId: `model-option-${world.targetModel.providerID}-${world.targetModel.modelID}` });
+      await user.notSee({ role: "heading", label: "Log in to this provider to use the models" });
       expect(await world.memberAuthorizationReady()).toBe(true); expect(await world.nativeHasRequestedModel()).toBe(true);
       const witness = world.witness(); expect(witness.oauthStarts).toBe(1); expect(witness.tokenExchanges).toBe(1);
       const other = await probe.api(world.other, "/v1/inference-providers?scope=usable", { headers: { "x-openwork-org-id": world.organizationId } });

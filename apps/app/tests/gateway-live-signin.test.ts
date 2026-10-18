@@ -24,22 +24,25 @@ const provider = { cloudProviderId: "ipr_fixture", providerId: "ipr_fixture", cr
 const alias = { id: model.modelID, name: "Model", config: { id: model.modelID }, upstreamModelId: "catalog", modelGroupId: "group",
   modelGroupName: "Group", credentialSetId: "gcs_set", credentialSetName: "Set" };
 
-for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-native", "failed-auth", "changed-account", "aborted", "legacy-ready", "legacy-reloading", "provider-ready", "legacy-provider-ready", "legacy-provider-reloading", "legacy-fresh-failed", "legacy-provider-empty"] ) {
+for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-native", "failed-auth", "changed-account", "aborted", "legacy-ready", "legacy-reloading", "provider-ready", "legacy-provider-ready", "legacy-provider-reloading", "legacy-fresh-failed", "legacy-provider-empty", "live-stale-row-ready"] ) {
   test(`live sign-in confirms only fresh authorization and the requested native identity: ${scenario}`, async () => {
     const requests: string[] = [];
     const controller = new AbortController();
     let faultActive = true;
     let oauthStarts = 0;
+    let nativeLive = !scenario.startsWith("legacy") && scenario !== "live-stale-row-ready";
+    let liveStartRequestIndex = 0;
     const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init);
       const path = new URL(request.url).pathname.replace(/^\/api\/den/, "");
       requests.push(`${request.method} ${path}`);
       if (path === "/den-session") return Response.json({ ok: true });
-      if (path === "/experimental/engine-v2-preview/status") return Response.json({ enabled: true, running: true, chatRouting: true, liveProviderSync: !scenario.startsWith("legacy"),
+      if (path === "/experimental/engine-v2-preview/status") return Response.json({ enabled: true, running: true, chatRouting: true, liveProviderSync: nativeLive,
         mirroredProviderIds: [], skippedProviderIds: [], catalogModelIds: [] });
       if (path === "/cloud-provider-sync/run") return Response.json({ status: "applied" });
       if (path === "/cloud-provider-sync/status") return Response.json({ hasSession: true,
-        reloadPending: scenario.endsWith("reloading"), skippedProviders: [],
+        reloadPending: scenario.endsWith("reloading"), skippedProviders: scenario === "live-stale-row-ready"
+          ? [provider, { ...provider, credentialSetId: "gcs_other" }].map(entry => ({ ...entry, reason: "member_auth_required" })) : [],
         providers: [{ cloudProviderId: provider.cloudProviderId, providerId: provider.providerId, sourceProviderId: "openai", name: "Provider", modelIds: [model.modelID] }] });
       if (path === "/v1/llm-providers") return Response.json({ llmProviders: [] });
       if (path === "/v1/inference-providers") {
@@ -73,6 +76,12 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
       markOpencodeConfigReloadRequired: () => {},
     });
     try {
+      if (scenario === "live-stale-row-ready") {
+        await store.runCloudProviderSync("manual");
+        expect(Object.keys(store.getSnapshot().cloudProviderServerSync?.skippedProviders ?? {})).toHaveLength(2);
+        nativeLive = true;
+        liveStartRequestIndex = requests.length;
+      }
       if (scenario === "legacy-fresh-failed") {
         faultActive = false;
         expect(await store.refreshProviders({ force: true })).not.toBeNull();
@@ -103,10 +112,16 @@ for (const scenario of ["ready", "locked", "wrong-model", "wrong-set", "stale-na
         expect(requests).toContain("GET /cloud-provider-sync/status");
       } else {
         expect(requests).toContain("GET /v1/inference-providers");
-        expect(requests.some((request) => request.includes("/cloud-provider-sync/run"))).toBe(false);
-        // Live completion does not depend on materialized imports or legacy usage verification.
-        expect(store.getSnapshot().gatewayUsageProviderScope).toBeNull();
-        expect(store.getSnapshot().importedCloudProviders).toEqual({});
+        expect(requests.slice(liveStartRequestIndex).some((request) => request.includes("/cloud-provider-sync/run"))).toBe(false);
+        if (scenario === "live-stale-row-ready") {
+          const skipped = store.getSnapshot().cloudProviderServerSync?.skippedProviders ?? {};
+          expect(skipped[`${provider.cloudProviderId}:${provider.credentialSetId}`]).toBeUndefined();
+          expect(skipped[`${provider.cloudProviderId}:gcs_other`]).toBeDefined();
+        } else {
+          // Live completion does not depend on materialized imports or legacy usage verification.
+          expect(store.getSnapshot().gatewayUsageProviderScope).toBeNull();
+          expect(store.getSnapshot().importedCloudProviders).toEqual({});
+        }
       }
     } finally {
       store.dispose(); fetch.mockRestore();

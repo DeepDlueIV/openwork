@@ -90,7 +90,8 @@ async function nativeModelSignIn(seed: Seed, live: boolean) {
   const host = async (path: string, method = "GET", body?: unknown) => {
     const response = await fetch(`${app.openworkUrl}${path}`, { method, headers: { authorization: `Bearer ${manifest.token}`, "x-openwork-host-token": manifest.hostToken,
       ...(body === undefined ? {} : { "content-type": "application/json" }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(60_000) });
-    const value: unknown = await response.json();
+    const payload = await response.text();
+    const value: unknown = payload ? JSON.parse(payload) : null;
     if (!response.ok) throw new Error(`Real host ${method} ${path}: HTTP ${response.status}`);
     return value;
   };

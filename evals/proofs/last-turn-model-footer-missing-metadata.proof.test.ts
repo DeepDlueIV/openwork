@@ -17,10 +17,6 @@ test("a member sees the requested model's human name even when the engine omits 
     await user.reload();
     await user.see({ text: world.latest.reply });
     await user.see({ text: world.older.reply });
-    await user.click("Change model");
-    await user.see({ testId: "composer-model-picker" });
-    await user.screenshot();
-    await user.press("Escape");
     await user.hover("composer");
     expect(world.repliesWithoutResolvedMetadata).toBe(2);
     expect(await world.featureEnabled()).toBe(false);

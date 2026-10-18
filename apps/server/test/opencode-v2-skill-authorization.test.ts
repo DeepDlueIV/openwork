@@ -14,7 +14,7 @@ test("native authorization is token-scoped, loadable-snapshot-bound, and off wit
   let entries: unknown[] = [listed];
   const evaluations: Array<{ sessionID: string; ids: string[] }> = [];
   const bridge = await createV2ContextBridge(async path => {
-    assert.equal(path, "/experimental/connect/skills");
+    assert.equal(path, "/experimental/connect/skills?fresh=true");
     return { skills: entries, ...(native ? { delivery: "native" } : {}) };
   }, async (sessionID, ids) => {
     evaluations.push({ sessionID, ids });

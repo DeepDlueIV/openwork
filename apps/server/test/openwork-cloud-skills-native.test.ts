@@ -68,7 +68,7 @@ test("native instructions are immutable authorized snapshots, not warm registry 
     return new Response(`data: ${JSON.stringify({ id: "skill-fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "Fixture complete" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "skill-fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
   } });
   const bridge = await createV2ContextBridge(async path => {
-    if (path === "/experimental/connect/skills") {
+    if (new URL(path, "http://fixture").pathname === "/experimental/connect/skills") {
       catalogReads++; await catalogHeld.promise;
       return { ...(native ? { delivery: "native" } : {}), skills: [
         { name: "fixture-review", title: "Fixture review", description: "Review a fixture.",

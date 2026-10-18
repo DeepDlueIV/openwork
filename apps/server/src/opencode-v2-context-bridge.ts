@@ -60,7 +60,7 @@ export async function createV2ContextBridge(
       if (call.name === "openwork_skill_authorize") {
         const input = skillAuthorizationSchema.parse(call.input);
         const current = async () => {
-          const listed = loadableCloudSkillSnapshots(await read("/experimental/connect/skills"));
+          const listed = loadableCloudSkillSnapshots(await read("/experimental/connect/skills?fresh=true"));
           return listed !== undefined && input.skills.every(expected => {
             const matches = listed.filter(skill => skill.id === expected.id);
             return matches.length === 1 && sameCloudSkillSnapshot(matches[0], expected);

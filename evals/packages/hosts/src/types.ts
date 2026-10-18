@@ -56,6 +56,11 @@ export interface ChromeSurfaceOptions {
    * (Tailwind v4 `hover:` and `group-hover:` are gated on `(hover: hover)`) never appear.
    */
   mouse?: boolean;
+  /**
+   * Chrome --host-resolver-rules, e.g. "MAP office.acmerobotics.com:80 127.0.0.1:52664": the browser shows and links to a
+   * real-looking address while reaching a local service. Local Chrome only.
+   */
+  hostRules?: string;
 }
 
 /** Blink overrides for a fine, hover-capable primary pointer (ui::HoverType HOVER = 2, ui::PointerType FINE = 4). */

@@ -6,11 +6,12 @@ import { openworkReadTransport, type OpenworkReadTransport } from "./opencode-pl
 import { createV2ReadAdapter, readV2SessionActivity } from "./opencode-v2-read-adapter.js";
 import { isRecord } from "./workspace-kv-store.js";
 import { createV2BrowserBridge } from "./opencode-v2-browser-bridge.js";
+import { cloudSkillSnapshotSchema, loadableCloudSkillSnapshots, sameCloudSkillSnapshot } from "./opencode-plugins/openwork-cloud-skills-v2.js";
 
 const requestSchema = z.object({ name: z.enum(["openwork_context", "openwork_query", "openwork_skills", "openwork_skill_read", "openwork_skill_authorize"]), input: z.unknown() });
 const skillAuthorizationSchema = z.object({
   sessionID: z.string().regex(/^ses_[a-zA-Z0-9]+$/).max(128),
-  ids: z.array(z.string().regex(/^openwork-cloud-[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80)).min(1).max(150),
+  skills: z.array(cloudSkillSnapshotSchema).min(1).max(150),
 }).strict();
 // Advertise only reads this bridge executes. The internal Cloud-attachment
 // authorization operation is not a model tool or a generic command executor.
@@ -58,13 +59,21 @@ export async function createV2ContextBridge(
       // Den's existing default-off nativeCloudSkills rollout owns this path.
       if (call.name === "openwork_skill_authorize") {
         const input = skillAuthorizationSchema.parse(call.input);
-        const catalog = z.object({ delivery: z.literal("native"), skills: z.array(z.object({
-          name: z.string(), modelDiscovery: z.boolean().optional(),
-        })) }).safeParse(await read("/experimental/connect/skills"));
-        if (!catalog.success || !authorizeSkillAttachment) return new Response(null, { status: 403 });
-        const listed = new Set(catalog.data.skills.filter(skill => skill.modelDiscovery === true).map(skill => `openwork-cloud-${skill.name}`));
-        if (input.ids.some(id => !listed.has(id))) return new Response(null, { status: 403 });
-        return Response.json(await authorizeSkillAttachment(input.sessionID, input.ids));
+        const current = async () => {
+          const listed = loadableCloudSkillSnapshots(await read("/experimental/connect/skills"));
+          return listed !== undefined && input.skills.every(expected => {
+            const matches = listed.filter(skill => skill.id === expected.id);
+            return matches.length === 1 && sameCloudSkillSnapshot(matches[0], expected);
+          });
+        };
+        if (!authorizeSkillAttachment || !await current()) return new Response(null, { status: 403 });
+        const permission = z.object({ data: z.object({ effect: z.enum(["allow", "ask", "deny"]) }).passthrough() })
+          .parse(await authorizeSkillAttachment(input.sessionID, input.skills.map(skill => skill.id)));
+        // Permission hooks may await work while another location refreshes the
+        // account catalog. Do not authorize a body that changed or was withheld
+        // during that evaluation, even if the skill's visible name is unchanged.
+        if (!await current()) return new Response(null, { status: 403 });
+        return Response.json({ ...permission, ...(permission.data.effect === "allow" ? { authorized: input.skills } : {}) });
       }
       // Internal plugin read: one listed skill's SKILL.md for native delivery.
       if (call.name === "openwork_skill_read") {

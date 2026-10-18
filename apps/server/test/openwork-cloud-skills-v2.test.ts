@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   discoverySkills, mentionedSkillIds, nativeSkills, registerCloudSkillDiscovery, sha256Digest,
-  type CloudSkillContext,
+  cloudSkillSnapshotSchema, type CloudSkillContext,
 } from "../src/opencode-plugins/openwork-cloud-skills-v2.js";
 import { serve } from "../src/serve-node.js";
 
@@ -32,6 +32,11 @@ function deferred() {
   const promise = new Promise<void>(done => { resolve = done; });
   return { promise, resolve };
 }
+function permission(input: unknown, effect = "allow") {
+  assert.ok(typeof input === "object" && input !== null && "skills" in input && Array.isArray(input.skills));
+  const authorized = input.skills.map(skill => cloudSkillSnapshotSchema.parse(skill));
+  return { data: { effect }, ...(effect === "allow" ? { authorized } : {}) };
+}
 async function harness(respond: (name: string, input: unknown) => unknown | Promise<unknown>) {
   const server = await serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const value: { name: string; input: unknown } = await request.json();
@@ -48,6 +53,7 @@ async function harness(respond: (name: string, input: unknown) => unknown | Prom
   const stop = await registerCloudSkillDiscovery({
     options: { url: `http://127.0.0.1:${server.port}/read`, token: "fixture-token" },
     skill: {
+      async list() { return registered; },
       async transform(callback) { transforms++; transform = callback; replay(); return { async dispose() { registered = []; } }; },
       async reload() { replay(); },
     },
@@ -90,14 +96,15 @@ test("native names use the engine authorization operation, not catalog membershi
     const authorizations: unknown[] = [];
     const app = await harness((name, input) => {
       if (name === "openwork_skills") return { delivery: "native", skills: [fixture] };
-      if (name === "openwork_skill_authorize") { authorizations.push(input); return { data: { effect } }; }
+      if (name === "openwork_skill_authorize") { authorizations.push(input); return permission(input, effect); }
       return { content: fixtureBody };
     });
     try {
       await until(() => app.skills().some(skill => skill.content === fixtureBody));
       if (effect === "allow") assert.deepEqual((await app.prompt("Run fixture-review")).skills, [{ id: "openwork-cloud-fixture-review" }]);
       else await assert.rejects(app.prompt("Run fixture-review"), /Nothing was sent/);
-      assert.deepEqual(authorizations, [{ sessionID: "ses_fixture", ids: ["openwork-cloud-fixture-review"] }]);
+      assert.deepEqual(authorizations, [{ sessionID: "ses_fixture", skills: [{ id: "openwork-cloud-fixture-review",
+        capability: fixture.capability, url: fixture.url, digest: fixture.digest }] }]);
     } finally { await app.close(); }
   }
 });
@@ -126,9 +133,9 @@ test("cold explicit attachments await only their catalog and verified instructio
   const catalogHeld = deferred();
   const bodyHeld = deferred();
   let reads = 0;
-  const app = await harness(async name => {
+  const app = await harness(async (name, input) => {
     if (name === "openwork_skills") { await catalogHeld.promise; return { delivery: "native", skills: [fixture] }; }
-    if (name === "openwork_skill_authorize") return { data: { effect: "allow" } };
+    if (name === "openwork_skill_authorize") return permission(input);
     reads++; await bodyHeld.promise; return { content: fixtureBody };
   });
   try {
@@ -150,8 +157,8 @@ test("cold explicit attachments await only their catalog and verified instructio
 test("setup, denied reads and digest mismatches never count as ready instructions", async () => {
   for (const skill of [fixture, catalog.skills[1], catalog.skills[2]]) {
     assert.ok(skill);
-    const app = await harness(name => name === "openwork_skills" ? { delivery: "native", skills: [skill] }
-      : name === "openwork_skill_authorize" ? { data: { effect: "allow" } } : { content: "unverified" });
+    const app = await harness((name, input) => name === "openwork_skills" ? { delivery: "native", skills: [skill] }
+      : name === "openwork_skill_authorize" ? permission(input) : { content: "unverified" });
     try {
       await until(() => app.skills().length > 0);
       await assert.rejects(app.prompt("Review this", [`openwork-cloud-${skill.name}`]), /instructions are unavailable/);
@@ -190,7 +197,7 @@ test("two bounded reads publish metadata early and prioritize a named selection 
     url: `skill://fixture-${index}/SKILL.md`, digest: sha256Digest(`body-${index}`) }));
   const app = await harness(async (name, input) => {
     if (name === "openwork_skills") return { delivery: "native", skills: entries };
-    if (name === "openwork_skill_authorize") return { data: { effect: "allow" } };
+    if (name === "openwork_skill_authorize") return permission(input);
     assert.ok(typeof input === "object" && input !== null && "url" in input && typeof input.url === "string");
     const index = Number(input.url.match(/fixture-(\d+)/)?.[1]);
     started.push(index); active++; peak = Math.max(peak, active);
@@ -209,6 +216,23 @@ test("two bounded reads publish metadata early and prioritize a named selection 
     assert.equal(peak, 2);
     assert.ok(started.length < 10, "the named prompt does not wait for full hydration");
   } finally { first.resolve(); rest.resolve(); await app.close(); }
+});
+
+test("an allowed snapshot cannot admit a different body substituted into the native registry", async () => {
+  const app = await harness((name, input) => {
+    if (name === "openwork_skills") return { delivery: "native", skills: [fixture] };
+    if (name === "openwork_skill_authorize") {
+      const entry = app.skills().find(skill => skill.id === "openwork-cloud-fixture-review");
+      assert.ok(entry);
+      entry.content = "substituted instructions";
+      return permission(input);
+    }
+    return { content: fixtureBody };
+  });
+  try {
+    await until(() => app.skills().some(skill => skill.content === fixtureBody));
+    await assert.rejects(app.prompt("Run fixture-review"), /instructions are unavailable/);
+  } finally { await app.close(); }
 });
 
 test("disposal cancels pending reads without publishing late private bodies", async () => {

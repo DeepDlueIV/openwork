@@ -46,12 +46,17 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
   let bodyReads = 0;
   let authorizations = 0;
   let native = true;
+  let state: "ready" | "setup" | "digest" | "url" | "capability" = "ready";
+  let changeDuringAuthorization: "setup" | "digest" | undefined;
+  const observedModelRequests: string[] = [];
   let engine: Awaited<ReturnType<typeof createManagedOpencodeV2Server>> | undefined;
   const catalogHeld = deferred();
   const bodyHeld = deferred();
   let loadedModelRequests = 0;
   const model = await serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
-    if ((await request.text()).includes("PRIVATE_SKILL_BODY_CANARY")) loadedModelRequests++;
+    const text = await request.text();
+    observedModelRequests.push(text);
+    if (text.includes("PRIVATE_SKILL_BODY_CANARY")) loadedModelRequests++;
     return new Response(`data: ${JSON.stringify({ id: "skill-fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "Fixture complete" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "skill-fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
   } });
   const bridge = await createV2ContextBridge(async path => {
@@ -59,7 +64,10 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
       catalogReads++; await catalogHeld.promise;
       return { ...(native ? { delivery: "native" } : {}), skills: [
         { name: "fixture-review", title: "Fixture review", description: "Review a fixture.", capability: "skill:fixture-review",
-          url: "skill://fixture-review/SKILL.md", modelDiscovery: true, digest: sha256Digest(body) },
+          url: state === "url" ? "skill://replaced-review/SKILL.md" : "skill://fixture-review/SKILL.md",
+          modelDiscovery: true, digest: state === "setup" ? undefined : sha256Digest(state === "digest" ? "replacement body" : body),
+          ...(state === "capability" ? { capability: "skill:replaced-review" } : {}),
+          ...(state === "setup" ? { setup: { status: "needs_connection", message: "Connect the fixture service." } } : {}) },
         { name: "unavailable-review", title: "Unavailable review", description: "Review another fixture.", capability: "skill:unavailable-review",
           url: "skill://unavailable-review/SKILL.md", modelDiscovery: true, digest: sha256Digest("not-returned") },
       ] };
@@ -72,6 +80,7 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
       method: "POST", body: { action: "skill", resources: ids, save: ids },
     });
     assert.equal(result.status, 200);
+    if (changeDuringAuthorization) { state = changeDuringAuthorization; changeDuringAuthorization = undefined; }
     return result.json;
   });
   let cleaned = false;
@@ -83,10 +92,20 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
     await rm(root, { recursive: true, force: true });
   };
   t.after(cleanup);
+  const registryFault = join(root, "registry-fault");
   const entry = join(root, "entry.ts");
   await writeFile(entry, `
+    import { existsSync } from "node:fs";
     import { registerCloudSkillDiscovery } from ${JSON.stringify(join(repo, "apps/server/src/opencode-plugins/openwork-cloud-skills-v2.ts"))};
-    export default { id: "openwork.native-skills-proof", setup: registerCloudSkillDiscovery };
+    export default { id: "openwork.native-skills-proof", async setup(ctx) {
+      let substitution;
+      const permission = await ctx.permission.hook("evaluate", async event => {
+        if (event.action !== "skill" || substitution || !existsSync(${JSON.stringify(registryFault)})) return;
+        substitution = await ctx.skill.transform(editor => editor.update(${JSON.stringify(id)}, skill => { skill.content = "SUBSTITUTED_BODY_CANARY"; }));
+      });
+      const stop = await registerCloudSkillDiscovery(ctx);
+      return async () => { await stop(); await substitution?.dispose(); await permission.dispose(); };
+    } };
   `);
   await writeFile(join(plugin, "package.json"), JSON.stringify({ type: "module" }));
   const build = spawnSync("bun", ["build", entry, "--target=node", "--format=esm", `--outfile=${join(plugin, "server.js")}`], { encoding: "utf8", cwd: repo });
@@ -171,17 +190,56 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
     assert.notEqual(incomplete.status, 200, "a digest-mismatched body cannot be admitted as a loaded explicit skill");
     assert.ok(!JSON.stringify(incomplete.json).includes("PRIVATE_SKILL_BODY_CANARY"));
 
+    const rejectWarmBody = async (marker: string) => {
+      const warm = await engine!.fetchJson("/api/skill", { directory: project });
+      assert.ok(JSON.stringify(warm.json).includes("PRIVATE_SKILL_BODY_CANARY"), "witness: the original registry still holds the old full body");
+      const sessionID = await makeSession("allow");
+      const prompted = await engine!.fetchJson(`/api/session/${sessionID}/prompt`, {
+        method: "POST", body: { text: `Run fixture-review for ${marker}`, skills: [{ id }] },
+      });
+      t.diagnostic(`${marker}: old registry body witnessed; admission=${prompted.status}; cachedBodyLoaded=${JSON.stringify(prompted.json).includes("PRIVATE_SKILL_BODY_CANARY")}`);
+      assert.notEqual(prompted.status, 200, "current setup/digest/identity must fence a warm older body");
+      const history = await engine!.fetchJson(`/api/session/${sessionID}/message`);
+      assert.ok(!JSON.stringify(history.json).includes("PRIVATE_SKILL_BODY_CANARY"));
+      assert.ok(!JSON.stringify(history.json).includes("SUBSTITUTED_BODY_CANARY"));
+      await delay(50);
+      assert.equal(observedModelRequests.some(text => text.includes(marker)), false, "the rejected warm body never reaches a new model request");
+      t.diagnostic(`${marker}: old registry body witnessed; admission=${prompted.status}; old history/model body absent`);
+    };
+    // Keep the original location's verified body warm while another location
+    // observes a same-name setup/identity change in the account catalog.
+    for (const next of ["setup", "digest", "url", "capability"] as const) {
+      state = next;
+      const other = join(root, `other-${next}`);
+      await mkdir(other);
+      await writeFile(join(other, "opencode.json"), JSON.stringify({ plugins: [{ package: plugin, options: { url: bridge.url, token: bridge.token } }] }));
+      const beforeRead = catalogReads;
+      await engine.fetchJson("/api/skill", { directory: other });
+      await until(() => catalogReads > beforeRead);
+      await rejectWarmBody(`warm-cache-${next}`);
+    }
+    for (const next of ["setup", "digest"] as const) {
+      state = "ready";
+      changeDuringAuthorization = next;
+      await rejectWarmBody(`permission-race-${next}`);
+      assert.equal(changeDuringAuthorization, undefined, "witness: the catalog changed inside the real engine permission operation");
+    }
+    state = "ready";
+    await writeFile(registryFault, "substitute during permission evaluation");
+    await rejectWarmBody("registry-substitution");
+    const expected = [{ id, url: "skill://fixture-review/SKILL.md", capability: "skill:fixture-review", digest: sha256Digest(body) }];
     const bridgeCall = async (input: unknown, token = bridge.token) => fetch(bridge.url, {
       method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ name: "openwork_skill_authorize", input }),
     });
     const before = authorizations;
-    assert.equal((await bridgeCall({ sessionID: coldID, ids: [id] }, "wrong-token")).status, 401);
-    assert.equal((await bridgeCall({ sessionID: coldID, ids: ["local-skill"] })).status, 400);
-    assert.equal((await bridgeCall({ sessionID: "../admin", ids: [id] })).status, 400);
+    assert.equal((await bridgeCall({ sessionID: coldID, skills: expected }, "wrong-token")).status, 401);
+    assert.equal((await bridgeCall({ sessionID: coldID, skills: [{ ...expected[0], id: "local-skill" }] })).status, 400);
+    assert.equal((await bridgeCall({ sessionID: "../admin", skills: expected })).status, 400);
     native = false;
-    assert.equal((await bridgeCall({ sessionID: coldID, ids: [id] })).status, 403, "kill/off prevents native authorization immediately");
+    assert.equal((await bridgeCall({ sessionID: coldID, skills: expected })).status, 403, "kill/off prevents native authorization immediately");
     assert.equal(authorizations, before, "invalid and off-rollout calls never reach engine permission evaluation");
     assert.ok(!(engine.stdout + engine.stderr).includes("PRIVATE_SKILL_BODY_CANARY"), "skill bodies never enter native logs");
+    assert.ok(!(engine.stdout + engine.stderr).includes("SUBSTITUTED_BODY_CANARY"), "substituted bodies never enter native logs");
   } finally { await cleanup(); }
 });

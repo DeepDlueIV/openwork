@@ -24,6 +24,7 @@ type PromptEvent = { readonly sessionID: string; prompt: { text: string; skills?
 export type CloudSkillContext = {
   options: { url: string; token: string };
   skill: {
+    list(): Promise<ReadonlyArray<NativeSkill>>;
     transform(callback: (editor: { get(id: string): unknown; add(skill: NativeSkill): void }) => void): Promise<Registration>;
     reload(): Promise<void>;
   };
@@ -42,6 +43,33 @@ const NATIVE_BUDGET_CHARS = 64_000;
 const NATIVE_DESCRIPTION_CHARS = 1_024;
 const MAX_MENTIONED_SKILLS = 3;
 const MAX_CONCURRENT_READS = 2;
+
+export const cloudSkillSnapshotSchema = z.object({
+  id: z.string().regex(/^openwork-cloud-[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80),
+  capability: z.string().regex(/^(?:skill:[^:]+|plugin:[^:]+:[^:]+)$/).max(512),
+  url: z.string().startsWith("skill://").max(2_048),
+  digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+}).strict();
+type CloudSkillSnapshot = z.infer<typeof cloudSkillSnapshotSchema>;
+
+function skillSnapshot(skill: CatalogSkill): CloudSkillSnapshot | undefined {
+  if (!skill.digest || !skill.url || skill.setup || skill.modelDiscovery !== true) return;
+  return { id: skillId(skill), capability: skill.capability, url: skill.url, digest: skill.digest };
+}
+
+export function loadableCloudSkillSnapshots(value: unknown): CloudSkillSnapshot[] | undefined {
+  const parsed = catalogSchema.safeParse(value);
+  if (!parsed.success || parsed.data.delivery !== "native") return;
+  if (new Set(parsed.data.skills.map(skill => skill.name)).size !== parsed.data.skills.length) return;
+  return parsed.data.skills.flatMap(skill => {
+    const snapshot = skillSnapshot(skill);
+    return snapshot ? [snapshot] : [];
+  });
+}
+
+export function sameCloudSkillSnapshot(left: CloudSkillSnapshot, right: CloudSkillSnapshot): boolean {
+  return left.id === right.id && left.capability === right.capability && left.url === right.url && left.digest === right.digest;
+}
 
 const skillId = (skill: CatalogSkill) => `${CLOUD_SKILL_ID_PREFIX}${skill.name}`;
 // Not SKILL.md: the native skill tool must not scan a fake directory. The engine
@@ -260,24 +288,41 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
       const mentioned = mentionedSkillIds(event.prompt.text, skills).filter(id => !attached.has(id));
       const ids = [...explicit, ...mentioned];
       if (ids.length === 0) return;
-      // The pinned engine materializes prompt attachments without the skill
-      // tool's check. The bridge uses the same permission-create operation as
-      // explicit composer attachments, including the engine's policy hooks.
-      const permission = z.object({ data: z.object({ effect: z.enum(["allow", "ask", "deny"]) }) })
-        .parse(await call("openwork_skill_authorize", { sessionID: event.sessionID, ids }));
+      const selected = ids.flatMap(id => {
+        const skill = catalog.skills.find(skill => skillId(skill) === id);
+        const snapshot = skill && skillSnapshot(skill);
+        return skill && snapshot ? [{ skill, snapshot }] : [];
+      });
+      const unavailable = () => new Error("Skill instructions are unavailable. Nothing was sent. Try again or retrieve the skill through get_skill.");
+      if (selected.length !== ids.length) throw unavailable();
+      await Promise.all(selected.map(({ skill }) => hydrate(skill, true)));
+      if (!native || closed) throw unavailable();
+      if (selected.some(({ snapshot }) => !contents.has(snapshot.digest))) throw unavailable();
+      await publish();
+      // Bind the permission operation to the exact loadable identity/body, not
+      // just a listed name or our older location-local catalog. Authorization is
+      // last: a slow hydration cannot outlive a newer setup/identity decision.
+      const expected = selected.map(({ snapshot }) => snapshot);
+      const permission = z.object({ data: z.object({ effect: z.enum(["allow", "ask", "deny"]) }),
+        authorized: z.array(cloudSkillSnapshotSchema).optional() })
+        .parse(await call("openwork_skill_authorize", { sessionID: event.sessionID, skills: expected }));
       if (permission.data.effect !== "allow") {
         throw new Error(permission.data.effect === "ask"
           ? "Named skills require permission. Nothing was sent. Choose Always allow for these skills in the permission request, then send again."
           : "Named skills are not permitted. Nothing was sent.");
       }
-      const selected = ids.map(id => catalog.skills.find(skill => skillId(skill) === id));
-      await Promise.all(selected.map(skill => skill ? hydrate(skill, true) : Promise.resolve()));
-      if (!native || closed) return;
-      if (selected.some(skill => !skill?.digest || skill.setup || !contents.has(skill.digest)
-        || !catalog.skills.some(current => skillId(current) === skillId(skill) && current.digest === skill.digest && !current.setup))) {
-        throw new Error("Skill instructions are unavailable. Nothing was sent. Try again or retrieve the skill through get_skill.");
-      }
-      await publish();
+      const authorized = permission.authorized;
+      if (!authorized || authorized.length !== expected.length
+        || authorized.some((snapshot, index) => !sameCloudSkillSnapshot(snapshot, expected[index]))) throw unavailable();
+      // A transform from another plugin, or a local refresh during the bridge
+      // call, must not substitute a different body under the authorized ID.
+      const registered = await context.skill.list();
+      if (!native || closed || authorized.some(snapshot => {
+        const local = catalog.skills.find(skill => skillId(skill) === snapshot.id);
+        const current = local && skillSnapshot(local);
+        const entry = registered.find(skill => skill.id === snapshot.id);
+        return !current || !sameCloudSkillSnapshot(current, snapshot) || !entry || sha256Digest(entry.content) !== snapshot.digest;
+      })) throw unavailable();
       event.prompt.skills = [...(event.prompt.skills ?? []), ...mentioned.map(id => ({ id }))];
     });
   };

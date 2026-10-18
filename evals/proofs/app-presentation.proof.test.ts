@@ -15,7 +15,9 @@ test("a member reads the saved fallback before slow preview discovery finishes",
     await user.type("composer", APP_REQUEST);
     await user.click("Run task");
     await user.see({ role: "button", label: "Open preview" }, { timeoutMs: 60_000 });
-    evidence.recordAssertionEvidence("The publication is available without requiring the interactive resource", "Open is visible while the model's final reply remains held", true);
+    const offered = (await probe.dom('[data-built-app-result] button[aria-label="Open preview"]')).elements.length;
+    expect(offered).toBe(1);
+    evidence.recordAssertionEvidence("The publication is available without requiring the interactive resource", `Open actions=${offered}; model final reply remains held`, offered === 1);
     await user.screenshot();
   });
   await step("after: Open immediately shows saved text labelled as not live data", async () => {

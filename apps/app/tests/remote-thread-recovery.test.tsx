@@ -137,6 +137,22 @@ test("a late send acknowledgement cannot erase the Stop submitted while it was i
   expect(entry().stop?.phase).toBe("accepted")
 })
 
+test("agent follow-ups retire only a Stop older than that turn, never a newer Stop acknowledged late", async () => {
+  let accept: (payload: unknown) => void = () => {}
+  response = async () => new Promise((resolve) => { accept = resolve })
+  const stopping = stopRemoteThread(entry(), "msg_original")
+  const stoppedTurn = entry().stop
+  if (!stoppedTurn?.requestedAt) throw new Error("Missing owned Stop request time")
+  useRemoteThreadStore.getState().revive("ses_remote", stoppedTurn.requestedAt - 1)
+  expect(entry().stop?.id).toBe(stoppedTurn.id)
+  accept({ stopped: true })
+  await stopping
+  expect(entry().stop?.requestedAt).toBe(stoppedTurn.requestedAt)
+  useRemoteThreadStore.getState().revive("ses_remote", stoppedTurn.requestedAt + 1)
+  expect(entry().stop).toBeNull()
+  expect(calls.filter((kind) => kind === "stop")).toHaveLength(1)
+})
+
 for (const action of ["send", "stop"]) test(`a known ${action} receipt survives transport failure and recovery only reads it`, async () => {
   response = async (kind) => kind === "read" ? Promise.reject(new Error("fixture connection lost")) : { state: "pending", requestId: "receipt_known" }
   if (action === "send") await sendRemoteFollowUp(entry(), "Retain this submitted message")

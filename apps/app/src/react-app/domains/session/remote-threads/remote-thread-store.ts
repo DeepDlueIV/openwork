@@ -47,6 +47,8 @@ export type RemoteThreadOwner = { workspaceId: string; sessionId: string }
 /** A request is not proof that the remote turn stopped or a message arrived. */
 export type RemoteThreadAction = {
   id: string
+  /** Used only to distinguish a later agent follow-up from an older acknowledgement. */
+  requestedAt?: number
   phase: "requesting" | "accepted" | "unconfirmed" | "failed"
   message: string | null
   requestId: string | null
@@ -83,7 +85,7 @@ type RemoteThreadState = {
   watch: (start: RemoteThreadStart, input: { owner: RemoteThreadOwner; organizationId: string; startedAt: number | null }) => () => void
   followedUp: (key: string, stopIdAtSubmission?: string | null) => void
   /** The agent sent the task a follow-up itself. */
-  revive: (sessionId: string) => void
+  revive: (sessionId: string, sentAt?: number) => void
   apply: (result: RemoteSessionStatusResult, keys: readonly string[], checkedAt: number) => void
   markStale: (keys: readonly string[]) => void
   update: (key: string, change: (entry: RemoteThreadEntry) => RemoteThreadEntry) => void
@@ -157,9 +159,13 @@ export const useRemoteThreadStore = create<RemoteThreadState>()((set, get) => ({
     })
     kick(true)
   },
-  revive: (sessionId) => {
-    const key = Object.values(get().threads).find((entry) => (entry.status?.sessionId ?? entry.start.sessionId) === sessionId)?.start.key
-    if (key) get().followedUp(key)
+  revive: (sessionId, sentAt) => {
+    const entry = Object.values(get().threads).find((entry) => (entry.status?.sessionId ?? entry.start.sessionId) === sessionId)
+    if (!entry) return
+    // An agent's later turn can retire an older Stop. A late acknowledgement
+    // of a send begun before Stop cannot clear that newer request.
+    const stopId = sentAt !== undefined && entry.stop?.requestedAt !== undefined && entry.stop.requestedAt < sentAt ? entry.stop.id : undefined
+    get().followedUp(entry.start.key, stopId)
   },
   apply: (result, keys, checkedAt) => {
     set((state) => {
@@ -364,7 +370,7 @@ export function useReviveRemoteThread(part: DynamicToolUIPart | null) {
   const sentAt = part && sessionId ? remoteToolCallStartedAt(part) : null
   useEffect(() => {
     if (!sessionId || sentAt === null || Date.now() - sentAt > REVIVE_WINDOW_MS) return
-    useRemoteThreadStore.getState().revive(sessionId)
+    useRemoteThreadStore.getState().revive(sessionId, sentAt)
   }, [sessionId, sentAt])
 }
 

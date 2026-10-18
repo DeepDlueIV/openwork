@@ -143,7 +143,7 @@ export async function stopRemoteThread(entry: RemoteThreadEntry, latestUserId?: 
   const current = store.threads[entry.start.key]
   if (!current || (current.stop && current.stop.phase !== "failed")) return
   const id = remoteFollowUpMessageId()
-  store.update(entry.start.key, (thread) => ({ ...thread, stop: { ...requesting, id } }))
+  store.update(entry.start.key, (thread) => ({ ...thread, stop: { ...requesting, id, requestedAt: Date.now() } }))
   let requestId: string | null = null
   const pending = (receipt: string) => {
     requestId = receipt
@@ -165,7 +165,7 @@ export async function stopRemoteThread(entry: RemoteThreadEntry, latestUserId?: 
   } catch (error) {
     result = { phase: "unconfirmed", requestId, message: `${failure(error).message} Stop isn't confirmed; the task may still be running.` }
   }
-  store.update(entry.start.key, (thread) => thread.stop?.id === id ? { ...thread, stop: { ...result, id } } : thread)
+  store.update(entry.start.key, (thread) => thread.stop?.id === id ? { ...thread, stop: { ...thread.stop, ...result } } : thread)
 }
 
 /** Check an existing receipt, never repeat the send/stop mutation. */
@@ -177,7 +177,7 @@ export async function checkRemoteThreadAction(entry: RemoteThreadEntry, followUp
   if (!action?.requestId || action.phase === "requesting") return
   const update = (result: ActionResult) => store.update(entry.start.key, (thread) => followUpId
     ? { ...thread, followUps: thread.followUps.map((item) => item.id === action.id ? { ...item, ...result } : item) }
-    : thread.stop?.id === action.id ? { ...thread, stop: { ...result, id: action.id } } : thread)
+    : thread.stop?.id === action.id ? { ...thread, stop: { ...thread.stop, ...result } } : thread)
   let requestId = action.requestId
   update({ ...action, phase: "requesting" })
   try {

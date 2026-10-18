@@ -1352,7 +1352,7 @@ export function SessionPage(props: SessionPageProps) {
       client={props.openworkServerClient}
       workspaceId={props.runtimeWorkspaceId}
       workspaceRoot={props.selectedWorkspaceRoot}
-      onOpenTarget={(target) => openTarget(target, { previewOnly: true }, sidePanelSessionKey)}
+      onOpenTarget={props.selectedSessionId ? (target) => openTarget(target, { previewOnly: true }) : undefined}
       onClose={closeRightPane}
       onOpenExtensions={props.settingsSlot ? () => setCurrentSidePanel("extensions") : undefined}
     />

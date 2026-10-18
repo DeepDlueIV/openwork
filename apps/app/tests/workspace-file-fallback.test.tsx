@@ -47,6 +47,10 @@ test("a disconnected workspace cannot browse or reuse another connection's catal
     expect(button?.disabled).toBe(true);
     expect(button?.title).toBe("Connect to this workspace to browse its files.");
     expect(host.querySelector("[data-workspace-file-tree]")).toBeNull();
+    await act(async () => root.render(<PanelEmpty initialDestination="files" browseUnavailableReason="Open a conversation to browse workspace files." />));
+    const unavailable = [...host.querySelectorAll("button")].find(element => element.textContent?.includes("Browse workspace files"));
+    expect(unavailable?.disabled).toBe(true);
+    expect(unavailable?.title).toBe("Open a conversation to browse workspace files.");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 

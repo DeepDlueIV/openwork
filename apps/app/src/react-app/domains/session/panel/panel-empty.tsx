@@ -9,6 +9,7 @@ export type PanelEmptyActions = {
   onOpenBrowser?: () => void;
   onOpenExtensions?: () => void;
   onBrowseWorkspaceFiles?: () => void;
+  browseUnavailableReason?: string;
   initialDestination?: "chooser" | "files";
 };
 
@@ -63,7 +64,7 @@ export function getPanelDestinations(
   return destinations;
 }
 
-export function PanelEmpty({ onOpenBrowser, onOpenExtensions, onBrowseWorkspaceFiles, initialDestination = "chooser" }: PanelEmptyActions) {
+export function PanelEmpty({ onOpenBrowser, onOpenExtensions, onBrowseWorkspaceFiles, browseUnavailableReason, initialDestination = "chooser" }: PanelEmptyActions) {
   const [destination, setDestination] = React.useState<"chooser" | "files">(initialDestination);
 
   if (destination === "files") {
@@ -84,7 +85,7 @@ export function PanelEmpty({ onOpenBrowser, onOpenExtensions, onBrowseWorkspaceF
           </span>
           <h2 className="text-base font-medium text-foreground">No referenced files available</h2>
           <Button className="mt-4" variant="outline" onClick={onBrowseWorkspaceFiles} disabled={!onBrowseWorkspaceFiles}
-            title={onBrowseWorkspaceFiles ? undefined : "Connect to this workspace to browse its files."}>
+            title={onBrowseWorkspaceFiles ? undefined : browseUnavailableReason ?? "Connect to this workspace to browse its files."}>
             Browse workspace files
           </Button>
         </div>

@@ -57,7 +57,7 @@ type SidePanelProps = {
   client: OpenworkServerClient | null;
   workspaceId: string | null;
   workspaceRoot: string;
-  onOpenTarget: (target: OpenTarget) => void;
+  onOpenTarget?: (target: OpenTarget) => void;
   onClose: () => void;
   onOpenExtensions?: () => void;
 };
@@ -523,7 +523,7 @@ export function SidePanel({
   React.useEffect(() => setBrowsingWorkspace(false), [sessionId, workspaceId, client]);
   const openWorkspaceFile = (entry: OpenworkWorkspaceCatalogEntry) => {
     const target = openTargetFromWorkspaceFile(entry.path, { size: entry.size, updatedAt: entry.mtimeMs });
-    if (!target) return;
+    if (!target || !onOpenTarget) return;
     setBrowsingWorkspace(false);
     onOpenTarget(target);
   };
@@ -764,7 +764,7 @@ export function SidePanel({
             ) : null}
           </div>
         </div> : null}
-        {!activeTab ? browsingWorkspace && client && workspaceId ? (
+        {!activeTab ? browsingWorkspace && client && workspaceId && onOpenTarget ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="shrink-0 border-b border-border p-2">
               <Button variant="ghost" size="sm" onClick={() => setBrowsingWorkspace(false)}><ArrowLeft /> Back to referenced files</Button>
@@ -778,7 +778,8 @@ export function SidePanel({
           <PanelEmpty initialDestination="files"
             onOpenBrowser={isBrowserAvailable ? createTab : undefined}
             onOpenExtensions={onOpenExtensions}
-            onBrowseWorkspaceFiles={client && workspaceId ? () => setBrowsingWorkspace(true) : undefined}
+            onBrowseWorkspaceFiles={client && workspaceId && onOpenTarget ? () => setBrowsingWorkspace(true) : undefined}
+            browseUnavailableReason={client && workspaceId && !onOpenTarget ? "Open a conversation to browse workspace files." : undefined}
           />
         ) : null}
         {activeTab?.type === "browser" ? (

@@ -57,7 +57,7 @@ export interface ChromeSurfaceOptions {
    */
   mouse?: boolean;
   /**
-   * Chrome --host-resolver-rules, e.g. "MAP office.acmerobotics.com:80 127.0.0.1:52664": the browser shows and links to a
+   * Chrome --host-resolver-rules, e.g. "MAP office.acmerobotics.internal:80 127.0.0.1:52664": the browser shows and links to a
    * real-looking address while reaching a local service. Local Chrome only.
    */
   hostRules?: string;

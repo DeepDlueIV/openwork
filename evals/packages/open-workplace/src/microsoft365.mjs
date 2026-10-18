@@ -11,6 +11,9 @@ import { inflateRawSync } from "node:zlib";
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 3993);
 const PUBLIC_ORIGIN = new URL(process.env.PUBLIC_URL || `http://${HOST}:${PORT}`).origin;
+// Upload sessions are fetched by API clients (an agent's shell), not a browser: use an address they can reach,
+// never the browser-only PUBLIC_URL. Like Graph, whose upload URLs are API hosts, not the page's own address.
+const uploadOrigin = () => (process.env.UPLOAD_URL ? new URL(process.env.UPLOAD_URL).origin : `http://${HOST}:${server.address().port}`);
 const TOKEN = "open-workplace-token";
 const MAX_BODY = 10 * 1024 * 1024;
 const MAX_TOTAL = 60 * 1024 * 1024;
@@ -334,7 +337,7 @@ async function graph(method, path, url, input, bytes, headers = {}) {
     // Capability URL: unpredictable even when ids are deterministic.
     const token = randomUUID(); const expirationDateTime = new Date(Date.now() + 15 * 60_000).toISOString();
     state.uploads[token] = { path: target, expires: Date.parse(expirationDateTime) };
-    return [200, { uploadUrl: `${PUBLIC_ORIGIN}/upload/${token}`, expirationDateTime, nextExpectedRanges: ["0-"] }];
+    return [200, { uploadUrl: `${uploadOrigin()}/upload/${token}`, expirationDateTime, nextExpectedRanges: ["0-"] }];
   }
   const byPath = path.match(/^\/me\/drive\/root:\/(.+?)(?::\/(content))?$/);
   const byId = path.match(/^\/me\/drive\/items\/([^/]+)(?:\/(content))?$/);

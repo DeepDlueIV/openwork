@@ -40,9 +40,10 @@ Every service also answers `GET /health`, `GET /state` (the current data, for ve
 | `OPEN_WORKPLACE_NOW` | wall clock | Fixed ISO time for reproducible runs (also makes IDs deterministic) |
 | `OPEN_WORKPLACE_TIME_ZONE` | `America/Los_Angeles` | Jira/Confluence display time zone |
 | `PUBLIC_URL` | `http://HOST:PORT` | Address used in links handed out by Open Outlook/Calendar/Drive (`webUrl`, `webLink`) |
+| `UPLOAD_URL` | `http://HOST:<listening port>` | Address in Open Drive upload-session URLs; API clients must reach it, so it never follows `PUBLIC_URL` |
 | `JIRA_PUBLIC_URL`, `CONFLUENCE_PUBLIC_URL` | `https://jira.acme.test`, `https://confluence.acme.test` | Address used in Jira/Confluence browse links |
 
-**Real-looking addresses.** Set the public URLs to the company's own hostnames (for example `http://office.acmerobotics.com`) and point the browser at the local ports with a host mapping. In OpenWork evals: `chrome({ hostRules: "MAP office.acmerobotics.com:80 127.0.0.1:<port>" })`. Links in mail, files and answers then look exactly like they would at a real company.
+**Real-looking addresses.** Set the public URLs to intranet-style hostnames under a reserved private domain (for example `http://office.acmerobotics.internal`) and point the browser at the local ports with a host mapping. In OpenWork evals: `chrome({ hostRules: "MAP office.acmerobotics.internal:80 127.0.0.1:<port>" })`. Never use a public domain: anything an agent fetches or uploads there would go to whoever owns it. Links in mail, files and answers then look exactly like they would at a real company.
 
 ## Tests
 

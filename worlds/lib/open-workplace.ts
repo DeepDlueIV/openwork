@@ -29,8 +29,10 @@ export interface OpenWorkplaceOptions {
   /** Fixed ISO time for reproducible runs (also makes generated IDs deterministic). */
   now?: string;
   /**
-   * The company's own domain, e.g. "acmerobotics.com". Links then read http://office.<domain>/drive?item=… and
+   * The company's intranet domain, e.g. "acmerobotics.internal". Links then read http://office.<domain>/drive?item=… and
    * http://atlassian.<domain>/jira/browse/…; browsers reach them through `hostRules`. Local placement only.
+   * Must be a reserved private name (.internal, .test, .example, .invalid, .localhost): anything that resolves on the
+   * public internet would send an agent's uploads and fetches to whoever owns that domain.
    */
   domain?: string;
   /** Apps to add to the org as connections. Defaults to all five. */
@@ -53,7 +55,9 @@ export interface OpenWorkplace {
 export async function startOpenWorkplace(stack: AsyncDisposableStack, den: Den, options: OpenWorkplaceOptions = {}): Promise<OpenWorkplace> {
   const local = den.placement?.kind !== "daytona";
   if (options.domain && !local) throw new Error("Open Workplace hostnames need a local browser; omit `domain` on Daytona.");
-  if (options.domain && !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(options.domain)) throw new Error(`Invalid Open Workplace domain ${JSON.stringify(options.domain)}.`);
+  if (options.domain && !/^[a-z0-9-]+(\.[a-z0-9-]+)*\.(internal|test|example|invalid|localhost)$/.test(options.domain)) {
+    throw new Error(`Open Workplace domain ${JSON.stringify(options.domain)} must be a reserved private name (.internal, .test, .example, .invalid or .localhost) so nothing can reach a real host.`);
+  }
   const env: Record<string, string> = {
     ...(options.person ? { OPEN_WORKPLACE_PERSON: options.person } : {}),
     ...(options.now ? { OPEN_WORKPLACE_NOW: options.now } : {}),

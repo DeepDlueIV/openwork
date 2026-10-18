@@ -260,16 +260,35 @@ describe("Open Outlook, Open Calendar and Open Drive", () => {
     expect(record(blocked.result).isError).toBe(true);
   });
 
+  test("links use the public address; upload sessions stay reachable by API clients", async () => {
+    const port = await freePort(); const local = `http://127.0.0.1:${port}`;
+    const other = spawn(process.execPath, [SCRIPT], { env: { PATH: process.env.PATH, HOST: "127.0.0.1", PORT: String(port), PUBLIC_URL: "http://office.acmerobotics.internal" }, stdio: "ignore" });
+    try {
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline && !(await fetch(`${local}/health`).then((r) => r.ok).catch(() => false))) await new Promise((resolve) => setTimeout(resolve, 50));
+      const call = async (name: string, args: Record<string, unknown>) => {
+        const envelope = await json(await fetch(`${local}/drive/mcp`, { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) }));
+        return record(JSON.parse(string(record(array(record(envelope.result).content)[0]).text)));
+      };
+      const file = await call("file_write", { path: "Public link.txt", content: "hello" });
+      expect(string(file.webUrl)).toMatch(/^http:\/\/office\.acmerobotics\.internal\/drive\?item=/);
+      const session = await call("file_create_upload_session", { path: "Reachable.pptx" });
+      expect(string(session.uploadUrl).startsWith(`${local}/upload/`)).toBe(true);
+      expect((await fetch(string(session.uploadUrl), { method: "PUT", body: new Uint8Array([80, 75, 3, 4]) })).status).toBe(201);
+    } finally { other.kill(); }
+  });
+
   test("upload sessions take binary bytes outside the chat, once, into OneDrive", async () => {
     const session = record(await toolValue("file_create_upload_session", { path: "session-upload.pptx" }));
     const uploadUrl = string(session.uploadUrl);
     expect(uploadUrl).toMatch(/\/upload\/[0-9a-f-]{36}$/);
-    const put = await fetch(uploadUrl.replace(/^https?:\/\/[^/]+/, base), { method: "PUT", body: new Uint8Array([80, 75, 3, 4, 1, 2, 3]) });
+    expect(uploadUrl.startsWith(`${base}/upload/`)).toBe(true); // usable exactly as returned
+    const put = await fetch(uploadUrl, { method: "PUT", body: new Uint8Array([80, 75, 3, 4, 1, 2, 3]) });
     expect(put.status).toBe(201);
     const saved = record(await put.json());
     expect(saved.name).toBe("session-upload.pptx");
     expect(record(saved.file).mimeType).toBe("application/vnd.openxmlformats-officedocument.presentationml.presentation");
-    expect((await fetch(uploadUrl.replace(/^https?:\/\/[^/]+/, base), { method: "PUT", body: new Uint8Array([1]) })).status).toBe(404);
+    expect((await fetch(uploadUrl, { method: "PUT", body: new Uint8Array([1]) })).status).toBe(404);
   });
 
   test("MCP handshake, schemas, notifications and errors are sensible; each product has its own endpoint", async () => {

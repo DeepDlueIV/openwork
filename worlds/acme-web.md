@@ -53,8 +53,8 @@ pnpm world up acme-web --stage open-workplace -- --open-workplace
 ```
 
 Worlds can start them directly with `startOpenWorkplace(stack, den, { person, now, domain })`
-from `worlds/lib/open-workplace.ts`. With `domain: "acmerobotics.com"`, links read
-`http://office.acmerobotics.com/drive?item=…`; pass the returned `hostRules` to
+from `worlds/lib/open-workplace.ts`. With `domain: "acmerobotics.internal"` (a reserved private name; public domains are refused), links read
+`http://office.acmerobotics.internal/drive?item=…`; pass the returned `hostRules` to
 `chrome({ hostRules })` so the browser reaches them.
 
 ## Automated regression

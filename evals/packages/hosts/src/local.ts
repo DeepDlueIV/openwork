@@ -352,6 +352,9 @@ function chromeArgs(cdpPort: number, profileDir: string, startUrl: string, headl
     // Avoid the Daytona preview h2 stall when ~28 dev chunks multiplex; h1.1 loads them, while plain-http local Den never negotiates h2.
     "--disable-http2",
     ...(mouse ? [MOUSE_POINTER_CHROME_ARG] : []),
+    // Film runs: a real 2x display, so screencast frames carry device pixels (an emulated
+    // deviceScaleFactor alone still yields 1x screencast frames).
+    ...(/^[1-4]$/.test(process.env.OPENWORK_EVAL_CHROME_SCALE ?? "") ? [`--force-device-scale-factor=${process.env.OPENWORK_EVAL_CHROME_SCALE}`] : []),
     startUrl,
   ];
   // Match Linux/Windows' classic gutter on headless macOS too, without changing

@@ -12,6 +12,7 @@ import {
 import { exchangeHandoffAndSignIn } from "../../app/lib/den-handoff";
 import {
   denSettingsChangedEvent,
+  denSessionUpdatedEvent,
 } from "../../app/lib/den-session-events";
 import { evalRelaunchDesktopApp, readDesktopDistributionInfo } from "../../app/lib/desktop";
 import { outboundEgressAllowed } from "../../app/lib/enterprise-activation";
@@ -69,12 +70,15 @@ type DenSigninGateProps = {
 };
 
 const readDenBootstrapSnapshot = () => readDenBootstrapConfig();
+const readOrgSelectionPendingSnapshot = () => readOrgSelectionPending().pending;
 
 const subscribeToDenBootstrap = (onStoreChange: () => void) => {
   if (typeof window === "undefined") return () => {};
   window.addEventListener(denSettingsChangedEvent, onStoreChange);
+  window.addEventListener(denSessionUpdatedEvent, onStoreChange);
   return () => {
     window.removeEventListener(denSettingsChangedEvent, onStoreChange);
+    window.removeEventListener(denSessionUpdatedEvent, onStoreChange);
   };
 };
 
@@ -92,7 +96,7 @@ const subscribeToDenBootstrap = (onStoreChange: () => void) => {
  * While we're still checking the Den session AND sign-in is required, we
  * show startup progress without mounting transcript/settings behind the gate.
  */
-function DenSigninGate({ children }: DenSigninGateProps) {
+export function DenSigninGate({ children }: DenSigninGateProps) {
   const denAuth = useDenAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -100,6 +104,13 @@ function DenSigninGate({ children }: DenSigninGateProps) {
     subscribeToDenBootstrap,
     readDenBootstrapSnapshot,
     readDenBootstrapSnapshot,
+  );
+  // A handoff can stay signed_in -> signed_in while opening a new org
+  // decision. Observe that decision independently of auth status and location.
+  const orgSelectionPending = useSyncExternalStore(
+    subscribeToDenBootstrap,
+    readOrgSelectionPendingSnapshot,
+    readOrgSelectionPendingSnapshot,
   );
   // Enterprise and cloud builds always persist requireSignin: true; the
   // bootstrap file can only raise it (apps/desktop/electron/workspace-store.mjs).
@@ -118,7 +129,7 @@ function DenSigninGate({ children }: DenSigninGateProps) {
     hasPreparedBootstrap,
     onSignin,
     onOnboarding,
-    orgSelectionPending: false,
+    orgSelectionPending: denAuth.isSignedIn && orgSelectionPending,
   };
   const redirectingPreparedWorkspace = shouldRenderPreparedRedirect(routeInput);
 
@@ -130,12 +141,12 @@ function DenSigninGate({ children }: DenSigninGateProps) {
       hasPreparedBootstrap,
       onSignin,
       onOnboarding,
-      orgSelectionPending: denAuth.isSignedIn && readOrgSelectionPending().pending,
+      orgSelectionPending: denAuth.isSignedIn && orgSelectionPending,
     });
     if (redirect === "signed-in-home") {
       navigate(
         signedInRoute(readDenSettings().activeOrgId, {
-          orgSelectionPending: readOrgSelectionPending().pending,
+          orgSelectionPending,
         }),
         { replace: true },
       );
@@ -150,6 +161,7 @@ function DenSigninGate({ children }: DenSigninGateProps) {
     navigate,
     onOnboarding,
     onSignin,
+    orgSelectionPending,
     requireSignin,
   ]);
 

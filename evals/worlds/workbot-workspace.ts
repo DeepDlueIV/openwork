@@ -167,6 +167,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
       identityReads: () => [...identityReads], identityScopes: () => [...identityScopes], listingReads: () => [...listingReads], pendingFolders: () => pendingFolders,
       threadRequests: () => [...threadRequests], pendingOtherThreads: () => pendingOtherThreads,
       holdOtherThread: () => { holdOtherThread = true; }, releaseOtherThread: releaseOther,
+      seedOwnerConversation: (text: string) => { thread("user_example").push({ id: "owner_account_turn", text, sentAt: Date.now(), finishedAt: Date.now(), status: "done", attachments: [], outputs: [], parts: [{ kind: "text", text: "Original account answer" }], modelSteps: 1, error: null }); },
       async documentReadStatus() { const response = await fetch(`${url}v1/workbot/documents/v1/documents/google-drive/files/file_brief/editor`); await response.arrayBuffer(); return response.status; },
       officeOpens: () => [...officeOpens], officeCloses: () => [...officeCloses], officeLaunches: () => [...officeLaunches],
       revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; },

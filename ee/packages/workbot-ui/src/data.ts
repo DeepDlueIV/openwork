@@ -34,7 +34,7 @@ export function newChatId() {
 const stepSchema = z.object({
   label: z.string(),
   icon: z.enum(["app", "computer"]),
-  status: z.enum(["running", "done"]),
+  status: z.enum(["running", "done", "failed", "stopped", "interrupted"]),
   app: z.string().nullable(),
   startedAt: z.number().nullable(),
   finishedAt: z.number().nullable(),
@@ -63,7 +63,7 @@ const turnSchema = z.object({
   context: workbotViewContextSchema.optional(),
   sentAt: z.number().nullable(),
   finishedAt: z.number().nullable(),
-  status: z.enum(["queued", "working", "done", "failed", "stopped"]),
+  status: z.enum(["queued", "working", "interrupted", "done", "failed", "stopped"]),
   attachments: z.array(z.object({ id: z.string(), name: z.string(), mediaType: z.string(), size: z.number(), updatedAt: z.number().optional() })),
   /** Files Workbot made or revised while answering, to open from the answer. `updatedAt` moves with each revision. */
   outputs: z.array(z.object({ id: z.string(), name: z.string(), mediaType: z.string(), size: z.number(), updatedAt: z.number().optional() })).default([]),
@@ -153,6 +153,7 @@ export function useWorkbotLive(enabled: boolean) {
   const queryClient = useQueryClient();
   const chat = useWorkbotChat();
   const [connected, setConnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [live, setLive] = useState<Record<string, LiveText>>({});
   const refetching = useRef<{ running: boolean; again: boolean }>({ running: false, again: false });
 
@@ -160,6 +161,8 @@ export function useWorkbotLive(enabled: boolean) {
     if (!enabled) return;
     // Another chat: none of the text streaming in the last one belongs here.
     setLive({});
+    setConnected(false);
+    setReconnecting(false);
     const controller = new AbortController();
     let attempt = 0;
 
@@ -213,7 +216,9 @@ export function useWorkbotLive(enabled: boolean) {
         try {
           const response = await openStream(controller.signal, chat);
           if (!response.ok || !response.body) throw new Error(`events_${response.status}`);
+          if (controller.signal.aborted) break;
           setConnected(true);
+          setReconnecting(false);
           attempt = 0;
           // Anything missed while disconnected is picked up by one re-read.
           void refresh();
@@ -236,8 +241,9 @@ export function useWorkbotLive(enabled: boolean) {
         } catch {
           // Reconnect below.
         }
-        setConnected(false);
         if (controller.signal.aborted) break;
+        setConnected(false);
+        setReconnecting(true);
         attempt += 1;
         await new Promise((resolve) => setTimeout(resolve, Math.min(10_000, attempt === 1 ? 250 : 1_000 * 2 ** Math.min(attempt - 2, 3))));
       }
@@ -246,7 +252,7 @@ export function useWorkbotLive(enabled: boolean) {
     return () => controller.abort();
   }, [enabled, queryClient, chat]);
 
-  return { connected, live };
+  return { connected, reconnecting, live };
 }
 
 export class WorkbotSendError extends Error {

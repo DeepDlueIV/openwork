@@ -109,9 +109,11 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
       return created.json.data.id;
     };
     const coldID = await makeSession("allow");
-    await until(() => catalogReads > 0);
     const ordinary = await engine.fetchJson(`/api/session/${coldID}/prompt`, { method: "POST", body: { text: "Hello" }, timeoutMs: 2_000 });
     assert.equal(ordinary.status, 200, "ordinary admission succeeds while catalog metadata is still held");
+    // Session creation is lazy: the first real prompt activates its location's
+    // plugins and starts discovery. Do not require discovery before that action.
+    await until(() => catalogReads > 0);
     assert.equal(bodyReads, 0, "witness: no body could have loaded yet");
     let admitted = false;
     const selected = engine.fetchJson(`/api/session/${coldID}/prompt`, {

@@ -49,7 +49,8 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
     }));
 
   async function add(ids: string[], retry = false) {
-    if (assigning || !canManage || !setsQuery.isSuccess) return;
+    if (assigning) throw new Error("The submitted teams are still being checked.");
+    if (!canManage || !setsQuery.isSuccess) throw new Error("Couldn't verify permission to assign this role. Your selections are kept; try again after access is verified.");
     // Keep submitted names even when successful writes remove them from the picker.
     const submitted: typeof outcomes = ids.map((id) => ({ id, name: teams.find((team) => team.id === id)?.name ?? "A deleted team", status: "pending" }));
     setOutcomes((current) => retry ? current.map((entry) => ids.includes(entry.id) ? { ...entry, status: "pending", error: undefined } : entry) : submitted);

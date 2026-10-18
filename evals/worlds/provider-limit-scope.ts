@@ -11,7 +11,7 @@ export async function providerLimitScope(seed: Seed) {
   const den = setup.use(await seed.den({
     ports: { api, web: webPort }, webApiBase: faults.ref.apiUrl,
     trustedOrigins: [faults.ref.webUrl],
-    env: { GATEWAY_ENABLED: "true" },
+    env: { GATEWAY_ENABLED: "true", GATEWAY_PROXY_BASE_URL: "http://127.0.0.1:1", GATEWAY_PUBLIC_BASE_URL: "http://127.0.0.1:1" },
     org: { name: "Provider limit recovery", admin: { name: "Limit owner" } },
   }));
   await enableOrganizationCapabilities(seed, den.admin, { gatewayProviderUsageLimits: true });

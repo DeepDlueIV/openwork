@@ -122,11 +122,20 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     return { ok: missing.length === 0, reason: missing.length ? `Deck is missing ${missing.map(String).join(", ")}` : "", slides: inspected.artifact.slideCount, sha256: inspected.artifact.sha256 };
   }
   const record_ = (row: Row) => { rows.push(row); world.markScene(`${row.id}:end:${row.status}`); console.log(`[day ${profile}] ${row.id} ${row.status} ${Math.round(row.latencyMs / 1000)}s ${row.reasons.join("; ").slice(0, 200)}`); };
+  let lastSessionPath = "";
   async function scene(id: string, title: string, body: () => Promise<Omit<Row, "id" | "title">>) {
     await step(`${id}: ${title}`, async () => {
       world.markScene(`${id}:start`);
+      const here = String(await evaluateOnSurface(world.app, () => location.pathname + location.search).catch(() => ""));
+      if (/\/session\//.test(here)) lastSessionPath = here;
       try { record_({ id, title, ...(await body()) }); }
-      catch (error) { record_({ id, title, status: "FAIL", reasons: [error instanceof Error ? error.message.slice(0, 400) : "error"], latencyMs: 0 }); await appAgent.run("composer.stop").catch(() => undefined); }
+      catch (error) {
+        record_({ id, title, status: "FAIL", reasons: [error instanceof Error ? error.message.slice(0, 400) : "error"], latencyMs: 0 });
+        // Never leave the app parked outside a chat (e.g. on Automations): later steps start from a session.
+        await evaluateOnSurface(world.app, browserScript((path: string) => { if (!/\/session\//.test(location.pathname) && path) { history.pushState(history.state, "", path); window.dispatchEvent(new PopStateEvent("popstate", { state: history.state })); } return true; }, [lastSessionPath])).catch(() => undefined);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await appAgent.run("composer.stop").catch(() => undefined);
+      }
     });
   }
   const verdict = (reasons: string[], completed: boolean) => (!completed ? "FAIL" : reasons.length ? "FAIL" : "PASS") as Row["status"];
@@ -160,9 +169,14 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     if (!automationId) return { status: "BLOCKED", reasons: ["No Automation to run"], latencyMs: 0 };
     const before = await world.observe();
     const started = Date.now();
+    const sessionPath = String(await evaluateOnSurface(world.app, () => location.pathname + location.search));
     await appUser.click({ role: "button", label: "Open Automation" });
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     world.markScene("D1:automations");
+    // Open this Automation's detail (what clicking it in the list does); Run now lives there.
+    await evaluateOnSurface(world.app, browserScript((id: string) => { const url = new URL(location.href); url.searchParams.set("automation", id); history.pushState(history.state, "", url.pathname + url.search); window.dispatchEvent(new PopStateEvent("popstate", { state: history.state })); return true; }, [automationId]));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    world.markScene("D1:automation-detail");
     await appUser.click({ role: "button", label: "Run now" });
     world.markScene("D1:run-now");
     let run: Json = {};
@@ -180,6 +194,9 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const draft = newItems(mails(before), mails(after)).find((mail) => mail.isDraft === true && ["France", "Germany", "Japan"].every((country) => text(mail.body).includes(country)));
     const reasons = checks([[run.status === "succeeded", `Automation run ${String(run.status ?? "not found")}`], [Boolean(draft), "No draft brief covering France, Germany and Japan"], [sentNothing(before, after), "Mail was sent"]]);
     if (draft) await show("D1", `${world.urls.outlook}?message=${encodeURIComponent(String(draft.id))}`, "Edit draft", "draft");
+    // Back to the chat, where the rest of the day happens.
+    await evaluateOnSurface(world.app, browserScript((path: string) => { history.pushState(history.state, "", path); window.dispatchEvent(new PopStateEvent("popstate", { state: history.state })); return true; }, [sessionPath]));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     return { status: reasons.length ? "FAIL" : "PASS", reasons, latencyMs: Date.now() - started, operator: "Run now clicked in the Automations page (instead of waiting for 09:00)", evidence: { runStatus: run.status, runId: run.id, draft: draft?.subject } };
   });
   const followPrompt = "Anything in this morning's brief that matters for Blue Harbor or Northwind?";

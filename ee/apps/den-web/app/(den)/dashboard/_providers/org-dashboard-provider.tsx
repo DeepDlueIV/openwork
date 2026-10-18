@@ -172,9 +172,10 @@ export function OrgDashboardProvider({
     return parseOrgListPayload(payload);
   }
 
-  async function setActiveOrganization(input: { organizationId?: string | null; organizationSlug?: string | null }) {
+  async function setActiveOrganization(input: { organizationId?: string | null; organizationSlug?: string | null }, workbotLink = false) {
     const { response, payload } = await requestJson(
-      "/api/auth/organization/set-active",
+      // The supported database-session route works for both bearer and cookie-backed Den visits.
+      workbotLink ? "/v1/me/active-organization" : "/api/auth/organization/set-active",
       {
         method: "POST",
         body: JSON.stringify(input),
@@ -296,7 +297,7 @@ export function OrgDashboardProvider({
       }
 
       if (displayedOrg && !displayedOrg.isActive) {
-        await setActiveOrganization({ organizationId: displayedOrg.id });
+        await setActiveOrganization({ organizationId: displayedOrg.id }, linkedOrgId !== null);
         if (!isCurrent()) return;
         directoryPayload = await loadOrgDirectory();
         if (!isCurrent()) return;

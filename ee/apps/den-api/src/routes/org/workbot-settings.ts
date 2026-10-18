@@ -28,6 +28,11 @@ export const RUNNER_UNAVAILABLE_MESSAGE = "Workbot's models can't be checked rig
 
 const notFound = jsonResponse("The organization was not found, or Workbot is off.", featureDisabledSchema)
 
+const requireWorkbotSettingsRead: ReturnType<typeof requireOrgPermission> = async (c, next) => {
+  if ((await memberPermissionsForRequest(c))?.has("inference.manage")) return next()
+  return requireOrgPermission("inference.view")(c, next)
+}
+
 /**
  * Manage › Workbot: the organization's default model for its cloud agents (Workbot, the Slack assistant, and cloud
  * Automations set to the cloud default). Admins choose it from the models the headless runner serves.
@@ -49,10 +54,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
     }),
     orgMemberRoute(),
     requireFeature("workbot"),
-    async (c, next) => {
-      if ((await memberPermissionsForRequest(c))?.has("inference.manage")) return next()
-      return requireOrgPermission("inference.view")(c, next)
-    },
+    requireWorkbotSettingsRead,
     async (c) => {
       c.header("Cache-Control", "no-store")
       const organizationId = c.get("organizationContext").organization.id

@@ -265,7 +265,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       if (auditBlocked) return auditBlocked
       const { organization, user, memberId } = resolved
       const canSchedule = (await cloudAutomationRuntime(organization.id).catch(() => "web")) === "headless"
-      const features = await getOrganizationFeatures(organization.id, { userId: user.id })
+      const features = await getOrganizationFeatures(organization.id)
       const permissions = features.workbot && resolved.scopes.has(DEN_MCP_READ_SCOPE)
         ? await resolvePermissionsForMember({ organizationId: organization.id, memberId: normalizeDenTypeId("member", memberId) })
         : null

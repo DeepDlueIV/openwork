@@ -201,16 +201,16 @@ function WorkspaceFileTreeView({ client, workspaceId, workspaceName, selectedPat
         />
       )}
       {query.data?.truncated ? (
-        <p role="status" className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground">
+        <p role="status" className="border-t border-border px-2 py-1 text-xs text-muted-foreground">
           Showing {entries.length.toLocaleString()} of {query.data.total.toLocaleString()} items. Search covers the shown items.
         </p>
       ) : null}
-      {query.data ? <details className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground">
+      {query.data ? <details className="border-t border-border px-2 py-1 text-xs text-muted-foreground">
         <summary className="cursor-pointer">Browser limits</summary>
         <p>Repository history (.git) and dependencies (node_modules) are excluded.</p>
       </details> : null}
       {query.data?.incomplete ? (
-        <p role="status" className="border-t border-border px-2 py-1 text-[10px] text-muted-foreground">Some folders could not be read. Check their permissions and refresh.</p>
+        <p role="status" className="border-t border-border px-2 py-1 text-xs text-muted-foreground">Some folders could not be read. Check their permissions and refresh.</p>
       ) : null}
     </aside>
   );

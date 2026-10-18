@@ -68,7 +68,7 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
         }
       }
     } finally { setAssigning(false); }
-    if (failed > 0) throw new Error(`${failed} ${failed === 1 ? "team wasn't" : "teams weren't"} updated. Review the team results and retry only those teams.`);
+    if (failed > 0) throw new Error(`Couldn't confirm the role for ${failed} ${failed === 1 ? "team" : "teams"}. Review the team results and retry only unconfirmed teams.`);
     toast({ title: `Assigned ${set.name} to ${submitted.length} ${submitted.length === 1 ? "team" : "teams"}` });
   }
 
@@ -97,8 +97,8 @@ export function SharedRoleTeams({ ready, set }: { ready: ReadyAccess; set: Permi
       </ItemPanel>
       {setsQuery.isError ? <DenNotice tone="error" message="Couldn't verify the teams' current roles. Assignment is blocked until they are verified." action={<DenButton size="sm" variant="secondary" onClick={() => void setsQuery.refetch()}>Try again</DenButton>} /> : null}
       {outcomes.length > 0 ? <div className="grid gap-2" aria-label="Role assignment results">
-        <ul className="divide-y divide-gray-100 text-[13px]" aria-live="polite">{outcomes.map((entry) => <li key={entry.id} className="flex min-h-11 flex-wrap items-center justify-between gap-2 py-2" data-testid="role-assignment-result" data-status={entry.status}><span className="min-w-0 break-words font-medium">{entry.name}</span><span className={entry.status === "failed" ? "text-red-700" : "text-gray-500"}>{entry.status === "assigned" ? "Role assigned" : entry.status === "pending" ? "Not confirmed yet" : entry.error}</span></li>)}</ul>
-        {outcomes.some((entry) => entry.status === "failed") ? <DenButton size="sm" variant="secondary" className="w-fit" disabled={assigning || !setsQuery.isSuccess} onClick={() => void add(outcomes.filter((entry) => entry.status === "failed").map((entry) => entry.id), true).catch(() => undefined)}>Retry failed teams</DenButton> : null}
+        <ul className="divide-y divide-gray-100 text-[13px]" aria-live="polite">{outcomes.map((entry) => <li key={entry.id} className="flex min-h-11 flex-wrap items-center justify-between gap-2 py-2" data-testid="role-assignment-result" data-status={entry.status}><span className="min-w-0 break-words font-medium">{entry.name}</span><span className={entry.status === "failed" ? "text-red-700" : "text-gray-500"}>{entry.status === "assigned" ? "Role assigned" : entry.status === "pending" ? "Not confirmed yet" : `Not confirmed: ${entry.error}`}</span></li>)}</ul>
+        {outcomes.some((entry) => entry.status === "failed") ? <DenButton size="sm" variant="secondary" className="w-fit" disabled={assigning || !setsQuery.isSuccess} onClick={() => void add(outcomes.filter((entry) => entry.status === "failed").map((entry) => entry.id), true).catch(() => undefined)}>Retry unconfirmed teams</DenButton> : null}
       </div> : null}
       <RemoveRoleFromTeam
         set={set}

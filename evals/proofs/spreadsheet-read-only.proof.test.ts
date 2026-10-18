@@ -28,7 +28,7 @@ test("a person previews a workbook without overwriting its other sheets, formula
     expect(await world.workbookHash()).toBe(world.originalHash);
     evidence.recordAssertionEvidence("The original workbook remains byte-for-byte intact", `No Save or Row controls; Download available; SHA-256 unchanged: ${await world.workbookHash()}`, (await world.workbookHash()) === world.originalHash);
     await user.screenshot();
-    await user.press("Escape");
+    await user.click("Artifact actions");
     await user.click("Close artifact");
   });
   await step("CSV remains editable and saves only the delimited table", async () => {

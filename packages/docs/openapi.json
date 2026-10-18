@@ -2430,6 +2430,7 @@
           "key": {
             "type": "string",
             "enum": [
+              "modelRemovalRecovery",
               "lastTurnModelFooter",
               "liveProviderSync",
               "googleDocumentTools",
@@ -2641,6 +2642,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "modelRemovalRecovery": {
+                      "type": "boolean"
+                    },
                     "lastTurnModelFooter": {
                       "type": "boolean"
                     },
@@ -2760,6 +2764,7 @@
                     }
                   },
                   "required": [
+                    "modelRemovalRecovery",
                     "lastTurnModelFooter",
                     "liveProviderSync",
                     "googleDocumentTools",
@@ -2803,6 +2808,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "modelRemovalRecovery": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "lastTurnModelFooter": {
                       "type": "object",
                       "properties": {
@@ -4877,6 +4938,7 @@
                     }
                   },
                   "required": [
+                    "modelRemovalRecovery",
                     "lastTurnModelFooter",
                     "liveProviderSync",
                     "googleDocumentTools",
@@ -5283,6 +5345,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "modelRemovalRecovery": {
+                      "type": "boolean"
+                    },
                     "lastTurnModelFooter": {
                       "type": "boolean"
                     },
@@ -5402,6 +5467,7 @@
                     }
                   },
                   "required": [
+                    "modelRemovalRecovery",
                     "lastTurnModelFooter",
                     "liveProviderSync",
                     "googleDocumentTools",
@@ -5445,6 +5511,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "modelRemovalRecovery": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "lastTurnModelFooter": {
                       "type": "object",
                       "properties": {
@@ -7519,6 +7641,7 @@
                     }
                   },
                   "required": [
+                    "modelRemovalRecovery",
                     "lastTurnModelFooter",
                     "liveProviderSync",
                     "googleDocumentTools",
@@ -31538,6 +31661,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "modelRemovalRecovery": {
+                          "type": "boolean"
+                        },
                         "lastTurnModelFooter": {
                           "type": "boolean"
                         },
@@ -31657,6 +31783,7 @@
                         }
                       },
                       "required": [
+                        "modelRemovalRecovery",
                         "lastTurnModelFooter",
                         "liveProviderSync",
                         "googleDocumentTools",
@@ -31700,6 +31827,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "modelRemovalRecovery": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "lastTurnModelFooter": {
                           "type": "object",
                           "properties": {
@@ -33774,6 +33957,7 @@
                         }
                       },
                       "required": [
+                        "modelRemovalRecovery",
                         "lastTurnModelFooter",
                         "liveProviderSync",
                         "googleDocumentTools",
@@ -33929,6 +34113,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "modelRemovalRecovery": {
+                          "type": "boolean"
+                        },
                         "lastTurnModelFooter": {
                           "type": "boolean"
                         },
@@ -34048,6 +34235,7 @@
                         }
                       },
                       "required": [
+                        "modelRemovalRecovery",
                         "lastTurnModelFooter",
                         "liveProviderSync",
                         "googleDocumentTools",
@@ -34091,6 +34279,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "modelRemovalRecovery": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "lastTurnModelFooter": {
                           "type": "object",
                           "properties": {
@@ -36165,6 +36409,7 @@
                         }
                       },
                       "required": [
+                        "modelRemovalRecovery",
                         "lastTurnModelFooter",
                         "liveProviderSync",
                         "googleDocumentTools",

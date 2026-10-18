@@ -8,6 +8,11 @@ import {
   AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER,
 } from "@openwork/types/automations";
 import type { GatewayProviderSummary } from "@openwork/types/den/gateway";
+import {
+  parseModelRemovalInventory,
+  type ModelRemovalInventory,
+} from "../../react-app/domains/session/surface/model-removal-inventory";
+export type { ModelRemovalInventory } from "../../react-app/domains/session/surface/model-removal-inventory";
 import { workbotSettingsSchema } from "@openwork/types/den/workbot-settings";
 import {
   remoteSessionStatusResultSchema,
@@ -3249,6 +3254,19 @@ export function createDenClient(options: {
       const providers = getDenOrgLlmProviders(payload);
       verifyInventory(payload, "llmProviders", providers.length);
       return providers;
+    },
+
+    /** Never treats unsupported endpoints, auth failures, or partial parsing as absence. */
+    async getModelRemovalInventory(orgId: string): Promise<ModelRemovalInventory> {
+      const [legacy, gateway] = await Promise.all([
+        requestJson<unknown>(baseUrls, "/v1/llm-providers", {
+          method: "GET", token, organizationId: orgId,
+        }),
+        requestJson<unknown>(baseUrls, "/v1/inference-providers?scope=usable", {
+          method: "GET", token, organizationId: orgId,
+        }),
+      ]);
+      return parseModelRemovalInventory(legacy, gateway);
     },
 
     async listOrgGatewayProviders(orgId: string): Promise<DenOrgGatewayProvider[]> {

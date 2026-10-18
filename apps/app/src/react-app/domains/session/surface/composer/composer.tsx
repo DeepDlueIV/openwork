@@ -48,6 +48,8 @@ import { ComposerSuggestionMenu, composerSuggestionRowClass } from "./composer-s
 import type { PlusMenuAgent, PlusMenuConnector, PlusMenuSection } from "./composer-plus-menu-model";
 import { connectionDiagnosticHistory, type ConnectionDiagnosticSource, type SendDiagnosticReason } from "@/app/lib/connection-diagnostic-history";
 import { composerDiagnosticBlockers } from "./composer-diagnostics";
+import { ModelRecoveryNote } from "./model-recovery-note";
+import { modelRecoveryChatKey, useModelRecoveryStore } from "../model-recovery-store";
 
 type MentionItem = {
   id: string;
@@ -78,6 +80,7 @@ type ComposerProps = {
   preparingReasons?: readonly SendDiagnosticReason[];
   modelUnavailable?: boolean;
   modelUnavailableMessage?: string | null;
+  modelRecoveryScope?: string;
   organizationModelsEmpty?: boolean;
   statusLabel: string;
   modelPickerOpen: boolean;
@@ -1368,6 +1371,13 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
               }}
             />
 
+            <ModelRecoveryNote
+              scope={props.modelRecoveryScope}
+              sessionId={props.sessionId}
+              selectedModel={props.selectedModel}
+              onChange={() => props.onModelPickerOpenChange(true)}
+              onSwitchBack={(model) => props.onModelChange(model, null)}
+            />
             {/* Respond to the pane width, including desktop split views. */}
             {props.busy && !props.stopping && escapeArmed ? (
               <div data-composer-stop-confirmation role="status" className="mt-2 text-[12px] font-medium text-gray-10">
@@ -1456,7 +1466,10 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
                   hideValue={props.organizationModelsEmpty}
                   onOpenChange={props.onModelPickerOpenChange}
                   onChange={(model, variant) => {
-                    if (!props.steering) props.onModelChange(model, variant);
+                    if (!props.steering) {
+                      props.onModelChange(model, variant);
+                      if (props.modelRecoveryScope) useModelRecoveryStore.getState().clear(modelRecoveryChatKey(props.modelRecoveryScope, props.sessionId));
+                    }
                   }}
                   disabled={props.steering}
                   sessionId={props.sessionId}

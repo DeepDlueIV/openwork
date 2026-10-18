@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "modelRemovalRecovery": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Model removal recovery: Keep a chat on its chosen model until removal is verified, then offer a nearby model with a quiet, reversible note. Renders DEN_FEATURE_MODEL_REMOVAL_RECOVERY."
+            },
             "lastTurnModelFooter": {
               "enum": [
                 "",

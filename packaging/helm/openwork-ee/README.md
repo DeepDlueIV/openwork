@@ -362,6 +362,7 @@ OpenWork Cloud. Don't change it on a customer install.
 <!-- BEGIN GENERATED features (pnpm features:sync) -->
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
+| `modelRemovalRecovery` | `DEN_FEATURE_MODEL_REMOVAL_RECOVERY` | default off | Keep a chat on its chosen model until removal is verified, then offer a nearby model with a quiet, reversible note. |
 | `lastTurnModelFooter` | `DEN_FEATURE_LAST_TURN_MODEL_FOOTER` | default off | Show the model that replied quietly below the latest answer instead of above the turn. |
 | `liveProviderSync` | `DEN_FEATURE_LIVE_PROVIDER_SYNC` | default off | Keep desktop OpenCode v2 models up to date with the organization's AI Gateway in real time. |
 | `googleDocumentTools` | `DEN_FEATURE_GOOGLE_DOCUMENT_TOOLS` | default off | Connected assistants inspect document tabs and headings, read or search bounded passages, and replace text against the revision they read. |

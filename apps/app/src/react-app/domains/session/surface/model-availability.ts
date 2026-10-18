@@ -129,10 +129,9 @@ export type UnavailableConfirmationGate = {
     verdict: ModelAvailability,
   ) => ModelAvailability;
   /**
-   * Milliseconds until the youngest tracked denial matures (0 when one is
-   * already mature but not yet re-rendered), or null when nothing is tracked.
-   * Callers use this to schedule a re-evaluation so a genuine denial still
-   * surfaces without further catalog changes.
+   * Milliseconds until the next immature denial matures, or null when every
+   * tracked denial has matured (or none are tracked). Mature denials must not
+   * schedule a busy loop or hide another model's pending deadline.
    */
   nextRecheckDelay: (nowMs?: number) => number | null;
 };
@@ -168,7 +167,7 @@ export function createUnavailableConfirmationGate(options?: {
       let next: number | null = null;
       for (const deniedAt of firstDeniedAtByModel.values()) {
         const remaining = confirmMs - (current - deniedAt);
-        if (remaining <= 0) return 0;
+        if (remaining <= 0) continue;
         next = next === null ? remaining : Math.min(next, remaining);
       }
       return next;

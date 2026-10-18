@@ -53,6 +53,13 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  modelRemovalRecovery: {
+    label: "Model removal recovery",
+    description: "Keep a chat on its chosen model until removal is verified, then offer a nearby model with a quiet, reversible note.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   lastTurnModelFooter: {
     label: "Last reply model footer",
     description: "Show the model that replied quietly below the latest answer instead of above the turn.",

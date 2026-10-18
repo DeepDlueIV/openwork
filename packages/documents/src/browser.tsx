@@ -16,6 +16,10 @@ export type DocumentsBrowserProps = {
   scope: readonly string[]
   enabled: boolean
   connectionsHref?: string | null
+  /** A host's existing sign-in flow, opened separately so recovery stays mounted. */
+  signInHref?: string | null
+  /** Freshly verify the authenticated identity still matches scope before revealing recovery. */
+  verifyScope?(): Promise<boolean>
   onDirtyChange?(dirty: boolean): void
   onContextChange?(context: DocumentsViewContext | null): void
   openDocument?: DocumentOpenRequest
@@ -44,7 +48,7 @@ export function DocumentsBrowser(props: DocumentsBrowserProps) {
   return <ScopedDocumentsBrowser key={JSON.stringify([props.scope, props.provider.id])} {...props} />
 }
 
-function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsHref, onDirtyChange, onContextChange, openDocument }: DocumentsBrowserProps) {
+function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsHref, signInHref, verifyScope, onDirtyChange, onContextChange, openDocument }: DocumentsBrowserProps) {
   const queryClient = useQueryClient()
   const scopeKey = JSON.stringify(scope)
   const [resources, setResources] = useState<ReadonlyMap<string, DocumentItem>>(new Map())
@@ -139,11 +143,11 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
     open(requested.data)
   })
   const accessFailure = documentsAccessFailure(query.error) ?? documentsAccessFailure(recent.error)
-  const flagOff = accessFailure === "disabled"
-  const [recovery, setRecovery] = useState<{ until: number; reason: "connection" | "blocked" } | null>(null)
+  const flagOff = !enabled || accessFailure === "disabled"
+  const [recovery, setRecovery] = useState<{ until: number; reason: "signin" | "connection" | "blocked" | "disabled" } | null>(null)
   const [restoring, setRestoring] = useState(false)
   const [recoveryError, setRecoveryError] = useState<string>()
-  const accessLost = accessFailure === "connection" || accessFailure === "blocked" || recovery !== null
+  const accessLost = accessFailure === "signin" || accessFailure === "connection" || accessFailure === "blocked" || recovery !== null
   const editorEnabled = enabled && !flagOff && !accessLost
   const activeItem = opened.find(item => item.id === activeTab)
   const activeFile = activeItem ? resources.get(activeTab) ?? activeItem : undefined
@@ -181,20 +185,23 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
       && JSON.stringify(entry.queryKey.slice(1, scope.length + 1)) === scopeKey })
   }, [queryClient, scopeKey, scope.length, onDirtyChange])
   useEffect(() => {
-    if (accessFailure !== "connection" && accessFailure !== "blocked") return
+    const reason = !enabled ? "disabled" : accessFailure
+    if (!reason) return
     setSelected(null)
     // Do not unmount editors here: Office unmount explicitly discards its encrypted draft.
-    if (opened.length) setRecovery(current => current ?? { until: Date.now() + DOCUMENT_RECOVERY_MS, reason: accessFailure })
-  }, [accessFailure, opened.length])
+    if (opened.length) setRecovery(current => current ?? { until: Date.now() + DOCUMENT_RECOVERY_MS, reason })
+  }, [enabled, accessFailure, opened.length])
   useEffect(() => {
     if (!recovery) return
     const timer = setTimeout(discardRecovery, Math.max(0, recovery.until - Date.now()))
     return () => clearTimeout(timer)
   }, [recovery, discardRecovery])
   const restoreRecovery = async () => {
-    if (restoring || !recovery) return
+    if (restoring || !recovery || !enabled) return
     setRestoring(true); setRecoveryError(undefined)
+    const identityNotice = "Sign-in identity isn't confirmed. Use the same account, then check again."
     try {
+      if (!verifyScope || !await verifyScope()) { setRecoveryError(identityNotice); return }
       const result = await query.refetch()
       if (result.isError) throw result.error
       // A successful directory read never grants access to an individual cached file.
@@ -206,11 +213,14 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
       if (Date.now() >= recovery.until) { discardRecovery(); return }
       const recentResult = await recent.refetch()
       if (recentResult.isError) throw recentResult.error
+      if (!await verifyScope()) { setRecoveryError(identityNotice); return }
       setRecovery(null)
     } catch { setRecoveryError("Access isn't confirmed. Reconnect or ask your admin, then check again.") }
     finally { setRestoring(false) }
   }
-  const needsConnection = accessFailure === "connection" || recovery?.reason === "connection"
+  const needsSignIn = accessFailure === "signin" || recovery?.reason === "signin"
+  const needsConnection = !needsSignIn && (accessFailure === "connection" || recovery?.reason === "connection")
+  const reauthenticateHref = signInHref ?? connectionsHref
   const blocked = accessLost || flagOff
   const visible = enabled && !flagOff && !query.isError && !accessLost
   const refreshFailed = !accessLost && !flagOff && (query.isError || recent.isError)
@@ -224,18 +234,18 @@ function ScopedDocumentsBrowser({ provider, editor, scope, enabled, connectionsH
     </aside>
     <div className="ow-documents-workspace">
       <div className="ow-document-tabs-row" ref={tabsRow}><DocumentTabs items={editorEnabled ? orderedTabs : []} activeId={activeTab} dirtyIds={dirtyIds} busyIds={busyIds} onSelect={setActiveTab} onClose={requestClose} onReorder={setTabOrder}/><div className="ow-document-actions" ref={setActionsHost}/></div>
-      {accessLost && <div className="ow-editor-message" role="status"><Lock size={16} aria-hidden />{needsConnection ? recovery ? "Google Drive needs a fresh connection." : "Connect Google Drive to browse and open your documents. Drive read permission is required." : "Access to your documents isn't confirmed."}{recovery && <><span>Open tabs are locked. Recovery is kept in this tab for up to 15 minutes.</span>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>}<button type="button" disabled={restoring} onClick={() => void restoreRecovery()}>Check access and restore tabs</button><button type="button" disabled={restoring} onClick={discardRecovery}>Discard retained changes</button></>}{!recovery && <>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Connect Google Drive</a>}<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></>}{recoveryError && <span>{recoveryError}</span>}</div>}
+      {accessLost && <div className="ow-editor-message" role="status"><Lock size={16} aria-hidden />{flagOff ? "Documents is off for your workspace. An admin can turn it on." : needsSignIn ? "Sign in again to restore document access." : needsConnection ? recovery ? "Google Drive needs a fresh connection." : "Connect Google Drive to browse and open your documents. Drive read permission is required." : "Access to your documents isn't confirmed."}{needsSignIn && reauthenticateHref && <a href={reauthenticateHref} target="_blank" rel="noopener noreferrer">Sign in again</a>}{recovery && <><span>Open tabs are locked. Recovery is kept in this tab for up to 15 minutes.</span>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>}<button type="button" disabled={restoring || !enabled} onClick={() => void restoreRecovery()}>Check access and restore tabs</button><button type="button" disabled={restoring} onClick={discardRecovery}>Discard retained changes</button></>}{!recovery && <>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Connect Google Drive</a>}<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></>}{recoveryError && <span>{recoveryError}</span>}</div>}
       {!accessLost && flagOff && activeTab !== "files" && <div className="ow-editor-message" role="status">Documents is off for your workspace. An admin can turn it on.<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></div>}
       {refreshFailed && activeTab !== "files" && <div className="ow-editor-message" role="status">Couldn't refresh documents. Your open document is unchanged.<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></div>}
     {enabled && openDocument && requested.isError && <div className="ow-documents-notice" role="status">Couldn't open this document. Check your Drive connection and access. <button type="button" onClick={() => void requested.refetch()}>Try again</button></div>}
     <div className="ow-documents-main" hidden={activeTab !== "files" || accessLost}>
-      <header className="ow-documents-toolbar">
+      <header className="ow-documents-toolbar" hidden={!editorEnabled}>
         <form onSubmit={submit} role="search" className="ow-documents-search"><Search size={16} strokeWidth={1.5} aria-hidden /><input aria-label={`Search ${folder.name}`} placeholder={`Search in ${folder.name}`} value={draft} maxLength={500} onChange={event => setDraft(event.target.value)} /><button type="submit">Search</button></form>
         <button type="button" title="Refresh documents" aria-label="Refresh documents" disabled={!enabled || query.isFetching} onClick={() => { void query.refetch(); void recent.refetch() }}><RefreshCw size={16} strokeWidth={1.5} /></button>
         <div className="ow-documents-layout" role="group" aria-label="Document view"><button type="button" aria-label="List view" aria-pressed={layout === "list"} onClick={() => setLayout("list")}><List size={16} strokeWidth={1.5} /></button><button type="button" aria-label="Grid view" aria-pressed={layout === "grid"} onClick={() => setLayout("grid")}><Grid2X2 size={16} strokeWidth={1.5} /></button></div>
       </header>
-      <div className="ow-documents-heading"><nav aria-label="Folder breadcrumbs">{(view === "recent" ? [{ id: "recent", name: "Recent" }] : folders).map((entry, index) => <span key={`${entry.id}-${index}`}>{index > 0 && <ChevronRight size={14} aria-hidden />}<button type="button" onClick={() => view === "recent" ? setActiveTab("files") : navigate(index)} aria-current={index === folders.length - 1 ? "location" : undefined}>{entry.name}</button></span>)}</nav><label>Sort by <select aria-label="Sort documents" value={order} onChange={event => setOrder(event.target.value === "modified" ? "modified" : event.target.value === "recent" ? "recent" : "name")}><option value="recent">Drive order</option><option value="name">Name</option><option value="modified">Last modified</option></select></label></div>
-      {search && <div className="ow-documents-notice">Results for “{search}” <button type="button" onClick={() => { setDraft(""); setSearch("") }}>Clear search</button></div>}
+      <div className="ow-documents-heading" hidden={!editorEnabled}><nav aria-label="Folder breadcrumbs">{(view === "recent" ? [{ id: "recent", name: "Recent" }] : folders).map((entry, index) => <span key={`${entry.id}-${index}`}>{index > 0 && <ChevronRight size={14} aria-hidden />}<button type="button" onClick={() => view === "recent" ? setActiveTab("files") : navigate(index)} aria-current={index === folders.length - 1 ? "location" : undefined}>{entry.name}</button></span>)}</nav><label>Sort by <select aria-label="Sort documents" value={order} onChange={event => setOrder(event.target.value === "modified" ? "modified" : event.target.value === "recent" ? "recent" : "name")}><option value="recent">Drive order</option><option value="name">Name</option><option value="modified">Last modified</option></select></label></div>
+      {editorEnabled && search && <div className="ow-documents-notice">Results for “{search}” <button type="button" onClick={() => { setDraft(""); setSearch("") }}>Clear search</button></div>}
       {!enabled ? <div className="ow-documents-state"><Lock size={20} strokeWidth={1.5} /><p>Documents is off for your workspace. An admin can turn it on.</p></div>
         : query.isError || accessLost ? <div className="ow-documents-state" role="status">{blocked && <Lock size={20} strokeWidth={1.5} />}<p>{flagOff ? "Documents is off for your workspace. An admin can turn it on." : needsConnection ? "Connect Google Drive to browse and open your documents. Drive read permission is required." : blocked ? "Your workspace blocks access to these documents. An admin can review the connection." : "Couldn't load your documents."}</p>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Connect Google Drive</a>}<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></div>
         : query.isPending ? <div className="ow-documents-skeleton" aria-label="Loading documents" aria-busy="true">{Array.from({ length: 8 }, (_, index) => <div key={index} />)}</div>

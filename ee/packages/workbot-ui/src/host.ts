@@ -29,6 +29,10 @@ export type WorkbotHost = {
   canSchedule?: boolean
   /** Where the person connects their own Google or Microsoft account, for the Calendar's connect links. */
   connectionsHref?: string | null
+  /** Existing sign-in URL, used without replacing a document with retained changes. */
+  signInHref?: string | null
+  /** Fresh sign-in identity check before revealing a retained document draft. */
+  verifyDocumentIdentity?(): Promise<boolean>
   /** The person can start side chats next to their main chat (on while Workbot is on). Off when unset. */
   sideChats?: boolean
   /** Copy-only sharing; does not create invitations or grant membership. */

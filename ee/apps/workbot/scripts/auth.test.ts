@@ -149,13 +149,50 @@ test("only an explicit workspace-choice link asks Den to reopen the workspace de
 
 test("workspace sign-in preserves a local destination but never returns to another site", async () => {
   const app = world().instance()
-  for (const [destination, expected] of [["/documents?chat=example", "/documents?chat=example"], ["https://other.example.test", "/"], ["//other.example.test", "/"], ["/\\other.example.test", "/"]]) {
+  const destinations: Array<[string, string]> = [
+    ["/documents?chat=example#section-2", "/documents?chat=example#section-2"],
+    ["/documents/My%20notes?query=a%20b#part%202", "/documents/My%20notes?query=a%20b#part%202"],
+    ["/?next=https://unrelated.example.test/#stay", "/?next=https://unrelated.example.test/#stay"],
+    ["https://unrelated.example.test", "/"],
+    ["//unrelated.example.test", "/"],
+    ["/\\unrelated.example.test", "/"],
+    ["/documents\\..\\unrelated.example.test", "/"],
+    ["javascript:alert(1)", "/"],
+    ["javascript://unrelated.example.test/", "/"],
+    [" /documents", "/"],
+  ]
+  for (const [destination, expected] of destinations) {
     const login = await app.request(`/auth/login?return=${encodeURIComponent(destination)}`)
     const cookie = cookieValue(login, "__Host-workbot-login") ?? ""
     const state = new URL(login.headers.get("location") ?? "").searchParams.get("state") ?? ""
     const callback = await app.request(`/auth/callback?state=${state}&code=example-code`, { headers: { cookie: `__Host-workbot-login=${cookie}` } })
     assert.equal(callback.status, 302)
     assert.equal(callback.headers.get("location"), expected)
+    assert.equal(new URL(callback.headers.get("location") ?? "", config.publicUrl).origin, config.publicUrl)
+    const session = cookieValue(callback, "__Host-workbot")
+    assert.ok(session)
+    assert.equal((await me(app, session)).status, 200)
+  }
+})
+
+test("encoded controls and ambiguous whitespace fall back to root through a successful sealed sign-in", async () => {
+  const app = world().instance()
+  const controls = ["\t", "\r", "\n", "\r\n", ...Array.from({ length: 33 }, (_, code) => String.fromCharCode(code)), "\u007f", "\u00a0", "\u2028", "\u3000"]
+  for (const control of controls) {
+    const destination = `/${control}/unrelated.example.test`
+    const login = await app.request(`/auth/login?return=${encodeURIComponent(destination)}`)
+    assert.equal(login.status, 302)
+    const loginCookie = cookieValue(login, "__Host-workbot-login")
+    assert.ok(loginCookie)
+    const state = new URL(login.headers.get("location") ?? "").searchParams.get("state")
+    assert.ok(state)
+    const callback = await app.request(`/auth/callback?state=${state}&code=example-code`, { headers: { cookie: `__Host-workbot-login=${loginCookie}` } })
+    assert.equal(callback.status, 302, `Sign-in must succeed for rejected return ${JSON.stringify(destination)}`)
+    assert.equal(callback.headers.get("location"), "/", `Unsafe return ${JSON.stringify(destination)}`)
+    assert.equal(new URL(callback.headers.get("location") ?? "", config.publicUrl).origin, config.publicUrl)
+    const session = cookieValue(callback, "__Host-workbot")
+    assert.ok(session)
+    assert.equal((await me(app, session)).status, 200)
   }
 })
 

@@ -35,10 +35,17 @@ const SESSION_MAX_AGE_S = 30 * 24 * 60 * 60
  */
 const REFRESHED_REUSE_MS = 2 * 60_000
 
-/** A path on this site to return to after signing in; anything else (another site, `//host`) becomes `/`. */
-function safeReturnPath(value: string | undefined) {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return "/"
-  return value.slice(0, 1_000)
+/** Validate before sealing: browsers strip controls and interpret backslashes as path separators. */
+function safeReturnPath(value: string | undefined, publicUrl: string) {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || /[\u0000-\u0020\u007f\\]|\s/u.test(value)) return "/"
+  const path = value.slice(0, 1_000)
+  try {
+    const origin = new URL(publicUrl).origin
+    if (new URL(path, origin).origin !== origin) return "/"
+    return path
+  } catch {
+    return "/"
+  }
 }
 
 function page(title: string, message: string, action: { href: string; label: string }) {
@@ -157,7 +164,7 @@ export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCo
       const state = randomToken()
       const verifier = randomToken()
       // Ties the sign-in to this browser, so a link someone else started can't sign it in as them.
-      const login = { state, verifier, returnTo: safeReturnPath(c.req.query("return")), createdAt: now() }
+      const login = { state, verifier, returnTo: safeReturnPath(c.req.query("return"), config.publicUrl), createdAt: now() }
       setCookie(c, loginCookie, sealer.seal(LOGIN_PURPOSE, login), { ...cookieOptions, maxAge: LOGIN_TTL_MS / 1000 })
       try {
         return c.redirect(await den.authorizeUrl({ state, verifier, chooseWorkspace: c.req.query("workspace") === "choose" }), 302)

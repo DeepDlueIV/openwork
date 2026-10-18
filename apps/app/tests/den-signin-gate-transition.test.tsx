@@ -36,7 +36,7 @@ function Destination() {
 
 for (const requireSignin of [true, false]) {
   for (const destination of ["/settings/cloud-account?tab=profile", "/workspace/ws-fixture/session/ses-fixture"]) {
-    test(`a mounted ${requireSignin ? "required" : "optional"} sign-in gate observes a new org decision without leaving signed_in at ${destination}`, async () => {
+    test.each(["settings", "session"])(`a mounted ${requireSignin ? "required" : "optional"} sign-in gate observes a new org decision without leaving signed_in at ${destination} via %s signal`, async (signal) => {
       await setDenBootstrapConfig({ baseUrl: "https://den.example.test", apiBaseUrl: "https://den.example.test", requireSignin });
       const signedIn: auth.DenAuthStore = { status: "signed_in", isSignedIn: true, error: null,
         user: { id: "user-fixture", email: "member@example.test", name: "Member" },
@@ -56,11 +56,21 @@ for (const requireSignin of [true, false]) {
         root.render(view());
       });
       expect(host.querySelector('[data-testid="destination"]')?.textContent).toBe(destination);
-      // A desktop handoff can keep auth signed_in while clearing the committed
-      // org and parking a real decision. Only the existing settings event fires.
+      if (signal === "session") {
+        // An unresolved org alone is not a navigation command. The later
+        // handoff-complete signal must independently publish the new decision.
+        await act(async () => writeDenSettings({ baseUrl: "https://den.example.test", authToken: "handoff-fixture-session", activeOrgId: "" }, { persistBootstrap: false }));
+        expect(host.querySelector('[data-testid="destination"]')?.textContent).toBe(destination);
+      }
+      // Both existing notification channels can complete a same-status handoff.
+      // Neither requires the auth provider to enter checking or signed_out.
       await act(async () => {
         markOrgSelectionPending({ id: "org-suggested", name: "Suggested organization" });
-        writeDenSettings({ baseUrl: "https://den.example.test", authToken: "handoff-fixture-session", activeOrgId: "" }, { persistBootstrap: false });
+        if (signal === "settings") {
+          writeDenSettings({ baseUrl: "https://den.example.test", authToken: "handoff-fixture-session", activeOrgId: "" }, { persistBootstrap: false });
+        } else {
+          window.dispatchEvent(new CustomEvent(denSessionUpdatedEvent, { detail: { status: "success" } }));
+        }
       });
       expect(useAuth.mock.results.every(result => result.type !== "return" || result.value.status === "signed_in")).toBe(true);
       expect(host.querySelector('[data-testid="destination"]')?.textContent).toBe("/onboarding");

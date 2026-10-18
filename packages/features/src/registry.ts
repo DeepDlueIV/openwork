@@ -284,6 +284,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  nativeCloudSkills: {
+    label: "Organization skills load like local skills",
+    description: "Organization and plugin skills reach agents with their full instructions in one step: the desktop app (OpenCode v2) lists them next to local skills and loads one when a message names it, and MCP clients get a short skill index plus the standard MCP skills listing.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   remoteSessionSubagents: {
     label: "Desktop: tasks on other computers as sub-agents",
     description: "A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop.",

@@ -348,6 +348,16 @@
               ],
               "description": "Invite links verify the invited email: Creating an account from an invitation link, emailed or shared by an admin, counts as verifying that email, so the invited person joins without entering an emailed code. Renders DEN_FEATURE_INVITE_LINK_VERIFIES_EMAIL."
             },
+            "nativeCloudSkills": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Organization skills load like local skills: Organization and plugin skills reach agents with their full instructions in one step: the desktop app (OpenCode v2) lists them next to local skills and loads one when a message names it, and MCP clients get a short skill index plus the standard MCP skills listing. Renders DEN_FEATURE_NATIVE_CLOUD_SKILLS."
+            },
             "remoteSessionSubagents": {
               "enum": [
                 "",

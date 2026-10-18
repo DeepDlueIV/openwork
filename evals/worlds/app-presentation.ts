@@ -59,7 +59,10 @@ export async function appPresentation(seed: Seed) {
       finalReplyChunks: [APP_REPLY], finalReplyInitiallyReleasedChunks: 0,
       steps: [{ tool: "create_app", arguments: {} }] }],
   });
-  const app = await seed.appWeb({ name: "app-presentation", workspacePath: seed.tmpPath("app-presentation"), engine: "v1", headless: true, mocks: { agent: mock } });
+  const app = await seed.appWeb({ name: "app-presentation", workspacePath: seed.tmpPath("app-presentation"), engine: "v1", headless: true,
+    // No organization is needed for this local presentation proof. Keep even
+    // anonymous deployment-feature discovery away from the production Den.
+    env: { OPENWORK_DEV_DEN_PROXY_TARGET: "http://127.0.0.1:9" }, mocks: { agent: mock } });
   const witness = app.mocks.agent;
   if (!witness) throw new Error("The publication witness did not start");
   const workspace = await seed.workspace(app, app.workspaceRoot);

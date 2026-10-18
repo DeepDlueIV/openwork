@@ -107073,6 +107073,179 @@
         ]
       }
     },
+    "/v1/workbot/telemetry": {
+      "post": {
+        "operationId": "recordWorkbotTelemetry",
+        "tags": [
+          "Workbot"
+        ],
+        "x-mcp": false,
+        "summary": "Record content-free Workbot service facts",
+        "description": "Server-to-server only: requires the runner service credential and a live member MCP token. Org and member are resolved from the token. No text or caller-supplied identity is accepted. Telemetry storage failure never fails a user flow.",
+        "responses": {
+          "204": {
+            "description": "Accepted, including best-effort storage failures."
+          },
+          "401": {
+            "description": "Service or member credentials are invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "const": "signed_in"
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "const": "accepted"
+                      },
+                      "sessionId": {
+                        "type": "string",
+                        "pattern": "^hs_wbs?_[a-f0-9]{40}$"
+                      },
+                      "messageId": {
+                        "type": "string",
+                        "pattern": "^(?:wb_hello|wb_[A-Za-z0-9_-]{8,64})$"
+                      },
+                      "timestamp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "attachmentCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20
+                      },
+                      "hasContext": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "sessionId",
+                      "messageId",
+                      "timestamp",
+                      "model",
+                      "attachmentCount",
+                      "hasContext"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "enum": [
+                          "completed",
+                          "failed",
+                          "aborted"
+                        ]
+                      },
+                      "sessionId": {
+                        "type": "string",
+                        "pattern": "^hs_wbs?_[a-f0-9]{40}$"
+                      },
+                      "messageId": {
+                        "type": "string",
+                        "pattern": "^(?:wb_hello|wb_[A-Za-z0-9_-]{8,64})$"
+                      },
+                      "timestamp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "attempt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "modelSource": {
+                        "default": "configured",
+                        "type": "string",
+                        "enum": [
+                          "response",
+                          "configured"
+                        ]
+                      },
+                      "errorCode": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "sessionId",
+                      "messageId",
+                      "timestamp",
+                      "attempt",
+                      "model",
+                      "errorCode"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/workbot/session": {
       "get": {
         "operationId": "getWorkbotSession",

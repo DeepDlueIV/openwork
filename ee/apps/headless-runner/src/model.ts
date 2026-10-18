@@ -21,6 +21,8 @@ export type ModelRequest = {
   cacheAfter?: ReadonlySet<Message>
 }
 export type ModelStep = {
+  /** Provider-reported answering model, when the gateway exposes it (may differ from a requested alias). */
+  model?: string
   text: string
   toolCalls: ToolCall[]
   /** inputTokens includes cachedInputTokens. */
@@ -329,7 +331,10 @@ export function toAnthropicMessages(messages: readonly Message[], cacheAfter?: R
   return out
 }
 
+const reportedModel = (value: string | null | undefined) => value && /^[A-Za-z0-9][A-Za-z0-9_./:@+-]{0,127}$/.test(value) ? value : undefined
+
 const anthropicResponse = z.object({
+  model: z.string().nullish(),
   content: z.array(
     z.discriminatedUnion("type", [
       z.object({ type: z.literal("text"), text: z.string() }),
@@ -365,7 +370,7 @@ const anthropicEvent = z
   .object({
     type: z.string(),
     index: z.number().optional(),
-    message: z.object({ usage: z.record(z.string(), z.unknown()).optional() }).loose().optional(),
+    message: z.object({ model: z.string().nullish(), usage: z.record(z.string(), z.unknown()).optional() }).loose().optional(),
     content_block: z.object({ type: z.string(), id: z.string().optional(), name: z.string().optional() }).loose().optional(),
     delta: z
       .object({ type: z.string().optional(), text: z.string().optional(), partial_json: z.string().optional() })
@@ -388,11 +393,13 @@ async function readAnthropicStream(
   const blocks = new Map<number, { kind: "text"; text: string } | { kind: "tool"; id: string; name: string; json: string } | { kind: "other" }>()
   const usage: Usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }
   let stopped = false
+  let model: string | undefined
   try {
     for await (const raw of sseData(response, signal)) {
       const event = anthropicEvent.safeParse(raw)
       if (!event.success) continue
       const value = event.data
+      if (value.type === "message_start") model = reportedModel(value.message?.model)
       if (value.type === "message_start" && value.message?.usage) {
         const start = value.message.usage
         usage.cachedInputTokens = tokenCount(start.cache_read_input_tokens)
@@ -439,6 +446,7 @@ async function readAnthropicStream(
   if (!stopped) throw streamInterrupted()
   const ordered = [...blocks.entries()].sort(([left], [right]) => left - right).map(([, block]) => block)
   return {
+    ...(model ? { model } : {}),
     text: ordered.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join(""),
     toolCalls: ordered.flatMap((block) => (block.kind === "tool" ? [{ id: block.id, name: block.name, ...parseArguments(block.json) }] : [])),
     usage,
@@ -494,6 +502,7 @@ export function anthropicModel(options: {
         }
       }
       return {
+        ...(reportedModel(parsed.data.model) ? { model: reportedModel(parsed.data.model) } : {}),
         text: text.join(""),
         toolCalls,
         usage: {
@@ -585,6 +594,7 @@ export function toOpenAIMessages(system: string, messages: readonly Message[]): 
 }
 
 const openAIResponse = z.object({
+  model: z.string().nullish(),
   choices: z
     .array(
       z.object({
@@ -610,6 +620,7 @@ const openAIResponse = z.object({
 
 const openAIChunk = z
   .object({
+    model: z.string().nullish(),
     choices: z
       .array(
         z
@@ -652,10 +663,12 @@ async function readOpenAIStream(
   const calls = new Map<number, { id: string; name: string; args: string }>()
   const usage: Usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }
   let finished = false
+  let model: string | undefined
   try {
     for await (const raw of sseData(response, signal)) {
       const chunk = openAIChunk.safeParse(raw)
       if (!chunk.success) continue
+      model = reportedModel(chunk.data.model) ?? model
       const choice = chunk.data.choices?.[0]
       if (choice?.delta?.content) {
         text += choice.delta.content
@@ -684,6 +697,7 @@ async function readOpenAIStream(
   }
   if (!finished) throw streamInterrupted()
   return {
+    ...(model ? { model } : {}),
     text,
     toolCalls: [...calls.entries()]
       .sort(([left], [right]) => left - right)
@@ -727,6 +741,7 @@ export function openAIModel(options: { baseUrl: string; maxOutputTokens: number;
       if (!parsed.success) throw new ModelError("model_bad_response", "Unexpected response from the AI gateway.", false)
       const message = parsed.data.choices[0].message
       return {
+        ...(reportedModel(parsed.data.model) ? { model: reportedModel(parsed.data.model) } : {}),
         text: message.content ?? "",
         toolCalls: (message.tool_calls ?? []).map((call) => ({
           id: call.id,

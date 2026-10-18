@@ -53,7 +53,7 @@ a{display:inline-block;background:#011627;color:#fff;text-decoration:none;font-s
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex")
 
 /** What sign-in needs from Den. */
-export type DenAuth = Pick<Den, "authorizeUrl" | "exchangeCode" | "session" | "refresh" | "revoke">
+export type DenAuth = Pick<Den, "authorizeUrl" | "exchangeCode" | "session" | "refresh" | "revoke"> & Partial<Pick<Den, "recordSignIn">>
 
 export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCookies" | "sessionSecret">; den: DenAuth; now?: () => number }) {
   const { config, den } = input
@@ -179,7 +179,9 @@ export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCo
       try {
         const tokens = await den.exchangeCode(code, login.verifier)
         const who = await den.session(tokens.accessToken)
-        writeSession(c, { id: randomToken(), userId: who.user.id, organizationId: who.organization.id, tokens, createdAt: now() })
+        const id = randomToken()
+        writeSession(c, { id, userId: who.user.id, organizationId: who.organization.id, tokens, createdAt: now() })
+        void den.recordSignIn?.(tokens.accessToken, id).catch(() => undefined)
         return c.redirect(login.returnTo, 302)
       } catch (error) {
         console.error("[workbot] sign-in failed", { error: error instanceof Error ? error.message : "unknown" })

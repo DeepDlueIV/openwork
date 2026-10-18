@@ -30,6 +30,7 @@ import { cache, type CachedOrgMember } from "../../cache.js"
 import { db } from "../../db.js"
 import { requestReadFor } from "../../request-reads.js"
 import { env } from "../../env.js"
+import { recordWorkbotConnection } from "../../workbot/telemetry.js"
 import { memberSignInLink } from "../../agent-links.js"
 import { appLogger } from "../../observability/logger.js"
 import {
@@ -1645,7 +1646,7 @@ async function handleExternalMcpOAuthCallback(input: {
   // change this separate grant binding.
   await rotateReadinessCredentialBinding(connection, statePayload.orgMembershipId)
   const refreshedConnection = await getExternalMcpConnection({ organizationId: connection.organizationId, connectionId: connection.id })
-  if (refreshedConnection) await checkConnectionReadiness(refreshedConnection, statePayload.orgMembershipId, input.requestId)
+  const readiness = refreshedConnection ? await checkConnectionReadiness(refreshedConnection, statePayload.orgMembershipId, input.requestId) : null
   if (member) {
     const { bindSlackOAuthMember } = await import("../../slack-assistant/repository.js")
     try {
@@ -1654,6 +1655,9 @@ async function handleExternalMcpOAuthCallback(input: {
       return mcpOAuthCallbackHtml(connectCallbackPage({ ok: false, name: connection.name, message: "Slack connected, but the assistant identity could not be verified. Connect the Slack account for this workspace and try again." }), 400)
     }
   }
+  if (readiness?.status === "ready") void recordWorkbotConnection({ organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId }, {
+    state, connectionId: connection.id, appId: "external_mcp",
+  })
   return mcpOAuthCallbackHtml(connectCallbackPage({ ok: true, name: connection.name }))
 }
 

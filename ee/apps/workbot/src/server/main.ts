@@ -13,7 +13,7 @@ import { registerWorkbotRoutes } from "./routes.js"
 
 const config = loadConfig()
 await initErrorReporting(config.errorReporting)
-const den = createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl })
+const den = createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl, serviceToken: config.runner.token })
 const auth = createAuth({ config, den })
 
 const app = new Hono<AppEnv>()

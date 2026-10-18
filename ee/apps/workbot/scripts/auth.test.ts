@@ -18,7 +18,8 @@ const who: DenSession = {
 // About the size of Den's JWT access tokens, so the cookie-size limit is exercised realistically.
 const accessToken = (n: number) => `access-${n}-${"x".repeat(1_400)}`
 
-function world(options: { secret?: string } = {}) {
+function world(options: { secret?: string; telemetryFails?: boolean } = {}) {
+  const signIns: Array<{ token: string; id: string }> = []
   let clock = 1_000_000
   const calls = { refresh: [] as string[], revoke: [] as string[] }
   let refreshes = 0
@@ -28,6 +29,10 @@ function world(options: { secret?: string } = {}) {
     authorizeUrl: async ({ state }) => `https://den.test/authorize?state=${state}`,
     exchangeCode: async (): Promise<Tokens> => ({ accessToken: accessToken(0), refreshToken: "refresh-0", expiresAt: clock + 45 * 60_000 }),
     session: async () => who,
+    recordSignIn: async (token, id) => {
+      signIns.push({ token, id })
+      if (options.telemetryFails) throw new Error("telemetry unavailable")
+    },
     refresh: async (refreshToken) => {
       calls.refresh.push(refreshToken)
       // Held until released, so concurrent requests overlap one refresh.
@@ -48,6 +53,7 @@ function world(options: { secret?: string } = {}) {
   return {
     instance,
     calls,
+    signIns,
     advance: (ms: number) => { clock += ms },
     failRefresh: () => { refreshOutcome = "signed_out" },
     release: async () => {
@@ -86,6 +92,19 @@ test("sign-in keeps everything in sealed cookies, and any instance with the secr
   assert.equal(elsewhere.status, 200)
   assert.deepEqual(await elsewhere.json(), { token: "access-0-" })
   assert.equal(w.calls.refresh.length, 0)
+})
+
+test("sign-in telemetry follows a successful cookie write once, and never blocks sign-in", async () => {
+  const w = world({ telemetryFails: true })
+  const app = w.instance()
+  const { session } = await signIn(app)
+  assert.equal(w.signIns.length, 1)
+  assert.equal(w.signIns[0].token, accessToken(0))
+  assert.match(w.signIns[0].id, /^[A-Za-z0-9_-]{16,128}$/)
+  assert.equal((await me(app, session)).status, 200)
+  assert.equal(w.signIns.length, 1, "reading the session is not another sign-in")
+  assert.equal((await app.request("/auth/callback?state=invalid&code=invalid")).status, 400)
+  assert.equal(w.signIns.length, 1, "an unfinished sign-in is never recorded")
 })
 
 test("forged, tampered, other-secret and wrong-purpose cookies are signed out", async () => {

@@ -23,6 +23,7 @@ import { getOrganizationContextForUser, listTeamsForMember } from "../orgs.js"
 import { listMemberUsableConnectionFacts } from "../routes/org/mcp-connections.js"
 import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
 import { organizationDefaultModel } from "./model.js"
+import { recordWorkbotTelemetry, workbotTelemetrySchema, workbotTelemetryServiceAuthorized } from "./telemetry.js"
 
 /**
  * What Den tells the Workbot app (ee/apps/workbot) about a signed-in person. Workbot calls these server-to-server
@@ -204,6 +205,39 @@ const providerNamesSchema = z.object({
 })
 
 export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono<T>) {
+  app.post(
+    "/v1/workbot/telemetry",
+    describeWorkbotRoute({
+      tags: ["Workbot"], operationId: "recordWorkbotTelemetry", "x-mcp": false,
+      summary: "Record content-free Workbot service facts",
+      description: "Server-to-server only: requires the runner service credential and a live member MCP token. Org and member are resolved from the token. No text or caller-supplied identity is accepted. Telemetry storage failure never fails a user flow.",
+      responses: { 204: { description: "Accepted, including best-effort storage failures." }, 401: jsonResponse("Service or member credentials are invalid.", unauthorizedSchema) },
+    }),
+    tokenRoute,
+    bodyLimit({ maxSize: 4096 }),
+    async (c, next) => {
+      if (!workbotTelemetryServiceAuthorized(c.req.header("x-openwork-workbot-service"))) return c.json({ error: "unauthorized" }, 401)
+      await next()
+    },
+    jsonValidator(workbotTelemetrySchema),
+    async (c) => {
+      const resolved = await resolve(c.req.raw.headers)
+      if (resolved instanceof Response) return resolved
+      const auditBlocked = await attributeWorkbot(c, resolved)
+      if (auditBlocked) return auditBlocked
+      const event = c.req.valid("json")
+      // Completion still records if the owner kills Workbot while the greeting is running.
+      await recordWorkbotTelemetry({ organizationId: resolved.organization.id, memberId: resolved.memberId }, event, async () => {
+        const organizationContext = await getOrganizationContextForUser({ userId: normalizeDenTypeId("user", resolved.principal.userId), organizationId: resolved.organization.id })
+        if (!organizationContext) return null
+        const memberTeams = await listTeamsForMember({ organizationId: resolved.organization.id, memberId: normalizeDenTypeId("member", resolved.memberId) })
+        const facts = await listMemberUsableConnectionFacts({ context: { organizationContext, memberTeams, session: null } })
+        return facts.filter((fact) => !fact.setupRequired && fact.connectedForMe && !fact.needsReconnect).length
+      })
+      return c.body(null, 204)
+    },
+  )
+
   app.get(
     "/v1/workbot/session",
     describeWorkbotRoute({

@@ -34671,6 +34671,54 @@ export type PostV1IntegrationsSlackByConnectionIdInteractionsResponses = {
 export type PostV1IntegrationsSlackByConnectionIdInteractionsResponse =
   PostV1IntegrationsSlackByConnectionIdInteractionsResponses[keyof PostV1IntegrationsSlackByConnectionIdInteractionsResponses];
 
+export type RecordWorkbotTelemetryData = {
+  body:
+    | {
+        event: "signed_in";
+        id: string;
+      }
+    | {
+        event: "accepted";
+        sessionId: string;
+        messageId: string;
+        timestamp: number;
+        model: string;
+        attachmentCount: number;
+        hasContext: boolean;
+      }
+    | {
+        event: "completed" | "failed" | "aborted";
+        sessionId: string;
+        messageId: string;
+        timestamp: number;
+        attempt: number;
+        model: string;
+        modelSource?: "response" | "configured";
+        errorCode: string | null;
+      };
+  path?: never;
+  query?: never;
+  url: "/v1/workbot/telemetry";
+};
+
+export type RecordWorkbotTelemetryErrors = {
+  /**
+   * Service or member credentials are invalid.
+   */
+  401: UnauthorizedError;
+};
+
+export type RecordWorkbotTelemetryError = RecordWorkbotTelemetryErrors[keyof RecordWorkbotTelemetryErrors];
+
+export type RecordWorkbotTelemetryResponses = {
+  /**
+   * Accepted, including best-effort storage failures.
+   */
+  204: void;
+};
+
+export type RecordWorkbotTelemetryResponse = RecordWorkbotTelemetryResponses[keyof RecordWorkbotTelemetryResponses];
+
 export type GetWorkbotSessionData = {
   body?: never;
   path?: never;

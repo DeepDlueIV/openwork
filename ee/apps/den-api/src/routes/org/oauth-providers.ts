@@ -4,6 +4,7 @@ import { z } from "zod"
 import { normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import { attributeOAuthCallbackMember } from "../../audit/request-capture.js"
 import { env } from "../../env.js"
+import { recordWorkbotConnection } from "../../workbot/telemetry.js"
 import {
   jsonValidator,
   orgMemberRoute,
@@ -718,6 +719,9 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
         }), 200)
       }
 
+      void recordWorkbotConnection({ organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId }, {
+        state, connectionId: credentialProviderId, appId: provider.providerId,
+      })
       return c.html(connectCallbackPage({ ok: true, name: provider.displayName }))
     },
   )

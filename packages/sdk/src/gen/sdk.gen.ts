@@ -1014,6 +1014,8 @@ import type {
   ReadGoogleDocumentTextResponses,
   ReadGoogleDriveDocumentContentErrors,
   ReadGoogleDriveDocumentContentResponses,
+  RecordWorkbotTelemetryErrors,
+  RecordWorkbotTelemetryResponses,
   RemoteSessionStatusRequest,
   RenamePermissionSetBody,
   ReplaceGoogleDocumentTextErrors,
@@ -16419,6 +16421,57 @@ export class DenClient extends HeyApiClient {
       url: "/v1/integrations/slack/{connectionId}/interactions",
       ...options,
       ...params,
+    });
+  }
+
+  /**
+   * Record content-free Workbot service facts
+   *
+   * Server-to-server only: requires the runner service credential and a live member MCP token. Org and member are resolved from the token. No text or caller-supplied identity is accepted. Telemetry storage failure never fails a user flow.
+   */
+  public recordWorkbotTelemetry<ThrowOnError extends boolean = false>(
+    parameters: {
+      body:
+        | {
+            event: "signed_in";
+            id: string;
+          }
+        | {
+            event: "accepted";
+            sessionId: string;
+            messageId: string;
+            timestamp: number;
+            model: string;
+            attachmentCount: number;
+            hasContext: boolean;
+          }
+        | {
+            event: "completed" | "failed" | "aborted";
+            sessionId: string;
+            messageId: string;
+            timestamp: number;
+            attempt: number;
+            model: string;
+            modelSource?: "response" | "configured";
+            errorCode: string | null;
+          };
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }]);
+    return (options?.client ?? this.client).post<
+      RecordWorkbotTelemetryResponses,
+      RecordWorkbotTelemetryErrors,
+      ThrowOnError
+    >({
+      url: "/v1/workbot/telemetry",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     });
   }
 

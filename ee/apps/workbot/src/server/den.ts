@@ -55,7 +55,7 @@ async function getJson(url: string) {
   return response.json()
 }
 
-export function createDen(options: { apiUrl: string; publicUrl: string }) {
+export function createDen(options: { apiUrl: string; publicUrl: string; serviceToken?: string }) {
   const redirectUri = `${options.publicUrl}/auth/callback`
   let discovered: Promise<Discovery> | null = null
 
@@ -139,6 +139,21 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
         resource,
       }).toString()
       return url.toString()
+    },
+    /** Successful cookie write, not merely a session read. Never awaited by sign-in. */
+    async recordSignIn(accessToken: string, id: string) {
+      if (!options.serviceToken) return
+      try {
+        const response = await fetch(`${options.apiUrl}/v1/workbot/telemetry`, {
+          method: "POST", redirect: "error",
+          headers: { authorization: `Bearer ${accessToken}`, "x-openwork-workbot-service": options.serviceToken, "content-type": "application/json" },
+          body: JSON.stringify({ event: "signed_in", id }), signal: AbortSignal.timeout(2_000),
+        })
+        if (!response.ok) console.warn("[workbot] telemetry_delivery_failed", { status: response.status })
+      } catch {
+        // Analytics is never a sign-in dependency; do not log credentials or response bodies.
+        console.warn("[workbot] telemetry_delivery_failed")
+      }
     },
     exchangeCode: (code: string, verifier: string) =>
       tokenRequest({ grant_type: "authorization_code", code, redirect_uri: redirectUri, code_verifier: verifier }),

@@ -114,9 +114,9 @@ test("a member recovers an authorized draft without losing it to another denied 
     await user.see({ text: "Google Drive needs a fresh connection." });
     world.restoreDrive();
     await user.click({ role: "button", label: "Check access and restore tabs" });
-    await user.see({ text: "Some documents are still locked. Restored tabs are available." });
     await user.click({ role: "button", label: "Project brief.txt, unsaved changes" });
     await user.see({ role: "textbox", label: "Document text" }, { value: "Keep this authorized draft" });
+    await user.see({ text: "Some documents are still locked. Restored tabs are available." });
     await user.notSee({ text: "Budget notes.txt" });
     await user.notSee({ text: "Analysis.xlsx" });
     evidence.recordAssertionEvidence("One denied file does not hold every other draft hostage", "The authorized edited text is visible; the denied and never-opened tabs remain individually locked", world.editorReads().includes("file_budget") && (await probe.dom('[aria-label^="Locked document "]')).elements.length === 2);

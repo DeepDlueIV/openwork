@@ -349,6 +349,8 @@ test("Automation runner Chat Completions is opt-in, pinned to the same model and
     assert.equal(forwarded.length, 1);
     assert.equal(forwarded[0]?.url, "https://api.openai.com/v1/chat/completions");
     assert.equal(forwarded[0]?.body.service_tier, undefined);
+    assert.equal(typeof forwarded[0]?.body.max_completion_tokens, "number");
+    assert.equal(forwarded[0]?.body.max_tokens, undefined);
     const witness = proxy.witnesses.find((entry) => entry.status === "completed");
     assert.equal(witness?.variantEvidence, "automation-runner-chat-completions");
     assert.equal(witness?.route, "https://api.openai.com/v1/chat/completions");

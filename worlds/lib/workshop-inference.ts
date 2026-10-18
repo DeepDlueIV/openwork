@@ -265,15 +265,17 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
       if (body.background === true || body.previous_response_id !== undefined || body.conversation !== undefined) { reject(400, "stored-or-background-inference-not-permitted"); return; }
       if (Array.isArray(body.tools) && body.tools.some((tool) => !record(tool) || tool.type !== "function")) { reject(400, "hosted-upstream-tools-not-permitted"); return; }
       witness.variantEvidence = runnerChat ? "automation-runner-chat-completions" : profile.serviceTier ? "priority-request-body" : "not-fast";
-      const tokenField = route === "/responses" ? "max_output_tokens" : "max_tokens";
-      const requested = body[tokenField] ?? body.max_completion_tokens;
+      // OpenAI's current models reject max_tokens on Chat Completions; OpenRouter (Qwen) still uses it.
+      const tokenField = route === "/responses" ? "max_output_tokens" : profile.provider === "openai" && runnerChat ? "max_completion_tokens" : "max_tokens";
+      const requested = body[tokenField] ?? body.max_completion_tokens ?? body.max_tokens;
       if (requested !== undefined && (!Number.isSafeInteger(requested) || typeof requested !== "number" || requested <= 0)) { reject(400, "invalid-output-token-bound"); return; }
       witness.requestedMaxOutputTokens = typeof requested === "number" ? requested : null;
       const allowance = Math.min(typeof requested === "number" ? requested : limits.maxOutputTokens, limits.maxOutputTokens, limits.maxTotalOutputTokens - outputReserved);
       if (allowance <= 0) { reject(429, "output-token-budget-exhausted"); return; }
       // Token bounds may be tightened, but Fast and reasoning are NEVER injected or modified.
-      body[tokenField] = allowance;
       delete body.max_completion_tokens;
+      delete body.max_tokens;
+      body[tokenField] = allowance;
       if (route === "/responses") body.store = false;
       if (route === "/chat/completions" && body.stream === true) body.stream_options = { include_usage: true };
       witness.forwardedMaxOutputTokens = allowance;

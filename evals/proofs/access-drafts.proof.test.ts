@@ -72,6 +72,29 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
     await user.click({ role: "button", label: "Save changes" });
     await user.notSee({ testId: "agent-permissions-save-bar" });
   });
+  await step("a denied policy refresh masks cached settings through a later network failure", async () => {
+    await world.traffic.faults.status(world.faultPath("/v1/agent-permissions"), 403, { times: 1, method: "GET", body: { error: "forbidden" } });
+    await user.click({ role: "switch", label: "Search the web" });
+    await user.click({ role: "button", label: "Save changes" });
+    await user.see({ text: "Couldn't verify access to agent permissions. Try again." });
+    await user.notSee({ role: "button", label: "Run commands" });
+    await world.traffic.faults.status(world.faultPath("/v1/agent-permissions"), 503, { times: 1, method: "GET", body: { error: "unavailable" } });
+    await user.click({ role: "button", label: "Try again" });
+    const requests = await probe.eventually(() => world.traffic.requestLog(), { within: 30_000, label: "a policy network failure followed the denial", until: (entries) => entries.some((entry) => entry.method === "GET" && entry.path.endsWith("/v1/agent-permissions") && entry.status === 503 && entry.faulted) });
+    await user.notSee({ role: "button", label: "Run commands" });
+    const shown = await probe.dom('[data-testid="agent-permission-commands"]');
+    evidence.recordAssertionEvidence("a later transient failure cannot reveal denied cached policies", `denied reads=${requests.filter((entry) => entry.status === 403 && entry.faulted).length}; cached command rows=${shown.elements.length}`, requests.some((entry) => entry.status === 403 && entry.faulted) && shown.elements.length === 0);
+    expect(shown.elements).toHaveLength(0);
+    await user.screenshot();
+  });
+  await step("a new authorized policy read restores the saved settings, not defaults or an old draft", async () => {
+    await user.click({ role: "button", label: "Try again" });
+    await user.see({ role: "button", label: "Run commands" }, { text: "Block" });
+    const blockedSearch = await probe.dom('[role="switch"][aria-label="Search the web"][aria-checked="false"]');
+    evidence.recordAssertionEvidence("authorized policy recovery restores actual saved choices", `commands=Block; blocked search switches=${blockedSearch.elements.length}`, blockedSearch.elements.length === 1);
+    expect(blockedSearch.elements).toHaveLength(1);
+    await user.screenshot();
+  });
   await step("role permission edits survive History and return through correctly associated panels", async () => {
     await user.navigate(world.url(`/dashboard/permissions/${world.role}`));
     await user.see({ role: "tab", label: "Permissions" });

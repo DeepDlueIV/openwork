@@ -157,7 +157,7 @@ export function WithPolicies({ orgId, children }: { orgId: string; children: (da
   const query = useAgentPermissions(orgId);
   if (query.isPending) return <EditorSkeleton />;
   const denied = query.error instanceof AgentPermissionsReadError && [401, 403, 404].includes(query.error.status);
-  const failure = query.isError ? <DenNotice tone="error" message={query.data && !denied ? "Couldn't refresh agent permissions. Your draft is kept; verify the saved settings before saving." : query.error.message} action={<DenButton variant="secondary" size="sm" loading={query.isFetching} onClick={() => void query.refetch()}>Try again</DenButton>} /> : null;
+  const failure = query.isError ? <DenNotice tone="error" message={query.data && !denied ? "Couldn't refresh agent permissions. Your draft is kept; verify the saved settings before saving." : query.error?.message ?? "Couldn't load agent permissions."} action={<DenButton variant="secondary" size="sm" loading={query.isFetching} onClick={() => void query.refetch()}>Try again</DenButton>} /> : null;
   if (!query.data || denied) return failure;
   return <>{failure}{children(query.isError ? { ...query.data, canEdit: false } : query.data)}</>;
 }

@@ -96,7 +96,7 @@ test("safe identifiers survive local and remote validation failure while secrets
     schemaVersion: "1", kind: "credential_prompt", name: "Fixture provider", destination: null, target: { type: "gateway_provider_credential", inferenceProviderId: "ipr_fixture", credentialSetId: "gcs_fixture", credentialKind: "aws_keys" },
   } } }
   await mount(aws)
-  expect(document.activeElement).toBe(outside)
+  expect(document.activeElement === outside).toBe(true)
   const id = container.querySelector<HTMLInputElement>('input:not([type="password"])')
   const secret = container.querySelector<HTMLInputElement>('input[type="password"]')
   await type(id, "AKIAFIXTURE")

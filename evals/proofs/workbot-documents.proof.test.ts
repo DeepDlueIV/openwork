@@ -133,7 +133,7 @@ test("a member handles a document request needing sign-in without replacing its 
     world.useOtherOrganization();
     await user.click({ role: "button", label: "Check sign-in" });
     await probe.eventually(() => world.identityScopes(), { within: 5000, label: "the current sign-in is the original person in another workspace", until: values => values.some(value => value.principalId === "user_example" && value.organizationId === "org_other") });
-    await probe.eventually(() => probe.dom('main[aria-label="Workspace sign-in recovery"] button:not(:disabled)'), { within: 5000, label: "the different workspace's identity check has settled", until: layout => layout.elements.length === 1 });
+    await probe.eventually(() => probe.dom('main[aria-label="Workspace sign-in recovery"][aria-busy="false"]'), { within: 5000, label: "the different workspace's identity check has settled", until: layout => layout.elements.length === 1 });
     await user.see({ text: "The signed-in account or workspace changed. Retained documents are locked." });
     await user.notSee({ role: "textbox", label: "Document text" });
     evidence.recordAssertionEvidence("Fresh identity is separate from file permissions", "The file service permits reads, but neither another person nor the same person in another workspace can restore the original draft", (await probe.dom(".ow-editor-plain")).elements.length === 0);

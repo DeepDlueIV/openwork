@@ -343,7 +343,8 @@ export function buildWorkbotTurns(snapshot: RunnerSnapshot, files: FileNames = n
       for (const step of part.steps) {
         if (step.status !== "running" || working) continue
         step.status = status === "stopped" ? "stopped" : "interrupted"
-        step.finishedAt = turn.updatedAt ?? null
+        // The end of the turn is not a measured command completion.
+        step.finishedAt = null
       }
     }
     // A closing "Next: a | b | c" line becomes buttons: the hello asks for one, and later answers sometimes follow suit.

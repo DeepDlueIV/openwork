@@ -42,7 +42,9 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
           if (url.pathname === "/v1/workbot/me") return json({ name: "Alex", email: "alex@example.test", userId: "user_example", organizationId: "org_example", organizationName: "Example", enabled: true, calendar: false, documents: false, workspaceAssistant: false, sideChats: false, denUrl: "https://example.test" });
           if (url.pathname === "/v1/workbot/events") {
             if (unavailable) return json({ error: "unavailable" }, 503);
-            res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.write("event: ready\ndata: {}\n\n"); streams.add(res); req.on("close", () => streams.delete(res)); return;
+            res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.write("event: ready\ndata: {}\n\n");
+            res.write(`data: ${JSON.stringify({ type: "text", messageId: "example", step: 1, delta: "The figures still need verification.", reset: true })}\n\n`);
+            streams.add(res); req.on("close", () => streams.delete(res)); return;
           }
           if (url.pathname === "/v1/workbot") {
             if (unavailable) return json({ error: "unavailable" }, 503);

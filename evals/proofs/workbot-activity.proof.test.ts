@@ -1,4 +1,5 @@
-import { expect, spec } from "@openwork/testkit";
+import { expect } from "vitest";
+import { spec } from "@openwork/testkit";
 import { workbotActivity } from "../worlds/workbot-activity.ts";
 
 const test = spec.world(workbotActivity, { timeout: 90_000, needs: { placement: "local" }, resources: { surfaces: [], services: [] } });
@@ -25,6 +26,7 @@ test("a member sees unverified work, failed stop, and a last-known conversation 
     await user.screenshot();
     await user.click({ role: "button", label: "Try stopping again" });
     await user.see({ text: "Stopped. This answer may be incomplete." });
+    await user.see({ text: "The figures still need verification." });
     expect(world.stopAttempts()).toBe(2);
   });
   await step("a background task also exposes its stop failure without hiding the card", async () => {

@@ -4,7 +4,7 @@ import { workbotFirstRun } from "../worlds/workbot-first-run.ts";
 
 const test = spec.world(workbotFirstRun, {
   timeout: 600_000,
-  needs: { commands: ["bun", "pnpm", "redis-server"], placement: "local" },
+  needs: { commands: ["bun", "pnpm"], placement: "local" },
   resources: { surfaces: ["web"], services: ["den", "mock"] },
 });
 

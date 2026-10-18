@@ -26,7 +26,7 @@ test("an owner can recover shared suggestion assignments without unlocking them 
     expect(url).toContain("view=assignments");
     await user.screenshot();
   });
-  await step("the owner separates one audience while retaining the policy and its enforcement values", async () => {
+  await step("the owner separates overlapping audiences while retaining the policy and its enforcement values", async () => {
     await user.click({ role: "checkbox", label: "Other audience" });
     await user.click({ role: "switch", label: "Member role" });
     await user.click({ role: "button", label: "Save changes" });

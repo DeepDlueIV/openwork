@@ -59,7 +59,8 @@ config:
     teamAccessRows: ""             # default off · Team plugin access shows compact rows with clear access sources and a confirmation before revoking a team grant.
     teamPageTabs: ""               # default off · Each team's page, and Everyone's, gets a Browser tab for the pages agents and the built-in browser can open, and a Models tab with the AI providers the team can use, its spend limits and its default model.
     inviteLinkVerifiesEmail: ""    # default off · Creating an account from an invitation link, emailed or shared by an admin, counts as verifying that email, so the invited person joins without entering an emailed code.
-    nativeCloudSkills: ""          # default off · Organization and plugin skills reach agents with their full instructions in one step: the desktop app (OpenCode v2) lists them next to local skills and loads one when a message names it, and MCP clients get a short skill index plus the standard MCP skills listing.
+    nativeCloudSkills: ""          # default off · In the desktop app (OpenCode v2), organization and plugin skills are listed next to local skills with their full description and load with their full instructions in one step, and a skill a message names loads before the agent starts.
+    mcpSkillsExtension: ""         # default off · MCP clients connected to OpenWork (Claude Code, Codex, Cursor and others) get a short list of the member's skills when they connect, and clients that support the MCP Skills Extension can list and load those skills directly.
     remoteSessionSubagents: ""     # default off · A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop.
   # END GENERATED features
   tenancy:

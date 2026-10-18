@@ -552,9 +552,11 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     const receiptScope = { organizationId, createdByUserId: normalizeDenTypeId("user", principal.userId) }
     const receiptStores = { commandStore: databaseRemoteSessionCommandStore, requestStore: databaseRemoteSessionRequestStore }
     const remoteSessionEventsEnabled = Boolean(memberIdentity && organizationFeatures.remoteSessionEvents)
-    // nativeCloudSkills: the skill index carries digests for native delivery,
-    // the MCP Skills Extension is served, and session instructions list skills.
+    // nativeCloudSkills: the skill index carries digests for OpenWork's native delivery.
+    // mcpSkillsExtension: the MCP Skills Extension is served and session
+    // instructions list the member's skills, for every MCP client.
     const nativeSkills = Boolean(memberIdentity && organizationFeatures.nativeCloudSkills)
+    const skillsExtension = Boolean(memberIdentity && organizationFeatures.mcpSkillsExtension)
     let resolvedSkillsPromise: Promise<ResolvedSkill[]> | null = null
     const loadResolvedSkills = (): Promise<ResolvedSkill[]> => resolvedSkillsPromise ??= (async () => resolveAgentSkills({
       skills: await loadRemoteSkills(),
@@ -566,10 +568,10 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
       appServers: appServersEnabled,
       remoteSessionEvents: remoteSessionEventsEnabled,
       remoteSessionStatus: Boolean(memberIdentity && organizationFeatures.remoteSessionSubagents),
-      skillsExtension: nativeSkills,
-      skillIndex: nativeSkills && advertisesInstructions ? skillIndexInstructions(await loadRemoteSkills()) : undefined,
+      skillsExtension,
+      skillIndex: skillsExtension && advertisesInstructions ? skillIndexInstructions(await loadRemoteSkills()) : undefined,
     })
-    if (nativeSkills) registerSkillsExtension(server, loadResolvedSkills)
+    if (skillsExtension) registerSkillsExtension(server, loadResolvedSkills)
     if (remoteSessionEventsEnabled) registerRemoteSessionReceiptResources({ server, ...receiptStores, ...receiptScope })
     registerAgentConnectionActionApp(server, { organizationId: principal.organizationId, member: memberIdentity })
     if (appServersEnabled) {

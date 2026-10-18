@@ -2464,6 +2464,7 @@
               "teamPageTabs",
               "inviteLinkVerifiesEmail",
               "nativeCloudSkills",
+              "mcpSkillsExtension",
               "remoteSessionSubagents"
             ]
           },
@@ -2741,6 +2742,9 @@
                     "nativeCloudSkills": {
                       "type": "boolean"
                     },
+                    "mcpSkillsExtension": {
+                      "type": "boolean"
+                    },
                     "remoteSessionSubagents": {
                       "type": "boolean"
                     },
@@ -2786,6 +2790,7 @@
                     "teamPageTabs",
                     "inviteLinkVerifiesEmail",
                     "nativeCloudSkills",
+                    "mcpSkillsExtension",
                     "remoteSessionSubagents",
                     "gatewayDashboard"
                   ]
@@ -4697,6 +4702,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "mcpSkillsExtension": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "remoteSessionSubagents": {
                       "type": "object",
                       "properties": {
@@ -4789,6 +4850,7 @@
                     "teamPageTabs",
                     "inviteLinkVerifiesEmail",
                     "nativeCloudSkills",
+                    "mcpSkillsExtension",
                     "remoteSessionSubagents"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -5261,6 +5323,9 @@
                     "nativeCloudSkills": {
                       "type": "boolean"
                     },
+                    "mcpSkillsExtension": {
+                      "type": "boolean"
+                    },
                     "remoteSessionSubagents": {
                       "type": "boolean"
                     },
@@ -5306,6 +5371,7 @@
                     "teamPageTabs",
                     "inviteLinkVerifiesEmail",
                     "nativeCloudSkills",
+                    "mcpSkillsExtension",
                     "remoteSessionSubagents",
                     "gatewayDashboard"
                   ]
@@ -7217,6 +7283,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "mcpSkillsExtension": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "remoteSessionSubagents": {
                       "type": "object",
                       "properties": {
@@ -7309,6 +7431,7 @@
                     "teamPageTabs",
                     "inviteLinkVerifiesEmail",
                     "nativeCloudSkills",
+                    "mcpSkillsExtension",
                     "remoteSessionSubagents"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -31394,6 +31517,9 @@
                         "nativeCloudSkills": {
                           "type": "boolean"
                         },
+                        "mcpSkillsExtension": {
+                          "type": "boolean"
+                        },
                         "remoteSessionSubagents": {
                           "type": "boolean"
                         },
@@ -31439,6 +31565,7 @@
                         "teamPageTabs",
                         "inviteLinkVerifiesEmail",
                         "nativeCloudSkills",
+                        "mcpSkillsExtension",
                         "remoteSessionSubagents",
                         "gatewayDashboard"
                       ]
@@ -33350,6 +33477,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "mcpSkillsExtension": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "remoteSessionSubagents": {
                           "type": "object",
                           "properties": {
@@ -33442,6 +33625,7 @@
                         "teamPageTabs",
                         "inviteLinkVerifiesEmail",
                         "nativeCloudSkills",
+                        "mcpSkillsExtension",
                         "remoteSessionSubagents"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -33663,6 +33847,9 @@
                         "nativeCloudSkills": {
                           "type": "boolean"
                         },
+                        "mcpSkillsExtension": {
+                          "type": "boolean"
+                        },
                         "remoteSessionSubagents": {
                           "type": "boolean"
                         },
@@ -33708,6 +33895,7 @@
                         "teamPageTabs",
                         "inviteLinkVerifiesEmail",
                         "nativeCloudSkills",
+                        "mcpSkillsExtension",
                         "remoteSessionSubagents",
                         "gatewayDashboard"
                       ]
@@ -35619,6 +35807,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "mcpSkillsExtension": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "remoteSessionSubagents": {
                           "type": "object",
                           "properties": {
@@ -35711,6 +35955,7 @@
                         "teamPageTabs",
                         "inviteLinkVerifiesEmail",
                         "nativeCloudSkills",
+                        "mcpSkillsExtension",
                         "remoteSessionSubagents"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."

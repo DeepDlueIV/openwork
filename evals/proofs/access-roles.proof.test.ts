@@ -7,15 +7,16 @@ const test = spec.world(accessRolesWorld, { timeout: 900_000, resources: { surfa
 const lookupTest = spec.world(accessRoleLookupFailure, { timeout: 900_000, resources: { surfaces: ["web"], services: ["den"] } });
 
 test("an owner edits organization access separately from team roles, without demoting an Admin when a team write fails", async ({ world, user, probe, step, evidence }) => {
-  await step("the owner opens the Admin's organization role without any team membership choices", async () => {
+  let customInOrganizationEditor = false;
+  await step("the owner inspects the Admin's organization access choices", async () => {
     await user.see({ text: "Direct Admin" }, { timeoutMs: 90_000 });
     await user.click({ role: "button", label: "Open actions for Direct Admin" });
     await user.click("Edit role");
     await user.click({ testId: "member-role-change" });
     await user.see({ role: "option", label: "Admin" });
-    await user.notSee({ role: "option", label: /Publisher role/ });
     const choices = await probe.dom('[data-testid="member-role-choice"] [role="option"]');
-    evidence.recordAssertionEvidence("organization role is independent of custom team roles", choices.elements.map((entry) => entry.text).join(", "), choices.elements.length === 2 && !choices.elements.some((entry) => entry.text.includes("Publisher role")));
+    customInOrganizationEditor = choices.elements.some((entry) => entry.text.includes("Previous role"));
+    evidence.recordAssertionEvidence("the owner can inspect the Admin's role choices", choices.elements.map((entry) => entry.text).join(", "), choices.elements.some((entry) => entry.text === "Admin"));
     await user.screenshot();
     await user.press("Escape");
     await user.click({ role: "button", label: "Cancel" });
@@ -23,9 +24,20 @@ test("an owner edits organization access separately from team roles, without dem
   await step("a failed team membership change leaves the direct Admin role unchanged", async () => {
     await world.traffic.faults.status(world.faultPath(`/v1/teams/${world.beta}`), 503, { method: "PATCH", body: { error: "unavailable", message: "Team update unavailable" } });
     await user.click({ role: "button", label: "Open actions for Direct Admin" });
-    await user.click({ role: "menuitem", label: "Manage teams" });
-    await user.click({ role: "button", label: "Beta team" });
-    await user.click({ role: "button", label: "Save teams" });
+    // Exercise the former combined action on the base, and the separate team
+    // action on the head. Both reach the same real failed membership request.
+    if (customInOrganizationEditor) {
+      await user.click({ role: "menuitem", label: "Edit role" });
+      await user.click({ testId: "member-role-change" });
+      await user.click({ testId: `member-role-option-role:${world.previous}` });
+      await user.click({ testId: "member-role-save" });
+    } else {
+      await user.click({ role: "menuitem", label: "Manage teams" });
+      await user.click({ role: "button", label: "Beta team" });
+      await user.click({ role: "button", label: "Save teams" });
+    }
+    const requests = await probe.eventually(() => world.traffic.requestLog(), { within: 30_000, label: "the team membership request failed", until: (entries) => entries.some((entry) => entry.path.endsWith(`/v1/teams/${world.beta}`) && entry.method === "PATCH" && entry.faulted && entry.status === 503) });
+    evidence.recordAssertionEvidence("the membership failure really occurred", `failed Beta membership writes=${requests.filter((entry) => entry.path.endsWith(`/v1/teams/${world.beta}`) && entry.faulted).length}`, requests.some((entry) => entry.path.endsWith(`/v1/teams/${world.beta}`) && entry.faulted && entry.status === 503));
     await user.see({ text: "Team update unavailable" });
     const org = record((await probe.api(world.den.admin, "/v1/org")).body);
     const member = rows(org.members).find((entry) => entry.id === world.targetId);
@@ -33,6 +45,7 @@ test("an owner edits organization access separately from team roles, without dem
     const safe = member?.role === "admin" && Array.isArray(team?.memberIds) && !team.memberIds.includes(world.targetId);
     evidence.recordAssertionEvidence("no intermediate demotion", `direct role=${String(member?.role)}; failed team membership is absent=${safe}`, safe);
     expect(safe).toBe(true);
+    expect(customInOrganizationEditor).toBe(false);
     await user.screenshot();
   });
   await step("a member without access is refused another person's permissions", async () => {
@@ -53,7 +66,8 @@ lookupTest("an owner cannot mistake a failed role lookup for Member or change an
   });
   await step("after: retry verifies the team in place and restores the role action", async () => {
     await user.click({ role: "button", label: "Try again" });
-    await user.see({ text: "No custom role" });
+    await user.see({ testId: "team-role-name" }, { text: "Previous role" });
+    await probe.eventually(() => probe.dom('[data-testid="team-role-change"]:not(:disabled)'), { within: 30_000, label: "role prerequisites are verified", until: (result) => result.elements.length === 1 });
     await user.click({ testId: "team-role-change" });
     await user.see({ role: "option", label: /Publisher role/ });
     const choices = await probe.dom('[data-testid="team-role-choice"] [role="option"]');
@@ -62,33 +76,42 @@ lookupTest("an owner cannot mistake a failed role lookup for Member or change an
   });
   await step("choosing a custom role keeps organization Admin access as its own grant", async () => {
     await user.click({ testId: `team-role-option-${world.publisher}` });
-    await user.see({ text: /Organization Admin access stays on\./ });
+    await user.see({ text: /Organization Admin access stays off\./ });
     await user.click({ testId: "team-role-save" });
     await user.see({ testId: "team-role-name" }, { text: "Publisher role" });
     const org = record((await probe.api(world.den.admin, "/v1/org")).body);
-    const admin = rows(org.teams).find((entry) => entry.id === world.alpha)?.grantsOrganizationAdmin;
-    evidence.recordAssertionEvidence("custom assignment does not demote the team", `organization Admin access=${String(admin)}`, admin === true);
-    expect(admin).toBe(true);
+    const admin = rows(org.teams).find((entry) => entry.id === world.beta)?.grantsOrganizationAdmin;
+    evidence.recordAssertionEvidence("custom assignment does not change organization Admin access", `organization Admin access=${String(admin)}`, admin === false);
+    expect(admin).toBe(false);
     await user.screenshot();
   });
 });
 
 test("an owner sees replacement consequences and retries only the teams whose role assignment failed", async ({ world, user, probe, step, evidence }) => {
-  await step("the owner reviews which existing role each team will lose before assignment", async () => {
+  let reviewedConsequences = "";
+  await step("the owner reviews two selected teams before assigning their role", async () => {
     await user.navigate(world.url(`/dashboard/permissions/${world.publisher}`));
-    await user.click({ role: "button", label: "Assign role" });
+    await user.see({ testId: "role-teams" });
+    await probe.eventually(() => probe.dom('[data-testid="role-teams"] button:not(:disabled)'), { within: 30_000, label: "team role inventory is verified", until: (result) => result.elements.length > 0 });
+    await user.click({ role: "button", label: /^(Assign role|Add team)$/ });
     await user.click({ role: "option", label: /Alpha team/ });
     await user.click({ role: "option", label: /Beta team/ });
-    await user.see({ text: "Beta team: Replaces Previous role" });
-    await user.see({ text: "Alpha team: Adds this custom role; keeps organization Admin access" });
     const consequences = await probe.dom('[aria-label="Changes to review"]');
-    const described = consequences.elements.map((entry) => entry.text).join("; ");
-    evidence.recordAssertionEvidence("the replacement is visible before confirming", described, described.includes("Replaces Previous role") && described.includes("keeps organization Admin access"));
+    reviewedConsequences = consequences.elements.map((entry) => entry.text).join("; ");
+    const selected = await probe.dom('[data-testid="access-add-team-popover"] [role="option"][aria-selected="true"]');
+    evidence.recordAssertionEvidence("two teams were selected before the write", selected.elements.map((entry) => entry.text).join("; "), selected.elements.length === 2);
+    expect(selected.elements).toHaveLength(2);
     await user.screenshot();
   });
   await step("one failed team stays selected, with both teams' actual outcomes retained", async () => {
     await world.traffic.faults.status(world.faultPath(`/v1/teams/${world.beta}/permission-set`), 503, { method: "PUT", body: { error: "unavailable", message: "Beta team unavailable" } });
-    await user.click({ role: "button", label: "Assign role", nth: 1 });
+    const popup = await probe.dom('[data-testid="access-add-team-popover"] button');
+    // Drive both versions' real submit action so the base fails after the fault,
+    // not merely because its older entry point is named Add team.
+    if (popup.elements.some((entry) => entry.text === "Assign role")) await user.click({ role: "button", label: "Assign role", nth: 1 });
+    else await user.click({ role: "button", label: "Add 2 teams" });
+    const faulted = await probe.eventually(() => world.traffic.requestLog(), { within: 30_000, label: "the second team's real write failed", until: (requests) => requests.some((entry) => entry.path.endsWith(`/${world.beta}/permission-set`) && entry.method === "PUT" && entry.faulted && entry.status === 503) });
+    evidence.recordAssertionEvidence("the second team really hit a failed write", `faulted Beta writes=${faulted.filter((entry) => entry.path.endsWith(`/${world.beta}/permission-set`) && entry.faulted).length}`, faulted.some((entry) => entry.path.endsWith(`/${world.beta}/permission-set`) && entry.faulted && entry.status === 503));
     await user.see({ text: "Couldn't confirm the role for 1 team. Review the team results and retry only unconfirmed teams." });
     await user.press("Escape");
     const results = await probe.dom('[data-testid="role-assignment-result"]');
@@ -106,6 +129,10 @@ test("an owner sees replacement consequences and retries only the teams whose ro
     evidence.recordAssertionEvidence("retry does not replay successful writes", `Alpha writes=${alpha.length}; Beta writes=${beta.length}; confirmed teams=${results.elements.length}`, alpha.length === 1 && beta.length === 2);
     expect(alpha).toHaveLength(1);
     expect(beta).toHaveLength(2);
+    expect(reviewedConsequences).toContain("Replaces Previous role");
+    expect(reviewedConsequences).toContain("keeps organization Admin access");
+    const org = record((await probe.api(world.den.admin, "/v1/org")).body);
+    expect(rows(org.teams).find((entry) => entry.id === world.alpha)?.grantsOrganizationAdmin).toBe(true);
     await user.screenshot();
   });
 });

@@ -28,7 +28,7 @@ async function accessRoles(seed: Seed, { place }: { place: Place }, lookupFailur
   const traffic = proxy ?? await seed.faultProxy(den);
   const faultPath = (path: string) => proxy ? path : `/api/den${path}`;
   if (lookupFailure) await traffic.faults.status(faultPath("/v1/permissions/sets"), 503, { times: 1, method: "GET", body: { error: "unavailable", message: "Role lookup unavailable" } });
-  const startPath = lookupFailure ? `/dashboard/members/teams/${alpha}` : "/dashboard/members";
+  const startPath = lookupFailure ? `/dashboard/members/teams/${beta}` : "/dashboard/members";
   const web = await seed.web({ den: proxy ? den : { ...den, ref: traffic.ref }, signedInAs: den.admin, startPath, headless: true, viewport: { width: 1280, height: 900 } });
   return { den, web, orgId, alpha, beta, publisher, previous, targetId, traffic, faultPath,
     url: (path: string) => new URL(path, den.ref.webUrl).toString(),

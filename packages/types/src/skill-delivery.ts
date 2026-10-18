@@ -40,7 +40,8 @@ export function skillDeliveryEvidence(call: {
   const named = typeof output?.name === "string" ? output.name.trim() : "";
   const content = typeof output?.content === "string" ? output.content : text || (typeof call.output === "string" && !output ? call.output : "");
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)?.[1];
-  const slug = frontmatter ? /^name:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim() : undefined;
+  const nameLine = frontmatter?.split(/\r?\n/).find(line => line.startsWith("name:"));
+  const slug = nameLine?.slice("name:".length).trim() || undefined;
   const name = (named || (asked && !asked.includes(":") ? asked : slug) || null)?.slice(0, 128) ?? null;
   if (call.status === "error" || envelope?.isError === true || call.isError) return { name, state: "blocked" };
   if (call.status === "selected") return { name, state: "selected" };

@@ -60,6 +60,12 @@ describe("skill delivery evidence", () => {
     expect(getCapabilityCallSentence(loaded).past).toBe("Loaded “review” instructions");
     expect(getCapabilityCallSentence(loaded).past).not.toMatch(/Used|Using/);
   });
+  test("tab-heavy frontmatter is parsed without a backtracking name expression", () => {
+    const output = `---\nname:${"\t".repeat(100_000)}\n---\nRead the report.`;
+    const found = skillEvidence({ ...native, toolName: "openwork_get_skill", state: "output-available", output });
+    expect(found?.name).toBe("review");
+    expect(found?.state).toBe("metadata-only");
+  });
   test("a successful status with only an acknowledgement does not attest instructions", () => {
     expect(skillEvidence({ ...native, toolName: "openwork_get_skill", state: "output-available", output: "Skill selected" })?.state).toBe("metadata-only");
   });

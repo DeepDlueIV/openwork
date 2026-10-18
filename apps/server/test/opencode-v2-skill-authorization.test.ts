@@ -7,7 +7,8 @@ test("native attachment authorization is token-scoped, Cloud-only, and off with 
   const evaluations: Array<{ sessionID: string; ids: string[] }> = [];
   const bridge = await createV2ContextBridge(async path => {
     assert.equal(path, "/experimental/connect/skills");
-    return { skills: [], ...(native ? { delivery: "native" } : {}) };
+    return { skills: [{ name: "fixture-review", modelDiscovery: true }, { name: "hidden-review", modelDiscovery: false }],
+      ...(native ? { delivery: "native" } : {}) };
   }, async (sessionID, ids) => {
     evaluations.push({ sessionID, ids });
     return { data: { id: "per_fixture", effect: "deny" } };
@@ -27,7 +28,9 @@ test("native attachment authorization is token-scoped, Cloud-only, and off with 
       { sessionID, ids: [] }, { sessionID, ids: Array.from({ length: 151 }, () => ids[0]) },
       { sessionID, ids, action: "shell" }, { sessionID, ids, decision: "always" },
     ]) assert.equal((await call(input)).status, 400);
-    assert.equal(evaluations.length, 0, "invalid requests cannot evaluate permissions or grant approvals");
+    assert.equal((await call({ sessionID, ids: ["openwork-cloud-removed-review"] })).status, 403);
+    assert.equal((await call({ sessionID, ids: ["openwork-cloud-hidden-review"] })).status, 403);
+    assert.equal(evaluations.length, 0, "invalid, hidden and unlisted requests cannot evaluate permissions or grant approvals");
     const response = await call({ sessionID, ids });
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { data: { id: "per_fixture", effect: "deny" } });

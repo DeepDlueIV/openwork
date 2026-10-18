@@ -58,8 +58,12 @@ export async function createV2ContextBridge(
       // Den's existing default-off nativeCloudSkills rollout owns this path.
       if (call.name === "openwork_skill_authorize") {
         const input = skillAuthorizationSchema.parse(call.input);
-        const catalog = z.object({ delivery: z.literal("native") }).safeParse(await read("/experimental/connect/skills"));
+        const catalog = z.object({ delivery: z.literal("native"), skills: z.array(z.object({
+          name: z.string(), modelDiscovery: z.boolean().optional(),
+        })) }).safeParse(await read("/experimental/connect/skills"));
         if (!catalog.success || !authorizeSkillAttachment) return new Response(null, { status: 403 });
+        const listed = new Set(catalog.data.skills.filter(skill => skill.modelDiscovery === true).map(skill => `openwork-cloud-${skill.name}`));
+        if (input.ids.some(id => !listed.has(id))) return new Response(null, { status: 403 });
         return Response.json(await authorizeSkillAttachment(input.sessionID, input.ids));
       }
       // Internal plugin read: one listed skill's SKILL.md for native delivery.

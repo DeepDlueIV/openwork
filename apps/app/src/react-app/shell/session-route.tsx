@@ -176,7 +176,6 @@ import type { CreateWorkspaceOptions } from "@/react-app/domains/workspace/types
 import {
   connectGatewayProvider,
   GATEWAY_CONNECT_TIMEOUT_MESSAGE,
-  isGatewaySetConnected,
   type GatewayConnectProvider,
   isCloudManagedProviderKey,
   resolveGatewayConnectProviders,
@@ -1137,12 +1136,9 @@ export function SessionRoute() {
         openUrl: (url) => platform.openLink(url),
         resync: async () => {
           synced = false;
-          await refreshCloudProviderSync("manual");
-          synced = sessionProviderAuthStore.getSnapshot().gatewayUsageProviderScope != null;
+          synced = await sessionProviderAuthStore.confirmGatewayProviderConnection(provider, request?.model, signal);
         },
-        isConnected: () => synced && (request
-          ? sessionProviderAuthStore.isGatewayModelAvailable(provider, request.model)
-          : isGatewaySetConnected(provider, sessionProviderAuthStore.getSnapshot().importedCloudProviders)),
+        isConnected: () => synced,
       });
       if (!connected && !signal.aborted && !request) {
         toast.error(GATEWAY_CONNECT_TIMEOUT_MESSAGE, { action: { label: "Retry sign-in", onClick: () => {

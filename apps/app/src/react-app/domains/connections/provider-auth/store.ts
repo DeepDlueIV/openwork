@@ -86,6 +86,7 @@ import {
   isCloudManagedProviderKey,
   isCloudProviderOutOfSync,
   isGatewayModelReady,
+  isGatewaySetConnected,
   type GatewayConnectProvider,
   resolveCloudProviderCredentials,
 } from "./cloud-provider-config";
@@ -2369,6 +2370,41 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
       && options.providers().some((entry) => entry.id === model.providerID && Boolean(entry.models[model.modelID]));
   }
 
+  /** Confirm the requested identity after sign-in, using the effective sync owner. */
+  async function confirmGatewayProviderConnection(provider: GatewayConnectProvider, model?: { providerID: string; modelID: string }, signal?: AbortSignal) {
+    const context = getCloudProviderSyncContextKey();
+    const scope = readGatewayUsageScope();
+    const isCurrent = () => !disposed && !signal?.aborted && context === getCloudProviderSyncContextKey()
+      && scope === readGatewayUsageScope();
+    const result = await runCloudProviderSync("manual");
+    if (!isCurrent()) return false;
+    if (result?.outcome === "handled_live") {
+      // Live ownership does not populate legacy imports or their usage scope.
+      // A cached native catalog alone cannot prove a newly authorized account:
+      // require a fresh usable assignment, then reread the native engine.
+      const settings = readDenSettings();
+      const inventory = await createDenClient({ baseUrl: settings.baseUrl, token: settings.authToken,
+        requireCompleteInventory: true }).getModelRemovalInventory(settings.activeOrgId ?? "");
+      if (!isCurrent()) return false;
+      const catalog = await refreshProviders({ force: true }, isCurrent);
+      if (!isCurrent() || !catalog || !provider.credentialSetId) return false;
+      return inventory.models.some((candidate) => candidate.providerID === provider.providerId
+        && candidate.modelID.split("_")[2] === provider.credentialSetId?.slice(4)
+        && (!model || (candidate.providerID === model.providerID && candidate.modelID === model.modelID))
+        && !inventory.lockedModels.some((locked) => locked.providerID === candidate.providerID && locked.modelID === candidate.modelID)
+        && isProviderAllowedByDesktopPolicy({ providerId: candidate.providerID,
+          restrictToCloud: options.checkDesktopAppRestriction({ restriction: "allowCustomProviders" }),
+          checkRestriction: options.checkDesktopAppRestriction })
+        && !options.disabledProviders().includes(candidate.providerID)
+        && catalog.connected.includes(candidate.providerID)
+        && catalog.all.some((entry) => entry.id === candidate.providerID && Boolean(entry.models[candidate.modelID])));
+    }
+    // Older engines still own materialized providers, reload state and scope.
+    return result?.outcome === "handled_server_side" && (model
+      ? isGatewayModelAvailable(provider, model)
+      : state.gatewayUsageProviderScope != null && isGatewaySetConnected(provider, state.importedCloudProviders));
+  }
+
   async function startGatewayProviderOAuth(providerId: string, credentialSetId?: string, signal?: AbortSignal) {
     const orgId = readDenSettings().activeOrgId;
     const client = options.openworkServer.getSnapshot().openworkServerClient;
@@ -2990,6 +3026,7 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
     refreshImportedCloudProviders: (input?: { strict?: boolean }) => refreshImportedCloudProviders({ strict: input?.strict }),
     runCloudProviderSync,
     startGatewayProviderOAuth,
+    confirmGatewayProviderConnection,
     isGatewayModelAvailable,
     startProviderAuth,
     refreshProviders,

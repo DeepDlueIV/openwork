@@ -75,7 +75,6 @@ import {
   connectGatewayProvider,
   GATEWAY_CONNECT_TIMEOUT_MESSAGE,
   gatewayConnectProviderKey,
-  isGatewaySetConnected,
   type GatewayConnectProvider,
   resolveGatewayConnectProviders,
   resolveGatewayProviderIds,
@@ -838,12 +837,9 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
         openUrl: (url) => platform.openLink(url),
         resync: async () => {
           synced = false;
-          const result = await providerAuthStore.runCloudProviderSync("manual");
-          synced = result?.outcome === "handled_server_side";
+          synced = await providerAuthStore.confirmGatewayProviderConnection(provider, request?.model, signal);
         },
-        isConnected: () => synced && (request
-          ? providerAuthStore.isGatewayModelAvailable(provider, request.model)
-          : isGatewaySetConnected(provider, providerAuthStore.getSnapshot().importedCloudProviders)),
+        isConnected: () => synced,
       });
       if (!connected && !signal.aborted && !request) {
         toast.error(GATEWAY_CONNECT_TIMEOUT_MESSAGE, { action: { label: "Retry sign-in", onClick: () => {

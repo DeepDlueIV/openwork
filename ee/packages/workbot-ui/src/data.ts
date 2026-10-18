@@ -3,7 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { workbotViewContextSchema, type WorkbotViewContext } from "@openwork/types/workbot-context";
+import { workbotViewContextSchema, WORKBOT_MAX_MESSAGE_CHARS, type WorkbotViewContext } from "@openwork/types/workbot-context";
 import { errorMessage as getErrorMessage, hostFetch, workbotHost } from "./host";
 
 const requestJson = (path: string, init?: RequestInit, timeoutMs?: number) => workbotHost().requestJson(path, init, timeoutMs);
@@ -257,7 +257,7 @@ export class WorkbotSendError extends Error {
 }
 
 /** The most one message can carry (the runner's limit); longer text goes as a file. */
-export const MAX_MESSAGE_CHARS = 100_000;
+export const MAX_MESSAGE_CHARS = WORKBOT_MAX_MESSAGE_CHARS;
 
 /** Why sending was refused, in the person's words. */
 function sendRefused(status: number, payload: unknown) {

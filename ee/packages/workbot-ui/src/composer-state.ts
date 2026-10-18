@@ -1,4 +1,4 @@
-import type { WorkbotViewContext } from "@openwork/types/workbot-context";
+import type { WorkbotCorrectionReference, WorkbotViewContext } from "@openwork/types/workbot-context";
 import type { WorkbotAttachment, WorkbotFile } from "./data";
 
 export type Upload = {
@@ -20,6 +20,7 @@ export type Pending = {
   attachments: WorkbotAttachment[];
   /** A correction is appended; it never removes the original conversation. */
   correctionOf?: string;
+  correctionReference?: WorkbotCorrectionReference;
   failed: string | null;
 };
 
@@ -79,7 +80,7 @@ export function createComposerState(uploadFile: Uploader) {
       if (upload) release(upload);
       publish({ ...state, uploads: state.uploads.filter(upload => upload.key !== key) });
     },
-    enqueue: (input: { id: string; text: string; context?: WorkbotViewContext; correctionOf?: string; attachments?: WorkbotAttachment[] }) => {
+    enqueue: (input: { id: string; text: string; context?: WorkbotViewContext; correctionOf?: string; correctionReference?: WorkbotCorrectionReference; attachments?: WorkbotAttachment[] }) => {
       const entry: Pending = { ...input, attachments: input.attachments ?? [], sentAt: Date.now(),
         uploads: input.correctionOf ? [] : state.uploads, failed: null };
       publish({ ...state, ...(input.correctionOf ? {} : { text: "", uploads: [] }), pending: [...state.pending, entry] });

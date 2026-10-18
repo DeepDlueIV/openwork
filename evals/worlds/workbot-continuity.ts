@@ -16,6 +16,7 @@ export async function workbotContinuity(_seed: Seed, { place }: { place: Place }
   const attempts: Record<string, unknown>[] = [];
   const accepted = new Map<string, Record<string, unknown>[]>();
   const requests: number[] = [];
+  const historyPages: Array<{ records: number; messages: number }> = [];
   let uploadCount = 0;
   const turn = (id: string, text: string, index: number) => ({ id, text, sentAt: 1_790_000_000_000 + index * 1000, finishedAt: 1_790_000_000_100 + index * 1000, status: "done", attachments: [], outputs: [], parts: [{ kind: "text", text: `Reply ${index + 1}` }], modelSteps: 1, error: null });
   try {
@@ -29,6 +30,18 @@ export async function workbotContinuity(_seed: Seed, { place }: { place: Place }
       plugins: [{ name: "workbot-continuity-fixture", configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
           const url = new URL(req.url ?? "/", "http://fixture");
+          if (url.pathname === "/fixture-file-inputs") {
+            res.setHeader("content-type", "text/html");
+            res.end(`<!doctype html><html><body><h1>File input boundaries</h1>
+              <label>Disabled input<input id="disabled-direct" type="file" disabled></label>
+              <fieldset disabled><legend>Disabled group</legend><input id="disabled-fieldset" type="file"></fieldset>
+              <div hidden><input id="unavailable-parent" type="file"></div>
+              <div inert><input id="inert-parent" type="file"></div>
+              <input id="hidden-enabled" type="file" hidden><output>No file selected</output>
+              <script>document.addEventListener('change', event => { if (event.target instanceof HTMLInputElement && event.target.files?.length) document.querySelector('output').textContent = 'Selected ' + event.target.files[0].name; });</script>
+              </body></html>`);
+            return;
+          }
           if (!url.pathname.startsWith("/v1/workbot")) return next();
           const referring = new URL(req.headers.referer ?? "http://fixture");
           const json = (body: unknown, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
@@ -40,7 +53,11 @@ export async function workbotContinuity(_seed: Seed, { place }: { place: Place }
             requests.push(count);
             const prior = Array.from({ length: history ? 230 : 2 }, (_, index) => turn(`message${String(index).padStart(4, "0")}`, index === 0 ? "Use Monday" : `Earlier question ${index + 1}`, index));
             const all = [...prior, ...(accepted.get(chat) ?? [])];
-            return json({ available: true, name: "Workbot", organizationName: "Example", status: "idle", turns: all.slice(-count), hasEarlier: all.length > count, filesEnabled: true });
+            // The runner's bound counts background records too; only caller messages render as chat rows.
+            const page = all.slice(-count);
+            const visible = history ? page.filter((_entry, index) => index % 2 === 0) : page;
+            if (history) historyPages.push({ records: page.length, messages: visible.length });
+            return json({ available: true, name: "Workbot", organizationName: "Example", status: "idle", turns: visible, hasEarlier: all.length > count, filesEnabled: true });
           }
           if (url.pathname === "/v1/workbot/chats") return json({ main: { updatedAt: Date.now() }, side: [{ id: "sidechat000000001", title: "Planning", updatedAt: Date.now() }] });
           if (url.pathname === "/v1/workbot/events") { res.setHeader("content-type", "text/event-stream"); res.end(": fixture\n\n"); return; }
@@ -54,7 +71,12 @@ export async function workbotContinuity(_seed: Seed, { place }: { place: Place }
             // Witness a real refusal after upload success / correction send, once per message identity.
             if ((correction || input.text === "Read my notes") && attempts.filter(entry => (correction ? entry.newId : entry.id) === id).length === 1) return json({ error: "too_many_queued" }, 429);
             const entries = accepted.get(chat) ?? [];
-            if (!entries.some(entry => entry.id === id)) entries.push({ ...turn(String(id), correction ? `Correction to an earlier message:\n${input.text}` : String(input.text), entries.length + 230), attachments: Array.isArray(input.attachments) ? input.attachments.map(id => ({ id, name: "notes.txt", mediaType: "text/plain", size: 5 })) : [] });
+            const originalId = url.pathname.split("/").at(-2) ?? "";
+            const originalIndex = Number(originalId.replace("message", ""));
+            const original = turn(originalId, originalIndex === 0 ? "Use Monday" : `Earlier question ${originalIndex + 1}`, originalIndex);
+            const reference = { messageId: `wb_${originalId}`, quote: original.text, sentAt: original.sentAt };
+            const text = correction ? `[OpenWork correction reference v1]\n${JSON.stringify(reference)}\n[End OpenWork correction reference]\n\n${input.text}` : String(input.text);
+            if (!entries.some(entry => entry.id === id)) entries.push({ ...turn(String(id), text, entries.length + 230), attachments: Array.isArray(input.attachments) ? input.attachments.map(id => ({ id, name: "notes.txt", mediaType: "text/plain", size: 5 })) : [] });
             accepted.set(chat, entries);
             return json({ ok: true }, 202);
           }
@@ -78,6 +100,6 @@ export async function workbotContinuity(_seed: Seed, { place }: { place: Place }
     const url = vite.resolvedUrls?.local[0];
     if (!url) throw new Error("Workbot fixture did not start");
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-continuity", startUrl: `${url}?chat=sidechat000000001`, headless: true }));
-    return { web, url, notesPath, attempts: () => [...attempts], uploads: () => uploadCount, windows: () => [...requests], async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
+    return { web, url, notesPath, attempts: () => [...attempts], uploads: () => uploadCount, windows: () => [...requests], historyPages: () => [...historyPages], async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
   } catch (error) { await resources.disposeAsync(); throw error; }
 }

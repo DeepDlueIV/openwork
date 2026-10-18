@@ -65,3 +65,29 @@ test("a member sees unverified work, failed stop, and a last-known conversation 
     await user.screenshot();
   });
 });
+
+test("a member recognizes an interrupted answer without an automatic prompt replay", async ({ world, user, probe, step, evidence }) => {
+  await user.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+  await step("the member can read the stored and still-streaming parts of the answer", async () => {
+    await user.see({ text: "The report has three sections." });
+    await user.see({ text: "The figures still need verification." });
+    evidence.recordAssertionEvidence("Both answer parts are on screen", "Stored report text and streamed verification text are visible", (await probe.text()).includes("The figures still need verification."));
+    await user.screenshot();
+  });
+  await step("after: a runner interruption preserves the words and labels the answer incomplete", async () => {
+    world.interruptAnswer();
+    await user.see({ text: "Interrupted. This answer may be incomplete." });
+    await user.see({ text: "The report has three sections." });
+    await user.see({ text: "The figures still need verification." });
+    evidence.recordAssertionEvidence("Interrupted is not running or completed", "The incomplete marker is visible and both answer parts remain", (await probe.text()).includes("Interrupted. This answer may be incomplete."));
+    await user.screenshot();
+  });
+  await step("reopening the conversation reads its incomplete state without resending the message", async () => {
+    await user.reload();
+    await user.see({ text: "Interrupted. This answer may be incomplete." });
+    await user.see({ text: "The report has three sections." });
+    expect(world.sends()).toBe(0);
+    evidence.recordAssertionEvidence("Reload only reads the conversation", "Zero message POSTs after interruption and reload", world.sends() === 0);
+    await user.screenshot();
+  });
+});

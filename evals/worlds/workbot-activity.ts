@@ -97,6 +97,7 @@ export async function workbotActivity(_seed: Seed, { place }: { place: Place }) 
       disconnect() { unavailable = true; for (const stream of streams) stream.end(); streams.clear(); },
       restore() { unavailable = false; },
       revokeAccess() { revoked = true; changed(); },
+      interruptAnswer() { if (snapshot.turns[0]) snapshot.turns[0].status = "interrupted"; snapshot.status = "idle"; changed(); },
 
       async [Symbol.asyncDispose]() { await resources.disposeAsync(); },
     };

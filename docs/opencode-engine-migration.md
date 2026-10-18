@@ -28,7 +28,8 @@ normally on later boots while the rollout is off. A fresh forced selection can
 fall back on its first failed start only before a v2 database exists; an existing
 v2 database may contain new history and is never silently rerouted on a later
 startup failure. Explicit manual engine choices
-retain their existing ownership and consent semantics. Policy updates do not
+retain their existing ownership and consent semantics, including when a pending
+automatic attempt fails after a manual choice. Policy updates do not
 abort a copy or a running task. Failures keep v1 selected, retain a durable error
 and backup receipt, and retry only on a later boot with a one-minute-to-one-day
 bounded exponential backoff. Desktop keeps a compact **Chat upgrade paused**

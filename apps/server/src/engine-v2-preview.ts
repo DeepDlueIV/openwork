@@ -1337,9 +1337,10 @@ export function createEngineV2Preview(options: {
       });
       return true;
     } catch (error) {
-      // Keep the source engine serving and the private copy/checkpoint for the
-      // next boot. There is deliberately no retry loop in this process.
-      chatRouting = false;
+      // The attempt only selects v2 after a healthy, durable switch. Until
+      // then v1 remains selected; do not overwrite a concurrent manual choice
+      // when the attempt fails. Keep the private copy/checkpoint for next boot.
+      // There is deliberately no retry loop in this process.
       const message = errorMessage(error);
       migration = { ...migration, state: "error", error: message,
         startedAt: attemptedCopy ? migration.startedAt ?? attemptStartedAt : attemptStartedAt };

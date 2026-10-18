@@ -59,6 +59,24 @@ test("boot never blocks: unreadable v1 history stays on v1 with a durable error 
   });
 });
 
+test("a failed automatic attempt cannot undo a concurrent manual v2 choice", async () => {
+  await profile(async (config, dir) => {
+    writeFileSync(join(dir, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: false }));
+    const idle = Promise.withResolvers<boolean>();
+    const engine = createEngineV2Preview({ config, autoUpgradeIdle: () => idle.promise });
+    try {
+      await engine.setChatRouting(true);
+      idle.reject(new Error("Could not verify the old engine's activity"));
+      for (let check = 0; check < 100 && readEngineV2PreviewState(config).autoUpgradeRetry === undefined; check++) await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal(engine.status().migration.state, "error");
+      assert.equal(engine.status().chatRouting, true);
+      assert.equal(engine.status().engineOrigin, "manual");
+      assert.equal(engine.status().engineForced, false);
+      assert.equal(readEngineV2PreviewState(config).chatRouting, true);
+    } finally { await engine.stop(); }
+  });
+});
+
 test("an automatic upgrade waiting for idle cannot be duplicated by an interactive migration", async () => {
   await profile(async config => {
     const engine = createEngineV2Preview({ config, autoUpgradeIdle: async () => false });

@@ -37,6 +37,7 @@ const { BuiltMcpAppPanel } = await import("../src/react-app/domains/apps/built-m
 const { removeDashboardTileCache } = await import("../src/react-app/domains/dashboard/dashboard-tile-cache")
 const { flushDashboardTileCacheStorage } = await import("../src/app/lib/dashboard-cache-storage")
 const { authorizeMcpAppAccess, denyMcpAppAccess, mcpAppAccessKey, mcpAppAccessVersion } = await import("../src/app/lib/mcp-app-presentation-cache")
+const mcpAppOpenLoads = await import("../src/app/lib/mcp-app-open-loads")
 const {
   buildMcpAppCsp,
   hasPreservedMcpAppResult,
@@ -421,6 +422,26 @@ describe("Authored App presentation", () => {
       expect(mcpAppAccessVersion(key)).toBe(version)
       expect(host.container.querySelector("iframe")).toBeNull()
     } finally { resolve.mockRestore(); await host.dispose(); authorizeMcpAppAccess(key, version) }
+  })
+
+  test("panel remounts for different principals do not share an in-memory open-load key", async () => {
+    const host = await startupFixture()
+    const part = authoredPart()
+    const uri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
+    const resolve = spyOn(host.client, "resolveMcpApp").mockResolvedValue({ app: fixture({ resourceUri: uri, toolName: "open_app" }) })
+    const loads = spyOn(mcpAppOpenLoads, "createMcpAppOpenLoads")
+    const render = (principalScope: string) => host.renderElement(createElement(McpAppFrame, { part,
+      origin: { client: host.client, workspaceId: "scoped-kept-loads", sessionId: "shared-chat", readOnly: true, principalScope } }))
+    try {
+      await render("cloud:member-a:organization")
+      await host.renderElement(createElement("div"))
+      await render("cloud:member-b:organization")
+      const keys = loads.mock.calls.map(([key]) => key)
+      expect(keys).toHaveLength(2)
+      expect(keys[0]).toContain("member-a")
+      expect(keys[1]).toContain("member-b")
+      expect(keys[0]).not.toBe(keys[1])
+    } finally { loads.mockRestore(); resolve.mockRestore(); await host.dispose() }
   })
 
   test("does not mistake generic tool prose or a mismatched revision for authored fallback", () => {

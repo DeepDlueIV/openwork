@@ -1068,7 +1068,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, acces
     return { appId: reference.appId, revisionId: reference.revisionId, title: reference.title, receiptId: reference.receiptId }
   }, [part.toolName, result])
   const launch = useMemo(() => gatewayMcpAppLaunch(result?._meta), [result])
-  const scope = uiStateOwner ?? JSON.stringify([origin?.workspaceId, origin?.sessionId])
+  const scope = uiStateOwner ?? JSON.stringify([origin?.principalScope, origin?.client.baseUrl, origin?.workspaceId, origin?.sessionId])
   const sourceConnectionId = launch?.resourceUri === "ui://openwork/connection-action/v2/view.html"
     && launch.toolName === "connection_action" && !launch.connectionId
     && typeof launch.arguments.connectionId === "string" ? launch.arguments.connectionId : null

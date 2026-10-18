@@ -48,7 +48,7 @@ function messageOf(payload: unknown, fallback: string) {
 }
 
 /** Workbot's page on its own site: same-origin requests with the session cookie; signed out means sign in again. */
-export function createHost(me: Me): WorkbotHost {
+export function createHost(me: Me, recovery: { authorization?: WorkbotHost["documentAuthorization"]; refreshIdentity?(): Promise<Me | null> } = {}): WorkbotHost {
   return {
     async requestJson(path, init = {}, timeoutMs = 30_000) {
       const headers = new Headers(init.headers)
@@ -79,8 +79,9 @@ export function createHost(me: Me): WorkbotHost {
     canSchedule: me.canSchedule,
     connectionsHref: me.denUrl ? `${me.denUrl}/dashboard/your-connections` : null,
     get signInHref() { return `/auth/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}` },
+    documentAuthorization: recovery.authorization,
     async verifyDocumentIdentity() {
-      const current = await fetchMe()
+      const current = await (recovery.refreshIdentity ? recovery.refreshIdentity() : fetchMe())
       return current !== null && current.userId !== null && current.organizationId !== null
         && current.userId === me.userId && current.organizationId === me.organizationId
     },

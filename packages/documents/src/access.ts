@@ -13,3 +13,14 @@ export function documentsAccessFailure(error: unknown): "signin" | "connection" 
 
 /** Recovery is memory-only, scoped to one mounted identity, and never indefinite. */
 export const DOCUMENT_RECOVERY_MS = 15 * 60 * 1000
+
+/** Existing locked files keep their deadline; newly locked files get their own. */
+export function lockDocumentRecovery(current: ReadonlyMap<string, number>, ids: readonly string[], now = Date.now()): ReadonlyMap<string, number> {
+  const next = new Map(current)
+  for (const id of ids) if (!next.has(id)) next.set(id, now + DOCUMENT_RECOVERY_MS)
+  return next
+}
+
+export function expiredDocumentRecovery(locks: ReadonlyMap<string, number>, now = Date.now()): string[] {
+  return [...locks].flatMap(([id, until]) => until <= now ? [id] : [])
+}

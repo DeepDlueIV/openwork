@@ -419,6 +419,43 @@ test("a paused automatic failure can become an explicitly consented manual migra
   expect(failedDialog?.querySelector("details")?.textContent).toContain("private conversion diagnostics");
 });
 
+test("manual history copying is not reclassified by a force-owned engine selection", async () => {
+  Reflect.set(window, "__OPENWORK_ELECTRON__", {});
+  const client = engineClient();
+  const manual: EngineV2PreviewStatus = { ...status, enabled: true, chatRouting: true, engineForced: true,
+    engineOrigin: "forced", forceUpgradePending: false,
+    migration: { state: "running", phase: "copying", imported: 1, skipped: 0, total: 2 },
+  };
+  spyOn(client, "setEngineV2ForcePolicy").mockResolvedValue(manual);
+  spyOn(client, "getEngineV2PreviewStatus").mockResolvedValue(manual);
+  await setFeatures(false, false);
+  observeEngineMigration(client, manual);
+  await renderOverlay();
+  expect(useEngineMigrationStore.getState().progress).toMatchObject({ view: "dialog", serverManaged: false });
+  expect(document.querySelector('[data-testid="engine-migration-progress"]')).not.toBeNull();
+  expect(document.querySelector('[data-testid="engine-migration-banner"]')).toBeNull();
+  expect(client.migrateOpencodeHistory).not.toHaveBeenCalled();
+});
+
+test("a healthy manual v2 choice retires the automatic notice without reopening a failure dialog", async () => {
+  Reflect.set(window, "__OPENWORK_ELECTRON__", {});
+  const client = engineClient();
+  const failed: EngineV2PreviewStatus = { ...status, automaticRetryAt: Date.now() + 60_000,
+    migration: { state: "error", imported: 1, skipped: 0, total: 2, error: "Previous automatic failure" },
+  };
+  spyOn(client, "setEngineV2ForcePolicy").mockResolvedValue(failed);
+  await setFeatures(false, false);
+  await renderOverlay();
+  expect(document.querySelector('[data-testid="engine-migration-banner"]')).not.toBeNull();
+  await act(async () => observeEngineMigration(client, { ...failed, automaticRetryAt: undefined,
+    enabled: true, running: true, chatRouting: true, engineOrigin: "manual", engineForced: false, forceUpgradePending: false,
+  }));
+  expect(useEngineMigrationStore.getState().progress).toBeNull();
+  expect(document.querySelector('[data-testid="engine-migration-recovery"]')).toBeNull();
+  expect(document.querySelector('[data-testid="engine-migration-progress"]')).toBeNull();
+  expect(client.migrateOpencodeHistory).not.toHaveBeenCalled();
+});
+
 test("a fresh forced v2 status refreshes routing without any migration UI or renderer switch", async () => {
   Reflect.set(window, "__OPENWORK_ELECTRON__", {});
   const client = engineClient();

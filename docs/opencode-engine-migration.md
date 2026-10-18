@@ -5,7 +5,7 @@ and **Migrate chats to OpenCode v2**. Advanced settings uses the same engine
 commands. Both hand off to one app-wide owner (`shell/engine-migration.tsx`)
 for the switch check, the migration consent, and migration progress, so a
 migration stays visible after the surface that started it closes. Switching
-engines never migrates history. V1 remains the default. Desktop packages include
+engines never migrates history. Desktop packages include
 both pinned native executables; v2's download fallback remains available for
 standalone servers.
 
@@ -31,8 +31,12 @@ startup failure. Explicit manual engine choices retain their ownership and
 consent semantics, including when a pending automatic attempt fails after a
 manual choice. A manual v2 selection also retires the automatic baseline, so a
 later boot cannot fence startup or restore an older target over its new history.
-An unfinished copy must be resumed before a v2 selection is accepted. Policy
-updates do not abort a copy or a running task. Failures retain the selected
+An unfinished copy must be resumed before a v2 selection is accepted. Pending
+automatic attempts bind to a manual-choice generation: an explicit later choice
+supersedes their idle reads, cutover and failure receipts. Copy preparation and
+baseline restoration hold the migration fence, and the shared state journal
+serializes writes so a late automatic rename cannot win after manual consent.
+Policy updates do not abort a copy or a running task. Failures retain the selected
 engine, durable error and backup receipt. Automatic retries
 only run on a later boot with a one-minute-to-one-day bounded exponential
 backoff; policy-off/status refreshes never restart a failed inactive sidecar.
@@ -52,6 +56,9 @@ an explicit alternative, never an automatic global restart. Startup discovery
 restores a failed automatic receipt even when copying never started; host backoff
 and rollout policy still decide whether a later boot retries it automatically.
 Both automatic and manual failure dialogs keep raw errors under **Technical details**.
+A verified healthy manual v2 choice retires its obsolete automatic notice without
+opening another error dialog. Engine-selection provenance does not turn a later
+user-requested history copy into an automatic migration.
 Source chat changes during copying or v2 startup
 prevent the switch; a later attempt restores the pre-copy v2 baseline under
 the existing migration ownership lock before copying a fresh v1 snapshot.

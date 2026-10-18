@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
@@ -58,6 +58,26 @@ test("boot never blocks: unreadable v1 history stays on v1 with a durable error 
   });
 });
 
+test("policy off before idle prevents the future automatic process start", { skip: process.platform === "win32" }, async () => {
+  await profile(async (config, dir) => {
+    const binary = join(dir, "future-engine");
+    writeFileSync(binary, '#!/bin/sh\nprintf "started\\n" >> "$0.attempts"\nexit 1\n', { mode: 0o700 });
+    process.env.OPENWORK_OPENCODE2_BIN = binary;
+    const idle = Promise.withResolvers<boolean>();
+    let probed = false;
+    const engine = createEngineV2Preview({ config, autoUpgradeIdle: () => { probed = true; return idle.promise; } });
+    try {
+      assert.equal(probed, true, "witness: the automatic attempt is waiting for idle");
+      engine.setForcePolicy({ upgrade: false });
+      idle.resolve(true);
+      await new Promise(resolve => setTimeout(resolve, 250));
+      assert.equal(engine.status().enabled, false);
+      assert.equal(existsSync(`${binary}.attempts`), false, "no future v2 process may start after policy off");
+      assert.equal(engine.status().automaticRetryAt, undefined);
+    } finally { await engine.stop(); }
+  });
+});
+
 test("policy off does not restart a failed sidecar, but explicit manual recovery can", { skip: process.platform === "win32" }, async () => {
   await profile(async (config, dir) => {
     const binary = join(dir, "failed-engine");
@@ -100,10 +120,12 @@ test("a failed automatic attempt cannot undo a concurrent manual v2 choice", asy
     const idle = Promise.withResolvers<boolean>();
     const engine = createEngineV2Preview({ config, autoUpgradeIdle: () => idle.promise });
     try {
+      await engine.setEnabled(true);
       await engine.setChatRouting(true);
       idle.reject(new Error("Could not verify the old engine's activity"));
-      for (let check = 0; check < 100 && readEngineV2PreviewState(config).autoUpgradeRetry === undefined; check++) await new Promise(resolve => setTimeout(resolve, 5));
-      assert.equal(engine.status().migration.state, "error");
+      await engine.stop();
+      assert.equal(engine.status().migration.state, "idle", "an obsolete attempt cannot publish a new failure over the manual choice");
+      assert.equal(engine.status().automaticRetryAt, undefined);
       assert.equal(engine.status().chatRouting, true);
       assert.equal(engine.status().engineOrigin, "manual");
       assert.equal(engine.status().engineForced, false);
@@ -111,6 +133,19 @@ test("a failed automatic attempt cannot undo a concurrent manual v2 choice", asy
       assert.equal(saved.chatRouting, true);
       assert.equal(saved.automaticHistoryCopy, undefined, "manual v2 history must not remain fenced on a later boot");
       assert.equal(saved.automaticHistoryRevision, undefined, "a later attempt must not restore an old target over manual v2 history");
+    } finally { await engine.stop(); }
+  });
+});
+
+test("concurrent manual choices journal in order without losing an accepted write", async () => {
+  await profile(async config => {
+    config.engineAutoUpgrade = false;
+    const engine = createEngineV2Preview({ config, deferStart: true });
+    try {
+      const choices = await Promise.all(Array.from({ length: 12 }, (_, index) => engine.setChatRouting(index % 2 === 0)));
+      assert.equal(choices.length, 12);
+      assert.equal(readEngineV2PreviewState(config).chatRouting, engine.status().chatRouting);
+      assert.equal(readEngineV2PreviewState(config).engineOrigin, "manual");
     } finally { await engine.stop(); }
   });
 });

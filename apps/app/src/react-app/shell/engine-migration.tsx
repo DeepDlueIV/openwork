@@ -238,8 +238,17 @@ export function observeEngineMigration(client: EngineMigrationClient, status: En
   const migration = status.migration;
   if (!migration) return;
   const { progress } = useEngineMigrationStore.getState();
-  const serverManaged = status.forceUpgradePending === true
-    || status.engineForced === true || status.engineOrigin === "forced" || status.automaticRetryAt !== undefined;
+  const hostAttempt = status.forceUpgradePending === true || status.automaticRetryAt !== undefined;
+  if (progress?.serverManaged && !hostAttempt && status.engineOrigin === "manual"
+    && selectedChatEngine(status) === "v2" && status.running && migration.state !== "running") {
+    // A verified manual v2 choice resolved this automatic notice. Keep its
+    // durable receipt on the host, without reopening an obsolete error dialog.
+    useEngineMigrationStore.setState({ progress: null });
+    return;
+  }
+  // Engine-selection provenance does not own a later manual history copy.
+  // Known host progress stays host-owned until a manual consent replaces it.
+  const serverManaged = hostAttempt || progress?.serverManaged === true;
   if (progress) {
     updateProgress({
       migration, selected: selectedChatEngine(status), automaticRetryAt: status.automaticRetryAt, serverManaged,

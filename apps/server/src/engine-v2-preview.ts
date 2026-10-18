@@ -583,6 +583,10 @@ export function createEngineV2Preview(options: {
   const autoUpgradeAbort = new AbortController();
   let autoUpgradeJob: Promise<void> | undefined;
   let autoUpgradeInFlight = false;
+  let autoUpgradeCopyInFlight = false;
+  let autoUpgradeStartedAt: string | undefined;
+  let choiceGeneration = 0;
+  let autoUpgradeGeneration = 0;
   let migration: EngineV2MigrationStatus = resumeMigration
     ? { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0, resumed: true }
     : initialState.historyCopyResult ?? { state: "idle", imported: 0, skipped: 0, total: 0 };
@@ -597,16 +601,24 @@ export function createEngineV2Preview(options: {
   const ownsGateway = () => liveProviderSync;
   let v1HistoryCopiedAt = initialState.v1HistoryCopiedAt;
   let v1HistoryCopyStartedAt = initialState.v1HistoryCopyStartedAt;
-  const persistState = (receipt: EngineV2MigrationStatus = migration) => writeEngineV2PreviewState(config, {
-    enabled, chatRouting, engineOrigin, engineForced,
-    ...(engineChangedAt === undefined ? {} : { engineChangedAt }),
-    ...(automaticHistoryRevision === undefined ? {} : { automaticHistoryRevision }),
-    ...(automaticHistoryCopy ? { automaticHistoryCopy: true } : {}),
-    ...(autoUpgradeRetry ? { autoUpgradeRetry } : {}),
-    ...(v1HistoryCopiedAt === undefined ? {} : { v1HistoryCopiedAt }),
-    ...(v1HistoryCopyStartedAt === undefined ? {} : { v1HistoryCopyStartedAt }),
-    ...(receipt.state === "completed" || receipt.state === "error" ? { historyCopyResult: receipt } : {}),
-  });
+  let stateWrites: Promise<void> = Promise.resolve();
+  const persistState = (receipt: EngineV2MigrationStatus = migration) => {
+    const snapshot: EngineV2PreviewState = {
+      enabled, chatRouting, engineOrigin, engineForced,
+      ...(engineChangedAt === undefined ? {} : { engineChangedAt }),
+      ...(automaticHistoryRevision === undefined ? {} : { automaticHistoryRevision }),
+      ...(automaticHistoryCopy ? { automaticHistoryCopy: true } : {}),
+      ...(autoUpgradeRetry ? { autoUpgradeRetry } : {}),
+      ...(v1HistoryCopiedAt === undefined ? {} : { v1HistoryCopiedAt }),
+      ...(v1HistoryCopyStartedAt === undefined ? {} : { v1HistoryCopyStartedAt }),
+      ...(receipt.state === "completed" || receipt.state === "error" ? { historyCopyResult: receipt } : {}),
+    };
+    // A manual choice and a settling automatic attempt share one journal.
+    // Serialize their atomic renames so an older write cannot win after consent.
+    const pending = stateWrites.catch(() => undefined).then(() => writeEngineV2PreviewState(config, snapshot));
+    stateWrites = pending;
+    return pending;
+  };
   let allowRunning = true;
   let running = false;
   let version: string | undefined;
@@ -792,10 +804,14 @@ export function createEngineV2Preview(options: {
     return {
       engineOrigin, engineForced,
       ...(engineChangedAt === undefined ? {} : { engineChangedAt }),
-      forceUpgradePending: automaticHistoryCopy || (forceUpgrade && !chatRouting && (autoUpgradeInFlight || autoUpgradeRetry !== undefined)),
+      forceUpgradePending: automaticHistoryCopy || autoUpgradeCopyInFlight || (forceUpgrade && !chatRouting && ((autoUpgradeInFlight && autoUpgradeGeneration === choiceGeneration) || autoUpgradeRetry !== undefined)),
       ...(autoUpgradeRetry ? { automaticRetryAt: autoUpgradeRetry.retryAt } : {}),
       enabled,
-      migration: { ...migration },
+      migration: autoUpgradeCopyInFlight && migration.state !== "running"
+        ? { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0,
+          ...(autoUpgradeStartedAt ? { startedAt: autoUpgradeStartedAt } : {}),
+          ...(migration.backupPath ? { backupPath: migration.backupPath } : {}) }
+        : { ...migration },
       v1HistoryAvailable: hasV1History(),
       chatRouting,
       liveProviderSync: enabled && chatRouting && ownsGateway(),
@@ -1062,18 +1078,25 @@ export function createEngineV2Preview(options: {
   }
 
   function requireNoMigration(): void {
-    if (migration.state === "running") {
+    if (migration.state === "running" || autoUpgradeCopyInFlight) {
       throw new ApiError(409, "engine_migration_running", "Wait for chat migration to finish before switching engines.");
     }
   }
 
   async function setEnabled(nextEnabled: boolean): Promise<EngineV2PreviewStatus> {
     requireNoMigration();
-    if (nextEnabled && enabled && running) return status();
+    const alreadyRunning = nextEnabled && enabled && running;
+    choiceGeneration++;
     enabled = nextEnabled;
     engineOrigin = "manual";
     engineForced = false;
+    if (nextEnabled && v1HistoryCopyStartedAt === undefined) {
+      automaticHistoryCopy = false;
+      automaticHistoryRevision = undefined;
+      autoUpgradeRetry = undefined;
+    }
     await persistState();
+    if (alreadyRunning) return status();
     if (!enabled) {
       await stopRuntime();
       return status();
@@ -1087,13 +1110,17 @@ export function createEngineV2Preview(options: {
     return status();
   }
 
+  function requireHistoryCopyFinished(): void {
+    if (v1HistoryCopyStartedAt !== undefined) {
+      throw new ApiError(409, "engine_migration_required", "Resume the unfinished chat migration before switching to v2, so every chat stays readable.");
+    }
+  }
+
   // v2 opens a v1 chat only once a migration has copied it. Routing to v2
   // before that leaves every such chat unreadable, so it waits for a copy.
   async function requireV1HistoryCopied(): Promise<void> {
     requireNoMigration();
-    if (v1HistoryCopyStartedAt !== undefined) {
-      throw new ApiError(409, "engine_migration_required", "Resume the unfinished chat migration before switching to v2, so every chat stays readable.");
-    }
+    requireHistoryCopyFinished();
     if (chatRouting) return;
     let source: string;
     try { source = opencodeV1DatabasePath(); } catch { return; }
@@ -1111,9 +1138,13 @@ export function createEngineV2Preview(options: {
       : "This chat is still in OpenCode v1 and hasn't been copied to v2. Migrate your chats to OpenCode v2, or switch back to v1 to open it.";
   }
 
-  async function setChatRouting(nextChatRouting: boolean, origin: EngineOrigin = "manual", forceOwned = origin === "forced"): Promise<EngineV2PreviewStatus> {
+  async function setChatRouting(nextChatRouting: boolean, origin: EngineOrigin = "manual", forceOwned = origin === "forced", expectedGeneration?: number): Promise<EngineV2PreviewStatus> {
     if (nextChatRouting) await requireV1HistoryCopied();
-    else requireNoMigration();
+    requireNoMigration();
+    if (nextChatRouting) requireHistoryCopyFinished();
+    if (expectedGeneration !== undefined && expectedGeneration !== choiceGeneration) throw new Error("Manual engine choice retained.");
+    if (origin === "manual") choiceGeneration++;
+    const mutationGeneration = choiceGeneration;
     const previous = { enabled, chatRouting, engineOrigin, engineChangedAt, engineForced, automaticHistoryCopy, automaticHistoryRevision, autoUpgradeRetry };
     chatRouting = nextChatRouting;
     engineOrigin = origin;
@@ -1130,9 +1161,12 @@ export function createEngineV2Preview(options: {
     }
     try { await persistState(); }
     catch (error) {
-      ({ enabled, chatRouting, engineOrigin, engineChangedAt, engineForced, automaticHistoryCopy, automaticHistoryRevision, autoUpgradeRetry } = previous);
+      if (choiceGeneration === mutationGeneration) {
+        ({ enabled, chatRouting, engineOrigin, engineChangedAt, engineForced, automaticHistoryCopy, automaticHistoryRevision, autoUpgradeRetry } = previous);
+      }
       throw error;
     }
+    if (expectedGeneration !== undefined && expectedGeneration !== choiceGeneration) throw new Error("Manual engine choice retained.");
     warmActiveWorkspace();
     return status();
   }
@@ -1194,9 +1228,10 @@ export function createEngineV2Preview(options: {
 
   function migrateHistory(): EngineV2PreviewStatus {
     if (migration.state === "running") return status();
-    if (autoUpgradeInFlight) {
+    if (autoUpgradeCopyInFlight || (autoUpgradeInFlight && autoUpgradeGeneration === choiceGeneration)) {
       throw new ApiError(409, "engine_upgrade_host_managed", "An automatic chat upgrade is still pending. Wait for it to pause or finish before starting a manual migration.");
     }
+    choiceGeneration++;
     // Explicit consent is a new manual operation, not an automatic retry.
     // Retire automatic ownership, but keep the source, backups and checkpoints.
     automaticHistoryCopy = false;
@@ -1273,7 +1308,19 @@ export function createEngineV2Preview(options: {
 
   async function autoUpgrade(): Promise<boolean> {
     autoUpgradeInFlight = true;
+    const generation = choiceGeneration;
+    autoUpgradeGeneration = generation;
     const attemptStartedAt = new Date().toISOString();
+    autoUpgradeStartedAt = attemptStartedAt;
+    const requireCurrentChoice = () => {
+      if (choiceGeneration !== generation) throw new Error("Manual engine choice retained.");
+    };
+    const idle = async () => {
+      requireCurrentChoice();
+      const result = await (options.autoUpgradeIdle?.() ?? false);
+      requireCurrentChoice();
+      return result;
+    };
     let attemptedCopy = false;
     try {
       if (autoUpgradeRetry && Date.now() < autoUpgradeRetry.retryAt) return false;
@@ -1281,78 +1328,98 @@ export function createEngineV2Preview(options: {
       // Unlike the interactive availability hint, unreadable history is not
       // evidence of an empty profile. Fail closed rather than hide its chats.
       if (!existsSync(source) || (await readMigrationSessions(source)).length === 0) {
-        await waitForEngineIdle({ signal: autoUpgradeAbort.signal, idle: options.autoUpgradeIdle ?? (async () => false) });
+        await waitForEngineIdle({ signal: autoUpgradeAbort.signal, idle });
+        if (!forceUpgrade) return true;
         enabled = true;
         allowRunning = true;
         await start();
         if (!running) throw new Error("OpenCode v2 did not become healthy. Keeping v1.");
         autoUpgradeAbort.signal.throwIfAborted();
+        requireCurrentChoice();
         if (!forceUpgrade) return true;
         await withEngineSwitchFence(config, { from: "v1", to: "v2", operation: async () => {
-          if (!forceUpgrade || !await options.autoUpgradeIdle?.() || (existsSync(source) && (await readMigrationSessions(source)).length > 0)) {
+          if (!forceUpgrade || !await idle() || (existsSync(source) && (await readMigrationSessions(source)).length > 0)) {
             throw new Error("OpenCode v1 gained history or running work while v2 started. Keeping v1 until a later boot.");
           }
+          requireCurrentChoice();
           migration = { state: "idle", imported: 0, skipped: 0, total: 0 };
-          await setChatRouting(true, "fresh", true);
+          await setChatRouting(true, "fresh", true, generation);
+          requireCurrentChoice();
         } });
         return true;
       }
       await runEngineAutoUpgrade({
         signal: autoUpgradeAbort.signal,
-        idle: options.autoUpgradeIdle ?? (async () => false),
-        revision: () => historyRevision(source),
-        copy: async () => {
+        idle,
+        revision: async () => {
+          requireCurrentChoice();
           const revision = await historyRevision(source);
-          if (automaticHistoryCopy && automaticHistoryRevision !== undefined && automaticHistoryRevision !== revision
-            && v1HistoryCopyStartedAt === undefined && migration.backupPath) {
-            // A previous automatic copy never served v2, but v1 changed while
-            // it ran. Restore its pre-copy target before taking a fresh snapshot.
-            // Independent v2 chats in that backup survive; v1 is never written.
-            await stopRuntime();
-            const target = join(rootDir, "opencode.db");
-            const temporary = `${target}.auto-restore`;
-            const ownership = await acquireHistoryCopyLock(target);
-            try {
-              await rm(temporary, { force: true });
-              await snapshotV1Database(migration.backupPath, temporary);
-              await rm(`${target}-wal`, { force: true });
-              await rm(`${target}-shm`, { force: true });
-              await rename(temporary, target);
-              v1HistoryCopiedAt = undefined;
-              automaticHistoryRevision = undefined;
-              await persistState();
-              await ownership.complete();
-            } finally { await ownership.release(); }
-          }
-          automaticHistoryCopy = true;
-          automaticHistoryRevision ??= revision;
-          // Persist ownership and source revision before starting, including a
-          // crash before the copy marker. A resumed stale snapshot never switches.
-          await persistState();
-          attemptedCopy = true;
-          runMigration(v1HistoryCopyStartedAt !== undefined, true);
-          await migrationJob;
-          if (migration.state !== "completed") throw new Error(migration.error ?? "Automatic history copy did not finish.");
-          if (automaticHistoryRevision !== await historyRevision(source)) {
-            throw new Error("OpenCode v1 changed since the saved history snapshot. Keeping v1 until a later boot.");
-          }
+          requireCurrentChoice();
+          return revision;
+        },
+        copy: async () => {
+          requireCurrentChoice();
+          if (!forceUpgrade) throw new Error("Automatic upgrade is no longer enabled. Keeping v1.");
+          autoUpgradeCopyInFlight = true;
+          try {
+            const revision = await historyRevision(source);
+            if (automaticHistoryCopy && automaticHistoryRevision !== undefined && automaticHistoryRevision !== revision
+              && v1HistoryCopyStartedAt === undefined && migration.backupPath) {
+              // A previous automatic copy never served v2, but v1 changed while
+              // it ran. Restore its pre-copy target before taking a fresh snapshot.
+              // Independent v2 chats in that backup survive; v1 is never written.
+              await stopRuntime();
+              const target = join(rootDir, "opencode.db");
+              const temporary = `${target}.auto-restore`;
+              const ownership = await acquireHistoryCopyLock(target);
+              try {
+                await rm(temporary, { force: true });
+                await snapshotV1Database(migration.backupPath, temporary);
+                await rm(`${target}-wal`, { force: true });
+                await rm(`${target}-shm`, { force: true });
+                await rename(temporary, target);
+                v1HistoryCopiedAt = undefined;
+                automaticHistoryRevision = undefined;
+                await persistState();
+                await ownership.complete();
+              } finally { await ownership.release(); }
+            }
+            automaticHistoryCopy = true;
+            automaticHistoryRevision ??= revision;
+            // Persist ownership and source revision before starting, including a
+            // crash before the copy marker. A resumed stale snapshot never switches.
+            await persistState();
+            attemptedCopy = true;
+            runMigration(v1HistoryCopyStartedAt !== undefined, true);
+            await migrationJob;
+            if (migration.state !== "completed") throw new Error(migration.error ?? "Automatic history copy did not finish.");
+            if (automaticHistoryRevision !== await historyRevision(source)) {
+              throw new Error("OpenCode v1 changed since the saved history snapshot. Keeping v1 until a later boot.");
+            }
+          } finally { autoUpgradeCopyInFlight = false; }
         },
         switchEngine: async () => {
+          requireCurrentChoice();
           if (!forceUpgrade) throw new Error("Automatic upgrade is no longer enabled. Keeping v1.");
           allowRunning = true;
           await start();
           if (!running) throw new Error("OpenCode v2 did not become healthy. Keeping v1.");
           autoUpgradeAbort.signal.throwIfAborted();
+          requireCurrentChoice();
           await withEngineSwitchFence(config, { from: "v1", to: "v2", operation: async () => {
-            if (!forceUpgrade || !await options.autoUpgradeIdle?.() || automaticHistoryRevision !== await historyRevision(source)) {
+            if (!forceUpgrade || !await idle() || automaticHistoryRevision !== await historyRevision(source)) {
               throw new Error("OpenCode v1 changed while v2 started. Keeping v1 until a later boot.");
             }
-            await setChatRouting(true, "forced");
+            await setChatRouting(true, "forced", true, generation);
+            requireCurrentChoice();
           } });
         },
       });
       return true;
     } catch (error) {
+      // Manual intent supersedes this attempt. Its late response cannot change
+      // routing, ownership, the receipt or cooldown of the accepted choice.
+      if (choiceGeneration !== generation) return false;
       // The attempt only selects v2 after a healthy, durable switch. Until
       // then v1 remains selected; do not overwrite a concurrent manual choice
       // when the attempt fails. Keep the private copy/checkpoint for next boot.
@@ -1389,6 +1456,7 @@ export function createEngineV2Preview(options: {
     await startFailureJob;
     await stopRuntime();
     await startFailureJob;
+    await stateWrites.catch(() => undefined);
   }
 
   function startWhenReady(): void {

@@ -5,6 +5,7 @@ import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 /** Real signed-in app-web pages share their production query cache. Only Den read responses are faulted. */
 export async function automationsInventory(seed: Seed) {
+  if (process.env.OPENWORK_EVAL_DEN_API_URL) throw new Error("Inventory authorization proof requires a cold isolated Den, not a reused organization");
   const { den, webPort } = await denForAppWeb(seed, { web: false, org: { name: "Inventory workspace", admin: { name: "Inventory Admin" } } });
   await enableOrganizationCapabilities(seed, den.admin, { automationCalendar: true });
   const proxy = await seed.faultProxy(den);
@@ -21,7 +22,7 @@ export async function automationsInventory(seed: Seed) {
     await proxy.faults.clear();
     for (const root of ["/api/den/v1", "/v1"]) {
       // Register the longer cursor prefix first; the first-page read always succeeds in these races.
-      await proxy.faults.status(`${root}/automations?limit=100&cursor=page_100`, mode === "authorized" ? 200 : mode === "denied" ? 403 : 503, { times: 1000, method: "GET", body: mode === "authorized" ? next : { error: mode === "denied" ? "access_denied" : "unavailable" } });
+      await proxy.faults.status(`${root}/automations?cursor=page_100`, mode === "authorized" ? 200 : mode === "denied" ? 403 : 503, { times: 1000, method: "GET", body: mode === "authorized" ? next : { error: mode === "denied" ? "access_denied" : "unavailable" } });
       await proxy.faults.status(`${root}/automations?limit=100`, 200, { times: 1000, method: "GET", body: first });
       await proxy.faults.status(`${root}/automation-runs?`, 200, { times: 1000, method: "GET", body: { items: [], nextCursor: null } });
       await proxy.faults.status(`${root}/capabilities/google-workspace/calendar-events`, 200, { times: 1000, method: "GET", body: meeting });

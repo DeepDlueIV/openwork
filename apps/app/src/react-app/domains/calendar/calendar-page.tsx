@@ -192,8 +192,8 @@ export function CalendarPage(props: {
   const transport = useCalendarTransport(denContext)
   const orgConnections = useOrgMcpConnections()
   const presence = Object.fromEntries(PROVIDERS.map((provider) => [provider, calendarProviderPresence(provider, orgConnections.connections, orgConnections.loaded, transport)]))
-  const googleMeetings = useCalendarMeetings({ provider: "google", transport, organizationId, range, enabled: enabled && !listQuery.accessDenied && layers.meetings && presence.google?.presence === "available" })
-  const microsoftMeetings = useCalendarMeetings({ provider: "microsoft", transport, organizationId, range, enabled: enabled && !listQuery.accessDenied && layers.meetings && presence.microsoft?.presence === "available" })
+  const googleMeetings = useCalendarMeetings({ provider: "google", transport, keyPrefix: denContext.queryRoot, range, enabled: denContext.ready && enabled && !listQuery.accessDenied && layers.meetings && presence.google?.presence === "available" })
+  const microsoftMeetings = useCalendarMeetings({ provider: "microsoft", transport, keyPrefix: denContext.queryRoot, range, enabled: denContext.ready && enabled && !listQuery.accessDenied && layers.meetings && presence.microsoft?.presence === "available" })
   const meetingQueries = { google: googleMeetings, microsoft: microsoftMeetings }
 
   const calendarItems = useMemo(() => layers.automations && automationItems && runsQuery.data

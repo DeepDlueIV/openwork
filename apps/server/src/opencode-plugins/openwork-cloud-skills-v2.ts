@@ -178,8 +178,8 @@ export function mentionedSkillIds(text: string, skills: ReadonlyArray<Pick<Nativ
 
 /** Setup starts background discovery, not a chat-wide network dependency.
  * Do not touch the native registry until opted-in metadata arrives. The prompt
- * hook is inert off-rollout; only explicit Cloud attachments wait for the cold
- * metadata read, and only selected native instructions gate their admission.
+ * hook is inert for ordinary off-rollout chat; explicit Cloud attachments need
+ * native delivery and wait for their metadata and selected verified instructions.
  * No storage, configuration rewrite or watcher is involved. */
 export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
   let skills: NativeSkill[] = [];
@@ -275,6 +275,7 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
     return done;
   };
 
+  const unavailable = () => new Error("Skill instructions are unavailable. Nothing was sent. Try again or retrieve the skill through get_skill.");
   const ensurePromptHook = async () => {
     if (promptHook || !context.session) return;
     const session = context.session;
@@ -284,7 +285,10 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
       // Only an explicit Cloud attachment needs the cold catalog promise.
       // Ordinary chat never waits on discovery, let alone all catalog bodies.
       if (explicit.length) await initialCatalog;
-      if (!native || closed) return;
+      if (!native || closed) {
+        if (explicit.length) throw unavailable();
+        return;
+      }
       const mentioned = mentionedSkillIds(event.prompt.text, skills).filter(id => !attached.has(id));
       const ids = [...explicit, ...mentioned];
       if (ids.length === 0) return;
@@ -293,7 +297,6 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
         const snapshot = skill && skillSnapshot(skill);
         return skill && snapshot ? [{ skill, snapshot }] : [];
       });
-      const unavailable = () => new Error("Skill instructions are unavailable. Nothing was sent. Try again or retrieve the skill through get_skill.");
       if (selected.length !== ids.length) throw unavailable();
       await Promise.all(selected.map(({ skill }) => hydrate(skill, true)));
       if (!native || closed) throw unavailable();

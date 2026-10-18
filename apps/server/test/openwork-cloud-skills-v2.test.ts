@@ -129,6 +129,19 @@ test("ordinary cold chat is admitted while discovery is still pending; off path 
   } finally { held.resolve(); await app.close(); }
 });
 
+test("off-rollout discovery metadata is never admitted as a loaded explicit skill", async () => {
+  const app = await harness(name => {
+    assert.equal(name, "openwork_skills", "off rollout performs no body or authorization reads");
+    return { skills: [fixture] };
+  });
+  try {
+    await until(() => app.skills().length > 0);
+    assert.ok(app.skills()[0]?.content.includes("discovery metadata"));
+    await app.prompt("Ordinary message");
+    await assert.rejects(app.prompt("Review this", ["openwork-cloud-fixture-review"]), /instructions are unavailable/);
+  } finally { await app.close(); }
+});
+
 test("cold explicit attachments await only their catalog and verified instructions", async () => {
   const catalogHeld = deferred();
   const bodyHeld = deferred();

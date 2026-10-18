@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createMcpResultsCollector } from "../src/opencode-plugins/openwork-mcp-results-v2.js";
+import { createMcpResultsCollector, preservedEntry } from "../src/opencode-plugins/openwork-mcp-results-v2.js";
 
 const event = { id: "execute", messageID: "message" };
 const output = { launch: { connectionId: "app", toolName: "open_app", resourceUri: "ui://project-board", arguments: {} } };
@@ -24,6 +24,9 @@ for (const sourceBytes of [70_000, 200_000]) test(`a ${sourceBytes}-byte authore
   const collector = createMcpResultsCollector();
   collector.before({ ...event, tool: "execute" });
   const inner = { ...event, tool: "openwork-cloud.create_app", input: { title: "Project board", preparationId: "preparation", reactSource: "x".repeat(sourceBytes) } };
+  const receipt = preservedEntry({ ...inner, status: "completed", result: { output } });
+  assert.ok(receipt, "large authored input must not discard a small complete delivery receipt");
+  assert.deepEqual(receipt.input, { title: "Project board", preparationId: "preparation" });
   collector.before(inner);
   collector.settle(event, collector.claim(inner)!, { status: "completed", output });
   const persisted = JSON.parse(JSON.stringify(collector.metadata(event)));

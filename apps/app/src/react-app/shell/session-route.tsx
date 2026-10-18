@@ -151,6 +151,7 @@ import { computeModelAvailability, createUnavailableConfirmationGate, type Model
 import { useModelRemovalConfirmation } from "@/react-app/domains/session/surface/use-model-removal-confirmation";
 import { closestAvailableModel } from "@/react-app/domains/session/surface/model-removal";
 import { modelRecoveryChatKey, useModelRecoveryStore } from "@/react-app/domains/session/surface/model-recovery-store";
+import { readModelDisplayMemory, rememberModelDisplayNames } from "@/react-app/domains/session/surface/model-display-memory";
 import { useSessionFindStore } from "@/react-app/domains/session/surface/find-store";
 import { useModelPicker } from "@/react-app/domains/session/modals/use-model-picker";
 import { GatewayModelAccessProvider, type GatewayModelSelectionHandle } from "@/react-app/domains/connections/provider-auth/gateway-model-access";
@@ -1215,7 +1216,7 @@ export function SessionRoute() {
     workspaceReady: Boolean(selectedWorkspaceId && opencodeClient),
     reloadPending: sessionProviderAuthSnapshot.cloudProviderServerSync?.reloadPending === true,
   });
-  const organizationModelsEmpty = isOrganizationModelsEmpty({
+  const catalogOrganizationModelsEmpty = isOrganizationModelsEmpty({
     workspaceReady: Boolean(selectedWorkspaceId && opencodeClient),
     loading,
     restrictToCloud: restrictToCloudProviders,
@@ -1298,10 +1299,10 @@ export function SessionRoute() {
   );
   const activeComposerModel = selectedSessionModelSelection?.model ?? (selectedSessionId ? local.prefs.defaultModel : newTaskModel) ?? null;
   const recoveryChatKey = modelRecoveryChatKey(modelRecoveryScope, selectedSessionId);
-  const rememberedModelTitles = useRef(new Map<string, ModelOption>());
-  for (const option of modelPicker.options) {
-    rememberedModelTitles.current.set(`${option.providerID}/${option.modelID}`, option);
-  }
+  const rememberedModelTitles = useMemo(() => readModelDisplayMemory(modelRecoveryScope), [modelRecoveryScope]);
+  useEffect(() => {
+    rememberModelDisplayNames(modelRecoveryScope, rememberedModelTitles, modelPicker.knownOptions);
+  }, [modelRecoveryScope, rememberedModelTitles, modelPicker.knownOptions]);
   const modelAvailabilityGate = useMemo(() => createUnavailableConfirmationGate(), []);
   const [availabilityRecheckTick, bumpAvailabilityRecheck] = useReducer(
     (value: number) => value + 1,
@@ -1310,13 +1311,13 @@ export function SessionRoute() {
   const resolveCatalogModelAvailability = useCallback((model: ModelRef | null): ModelAvailability =>
     modelAvailabilityGate.confirm(model, computeModelAvailability(model, {
       workspaceReady: Boolean(selectedWorkspaceId && opencodeClient),
-      loading,
+      loading: loading || providerListQuery.isPlaceholderData || providerListQuery.isError,
       signedIn: denAuth.isSignedIn,
       cloudProviderSyncReady,
       openWorkModelsSyncing,
       restrictToCloud: restrictToCloudProviders,
       checkRestriction: checkDesktopRestriction,
-      cloudProviderList,
+      cloudProviderList: liveProviderSync ? providerListQuery.data ?? null : cloudProviderList,
       providerList: providerListQuery.data,
     })), [
     // The tick only forces re-evaluation of denials tracked by the gate.
@@ -1329,6 +1330,9 @@ export function SessionRoute() {
     modelAvailabilityGate,
     opencodeClient,
     openWorkModelsSyncing,
+    liveProviderSync,
+    providerListQuery.isPlaceholderData,
+    providerListQuery.isError,
     providerListQuery.data,
     restrictToCloudProviders,
     selectedWorkspaceId,
@@ -1343,7 +1347,8 @@ export function SessionRoute() {
   const organizationRemovalConfirmed = useModelRemovalConfirmation({
     model: activeComposerModel,
     missing: catalogAvailability.status === "unavailable" && catalogAvailability.reason !== "provider_blocked",
-    ready: !loading && cloudProviderSyncReady && Boolean(opencodeClient && selectedWorkspaceId),
+    ready: !loading && cloudProviderSyncReady && !providerListQuery.isError
+      && !providerListQuery.isPlaceholderData && Boolean(opencodeClient && selectedWorkspaceId),
     scope: modelRecoveryScope,
     chatKey: recoveryChatKey,
     refreshEngine: async () => {
@@ -1367,6 +1372,8 @@ export function SessionRoute() {
         && activeComposerModel.modelID === model.modelID)) return { status: "pending" };
     return verdict;
   }, [resolveCatalogModelAvailability, organizationRemovalConfirmed, activeComposerModel]);
+  const organizationModelsEmpty = catalogOrganizationModelsEmpty
+    && (!activeComposerModel || !isCloudManagedProviderKey(activeComposerModel.providerID) || organizationRemovalConfirmed);
   const selectedModelUnavailable =
     resolveModelAvailability(newTaskModel).status === "unavailable";
   const orgNewTaskModelUnavailable = Boolean(orgNewTaskModel && !workspaceDefault
@@ -1399,7 +1406,7 @@ export function SessionRoute() {
       // default; a conversation's own unavailable model must surface the
       // picker for that conversation instead.
       entitledOrgDefaultModel: activeComposerTargetsSession || workspaceDefault ? false : Boolean(entitledOrgDefaultModel),
-      organizationModelsEmpty,
+      organizationModelsEmpty: organizationModelsEmpty && !organizationRemovalConfirmed,
       autoOpenedUnavailableModelKey: autoOpenedUnavailableModelRef.current,
     })) return;
     if (!activeComposerTargetsSession && !workspaceDefault && entitledOrgDefaultModel) {
@@ -1420,10 +1427,12 @@ export function SessionRoute() {
     const collections = useModelCollectionsStore.getState();
     // Named options from the same catalog the entitlement check reads, limited to what the member may use.
     const entitled = new Set(entitledModelOptions.filter((option) => !option.disabled).map((option) => `${option.providerID}/${option.modelID}`));
-    const candidates = runtimeModelOptions(cloudProviderList ?? providerListQuery.data)
-      .filter((option) => entitled.has(`${option.providerID}/${option.modelID}`));
+    const connected = new Set(runtimeModelOptions(cloudProviderList ?? providerListQuery.data)
+      .map((option) => `${option.providerID}/${option.modelID}`));
+    const candidates = modelPicker.actionOptions.filter((option) => !option.disabled && !option.gatewayAuthorization
+      && entitled.has(`${option.providerID}/${option.modelID}`) && connected.has(`${option.providerID}/${option.modelID}`));
     const previous = activeComposerModel
-      ? rememberedModelTitles.current.get(`${activeComposerModel.providerID}/${activeComposerModel.modelID}`) ?? activeComposerModel : null;
+      ? rememberedModelTitles.get(`${activeComposerModel.providerID}/${activeComposerModel.modelID}`) ?? activeComposerModel : null;
     const chooseReplacement = modelRemovalRecovery ? closestAvailableModel : nextAvailableModel;
     const replacement = previous ? chooseReplacement(candidates, collections.favorites, collections.recent, previous,
       (option) => resolveModelAvailability(option).status === "available") : null;
@@ -1441,7 +1450,7 @@ export function SessionRoute() {
         action: { label: "Change", onClick: () => window.dispatchEvent(new CustomEvent(openComposerModelPickerEvent, { detail: { sessionId: targetSessionId ?? undefined } })) },
       });
     }
-  }, [activityRouteActive, activeComposerModel, activeComposerTargetsSession, changeNewTaskModel, cloudProviderList, cloudProviderSyncReady, denAuth.isSignedIn, entitledModelOptions, entitledOrgDefaultModel, providerListQuery.data, organizationModelsEmpty, resolveModelAvailability, selectedModelUnavailableKey, selectedSessionId, workspaceDefault, organizationRemovalConfirmed, modelRemovalRecovery, recoveryChatKey]);
+  }, [activityRouteActive, activeComposerModel, activeComposerTargetsSession, changeNewTaskModel, cloudProviderList, cloudProviderSyncReady, denAuth.isSignedIn, entitledModelOptions, entitledOrgDefaultModel, providerListQuery.data, organizationModelsEmpty, resolveModelAvailability, selectedModelUnavailableKey, selectedSessionId, workspaceDefault, organizationRemovalConfirmed, modelRemovalRecovery, recoveryChatKey, modelPicker.actionOptions, rememberedModelTitles]);
 
   // Optimistic model selection: a remembered model is treated as valid until
   // the availability gate CONFIRMS it absent (selectedModelUnavailable).
@@ -2043,6 +2052,7 @@ export function SessionRoute() {
     const scopedSurface = {
       ...surfaceProps,
       workspaceRoot,
+      modelRecoveryScope: JSON.stringify([sessionDraftScope, endpoint.opencodeBaseUrl, workspace.id]),
       modelUnavailable: false,
       modelUnavailableMessage: null,
       resolveModelAvailability: undefined,

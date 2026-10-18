@@ -110,6 +110,32 @@ The important invariant is one active catalog owner and convergence after
 every invalidation or reconnect, not an impossible guarantee of instantaneous
 consistency during a network partition.
 
+## Model loss in a conversation
+
+An engine catalog is an availability snapshot, not evidence that an organization
+removed a model. A managed selection stays pending during an incomplete catalog,
+failed inventory read, or member sign-in requirement. Before replacing it, the
+app requires two complete, independently fetched member inventories from Den,
+separated by the reload grace period and a fresh engine catalog read. Gateway
+inventory must explicitly establish assignment completeness; an older Den or a
+credential-related omission cannot authorize replacement. Den still authorizes
+every inference request.
+
+An explicit `ModelUnavailable` / `ProviderModelNotFound` send rejection refreshes
+the workspace catalog and retries once with the same request/message identity.
+Transport failures and unknown admission never replay. A second rejection stays
+inline through the existing send-error path.
+
+`modelRemovalRecovery` (cloud and self-hosted, default off) changes confirmed
+removal recovery: prefer a usable model from the same maker/family, then personal
+pins, recent choices, and picker order. Only that conversation changes. A quiet,
+dismissible composer note offers Change and, after the old model returns,
+Switch back. Display names are remembered in bounded account/workspace-scoped
+local storage; this cache never grants access. Without another usable model the
+composer picker/empty state offers the next action. Turning the rollout off
+hides the note and restores legacy confirmed-removal presentation, without
+undoing a selection, interrupting work, or weakening authoritative confirmation.
+
 ## Kill switch
 
 The registry kill switch rejects new stream connections and causes active

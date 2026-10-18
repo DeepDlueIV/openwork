@@ -7,7 +7,7 @@ import { getErrorMessage, getReauthRequiredError, requestJson } from "../../_lib
 import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
 import { getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
-import { permissionsQueryKeys } from "./permissions-query-keys";
+import { clearDeniedRoleReads, permissionsQueryKeys } from "./permissions-query-keys";
 
 /**
  * Den API Permissions endpoints (ee/apps/den-api/src/routes/org/permissions.ts).
@@ -232,19 +232,34 @@ function required<T>(value: T | null): T {
 
 export { permissionsQueryKeys } from "./permissions-query-keys";
 
+function usePermissionReadViewer(orgId: string | null) {
+  const { orgContext } = useOrgDashboard();
+  return orgContext?.organization.id === orgId ? orgContext.currentMember.id : "";
+}
+
+function deniedRoleRead(cause: unknown): boolean {
+  return cause instanceof PermissionsRequestError && [401, 403, 404].includes(cause.status);
+}
+
 export function usePermissionSets(orgId: string | null, enabled = true) {
-  return useQuery({
-    queryKey: permissionsQueryKeys.sets(orgId ?? ""),
-    enabled: enabled && Boolean(orgId),
+  const viewerId = usePermissionReadViewer(orgId);
+  const client = useQueryClient();
+  const query = useQuery<PermissionSetSummary[] | null>({
+    queryKey: permissionsQueryKeys.sets(orgId ?? "", viewerId),
+    enabled: enabled && Boolean(orgId) && Boolean(viewerId),
     retry: false,
-    queryFn: async ({ signal }) => required(await permissionsRequest({
-      orgId: orgId ?? "",
-      path: "/v1/permissions/sets",
-      schema: z.object({ sets: z.array(setSummarySchema) }),
-      fallback: "Couldn't load permissions",
-      signal,
-    })).sets,
+    refetchOnMount: "always",
+    queryFn: async ({ signal }) => {
+      try {
+        return required(await permissionsRequest({ orgId: orgId ?? "", path: "/v1/permissions/sets", schema: z.object({ sets: z.array(setSummarySchema) }), fallback: "Couldn't load permissions", signal })).sets;
+      } catch (cause) {
+        if (deniedRoleRead(cause)) await clearDeniedRoleReads(client, orgId ?? "", viewerId);
+        throw cause;
+      }
+    },
   });
+  const blocked = query.data === null || deniedRoleRead(query.error);
+  return { ...query, data: blocked ? undefined : query.data ?? undefined, isSuccess: query.isSuccess && !blocked, isError: query.isError || blocked, error: blocked ? new Error("Couldn't verify access to roles. Try again.") : query.error };
 }
 
 /**
@@ -254,40 +269,53 @@ export function usePermissionSets(orgId: string | null, enabled = true) {
 export function useCustomRoleTeams(orgId: string | null, enabled: boolean) {
   const query = usePermissionSets(orgId, enabled);
   const setByTeam = new Map<string, PermissionSetSummary>();
-  for (const set of query.data ?? []) {
+  for (const set of enabled ? query.data ?? [] : []) {
     if (set.kind !== "team") continue;
     // A shared role (sharedRoles) applies to every team in `teams`.
     const teams = set.teams.length > 0 ? set.teams : set.team ? [set.team] : [];
     for (const team of teams) setByTeam.set(team.id, set);
   }
   const nameByTeam = new Map([...setByTeam].map(([teamId, set]) => [teamId, set.name]));
-  return { setByTeam, nameByTeam, teamIds: new Set(setByTeam.keys()), loading: enabled && query.isPending };
+  return { setByTeam, nameByTeam, teamIds: new Set(setByTeam.keys()), loading: enabled && query.isPending, verified: enabled && query.isSuccess };
 }
 
 export function usePermissionSet(orgId: string | null, setId: string, enabled = true) {
-  return useQuery({
-    queryKey: permissionsQueryKeys.set(orgId ?? "", setId),
-    enabled: enabled && Boolean(orgId) && Boolean(setId),
+  const viewerId = usePermissionReadViewer(orgId);
+  const client = useQueryClient();
+  const query = useQuery<PermissionSetDetail | null>({
+    queryKey: permissionsQueryKeys.set(orgId ?? "", setId, viewerId),
+    enabled: enabled && Boolean(orgId) && Boolean(setId) && Boolean(viewerId),
     retry: false,
-    queryFn: async ({ signal }) => required(await permissionsRequest({
-      orgId: orgId ?? "",
-      path: `/v1/permissions/sets/${encodeURIComponent(setId)}`,
-      schema: z.object({ set: setDetailSchema }),
-      fallback: "Couldn't load these permissions",
-      signal,
-    })).set,
+    refetchOnMount: "always",
+    queryFn: async ({ signal }) => {
+      try {
+        return required(await permissionsRequest({ orgId: orgId ?? "", path: `/v1/permissions/sets/${encodeURIComponent(setId)}`, schema: z.object({ set: setDetailSchema }), fallback: "Couldn't load these permissions", signal })).set;
+      } catch (cause) {
+        if (deniedRoleRead(cause)) await clearDeniedRoleReads(client, orgId ?? "", viewerId);
+        throw cause;
+      }
+    },
   });
+  const blocked = query.data === null || deniedRoleRead(query.error);
+  return { ...query, data: blocked ? undefined : query.data ?? undefined, isSuccess: query.isSuccess && !blocked, isError: query.isError || blocked, error: blocked ? new Error("Couldn't verify access to these permissions. Try again.") : query.error };
 }
 
 export function useRoleGrantLocks(orgId: string | null, sets: readonly PermissionSetSummary[], permissions: readonly string[], isOwner: boolean) {
+  const viewerId = usePermissionReadViewer(orgId);
+  const client = useQueryClient();
   const details = useQueries({ queries: sets.map((set) => ({
-    queryKey: permissionsQueryKeys.set(orgId ?? "", set.id),
-    enabled: Boolean(orgId) && !isOwner,
+    queryKey: permissionsQueryKeys.set(orgId ?? "", set.id, viewerId),
+    enabled: Boolean(orgId) && Boolean(viewerId) && !isOwner,
     retry: false,
-    queryFn: async ({ signal }: { signal: AbortSignal }) => required(await permissionsRequest({
-      orgId: orgId ?? "", path: `/v1/permissions/sets/${encodeURIComponent(set.id)}`,
-      schema: z.object({ set: setDetailSchema }), fallback: "Couldn't verify this role", signal,
-    })).set,
+    refetchOnMount: (): "always" => "always",
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<PermissionSetDetail | null> => {
+      try {
+        return required(await permissionsRequest({ orgId: orgId ?? "", path: `/v1/permissions/sets/${encodeURIComponent(set.id)}`, schema: z.object({ set: setDetailSchema }), fallback: "Couldn't verify this role", signal })).set;
+      } catch (cause) {
+        if (deniedRoleRead(cause)) await clearDeniedRoleReads(client, orgId ?? "", viewerId);
+        throw cause;
+      }
+    },
   })) });
   return new Map(sets.map((set, index) => {
     const detail = details[index];
@@ -371,6 +399,7 @@ function useReauthableWrite() {
 }
 
 export function useUpdatePermissionSet(orgId: string, setId: string) {
+  const viewerId = usePermissionReadViewer(orgId);
   const queryClient = useQueryClient();
   const write = useReauthableWrite();
   return useMutation({
@@ -385,13 +414,16 @@ export function useUpdatePermissionSet(orgId: string, setId: string) {
       fallback: "Couldn't save permissions",
     })).set),
     onSuccess: (set) => {
-      queryClient.setQueryData(permissionsQueryKeys.set(orgId, setId), set);
+      const key = permissionsQueryKeys.set(orgId, setId, viewerId);
+      // A pre-denial write response cannot clear the read-authorization barrier.
+      if (queryClient.getQueryData(key) !== null && queryClient.getQueryData(permissionsQueryKeys.sets(orgId, viewerId)) !== null) queryClient.setQueryData(key, set);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) }),
   });
 }
 
 export function useCreateTeamPermissions(orgId: string) {
+  const viewerId = usePermissionReadViewer(orgId);
   const queryClient = useQueryClient();
   const write = useReauthableWrite();
   return useMutation({
@@ -406,7 +438,8 @@ export function useCreateTeamPermissions(orgId: string) {
       fallback: "Couldn't create team permissions",
     })).set),
     onSuccess: (set) => {
-      queryClient.setQueryData(permissionsQueryKeys.set(orgId, set.id), set);
+      const key = permissionsQueryKeys.set(orgId, set.id, viewerId);
+      if (queryClient.getQueryData(key) !== null && queryClient.getQueryData(permissionsQueryKeys.sets(orgId, viewerId)) !== null) queryClient.setQueryData(key, set);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) }),
   });
@@ -528,6 +561,7 @@ export function useSetTeamRole(orgId: string) {
 
 /** sharedRoles: creates a named role, given to the teams now (each team's custom role is replaced). */
 export function useCreateSharedRole(orgId: string) {
+  const viewerId = usePermissionReadViewer(orgId);
   const queryClient = useQueryClient();
   const write = useReauthableWrite();
   return useMutation({
@@ -542,7 +576,8 @@ export function useCreateSharedRole(orgId: string) {
       fallback: "Couldn't create the role",
     })).set),
     onSuccess: (set) => {
-      queryClient.setQueryData(permissionsQueryKeys.set(orgId, set.id), set);
+      const key = permissionsQueryKeys.set(orgId, set.id, viewerId);
+      if (queryClient.getQueryData(key) !== null && queryClient.getQueryData(permissionsQueryKeys.sets(orgId, viewerId)) !== null) queryClient.setQueryData(key, set);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) }),
   });
@@ -550,6 +585,7 @@ export function useCreateSharedRole(orgId: string) {
 
 /** sharedRoles: renames a custom role. */
 export function useRenameRole(orgId: string, setId: string) {
+  const viewerId = usePermissionReadViewer(orgId);
   const queryClient = useQueryClient();
   const write = useReauthableWrite();
   return useMutation({
@@ -564,7 +600,9 @@ export function useRenameRole(orgId: string, setId: string) {
       fallback: "Couldn't rename the role",
     })).set),
     onSuccess: (set) => {
-      queryClient.setQueryData(permissionsQueryKeys.set(orgId, setId), set);
+      const key = permissionsQueryKeys.set(orgId, setId, viewerId);
+      // A pre-denial write response cannot clear the read-authorization barrier.
+      if (queryClient.getQueryData(key) !== null && queryClient.getQueryData(permissionsQueryKeys.sets(orgId, viewerId)) !== null) queryClient.setQueryData(key, set);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) }),
   });

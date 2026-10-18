@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Plus, ShieldCheck } from "lucide-react";
 import { getPermissionDefinition } from "@openwork/types/den/permissions";
 import { DenButton } from "../../_components/ui/button";
@@ -34,7 +34,8 @@ export function SharedTeamRolePanel({ team }: { team: DenOrgTeam }) {
   const verified = canView && setsQuery.isSuccess && Boolean(memberData) && memberDetail.isSuccess && (!teamSet || Boolean(teamData) && teamDetail.isSuccess);
   const loading = canView && (setsQuery.isPending || Boolean(teamSet && teamDetail.isPending) || Boolean(memberSet && memberDetail.isPending));
   const failed = canView && !loading && !verified;
-  const title = setsQuery.data ? teamSet?.name ?? "No custom role" : "Role not verified";
+  const canShowRole = canView && Boolean(setsQuery.data) && Boolean(memberData) && (!teamSet || Boolean(teamData));
+  const title = canShowRole ? teamSet?.name ?? "No custom role" : "Role not verified";
   const extraKeys = verified && teamData && memberData ? allowedKeys(teamData.permissions).filter((key) => !allowedKeys(memberData.permissions).includes(key)) : [];
   async function retry() { await setsQuery.refetch(); if (teamSet) await teamDetail.refetch(); if (memberSet) await memberDetail.refetch(); }
 
@@ -48,11 +49,11 @@ export function SharedTeamRolePanel({ team }: { team: DenOrgTeam }) {
         <IconTile icon={ShieldCheck} />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="break-words text-[14px] font-medium leading-5 text-gray-900" data-testid="team-role-name">{loading && !setsQuery.data ? <DenSkeleton className="h-5 w-28" /> : title}</span>
-          <span className="text-[13px] text-gray-500">{teamSet ? "Custom role" : verified ? "Only permissions available to everyone" : "Custom permissions not verified"}</span>
+          <span className="text-[13px] text-gray-500">{!canShowRole ? "Custom permissions not verified" : teamSet ? "Custom role" : "Only permissions available to everyone"}</span>
         </span>
         <span className="flex max-w-full flex-wrap gap-2">
-          {teamSet ? <LinkButton size="sm" variant="secondary" href={getPermissionSetRoute(orgSlug, teamSet.id)}>Open role</LinkButton> : null}
-          <CustomRolePicker team={team} setId={teamSet?.id ?? null} customSets={customSets} disabled={!verified} canManage={access?.canManagePermissions ?? false} newRoleHref={getNewRoleRoute(orgSlug)} />
+          {canShowRole && teamSet ? <LinkButton size="sm" variant="secondary" href={getPermissionSetRoute(orgSlug, teamSet.id)}>Open role</LinkButton> : null}
+          {canShowRole ? <CustomRolePicker team={team} setId={teamSet?.id ?? null} customSets={customSets} disabled={!verified} canManage={access?.canManagePermissions ?? false} newRoleHref={getNewRoleRoute(orgSlug)} /> : <DenButton size="sm" variant="secondary" disabled data-testid="team-role-change">Change custom role</DenButton>}
         </span>
       </div>
     </ItemPanel>
@@ -68,6 +69,8 @@ function CustomRolePicker({ team, setId, customSets, disabled, canManage, newRol
   const toast = useDenToast();
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState<string | null>(setId);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const currentName = customSets.find((set) => set.id === setId)?.name;
   const chosenName = customSets.find((set) => set.id === choice)?.name ?? "No custom role";
   const changed = choice !== setId;
@@ -75,6 +78,7 @@ function CustomRolePicker({ team, setId, customSets, disabled, canManage, newRol
     if (!changed || disabled || !canManage) return;
     try {
       await saveRole.mutateAsync({ teamId: team.id, permissionSetId: choice });
+      if (!active.current) return;
       setOpen(false);
       toast({ title: choice ? `Assigned ${chosenName} to ${team.name}` : `Removed ${currentName} from ${team.name}` });
     } catch { /* Keep the selection and the actual error in place. */ }

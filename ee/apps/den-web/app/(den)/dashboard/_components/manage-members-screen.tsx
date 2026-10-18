@@ -152,6 +152,7 @@ export function ManageMembersScreen() {
     updateTeam,
     deleteTeam,
     runReauthableAction,
+    refreshOrgData,
   } = useOrgDashboard();
   const [activeTab, setActiveTab] = useState<MembersTab>("members");
   const [memberFilter, setMemberFilter] = useState("");
@@ -225,14 +226,17 @@ export function ManageMembersScreen() {
   function chosenRole(value: string, teamId: string) {
     const set = value.startsWith("role:") ? customSets.find((entry) => entry.id === value.slice(5)) : null;
     const teams = set ? roleTeams(set.id) : [];
+    const referencedTeams = set?.teams.length ? set.teams : set?.team ? [set.team] : [];
+    const unverifiedTeams = referencedTeams.some((reference) => !teams.some((team) => team.id === reference.id));
     const grantable = teams.filter((team) => !team.managedByScim && (!team.grantsOrganizationAdmin || access.canManageAdminTeams));
-    const selected = grantable.find((team) => team.id === teamId) ?? (teams.length === 1 ? grantable[0] : undefined);
-    return { set, teams, grantable, selected, blocked: value.startsWith("role:") && (!set || !selected || Boolean(roleLocks.get(set.id)) || !access.canManageTeams) };
+    const selected = grantable.find((team) => team.id === teamId) ?? (referencedTeams.length === 1 ? grantable[0] : undefined);
+    return { set, teams, grantable, selected, unverifiedTeams, blocked: value.startsWith("role:") && (!roleSets.isSuccess || unverifiedTeams || !set || !selected || Boolean(roleLocks.get(set.id)) || !access.canManageTeams) };
   }
   const inviteChoice = chosenRole(inviteRole, inviteTeamId);
   function customTeamChoice(value: string, teamId: string, onChange: (id: string) => void) {
     const choice = chosenRole(value, teamId);
     if (!choice.set) return null;
+    if (choice.unverifiedTeams || !roleSets.isSuccess) return <DenNotice tone="neutral" message="Some teams for this role aren't verified. Assignment is blocked." action={<DenButton size="sm" variant="secondary" onClick={() => void Promise.all([refreshOrgData(), roleSets.refetch()])}>Verify teams</DenButton>} />;
     if (!choice.teams.length) return (
       <p className="col-span-full min-w-0 text-[13px] text-gray-500">
         <Link href={getPermissionSetRoute(orgSlug, choice.set.id)} className="underline" title={choice.set.name}>{choice.set.name}</Link>
@@ -529,7 +533,7 @@ export function ManageMembersScreen() {
         teamRoles={sharedRoles ? (
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="member-role-editor-team-roles">
             <span className="min-w-0 truncate" title={editingMemberTeamRoles.join(", ")}>
-              {editingMemberTeamRoles.length > 0 ? `From teams: ${editingMemberTeamRoles.join(", ")}` : "No roles from teams"}
+              {permissionsFeature && !customRoles.verified ? access.canViewPermissions ? "Team roles not verified" : "Custom roles not visible" : editingMemberTeamRoles.length > 0 ? `From teams: ${editingMemberTeamRoles.join(", ")}` : "No roles from teams"}
             </span>
             {access.canManageTeams ? (
               <button
@@ -859,6 +863,7 @@ export function ManageMembersScreen() {
                     ) : !listToolbars && member.adminTeams.length > 0 ? (
                       <span className="mt-1 block text-[12px] text-cyan-700">Admin via {member.adminTeams.map((team) => team.name).join(", ")}</span>
                     ) : null}
+                    {teamRoles && permissionsFeature && !customRoles.verified ? <span className="block whitespace-normal text-[12px] text-gray-500">{access.canViewPermissions ? "Team roles not verified" : "Custom roles not visible"}</span> : null}
                   </span>
                   <span data-testid="member-joined" className="col-start-1 row-start-3 pl-11 text-[13px] text-gray-500 lg:col-auto lg:row-auto lg:pl-0">
                     {member.joinedAt ? <span className="lg:hidden">Joined </span> : null}

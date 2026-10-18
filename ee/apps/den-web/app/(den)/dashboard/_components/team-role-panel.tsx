@@ -30,6 +30,7 @@ export function TeamRolePanel({ team }: { team: DenOrgTeam }) {
   const memberData = memberDetail.data?.id === memberSet?.id && memberDetail.data?.kind === "member_default" ? memberDetail.data : null;
   const verified = !feature || canView && sets.isSuccess && memberDetail.isSuccess && Boolean(memberData) && (!teamSet || teamDetail.isSuccess && Boolean(teamData));
   const loading = feature && canView && (sets.isPending || Boolean(teamSet && teamDetail.isPending) || Boolean(memberSet && memberDetail.isPending));
+  const canShowRole = !feature || canView && Boolean(sets.data) && Boolean(memberData) && (!teamSet || Boolean(teamData));
   const memberKeys = !feature ? permissionDefaultKeys("member") : verified && memberData ? allowedKeys(memberData.permissions) : [];
   const customKeys = verified && teamData ? allowedKeys(teamData.permissions).filter((key) => !memberKeys.includes(key)) : [];
   const [showAll, setShowAll] = useState(false);
@@ -60,9 +61,9 @@ export function TeamRolePanel({ team }: { team: DenOrgTeam }) {
     <ItemPanel>
       <div className="flex flex-wrap items-center gap-3.5 px-5 py-4">
         <IconTile icon={ShieldCheck} />
-        <span className="min-w-0 flex-1 break-words text-[14px] font-medium text-gray-900" data-testid="team-role-name">{!verified && !sets.data ? "Role not verified" : teamSet ? "Custom permissions" : "No custom role"}</span>
+        <span className="min-w-0 flex-1 break-words text-[14px] font-medium text-gray-900" data-testid="team-role-name">{!canShowRole ? "Role not verified" : teamSet ? "Custom permissions" : "No custom role"}</span>
         <span className="flex max-w-full flex-wrap gap-2">
-          {teamSet ? <LinkButton size="sm" variant="secondary" href={getPermissionSetRoute(orgSlug, teamSet.id)} data-testid="team-role-edit">Edit permissions</LinkButton> : null}
+          {canShowRole && teamSet ? <LinkButton size="sm" variant="secondary" href={getPermissionSetRoute(orgSlug, teamSet.id)} data-testid="team-role-edit">Edit permissions</LinkButton> : null}
           <DenButton size="sm" variant="secondary" disabled={!canManage || busy} title={!canManage ? feature ? permissionLockReason("permissions.manage") : "Custom roles need Permissions, an Enterprise feature." : undefined} onClick={() => teamSet ? setConfirmRemove(true) : void createRole()}>{teamSet ? "Remove custom role" : "Create custom role"}</DenButton>
         </span>
       </div>

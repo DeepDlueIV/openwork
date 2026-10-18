@@ -6,7 +6,6 @@ import { Plus, Search } from "lucide-react";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
 import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenInput } from "../../_components/ui/input";
-import { DenChip } from "../../_components/ui/chip";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenSkeleton } from "../../_components/ui/skeleton";
 import { getAiGatewayProviderRoute, getNewAiGatewayProviderRoute } from "../../_lib/den-org";
@@ -25,7 +24,15 @@ function modelsLabel(provider: DenInferenceProvider) {
   return `${provider.modelIds.length} ${provider.modelIds.length === 1 ? "model" : "models"}`;
 }
 
-function ProviderRow({ provider, orgSlug, comparison }: { provider: DenInferenceProvider; orgSlug: string | null; comparison: boolean }) {
+export type GatewayProviderSummary = {
+  audience: string;
+  nobody: boolean;
+  ready: boolean;
+  status: { label: string; dot: string; text: string };
+};
+
+/** Who can use a gateway provider and whether it is ready, shared by every provider list. */
+export function useGatewayProviderSummary(provider: DenInferenceProvider): GatewayProviderSummary {
   const { orgContext } = useOrgDashboard();
   // LiteLLM per-person keys add automatic member grants; only the access group says who may use it.
   const accessGroupId = provider.litellm ? liteLlmAccessGroupId(provider) : null;
@@ -48,23 +55,33 @@ function ProviderRow({ provider, orgSlug, comparison }: { provider: DenInference
       : nobody
         ? { label: "Give access", dot: "bg-amber-500", text: "text-amber-700" }
         : { label: "Ready", dot: "bg-emerald-500", text: "text-gray-600" };
+  return { audience, nobody, ready, status };
+}
+
+export function gatewayModelsLabel(provider: DenInferenceProvider) {
+  return modelsLabel(provider);
+}
+
+function ProviderRow({ provider, orgSlug }: { provider: DenInferenceProvider; orgSlug: string | null }) {
+  const { audience, nobody, ready, status } = useGatewayProviderSummary(provider);
+  const litellm = provider.litellm;
   return (
-    <div className={comparison ? "grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-3" : ROW} data-testid="gateway-provider-row">
+    <div className={ROW} data-testid="gateway-provider-row">
       <DenBrandMark
         name={provider.providerId}
         simpleIconSlug={getProviderIconSlug(provider.providerId)}
         serviceUrl={litellm ? LITELLM_DOC_URL : getProviderDocUrl(provider.providerConfig)}
-        className={`h-8 w-8 shrink-0 rounded-[8px] ${comparison ? "row-span-3 self-start" : ""}`}
+        className="h-8 w-8 shrink-0 rounded-[8px]"
         imageClassName="h-4 w-4"
       />
-      <div className={comparison ? "col-start-2 row-start-1 min-w-0" : "min-w-0 w-[200px] shrink-0"}>
+      <div className="min-w-0 w-[200px] shrink-0">
         <p className="truncate text-[13px] font-medium text-gray-900">{provider.name}</p>
       </div>
-      <p className={`${comparison ? "col-start-2 row-start-2" : "w-[140px] shrink-0"} text-[13px] text-gray-600`}>{modelsLabel(provider)}</p>
-      <p className={`${comparison ? "col-start-2 row-start-3" : "flex-1"} min-w-0 truncate text-[13px] ${nobody ? "text-gray-400" : "text-gray-600"}`} data-testid="gateway-provider-audience">
+      <p className="w-[140px] shrink-0 text-[13px] text-gray-600">{modelsLabel(provider)}</p>
+      <p className={`min-w-0 flex-1 truncate text-[13px] ${nobody ? "text-gray-400" : "text-gray-600"}`} data-testid="gateway-provider-audience">
         {nobody ? "No one yet" : audience}
       </p>
-      <p className={`flex ${comparison ? "col-start-3 row-start-2 justify-end" : "w-[110px] shrink-0"} items-center gap-2 text-[12px] ${status.text}`} aria-label={`Status: ${status.label}`}>
+      <p className={`flex w-[110px] shrink-0 items-center gap-2 text-[12px] ${status.text}`} aria-label={`Status: ${status.label}`}>
         <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} aria-hidden="true" />
         {status.label}
       </p>
@@ -72,7 +89,7 @@ function ProviderRow({ provider, orgSlug, comparison }: { provider: DenInference
         href={getAiGatewayProviderRoute(orgSlug, provider.id)}
         data-testid="gateway-provider-open"
         aria-label={`Manage ${provider.name}`}
-        className={buttonVariants({ variant: "secondary", size: "sm", className: comparison ? "col-start-3 row-start-1" : undefined })}
+        className={buttonVariants({ variant: "secondary", size: "sm" })}
       >
         {ready ? "Manage" : "Set up"}
       </Link>
@@ -93,7 +110,7 @@ function EmptyState({ orgSlug }: { orgSlug: string | null }) {
 }
 
 /** The AI Providers tab of AI Gateway: who can use models, then one row per provider. */
-export function GatewayProvidersSection({ comparison = false }: { comparison?: boolean }) {
+export function GatewayProvidersSection() {
   const { orgId, orgSlug } = useOrgDashboard();
   const { inferenceProviders, busy, error, reloadProviders } = useOrgInferenceProviders(orgId);
   const [query, setQuery] = useState("");
@@ -104,21 +121,20 @@ export function GatewayProvidersSection({ comparison = false }: { comparison?: b
   const empty = !busy && !error && inferenceProviders.length === 0;
 
   return (
-    <div className={comparison ? "min-w-0" : undefined} data-testid="gateway-providers-section">
-      {comparison ? <div className="mb-4 flex flex-wrap items-center gap-2"><h2 className="text-[16px] font-medium tracking-[-0.02em] text-gray-950">AI Gateway providers</h2><DenChip>New</DenChip></div> : null}
+    <div>
       {error ? <DenNotice message="Could not load your providers. Your saved configuration has not changed." tone="error" presentation="inline" className="mb-6" action={<DenButton size="sm" variant="secondary" onClick={() => void reloadProviders()}>Retry</DenButton>} /> : null}
 
       {empty ? <EmptyState orgSlug={orgSlug} /> : (
         <>
-          <GatewayWhoCanUseModels compact={comparison} />
+          <GatewayWhoCanUseModels />
 
           <section aria-labelledby="gateway-providers-heading" className="mt-8">
-            <div className={`mb-3 flex ${comparison ? "flex-wrap" : ""} items-center justify-between gap-4`}>
+            <div className="mb-3 flex items-center justify-between gap-4">
               <h2 id="gateway-providers-heading" className="text-[14px] font-medium text-gray-900">
                 Providers
               </h2>
-              <div className={`flex ${comparison ? "w-full flex-wrap" : ""} items-center gap-2`}>
-                <div className={comparison ? "min-w-0 flex-1 basis-40" : "w-[200px]"}>
+              <div className="flex items-center gap-2">
+                <div className="w-[200px]">
                   <DenInput type="search" icon={Search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by name" aria-label="Filter by name" className="h-8 text-[12px]" />
                 </div>
                 <Link href={getNewAiGatewayProviderRoute(orgSlug)} data-testid="gateway-provider-create" className={buttonVariants({ variant: "primary", size: "sm" })}>
@@ -131,12 +147,14 @@ export function GatewayProvidersSection({ comparison = false }: { comparison?: b
               {busy && inferenceProviders.length === 0 ? Array.from({ length: 3 }, (_, index) => (
                 <div key={index} className={ROW} aria-hidden="true">
                   <DenSkeleton className="size-8 shrink-0 rounded-lg" />
-                  <DenSkeleton className={comparison ? "h-12 min-w-0 flex-1" : "h-4 w-[200px] shrink-0"} />
-                  {!comparison ? <><DenSkeleton className="h-4 w-[140px] shrink-0" /><DenSkeleton className="h-4 flex-1" /><DenSkeleton className="h-4 w-[110px] shrink-0" /></> : null}
+                  <DenSkeleton className="h-4 w-[200px] shrink-0" />
+                  <DenSkeleton className="h-4 w-[140px] shrink-0" />
+                  <DenSkeleton className="h-4 flex-1" />
+                  <DenSkeleton className="h-4 w-[110px] shrink-0" />
                   <DenSkeleton className="h-8 w-20 shrink-0 rounded-lg" />
                 </div>
               )) : filtered.length === 0 ? !error && !busy ? <p className="px-4 py-6 text-[13px] text-gray-500">No providers match that filter. Try another name.</p> : null
-                : filtered.map((provider) => <ProviderRow key={provider.id} provider={provider} orgSlug={orgSlug} comparison={comparison} />)}
+                : filtered.map((provider) => <ProviderRow key={provider.id} provider={provider} orgSlug={orgSlug} />)}
             </div>
           </section>
         </>

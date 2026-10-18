@@ -17,14 +17,22 @@ function layoutEnabled(body: unknown) {
 test("an owner compares gateway and legacy providers without losing either management flow", async ({ world, user, probe, step, evidence }) => {
   const providersUrl = world.url("/dashboard/ai-gateway?tab=ai-providers");
   const featuresUrl = world.url(`/admin/organizations/${world.orgId}/features`);
+  // The flag-off screen is the untouched stacked layout: gateway rows, then the Legacy Providers section.
+  async function originalLayout() {
+    const rows = await probe.dom('[data-testid="gateway-provider-row"]');
+    const legacy = await probe.dom('[data-testid="gateway-legacy-providers"]');
+    const comparison = await probe.dom('[data-layout="comparison"]');
+    const lastRow = rows.elements[rows.elements.length - 1];
+    const legacyTop = legacy.elements[0]?.rect.top ?? -1;
+    const stacked = comparison.elements.length === 0 && Boolean(lastRow) && legacyTop >= lastRow.rect.top + lastRow.rect.height && legacy.elements[0].text.includes("Legacy Providers");
+    return { stacked, detail: `comparison layout present=${comparison.elements.length > 0}; gateway rows=${rows.elements.length}, last row bottom=${lastRow ? lastRow.rect.top + lastRow.rect.height : "none"}; Legacy Providers top=${legacyTop}` };
+  }
   await step("before: the disabled rollout keeps legacy providers below the gateway list", async () => {
     await user.see({ text: "Shared gateway models" }, { timeoutMs: 60_000 });
     await user.see({ text: "Shared desktop credentials with a long provider name" });
-    const layout = await probe.dom(sections);
-    const [gateway, legacy] = layout.elements;
-    const stacked = legacy.rect.top >= gateway.rect.top + gateway.rect.height;
-    evidence.recordAssertionEvidence("The default remains the original stacked layout", `gateway top=${gateway.rect.top}, height=${gateway.rect.height}; legacy top=${legacy.rect.top}`, stacked);
-    expect(stacked).toBe(true);
+    const original = await originalLayout();
+    evidence.recordAssertionEvidence("The default remains the original stacked layout", original.detail, original.stacked);
+    expect(original.stacked).toBe(true);
     await user.screenshot();
   });
   await step("after: enabling the rollout places clearly marked provider systems side by side", async () => {
@@ -40,15 +48,18 @@ test("an owner compares gateway and legacy providers without losing either manag
     await user.see({ text: "Shared desktop credentials with a long provider name" });
     const layout = await probe.dom(sections);
     const [gateway, legacy] = layout.elements;
-    const sideBySide = Math.abs(gateway.rect.top - legacy.rect.top) < 2 && legacy.rect.left >= gateway.rect.left + gateway.rect.width;
-    evidence.recordAssertionEvidence("Both provider systems start on the same row with explicit New and Legacy labels", `${layout.elements.map((entry) => `${entry.text.slice(0, 70)}: x=${entry.rect.left}, y=${entry.rect.top}`).join("; ")}`, sideBySide && gateway.text.includes("New") && legacy.text.includes("Legacy"));
+    const panels = await probe.dom('[data-layout="comparison"] section > div.rounded-2xl');
+    const listsAligned = panels.elements.length === 2 && Math.abs(panels.elements[0].rect.top - panels.elements[1].rect.top) < 1;
+    const sideBySide = Math.abs(gateway.rect.top - legacy.rect.top) < 2 && legacy.rect.left >= gateway.rect.left + gateway.rect.width && gateway.rect.width >= 460;
+    evidence.recordAssertionEvidence("Both provider systems sit side by side with explicit New and Legacy labels, and their lists start on the same line", `${layout.elements.map((entry) => `${entry.text.slice(0, 40)}: x=${entry.rect.left}, width=${entry.rect.width}`).join("; ")}; list tops=${panels.elements.map((entry) => entry.rect.top).join(" / ")}`, sideBySide && listsAligned && gateway.text.includes("New") && legacy.text.includes("Legacy"));
     expect(sideBySide).toBe(true);
+    expect(listsAligned).toBe(true);
     expect(gateway.text).toContain("New");
     expect(legacy.text).toContain("Legacy");
     await user.screenshot();
   });
   await step("the legacy distinction explains desktop key sharing and unavailable usage controls", async () => {
-    await user.click({ text: "Key sharing and usage limits" });
+    await user.click({ text: "How legacy keys differ" });
     await user.see({ text: "Bring Your Own Key (Legacy System) providers send the API key directly to users’ desktop applications." });
     const details = await probe.dom('[data-testid="gateway-legacy-providers"] details[open]');
     const copy = details.elements[0]?.text ?? "";
@@ -57,16 +68,19 @@ test("an owner compares gateway and legacy providers without losing either manag
     expect(accurate).toBe(true);
     await user.screenshot();
   });
-  await step("gateway filtering does not filter or modify legacy providers", async () => {
-    await user.type({ label: "Filter by name" }, "no-match-layout");
-    await user.see({ text: "No providers match that filter. Try another name." });
+  await step("one filter narrows both lists without changing either", async () => {
+    await user.type({ label: "Filter providers…" }, "desktop");
+    await user.see({ text: "No AI Gateway providers match “desktop”." });
     await user.see({ text: "Shared desktop credentials with a long provider name" });
-    const rows = await probe.dom('[data-testid="gateway-provider-row"], [data-testid="llm-provider-card"]');
-    evidence.recordAssertionEvidence("Filtering remains scoped to the gateway", `remaining provider rows=${rows.elements.length}; ${rows.elements.map((entry) => entry.text).join(";")}`, rows.elements.length === 1 && rows.elements[0].text.includes("Shared desktop credentials"));
-    expect(rows.elements).toHaveLength(1);
-    await user.type({ label: "Filter by name" }, "", { replace: true });
-    await user.see({ text: "Shared gateway models" });
+    const rows = await probe.dom('[data-testid="gateway-provider-open"], [data-testid="llm-provider-card"]');
+    const narrowed = rows.elements.length === 1 && rows.elements[0].text.includes("Shared desktop credentials");
     await user.screenshot();
+    await user.type({ label: "Filter providers…" }, "", { replace: true });
+    await user.see({ text: "Shared gateway models" });
+    const restored = await probe.dom('[data-testid="gateway-provider-open"], [data-testid="llm-provider-card"]');
+    evidence.recordAssertionEvidence("Filtering hides rows in both columns and clearing it restores both", `"desktop" → ${rows.elements.length} row (${rows.elements.map((entry) => entry.text.slice(0, 40)).join("; ")}); cleared → ${restored.elements.length} rows`, narrowed && restored.elements.length === 2);
+    expect(narrowed).toBe(true);
+    expect(restored.elements).toHaveLength(2);
   });
   await step("after: both lists and their actions stack without overflow on tablet and phone", async () => {
     for (const width of [1000, 390]) {
@@ -110,11 +124,10 @@ test("an owner compares gateway and legacy providers without losing either manag
     await user.see({ text: "Shared gateway models" });
     await user.see({ role: "heading", label: "Legacy Providers" });
     await user.see({ text: "Shared desktop credentials with a long provider name" });
-    const layout = await probe.dom(sections);
-    const [gateway, legacy] = layout.elements;
+    const original = await originalLayout();
     const rows = await probe.dom('[data-testid="gateway-provider-row"], [data-testid="llm-provider-card"]');
-    const restored = legacy.rect.top >= gateway.rect.top + gateway.rect.height && rows.elements.length === 2;
-    evidence.recordAssertionEvidence("Reverting changes presentation only, not saved providers", `stacked=${restored}; saved provider rows=${rows.elements.length}`, restored);
+    const restored = original.stacked && rows.elements.length === 2;
+    evidence.recordAssertionEvidence("Reverting changes presentation only, not saved providers", `${original.detail}; saved provider rows=${rows.elements.length}`, restored);
     expect(restored).toBe(true);
     await user.screenshot();
   });

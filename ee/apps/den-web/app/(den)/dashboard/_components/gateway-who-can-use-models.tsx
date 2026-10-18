@@ -28,7 +28,7 @@ function Option({ testId, checked, title, description, onSelect, children }: {
   );
 }
 
-export function GatewayWhoCanUseModels({ compact = false }: { compact?: boolean }) {
+export function GatewayWhoCanUseModels() {
   const { orgId, runReauthableAction, reauthDialogOpen } = useOrgDashboard();
   const { desktopPolicies, busy, error: policiesError, reloadPolicies } = useOrgDesktopPolicies(orgId);
   const state = readModelAccessState(desktopPolicies);
@@ -68,13 +68,14 @@ export function GatewayWhoCanUseModels({ compact = false }: { compact?: boolean 
 
   return (
     <>
-      <div className={`flex ${compact ? "flex-wrap" : ""} items-center gap-4 rounded-[12px] border border-gray-100 bg-white px-4 py-3`} data-testid="gateway-model-policy-row">
+      <div className="flex items-center gap-4 rounded-[12px] border border-gray-100 bg-white px-4 py-3" data-testid="gateway-model-policy-row">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-gray-100 text-gray-500"><Users className="h-4 w-4" aria-hidden="true" /></span>
-        <p className="min-w-0 flex-1 text-[13px] font-medium text-gray-900">Who can use models</p>
+        <p className="min-w-0 flex-1 text-[13px] font-medium text-gray-900 lg:whitespace-nowrap">Who can use models</p>
         {busy ? <span className="text-[12px] text-gray-400">Loading…</span> : (
           <>
-            <DenChip size="xs" data-testid="gateway-model-policy-state">{managed ? "Only models you provide" : "Any model"}</DenChip>
-            <span className={compact ? "sr-only" : "hidden text-[12px] text-gray-500 md:inline"}>{consequence}</span>
+            {/* The chip has a fixed height: wrapping it overlaps the label on narrow screens. */}
+            <DenChip size="xs" className="shrink-0 whitespace-nowrap" data-testid="gateway-model-policy-state">{managed ? "Only models you provide" : "Any model"}</DenChip>
+            <span className="hidden min-w-0 truncate text-[12px] text-gray-500 lg:inline">{consequence}</span>
           </>
         )}
         <DenButton size="sm" variant="secondary" data-testid="gateway-model-policy-open" disabled={busy} onClick={() => setOpen(true)}>Change</DenButton>

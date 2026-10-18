@@ -6,20 +6,30 @@ import { record, rows } from "../worlds/org-invite.ts";
 const test = spec.world(accessDrafts, { timeout: 900_000, resources: { surfaces: ["web"], services: ["den"] } });
 
 test("an owner keeps a team's unsaved draft across tabs, reviews newer saved settings and retries a failed save", async ({ world, user, probe, step, evidence }) => {
-  await step("the owner edits commands, then uses the keyboard to open Browser without losing the draft", async () => {
+  let keyboardWorked = false;
+  let panelLabelled = false;
+  let tabStops = 0;
+  await step("the owner edits commands and opens Browser without saving the command draft", async () => {
     await user.see({ role: "button", label: "Run commands" }, { timeoutMs: 90_000 });
     await user.click({ role: "button", label: "Run commands" });
     await user.click({ role: "option", label: "Block" });
     await user.see({ testId: "agent-permissions-save-bar" });
     await user.click({ role: "tab", label: "Agents" });
     await user.press("ArrowRight");
-    await user.see({ role: "button", label: "Open websites" });
     const focused = await probe.dom('[role="tab"][aria-selected="true"]');
+    keyboardWorked = focused.elements[0]?.text === "Browser" && focused.elements[0]?.focused === true;
+    // Keep driving the old click path on dev so its failure witnesses the lost
+    // draft too, rather than stopping solely on the missing arrow-key behavior.
+    if (!keyboardWorked) await user.click({ role: "tab", label: "Browser" });
+    await user.see({ role: "button", label: "Open websites" });
     const stops = await probe.dom('[role="tab"][tabindex="0"]');
-    evidence.recordAssertionEvidence("keyboard navigation has one focused tab stop", `selected=${focused.elements.map((entry) => entry.text).join()}; focused=${focused.elements[0]?.focused}; tab stops=${stops.elements.length}`, focused.elements[0]?.text === "Browser" && focused.elements[0]?.focused === true && stops.elements.length === 1);
-    expect(focused.elements[0]?.text).toBe("Browser");
-    expect(focused.elements[0]?.focused).toBe(true);
-    expect(stops.elements).toHaveLength(1);
+    tabStops = stops.elements.length;
+    const controls = await probe.dom('[role="tab"][aria-selected="true"][aria-controls]:not([aria-controls=""])');
+    const labelledPanels = await probe.dom('[role="tabpanel"]:not([hidden])[aria-labelledby]:not([aria-labelledby=""])');
+    panelLabelled = controls.elements.length === 1 && controls.elements[0]?.text === "Browser" && labelledPanels.elements.length === 1 && labelledPanels.elements.some((panel) => panel.text.includes("Open websites"));
+    const selected = await probe.dom('[role="tab"][aria-selected="true"]');
+    evidence.recordAssertionEvidence("Browser opens without saving the command draft", `selected=${selected.elements.map((entry) => entry.text).join()}; arrow navigation worked=${keyboardWorked}; tab stops=${tabStops}; selected panel labelled=${panelLabelled}`, selected.elements[0]?.text === "Browser");
+    expect(selected.elements[0]?.text).toBe("Browser");
     await user.screenshot();
   });
   await step("saving Browser keeps the unsaved command change and asks the owner to review newer saved settings", async () => {
@@ -66,11 +76,13 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
     await user.navigate(world.url(`/dashboard/permissions/${world.role}`));
     await user.see({ role: "tab", label: "Permissions" });
     await user.click({ role: "tab", label: "Permissions" });
+    await user.type({ testId: "role-name" }, "Edited role draft", { replace: true });
     await user.click({ role: "switch", label: "View any team" });
     await user.see({ testId: "permission-set-save-bar" });
     await user.click({ role: "tab", label: "History" });
     await user.click({ role: "tab", label: "Permissions" });
     await user.see({ testId: "permission-set-save-bar" });
+    await user.see({ testId: "role-name" }, { value: "Edited role draft" });
     const edited = await probe.dom('[data-permission-key="teams.view"][data-status="allow"]');
     const panels = await probe.dom('[role="tabpanel"]:not([hidden])');
     evidence.recordAssertionEvidence("the role draft remains in its only visible panel", `retained changed rows=${edited.elements.length}; visible panels=${panels.elements.length}`, edited.elements.length === 1 && panels.elements.length === 1);
@@ -85,6 +97,9 @@ test("an owner keeps a team's unsaved draft across tabs, reviews newer saved set
     const refused = await probe.api(world.den.members.plain, "/v1/agent-permissions");
     evidence.recordAssertionEvidence("drafts and permissions stay scoped", `other team has no draft; member read HTTP ${refused.response.status}`, refused.response.status === 403);
     expect(refused.response.status).toBe(403);
+    expect(keyboardWorked).toBe(true);
+    expect(panelLabelled).toBe(true);
+    expect(tabStops).toBe(1);
     await user.screenshot();
   });
 });

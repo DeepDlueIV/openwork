@@ -249,15 +249,22 @@ function RemoveRoleFromTeam({ set, team, onClose, onRemove }: {
 export function RoleNameField({ ready, set }: { ready: ReadyAccess; set: PermissionSetDetail }) {
   const toast = useDenToast();
   const rename = useRenameRole(ready.orgId, set.id);
-  const [name, setName] = useState(set.name);
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [nameBase, setNameBase] = useState(set.name);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  const name = nameDraft ?? set.name;
   const trimmed = name.trim();
   const changed = trimmed.length > 0 && trimmed !== set.name;
+  const conflict = nameDraft !== null && set.name !== nameBase && trimmed !== set.name;
   const canManage = ready.access.canManagePermissions;
 
   async function save() {
-    if (!changed) return;
+    if (!changed || conflict || !canManage) return;
     try {
       await rename.mutateAsync(trimmed);
+      if (!active.current) return;
+      setNameDraft(null);
       toast({ title: `Renamed to ${trimmed}` });
     } catch {
       return;
@@ -267,19 +274,21 @@ export function RoleNameField({ ready, set }: { ready: ReadyAccess; set: Permiss
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor="role-name" className="text-[13px] font-medium text-gray-700">Role name</label>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <DenInput
           id="role-name"
-          className="max-w-sm"
+          className="w-full min-w-0 sm:max-w-sm"
           value={name}
           maxLength={120}
-          disabled={!canManage}
-          onChange={(event) => { rename.reset(); setName(event.target.value); }}
+          disabled={!canManage || rename.isPending}
+          onChange={(event) => { if (nameDraft === null) setNameBase(set.name); rename.reset(); setNameDraft(event.target.value === set.name ? null : event.target.value); }}
           onKeyDown={(event) => { if (event.key === "Enter") void save(); }}
           data-testid="role-name"
         />
-        {changed ? <DenButton size="sm" loading={rename.isPending} onClick={() => void save()} data-testid="role-name-save">Rename</DenButton> : null}
+        {nameDraft !== null ? <DenButton size="sm" variant="secondary" disabled={rename.isPending} onClick={() => { setNameDraft(null); rename.reset(); }}>Discard name edit</DenButton> : null}
+        {changed ? <DenButton size="sm" loading={rename.isPending} disabled={conflict || !canManage} onClick={() => void save()} data-testid="role-name-save">Rename</DenButton> : null}
       </div>
+      {conflict ? <DenNotice tone="warning" message={`The saved role name changed to ${set.name}. Your draft is kept.`} action={<DenButton size="sm" variant="secondary" onClick={() => setNameBase(set.name)}>Keep my name edit</DenButton>} /> : null}
       {rename.error ? <DenNotice tone="error" message={rename.error.message} /> : null}
     </div>
   );

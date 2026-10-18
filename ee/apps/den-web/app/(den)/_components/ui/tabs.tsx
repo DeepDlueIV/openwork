@@ -33,7 +33,7 @@ export function underlineTabClassName(selected: boolean) {
 export function UnderlineTabs<T extends string>({ tabs, activeTab, onChange, className = "", label = "Sections", showZeroCounts = false, children }: UnderlineTabsProps<T>) {
   return <Tabs.Root value={activeTab} onValueChange={(value) => { const tab = tabs.find((entry) => entry.value === value); if (tab) onChange(tab.value); }}>
     <div className={`border-b border-gray-200 ${className}`}>
-      <Tabs.List className="-mb-px flex flex-wrap gap-6" aria-label={label}>
+      <Tabs.List activateOnFocus className="-mb-px flex flex-wrap gap-6" aria-label={label}>
         {tabs.map(({ value, label: title, icon: Icon, count, countTone = "neutral", countClassName }) => <Tabs.Tab key={value} value={value} className={underlineTabClassName(activeTab === value)}>
           {Icon ? <Icon className="size-4" aria-hidden /> : null}
           {title}

@@ -14540,6 +14540,10 @@
               ]
             }
           },
+          "modelAssignmentsComplete": {
+            "type": "boolean",
+            "description": "True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal."
+          },
           "authorizationRequests": {
             "type": "array",
             "items": {
@@ -15119,6 +15123,7 @@
           "updatedAt",
           "providerConfig",
           "models",
+          "modelAssignmentsComplete",
           "authorizationRequests",
           "settings",
           "modelGroups",
@@ -15274,6 +15279,10 @@
               ]
             }
           },
+          "modelAssignmentsComplete": {
+            "type": "boolean",
+            "description": "True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal."
+          },
           "authorizationRequests": {
             "type": "array",
             "items": {
@@ -15396,6 +15405,7 @@
           "updatedAt",
           "providerConfig",
           "models",
+          "modelAssignmentsComplete",
           "authorizationRequests"
         ]
       },
@@ -73379,6 +73389,10 @@
                             ]
                           }
                         },
+                        "modelAssignmentsComplete": {
+                          "type": "boolean",
+                          "description": "True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal."
+                        },
                         "authorizationRequests": {
                           "type": "array",
                           "items": {
@@ -73513,6 +73527,7 @@
                         "updatedAt",
                         "providerConfig",
                         "models",
+                        "modelAssignmentsComplete",
                         "authorizationRequests",
                         "apiKey",
                         "apiKeys"

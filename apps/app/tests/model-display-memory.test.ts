@@ -26,7 +26,7 @@ test("cold-start names and maker survive removal without crossing an identity sc
 });
 
 test("only bounded public identity/title metadata is retained", () => {
-  const memory = new Map();
+  const memory = readModelDisplayMemory("scope");
   rememberModelDisplayNames("scope", memory, [model, { providerID: "ipr_opaque", modelID: "gwm_opaque", title: "gwm_opaque" }]);
   expect(readModelDisplayMemory("scope").size).toBe(1);
   expect(window.localStorage.getItem("openwork.modelDisplayMemory.v1")).not.toContain("description");

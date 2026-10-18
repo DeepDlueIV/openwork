@@ -36,7 +36,7 @@ export function closestAvailableModel(
   const maker = modelMakerId(unavailable);
   const family = candidates.filter((option) => maker
     ? modelMakerId(option) === maker
-    : option.providerID === unavailable.providerID);
+    : !/^(ipr|lpr)_/.test(unavailable.providerID) && option.providerID === unavailable.providerID);
   // For Claude, preserve the closest tier instead of jumping from Opus to Haiku.
   const tier = (model: ModelRef & { title?: string }) => {
     const name = modelTitle(model).toLowerCase();

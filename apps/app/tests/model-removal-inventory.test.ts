@@ -17,7 +17,7 @@ function gatewayModel(id: string) {
 }
 const gatewayProvider = {
   id: "ipr_assigned", providerId: "anthropic", name: "Gateway", source: "openwork_gateway",
-  credentialStatus: "ready", models: [gatewayModel("gwm_ready")], authorizationRequests: [],
+  credentialStatus: "ready", modelAssignmentsComplete: true, models: [gatewayModel("gwm_ready")], authorizationRequests: [],
 };
 
 describe("authoritative member model inventory", () => {
@@ -67,6 +67,20 @@ describe("authoritative member model inventory", () => {
     });
   });
 
+  test("a complete empty assignment set permits removal regardless of aggregate credential hint", () => {
+    expect(parseModelRemovalInventory(emptyLegacy, { inferenceProviders: [{
+      ...gatewayProvider, credentialStatus: "org_credential_missing", models: [], modelAssignmentsComplete: true,
+    }] })).toEqual({ models: [], lockedModels: [] });
+  });
+
+  test("a healthy aggregate cannot disguise incomplete assignments or old servers", () => {
+    for (const modelAssignmentsComplete of [false, undefined]) {
+      expect(() => parseModelRemovalInventory(emptyLegacy, { inferenceProviders: [{
+        ...gatewayProvider, modelAssignmentsComplete,
+      }] })).toThrow();
+    }
+  });
+
   test("empty complete inventories are valid", () => {
     expect(parseModelRemovalInventory(emptyLegacy, emptyGateway)).toEqual({ models: [], lockedModels: [] });
   });
@@ -85,23 +99,25 @@ describe("authoritative member model inventory", () => {
       { inferenceProviders: [{ ...gatewayProvider, models: [{ ...gatewayModel("gwm_bad"), config: { id: "gwm_other" } }] }] },
       { inferenceProviders: [{ ...gatewayProvider, authorizationRequests: undefined }] },
       { inferenceProviders: [{ ...gatewayProvider, authorizationRequests: [{ credentialSetId: "gcs_set", name: "Sign in", authUrl: "https://example.test/auth" }] }] },
-      { inferenceProviders: [{ ...gatewayProvider, credentialStatus: "org_credential_missing", models: [] }] },
+      { inferenceProviders: [{ ...gatewayProvider, modelAssignmentsComplete: false }] },
+      { inferenceProviders: [{ ...gatewayProvider, modelAssignmentsComplete: undefined }] },
+      { inferenceProviders: [{ ...gatewayProvider, modelAssignmentsComplete: "true" }] },
     ]) expect(() => parseModelRemovalInventory(emptyLegacy, payload)).toThrow();
   });
 
   test("client requests both member inventories with org scope, never engine state", async () => {
-    const requests: Array<{ path: string; org: string | null }> = [];
+    const requests: Array<{ path: string; org: string | null; cache?: RequestCache }> = [];
     const fetch = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
-      requests.push({ path: url.pathname + url.search, org: new Headers(init?.headers).get("x-openwork-org-id") });
+      requests.push({ path: url.pathname + url.search, org: new Headers(init?.headers).get("x-openwork-org-id"), cache: init?.cache });
       return Response.json(url.pathname.endsWith("/llm-providers") ? emptyLegacy : emptyGateway);
     });
     try {
       const client = createDenClient({ baseUrl: "https://den.example.test", apiBaseUrl: "https://den.example.test", token: "member-token" });
       expect(await client.getModelRemovalInventory("org-a")).toEqual({ models: [], lockedModels: [] });
       expect(requests).toEqual([
-        { path: "/v1/llm-providers", org: "org-a" },
-        { path: "/v1/inference-providers?scope=usable", org: "org-a" },
+        { path: "/v1/llm-providers", org: "org-a", cache: "no-store" },
+        { path: "/v1/inference-providers?scope=usable", org: "org-a", cache: "no-store" },
       ]);
     } finally { fetch.mockRestore(); }
   });

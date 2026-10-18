@@ -2793,6 +2793,7 @@ type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 
 type DenRequestOptions = {
   method?: string;
+  cache?: RequestCache;
   token?: string | null;
   body?: unknown;
   timeoutMs?: number;
@@ -2869,6 +2870,7 @@ async function requestJsonRaw<T>(
         headers,
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         credentials: "include",
+        ...(options.cache ? { cache: options.cache } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
       },
       options.timeoutMs ?? DEFAULT_DEN_TIMEOUT_MS,
@@ -3260,10 +3262,10 @@ export function createDenClient(options: {
     async getModelRemovalInventory(orgId: string): Promise<ModelRemovalInventory> {
       const [legacy, gateway] = await Promise.all([
         requestJson<unknown>(baseUrls, "/v1/llm-providers", {
-          method: "GET", token, organizationId: orgId,
+          method: "GET", token, organizationId: orgId, cache: "no-store",
         }),
         requestJson<unknown>(baseUrls, "/v1/inference-providers?scope=usable", {
-          method: "GET", token, organizationId: orgId,
+          method: "GET", token, organizationId: orgId, cache: "no-store",
         }),
       ]);
       return parseModelRemovalInventory(legacy, gateway);

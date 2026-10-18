@@ -117,8 +117,10 @@ removed a model. A managed selection stays pending during an incomplete catalog,
 failed inventory read, or member sign-in requirement. Before replacing it, the
 app requires two complete, independently fetched member inventories from Den,
 separated by the reload grace period and a fresh engine catalog read. Gateway
-inventory must explicitly establish assignment completeness; an older Den or a
-credential-related omission cannot authorize replacement. Den still authorizes
+inventory must report `modelAssignmentsComplete: true` for every returned
+provider; an older Den or a credential-related omission cannot authorize
+replacement. The marker checks every effective active group/set grant, not the
+provider's aggregate credential status. Den still authorizes
 every inference request.
 
 An explicit `ModelUnavailable` / `ProviderModelNotFound` send rejection refreshes

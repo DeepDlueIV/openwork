@@ -3235,6 +3235,10 @@ export type GatewayProviderDetails = {
     credentialSetId: string;
     credentialSetName: string;
   }>;
+  /**
+   * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+   */
+  modelAssignmentsComplete: boolean;
   authorizationRequests: Array<{
     /**
      * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -3424,6 +3428,10 @@ export type GatewayProviderSummary = {
     credentialSetId: string;
     credentialSetName: string;
   }>;
+  /**
+   * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+   */
+  modelAssignmentsComplete: boolean;
   authorizationRequests: Array<{
     /**
      * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -20799,6 +20807,10 @@ export type GetV1InferenceProvidersByInferenceProviderIdConnectResponses = {
         credentialSetId: string;
         credentialSetName: string;
       }>;
+      /**
+       * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+       */
+      modelAssignmentsComplete: boolean;
       authorizationRequests: Array<{
         /**
          * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.

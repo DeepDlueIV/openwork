@@ -38,6 +38,9 @@ const gatewayInventory = z.object({
     name: z.string(),
     source: z.literal("openwork_gateway"),
     credentialStatus: z.enum(["ready", "member_auth_required", "org_credential_missing"]),
+    // Aggregate readiness is not completeness: another granted credential set
+    // may have omitted aliases. Old servers cannot attest to this contract.
+    modelAssignmentsComplete: z.literal(true),
     models: z.array(gatewayModel),
     authorizationRequests: z.array(z.object({
       credentialSetId: identity,
@@ -73,11 +76,6 @@ export function parseModelRemovalInventory(
     }
   }
   for (const provider of gateway.inferenceProviders) {
-    // The usable endpoint omits organization-credential-missing aliases, so it
-    // cannot establish a complete assignment inventory in this state.
-    if (provider.credentialStatus === "org_credential_missing") {
-      throw new Error("Gateway model assignment inventory is incomplete.");
-    }
     for (const model of provider.models) {
       models.push({ providerID: provider.id, modelID: model.id, title: model.name });
     }

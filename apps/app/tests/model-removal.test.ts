@@ -48,6 +48,10 @@ describe("closest usable model", () => {
     const other = { ...sonnet, providerID: "ipr_other" };
     expect(closestAvailableModel([luna, other], [luna], [], old, () => true)).toEqual(other);
   });
+  test("opaque provider IDs alone do not imply the same maker", () => {
+    const unknown = { providerID: old.providerID, modelID: old.modelID };
+    expect(closestAvailableModel([sonnet, luna], [luna], [], unknown, () => true)).toEqual(luna);
+  });
   test("without a matching family, user pins then recent then picker order win", () => {
     const gemini = option("google", "gemini-pro", "Gemini Pro");
     expect(closestAvailableModel([luna, gemini], [gemini], [luna], old, () => true)).toEqual(gemini);

@@ -1301,8 +1301,10 @@ export function SessionRoute() {
   const recoveryChatKey = modelRecoveryChatKey(modelRecoveryScope, selectedSessionId);
   const rememberedModelTitles = useMemo(() => readModelDisplayMemory(modelRecoveryScope), [modelRecoveryScope]);
   useEffect(() => {
-    rememberModelDisplayNames(modelRecoveryScope, rememberedModelTitles, modelPicker.knownOptions);
-  }, [modelRecoveryScope, rememberedModelTitles, modelPicker.knownOptions]);
+    const selected = modelPicker.knownOptions.find((option) => option.providerID === activeComposerModel?.providerID
+      && option.modelID === activeComposerModel.modelID);
+    if (selected) rememberModelDisplayNames(modelRecoveryScope, rememberedModelTitles, [selected]);
+  }, [modelRecoveryScope, rememberedModelTitles, modelPicker.knownOptions, activeComposerModel]);
   const modelAvailabilityGate = useMemo(() => createUnavailableConfirmationGate(), []);
   const [availabilityRecheckTick, bumpAvailabilityRecheck] = useReducer(
     (value: number) => value + 1,

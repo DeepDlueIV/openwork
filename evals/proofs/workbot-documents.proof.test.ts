@@ -8,7 +8,8 @@ test("a member opens and edits a Drive document while unavailable access stays b
   await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
   await step("before: Documents is locked while the feature is off", async () => {
     await user.navigate(`${world.url}documents?documents=off&assistant=off`);
-    await user.see({ text: "Documents is off for your workspace. An admin can turn it on." });
+    await user.see({ role: "button", label: "Check browsing access" });
+    expect(await probe.text()).toContain("Documents is off for your workspace. An admin can turn it on.");
     await user.notSee({ role: "textbox", label: "Document text" });
     await user.notSee({ role: "button", label: /^Documents/ });
     evidence.recordAssertionEvidence("The feature starts off", "The locked state contains no document editor", (await probe.dom(".ow-editor-plain")).elements.length === 0);

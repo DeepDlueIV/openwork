@@ -105,7 +105,8 @@ test("a member can compare five cold-preview, browser-warm and conversation-reop
       if (phase === "warm") {
         await world.warmBrowserCache();
         // One unmeasured priming open makes browser-warm mean a previous
-        // successful cached sandbox navigation, not merely cache enabled.
+        // successful sandbox navigation. Its shipping no-store policy stays intact;
+        // browser-warm is not a claim that the sandbox HTML had an HTTP cache hit.
         await user.click({ role: "button", label: "Open preview" });
         await useful();
         await close();
@@ -152,8 +153,8 @@ test("a member can compare five cold-preview, browser-warm and conversation-reop
       const definition = phase === "cold"
         ? "fresh renderer document; HTTP cache cleared and disabled before reload; existing browser/server processes; Open-to-useful excludes reload boot"
         : phase === "warm"
-          ? "same document/process; HTTP cache enabled after one successful unmeasured priming open; pane closed between samples"
-          : "same document/process with warm HTTP cache; navigate to another conversation and back through UI; record navigation-to-useful separately from Open-to-useful";
+          ? "same document/process; HTTP cache enabled after one successful unmeasured priming open; sandbox no-store policy respected, not a claimed HTTP cache hit; pane closed between samples"
+          : "same document/process with HTTP cache enabled and sandbox no-store respected; navigate to another conversation and back through UI; record navigation-to-useful separately from Open-to-useful";
       evidence.recordAssertionEvidence("Five bounded observations report a small-sample median and nearest-rank p95 without a general SLA", `${phase}: ${definition}; signed-out local fixture so account presentation/result stores are inactive, not bypassed; the existing in-memory open-load cache remains active, rechecks current authority and labels reused data Saved result. Deterministic read-only provider service=120ms only when actually called; cache rechecks are not provider calls. Cold discovery=250ms, others=0ms; 1440x900. DOM-visible useful-state observations include CDP overhead, not display-device paint. n=5 is small; nearest-rank p95 is the sample maximum, not population p95. Errors are censored, not successful times. Summary=${JSON.stringify(summary)}; raw=${JSON.stringify(samples)}`, successful.length === 5 && summary.providerRequests + summary.keptResultRechecks === 5 && summary.discoveryRoundtrip.n === 5);
       expect(successful).toHaveLength(5);
       expect(summary.providerRequests + summary.keptResultRechecks).toBe(5);

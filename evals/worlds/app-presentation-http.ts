@@ -5,13 +5,14 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 /** Network-only resource fault. The browser still runs the real host and sandbox. */
-export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<unknown>, readChecklist: (checkOnly: boolean) => Promise<unknown>) {
+export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<unknown>, readChecklist: (checkOnly: boolean) => Promise<unknown>, delayBootstrap: () => boolean) {
   if (!app.client.webSocketDebuggerUrl) throw new Error("App presentation requires browser CDP");
   const socket = new WebSocket(app.client.webSocketDebuggerUrl);
   const pending = new Map<number, { resolve(): void; reject(error: Error): void }>();
   let sequence = 0;
   let failure: Error | undefined;
   let disposing = false;
+  let bootstrapDelayedDocuments = 0;
   const fail = (cause: unknown) => {
     failure ??= cause instanceof Error ? cause : new Error(String(cause));
     for (const request of pending.values()) request.reject(failure);
@@ -32,6 +33,22 @@ export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<un
     if (typeof params.requestId !== "string" || !record(params.request)) throw new Error("Malformed resource request");
     const requestId = params.requestId;
     if (params.request.method === "OPTIONS") return command("Fetch.continueRequest", { requestId });
+    if (typeof params.request.url === "string" && new URL(params.request.url).pathname.endsWith("/mcp-apps/sandbox.html")) {
+      if (!delayBootstrap()) return command("Fetch.continueRequest", { requestId });
+      // Network fault on the shipping proxy, not invented renderer state/logs:
+      // defer only launch notifications so the real pre-result render is witnessed.
+      const original = await fetch(params.request.url, { signal: AbortSignal.timeout(10_000) });
+      const html = await original.text();
+      const relay = 'inner.contentWindow?.postMessage(event.data, "*");';
+      if (!original.ok || !html.includes(relay)) throw new Error("The shipping sandbox relay did not match the bootstrap fixture");
+      const delayed = html.replace(relay, `if (event.data?.method === "ui/notifications/tool-input" || event.data?.method === "ui/notifications/tool-result") {
+        const data = event.data; setTimeout(() => inner.contentWindow?.postMessage(data, "*"), 250);
+      } else { ${relay} }`);
+      bootstrapDelayedDocuments++;
+      return command("Fetch.fulfillRequest", { requestId, responseCode: original.status,
+        responseHeaders: Array.from(original.headers).filter(([name]) => !["content-length", "content-encoding", "transfer-encoding"].includes(name)).map(([name, value]) => ({ name, value })),
+        body: Buffer.from(delayed).toString("base64") });
+    }
     const isRead = typeof params.request.url === "string" && new URL(params.request.url).pathname.endsWith("/mcp-apps/call");
     let checkOnly = false;
     if (isRead) {
@@ -72,9 +89,10 @@ export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<un
     socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
     socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("App presentation CDP connection failed")); }, { once: true });
   });
-  await command("Fetch.enable", { patterns: ["*/mcp-apps/resolve", "*/mcp-apps/call"].map(urlPattern => ({ urlPattern, requestStage: "Request" })) });
+  await command("Fetch.enable", { patterns: ["*/mcp-apps/resolve", "*/mcp-apps/call", "*/mcp-apps/sandbox.html*"].map(urlPattern => ({ urlPattern, requestStage: "Request" })) });
   return {
     check() { if (failure) throw failure; },
+    bootstrapDelayedDocuments() { if (failure) throw failure; return bootstrapDelayedDocuments; },
     async [Symbol.asyncDispose]() {
       try { if (socket.readyState === WebSocket.OPEN) await command("Fetch.disable"); }
       finally { disposing = true; socket.close(); }

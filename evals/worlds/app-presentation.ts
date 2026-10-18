@@ -97,7 +97,7 @@ export async function appPresentation(seed: Seed) {
     providerReads.push({ scenario: current, elapsedMs: Math.round(performance.now() - start) });
     return { content: [{ type: "text", text: "Review pending" }], structuredContent: { status: "Review pending" },
       _meta: { "openwork/readOnly": true, "openwork/providerIdentity": "synthetic-checklist-provider" } };
-  });
+  }, () => scenario === "bootstrap");
   if (!app.client.webSocketDebuggerUrl) throw new Error("The App's browser has no CDP endpoint");
   const endpoint = new URL(app.client.webSocketDebuggerUrl);
   const flicker = fileURLToPath(new URL("../../.opencode/skills/measure-chat-flicker/scripts/flicker.mjs", import.meta.url));
@@ -110,6 +110,7 @@ export async function appPresentation(seed: Seed) {
     resolutions() { network.check(); return [...resolutions]; },
     providerReads() { network.check(); return [...providerReads]; },
     keptResultChecks() { network.check(); return [...keptResultChecks]; },
+    bootstrapDelayedDocuments: () => network.bootstrapDelayedDocuments(),
     // Browser network controls, never renderer stores: cold means a fresh
     // renderer document plus cleared/disabled HTTP cache, not a cold process.
     async coldBrowserCache() {

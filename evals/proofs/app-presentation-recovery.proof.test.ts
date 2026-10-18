@@ -30,7 +30,8 @@ test("a member's generated App recovers from missing bootstrap data without bein
     const resolutions = world.resolutions();
     expect(bootstrap.length).toBeGreaterThan(0);
     expect(resolutions).toHaveLength(1);
-    evidence.recordAssertionEvidence("An actual pre-result React failure recovers without retrying or re-resolving", `bootstrap events=${bootstrap.length}; resource resolutions=${resolutions.length}; delivered view heading visible; no Retry; event counts are not latency`, bootstrap.length > 0 && resolutions.length === 1);
+    expect(world.bootstrapDelayedDocuments()).toBe(1);
+    evidence.recordAssertionEvidence("An actual pre-result React failure recovers without retrying or re-resolving", `shipping proxy documents with a 250ms launch-delivery fault=${world.bootstrapDelayedDocuments()}; actual bootstrap events=${bootstrap.length}; resource resolutions=${resolutions.length}; delivered heading visible; no Retry; event counts are not latency`, bootstrap.length > 0 && resolutions.length === 1 && world.bootstrapDelayedDocuments() === 1);
     await user.screenshot();
   });
   await step("the assistant can finish without replacing the recovered view", async () => {

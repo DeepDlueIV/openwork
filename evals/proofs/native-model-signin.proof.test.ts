@@ -66,8 +66,12 @@ for (const worldFactory of [serverOwnedModelSignIn, liveOwnedModelSignIn]) {
       await user.notSee({ role: "heading", label: "Verify model access" });
       await user.click("Change model");
       const checked = await probe.dom(`${world.row(world.targetModel)}[data-checked="true"]`);
-      expect(checked.elements).toHaveLength(1);
-      expect(checked.elements[0]?.text).not.toContain("Sign-in required");
+      const allChecked = await probe.dom('[data-testid="composer-model-picker"] [data-model-key][data-checked="true"]');
+      // Recent is an intentional shortcut to the same provider row. Every
+      // selected representation must be this identity, not a different model.
+      expect(checked.elements.length).toBeGreaterThan(0);
+      expect(allChecked.elements).toHaveLength(checked.elements.length);
+      expect(checked.elements.every(row => !row.text.includes("Sign-in required"))).toBe(true);
       // Reselecting the verified native option must not reopen stale Login.
       await user.click({ testId: `model-option-${world.targetModel.providerID}-${world.targetModel.modelID}` });
       await user.notSee({ role: "heading", label: "Log in to this provider to use the models" });
@@ -76,7 +80,7 @@ for (const worldFactory of [serverOwnedModelSignIn, liveOwnedModelSignIn]) {
       const other = await probe.api(world.other, "/v1/inference-providers?scope=usable", { headers: { "x-openwork-org-id": world.organizationId } });
       expect(other.response.ok).toBe(true);
       expect(JSON.stringify(other.body)).not.toContain(world.targetModel.modelID);
-      evidence.recordAssertionEvidence("Only the exact requested alias is selected after a successful current read, without a second Login or another member's access", `checked requested rows=${checked.elements.length}; host OAuth starts=${witness.oauthStarts}; token exchanges=${witness.tokenExchanges}; other member has no requested alias`, checked.elements.length === 1 && witness.oauthStarts === 1 && witness.tokenExchanges === 1);
+      evidence.recordAssertionEvidence("Only the exact requested alias is selected after a successful current read, without a second Login or another member's access", `all ${allChecked.elements.length} selected Recent/provider representations match the requested identity; host OAuth starts=${witness.oauthStarts}; token exchanges=${witness.tokenExchanges}; other member has no requested alias`, checked.elements.length > 0 && allChecked.elements.length === checked.elements.length && witness.oauthStarts === 1 && witness.tokenExchanges === 1);
       await user.screenshot();
       await user.press("Escape");
     });

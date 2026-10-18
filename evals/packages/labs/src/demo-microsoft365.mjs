@@ -202,7 +202,7 @@ function event(input, existing) {
 function reset() {
   sequence = 0;
   auditSequence = 0;
-  state = { messages: [], events: [], files: [], audit: [], mailFolders: [] };
+  state = { messages: [], events: [], files: [], audit: [], mailFolders: [], uploads: {} };
   const addMail = (id, thread, subject, sender, content, hours, folder = "inbox") => {
     const item = message({ subject, body: { contentType: "Text", content }, toRecipients: [ALEX], conversationId: thread }, false);
     Object.assign(item, { id, from: recipient(sender[0], sender[1]), sender: recipient(sender[0], sender[1]), parentFolderId: folder, isRead: hours > 8, receivedDateTime: new Date(clock() - hours * 3600000).toISOString(), webLink: `${PUBLIC_ORIGIN}/outlook?message=${id}` }); state.messages.push(item);
@@ -327,6 +327,15 @@ async function graph(method, path, url, input, bytes, headers = {}) {
       const item = { id: `folder-${uuid()}`, name, path: folderPath, parentId, folder: true, revision: 1, eTag: `"${uuid()},1"`, createdDateTime: now(), lastModifiedDateTime: now() }; state.files.push(item); return [201, fileJson(item)];
     }
   }
+  // Graph upload sessions: a pre-authorised URL the caller PUTs bytes to, so large files never travel through a chat.
+  const session = path.match(/^\/me\/drive\/root:\/(.+?):\/createUploadSession$/);
+  if (session && method === "POST") {
+    const target = session[1].replace(/^\/+/, ""); if (!target || /[\\:*?"<>|\x00-\x1f]/.test(target)) throw bad("Invalid file path.");
+    // Capability URL: unpredictable even when demo ids are deterministic.
+    const token = randomUUID(); const expirationDateTime = new Date(Date.now() + 15 * 60_000).toISOString();
+    state.uploads[token] = { path: target, expires: Date.parse(expirationDateTime) };
+    return [200, { uploadUrl: `${PUBLIC_ORIGIN}/upload/${token}`, expirationDateTime, nextExpectedRanges: ["0-"] }];
+  }
   const byPath = path.match(/^\/me\/drive\/root:\/(.+?)(?::\/(content))?$/);
   const byId = path.match(/^\/me\/drive\/items\/([^/]+)(?:\/(content))?$/);
   if (byPath || byId) {
@@ -381,6 +390,7 @@ const TOOLS = [
   definition("file_find", "Find shared demo files by filename", { query: strSchema }, []),
   definition("file_read", "Read file metadata, safe text extraction and original base64 bytes", { item_id: strSchema }, ["item_id"]),
   definition("file_create_folder", "Create a OneDrive folder under root or an existing parent folder ID", { name: strSchema, parent_id: strSchema }, ["name"], false),
+  definition("file_create_upload_session", "Create a pre-authorised upload URL for a binary file such as .pptx, .docx or .xlsx. Then upload the bytes outside the chat with an HTTP PUT to uploadUrl and no auth header, for example: curl -sS -X PUT --data-binary @deck.pptx '<uploadUrl>'. The response is the saved file", { path: strSchema }, ["path"], false),
   definition("file_write", "Create, upload or update a OneDrive document or file; pass content for text or content_base64 for binary, not both. Existing filenames are replaced; eTag guards revisions", { path: strSchema, content: strSchema, content_base64: strSchema, if_match: strSchema }, ["path"], false, true),
   definition("calendar_list", "List demo calendar events", { start: strSchema, end: strSchema }, []),
   definition("calendar_read", "Read a demo event by ID including agenda, attendees and timezone", { event_id: strSchema }, ["event_id"]),
@@ -406,6 +416,7 @@ async function callTool(name, args) {
   if (name === "mail_create_draft") { const item = message({ subject: args.subject, body: { contentType: "Text", content: args.body }, toRecipients: args.to.map((address) => recipient(address)) }); state.messages.push(item); return item; }
   if (name === "mail_create_reply_draft") return (await graph("POST", `/me/messages/${encodeURIComponent(args.message_id)}/createReply`, url, { comment: args.body }))[1];
   if (name === "mail_send") { const item = findMessage(args.message_id); sendDraft(item); return { id: item.id, status: "sent_in_demo_only", deliveredExternally: false }; }
+  if (name === "file_create_upload_session") return (await graph("POST", `/me/drive/root:/${args.path.replace(/^\/+/, "")}:/createUploadSession`, url, {}))[1];
   if (name === "file_find") return { value: state.files.filter((entry) => entry.name.toLowerCase().includes((args.query || "").toLowerCase())).map(fileJson) };
   if (name === "file_create_folder") return (await graph("POST", args.parent_id && args.parent_id !== "root" ? `/me/drive/items/${encodeURIComponent(args.parent_id)}/children` : "/me/drive/root/children", url, { name: args.name, folder: {} }))[1];
   if (name === "file_read") { const file = findFile(args.item_id); if (file.folder) return fileJson(file); return { ...fileJson(file), ...preview(file.bytes, file.name), content_base64: file.bytes.toString("base64") }; }
@@ -550,6 +561,16 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/reset") { await readBody(request); reset(); return send(response, 200, { reset: true }); }
     if (request.method === "GET" && url.pathname === "/") return send(response, 200, '<!doctype html><html lang="en"><meta charset="utf-8"><title>Acme Microsoft 365 demo</title><body style="font:14px/1.6 system-ui;margin:48px"><h1>Acme Robotics · Microsoft 365 demo</h1><p>Fictional in-memory data. Mail and invitations are never delivered externally.</p><p><a href="/outlook">Open Outlook mail & calendar</a></p><p><a href="/onedrive">Open OneDrive shared files</a></p><details><summary>Demo connection details</summary><p>Standalone unofficial MCP: <code>/mcp</code>. Graph-shaped REST: <code>/v1.0</code>. Synthetic Bearer token: <code>demo-microsoft365-token</code>.</p><p>Restarting or POST /reset restores the seed. Upload limit: 10 MB per file, 60 MB total. Private demo use only; not production authentication.</p></details></body></html>');
     if (request.method === "GET" && ["/outlook", "/onedrive"].includes(url.pathname)) return send(response, 200, page(url.pathname.slice(1)));
+    const upload = url.pathname.match(/^\/upload\/([0-9a-f-]{36})$/);
+    if (upload && request.method === "PUT") {
+      const pending = state.uploads[upload[1]]; if (!pending || pending.expires < Date.now()) throw new ApiError(404, "itemNotFound", "The upload session expired or does not exist.");
+      const bytes = await readBody(request); if (!bytes.length) throw bad("Upload at least one byte.");
+      delete state.uploads[upload[1]];
+      const existing = state.files.find((entry) => entry.path.toLowerCase() === pending.path.toLowerCase());
+      const saved = putFile(pending.path, bytes, request.headers["content-type"] && request.headers["content-type"] !== "application/x-www-form-urlencoded" ? request.headers["content-type"] : undefined, existing);
+      auditCall(Date.now(), "upload_session_put", { path: pending.path, bytes: bytes.length }, { id: saved.id }, "completed");
+      return send(response, existing ? 200 : 201, fileJson(saved));
+    }
     const publicFile = url.pathname.match(/^\/(download|preview)\/([^/]+)$/);
     if (publicFile && request.method === "GET") { const file = findFile(decodeURIComponent(publicFile[2])); if (file.folder) throw bad("Select a file, not a folder."); return publicFile[1] === "preview" ? send(response, 200, preview(file.bytes, file.name)) : send(response, 200, file.bytes, { "content-type": file.mime, "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`, etag: file.eTag }); }
     if (url.pathname === "/mcp") {

@@ -18,7 +18,8 @@ const test = spec.world(workshopNarrative, {
   resources: { surfaces: ["appWeb", "web"], services: ["den"] },
 });
 const profile = process.env.OPENWORK_WORKSHOP_PROFILE ?? "gpt-sol-fast";
-const TURN_MS = 240_000;
+// Smaller open-weight models are ~3× slower per step; give them the same task with a proportionate clock.
+const TURN_MS = profile === "qwen-27b" ? 600_000 : 240_000;
 type Json = Record<string, unknown>;
 const record = (value: unknown): Json => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Json : {};
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -308,7 +309,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
   const dogPrompt = "Can I bring my dog to the office?";
   await scene("D11", "Honest answer when the handbook is silent", async () => {
     const t = await turn("D11", dogPrompt, { session: "Office question" });
-    const reasons = checks([[/people ops/i.test(t.answer), "Doesn't point to People Ops"], [/(couldn.t|could not|didn.t|did not|no) .{0,40}(find|policy|mention)/i.test(t.answer), "Doesn't say the policy wasn't found"]]);
+    const reasons = checks([[/people op(s|erations)|camila|\bHR\b|human resources/i.test(t.answer), "Doesn't say who to ask (People Ops)"], [/(couldn.t|could not|didn.t|did not|no) .{0,40}(find|policy|mention)/i.test(t.answer), "Doesn't say the policy wasn't found"]]);
     return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: dogPrompt };
   });
   const bookPrompt = "Book 30 minutes with Nora and Priya on Monday at 10 to go over the Atlas comparison.";

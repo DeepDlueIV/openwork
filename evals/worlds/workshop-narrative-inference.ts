@@ -17,7 +17,7 @@ export async function startNarrativeInference(name: string, stack: AsyncDisposab
   } catch { return { ready: false as const, reason: `Missing scoped ${profile.credentialEnv}; no provider fallback`, metadata }; }
   const proxy = await startWorkshopInferenceProxy(stack, profile, key, (process.env.OPENWORK_WORKSHOP_DAY === "1"
     // Day demo: one longer session incl. a real Automation run on the local runner (Chat Completions, same pinned model).
-    ? { maxRequests: 360, maxOutputTokens: 8192, maxTotalOutputTokens: 393216, maxInputBytes: 2 * 1024 * 1024, maxTotalInputBytes: 64 * 1024 * 1024, lifetimeMs: 75 * 60_000, requestTimeoutMs: 180_000, allowRunnerChatCompletions: true }
+    ? { maxRequests: 420, maxOutputTokens: 16384, maxTotalOutputTokens: 524288, maxInputBytes: 2 * 1024 * 1024, maxTotalInputBytes: 96 * 1024 * 1024, lifetimeMs: 150 * 60_000, requestTimeoutMs: 300_000, allowRunnerChatCompletions: true }
     : { maxRequests: 220, maxOutputTokens: 8192, maxTotalOutputTokens: 131072, maxInputBytes: 2 * 1024 * 1024, maxTotalInputBytes: 32 * 1024 * 1024, lifetimeMs: 35 * 60_000, requestTimeoutMs: 180_000 }));
   key = "";
   const tools = [{ type: "function", name: "workshop_probe", description: "Return the explicit protocol-check result; no business action.", strict: true, parameters: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } }];

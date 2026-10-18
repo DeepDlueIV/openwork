@@ -260,9 +260,21 @@ describe("fictional Microsoft 365 demo", () => {
     expect(record(blocked.result).isError).toBe(true);
   });
 
+  test("upload sessions take binary bytes outside the chat, once, into OneDrive", async () => {
+    const session = record(await toolValue("file_create_upload_session", { path: "session-upload.pptx" }));
+    const uploadUrl = string(session.uploadUrl);
+    expect(uploadUrl).toMatch(/\/upload\/[0-9a-f-]{36}$/);
+    const put = await fetch(uploadUrl.replace(/^https?:\/\/[^/]+/, base), { method: "PUT", body: new Uint8Array([80, 75, 3, 4, 1, 2, 3]) });
+    expect(put.status).toBe(201);
+    const saved = record(await put.json());
+    expect(saved.name).toBe("session-upload.pptx");
+    expect(record(saved.file).mimeType).toBe("application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    expect((await fetch(uploadUrl.replace(/^https?:\/\/[^/]+/, base), { method: "PUT", body: new Uint8Array([1]) })).status).toBe(404);
+  });
+
   test("MCP handshake, schemas, notifications and errors are sensible demo-only surfaces", async () => {
     const init = await rpc("initialize", { protocolVersion: "2025-06-18" }); expect(record(init.result).protocolVersion).toBe("2025-06-18"); expect(record(record(init.result).serverInfo).name).toContain("DEMO");
-    const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(16);
+    const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(17);
     for (const entry of tools) {
       expect(string(entry.description)).toContain("DEMO ONLY");
       expect(string(entry.description)).toContain(string(entry.name).startsWith("file_") ? "OneDrive" : "Outlook");

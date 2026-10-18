@@ -253,13 +253,17 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
   });
   const skillPrompt = "That's exactly what I needed. Save it as a skill so I can do this for other customers.";
   let skillPluginId = "";
+  let skillSlug = "";
   await scene("D5", "Save it as a skill", async () => {
     const libraryBefore = text(await world.readDenAs("owner", "/v1/me/library"));
     const t = await turn("D5", skillPrompt);
     const library = await world.readDenAs("owner", "/v1/me/library");
     const created = t.tools.find((name) => /create_skill/.test(name));
-    const pluginId = /plg_[0-9a-z]{26}/.exec(text(t.after.messages).split("create_skill").slice(1).join(""))?.[0] ?? "";
+    const afterCreate = text(t.after.messages).split("create_skill").slice(1).join("");
+    const pluginId = /plg_[0-9a-z]{26}/.exec(afterCreate)?.[0] ?? "";
     skillPluginId = pluginId;
+    // The saved skill's name (frontmatter slug) is what Activity and the "/" menu show.
+    skillSlug = /Skill created: ([a-z0-9-]+)/.exec(afterCreate)?.[1] ?? /\\"name\\":\\"([a-z0-9-]+)\\"/.exec(afterCreate)?.[1] ?? "";
     const reasons = checks([[Boolean(created), "create_skill was not called"], [text(library) !== libraryBefore, "Library unchanged"], [Boolean(pluginId), "No skill plugin id returned"]]);
     return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: skillPrompt, evidence: { pluginId } };
   });
@@ -375,8 +379,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     world.markScene("D15:activity");
     await user.on(world.recipientApp).screenshot();
     // Must be Lena's own skill: other items (e.g. organization plugins) can also be "shared with you".
-    const plugin = skillPluginId ? record(record(await world.readDenAs("owner", `/v1/plugins/${skillPluginId}`)).plugin ?? await world.readDenAs("owner", `/v1/plugins/${skillPluginId}`)) : {};
-    const skillName = String(plugin.name ?? "");
+    const skillName = skillSlug;
     const sharedSkill = Boolean(skillName) && activity.toLowerCase().includes(`${skillName.toLowerCase()} was shared with you`);
     const reasons = checks([[sharedSkill, `Lena's skill${skillName ? ` (${skillName})` : ""} not in Nora's Activity`], [/ready to use/i.test(activity), `${connector} not in Nora's Activity`]]);
     return { status: reasons.length ? "FAIL" : "PASS", reasons, latencyMs: Date.now() - started, operator: `Admin opened the ${connector} connector to the whole team (off camera)`, evidence: { activity: activity.slice(0, 600) } };

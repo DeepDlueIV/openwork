@@ -23,6 +23,9 @@ export function parseSkillDeliveryEvidence(value: unknown): SkillDeliveryEvidenc
 export function skillDeliveryEvidence(call: {
   tool: string; input: unknown; output?: unknown; status: "selected" | "completed" | "error"; isError?: boolean;
 }): SkillDeliveryEvidence | null {
+  const retrieval = /(?:^|[_.])(?:get_skill|skill)$/.test(call.tool);
+  const capability = /(?:^|[_.])execute_capability$/.test(call.tool);
+  if (!retrieval && !capability) return null;
   const input = record(call.input);
   const envelope = record(call.output);
   const text = Array.isArray(envelope?.content) ? envelope.content.flatMap(item => {
@@ -30,8 +33,7 @@ export function skillDeliveryEvidence(call: {
     return block?.type === "text" && typeof block.text === "string" ? [block.text] : [];
   }).join("\n") : "";
   const output = record(envelope?.structuredContent) ?? record(text) ?? envelope;
-  const retrieval = /(?:^|[_.])(?:get_skill|skill)$/.test(call.tool);
-  const skillCapability = /(?:^|[_.])execute_capability$/.test(call.tool) && (output?.kind === "skill"
+  const skillCapability = capability && (output?.kind === "skill"
     || (typeof input?.name === "string" && input.name.startsWith("skill:")));
   if (!retrieval && !skillCapability) return null;
   const asked = typeof input?.name === "string" ? input.name.trim() : "";
@@ -43,7 +45,7 @@ export function skillDeliveryEvidence(call: {
   if (call.status === "error" || envelope?.isError === true || call.isError) return { name, state: "blocked" };
   if (call.status === "selected") return { name, state: "selected" };
   if (/instructions are withheld|organization skill is not ready/i.test(content)) return { name, state: "blocked" };
-  if (!content.trim() || /discovery metadata, NOT the skill.s instructions|\[Result truncated by OpenWork\]/i.test(content)
-    || (call.tool === "skill" && typeof output?.content !== "string" && !frontmatter && !/<skill_content(?:\s|>)/.test(content))) return { name, state: "metadata-only" };
+  const hasInstructions = typeof output?.content === "string" || Boolean(frontmatter && slug) || /<skill_content(?:\s|>)/.test(content);
+  if (!content.trim() || !hasInstructions || /discovery metadata, NOT the skill.s instructions|\[Result truncated by OpenWork\]/i.test(content)) return { name, state: "metadata-only" };
   return { name, state: "instructions-loaded" };
 }

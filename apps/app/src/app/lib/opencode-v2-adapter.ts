@@ -18,7 +18,7 @@ import type {
   UnknownError,
 } from "@opencode-ai/sdk/v2/client";
 
-import { createClient, createDesktopFetch, type FieldsResult } from "./opencode";
+import { createClient, createDesktopFetch, PromptAdmissionUnknownError, type FieldsResult } from "./opencode";
 import type { OpenworkSessionHistory } from "./openwork-server";
 import { isDesktopRuntime } from "./runtime-env";
 import type { McpStatusMap, OpencodeEvent } from "../types";
@@ -647,6 +647,27 @@ function appEntriesFromScript(calls: unknown, output: unknown): Record<string, u
   });
 }
 
+/** Preserve either native output or a standard MCP envelope from an inner
+ * call. Only that call's text projection may supply a missing structured body;
+ * the parent script's arbitrary return value is never used as its result. */
+function codeModeMcpResult(output: unknown): Record<string, unknown> {
+  const envelope: Record<string, unknown> | null = isRecord(output) && Array.isArray(output.content) ? output
+    : Array.isArray(output) ? { content: output } : null;
+  let payload: unknown = envelope && "structuredContent" in envelope ? envelope.structuredContent : output;
+  if (!envelope || !("structuredContent" in envelope)) {
+    const text = envelope ? toolOutput(envelope.content) : typeof output === "string" ? output : null;
+    if (text) {
+      try { payload = JSON.parse(text); } catch { /* A text result is not a launch. */ }
+    }
+  }
+  const meta = envelope && isRecord(envelope._meta) ? envelope._meta : {};
+  const launch = isRecord(payload) && isRecord(payload.launch) ? payload.launch : null;
+  return { ...(envelope ?? { content: [{ type: "text", text: toolOutput(undefined, output) }] }),
+    structuredContent: payload,
+    ...(launch && meta["openwork/mcpApp"] === undefined ? { _meta: { ...meta, "openwork/mcpApp": launch } } : {}),
+  };
+}
+
 /**
  * Code Mode runs OpenWork Cloud calls inside one `execute`, whose part keeps
  * only `{ tool, status, input }` per call. The server's v2 plugin
@@ -696,9 +717,9 @@ export function codeModeConnectionParts(part: ToolPart): ToolPart[] {
     const input = readRecord(entry, "input") ?? {};
     const status = readString(entry, "status");
     if (status === "completed") {
-      const output = toolOutput(undefined, entry.output);
-      return [{ ...base, state: { status, input, output, title: tool, time,
-        metadata: { openworkMcpResult: isRecord(entry.output) && Array.isArray(entry.output.content) ? entry.output : { content: [{ type: "text", text: output }], structuredContent: entry.output, ...(isRecord(entry.output) && isRecord(entry.output.launch) ? { _meta: { "openwork/mcpApp": entry.output.launch } } : {}) } } } }];
+      const mcpResult = codeModeMcpResult(entry.output);
+      const output = toolOutput(mcpResult.content, entry.output);
+      return [{ ...base, state: { status, input, output, title: tool, time, metadata: { openworkMcpResult: mcpResult } } }];
     }
     if (status === "running" && !terminal) return [{ ...base, state: { status, input, title: tool, metadata: {}, time: { start: time.start } } }];
     const error = readString(entry, "error") ?? (status === "running" && terminal ? "The App call did not record a result. See the script details." : undefined);
@@ -2635,6 +2656,15 @@ export function createClientV2(
         { text, ...(skills.length ? { skills } : {}) },
         options?.signal,
       );
+      // Pinned native admission hooks can reject an unavailable/blocked skill
+      // with an empty 500. That response identifies neither the skill nor the
+      // cause, and does not prove whether text was stored. Keep the existing
+      // unknown-admission hold; never invent Loaded evidence or auto-resend.
+      if (promptResult.response.status === 500 && promptResult.payload === null) {
+        return { error: new PromptAdmissionUnknownError({ messageID: parameters.messageID,
+          cause: "Message acceptance couldn’t be confirmed. Check pending approvals and skill access before retrying.",
+        }), request: promptResult.request, response: promptResult.response };
+      }
       return promptResult.response.ok ? successfulResult(promptResult, {}) : failedResult(promptResult);
     },
     abort: async (

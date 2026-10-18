@@ -285,9 +285,15 @@ export function appCreationParts(run: AppCreationRun): DynamicToolUIPart[] {
  * An outer script error remains its own row, independent of an App receipt. */
 export function appCreationFailures(run: AppCreationRun): DynamicToolUIPart[] {
   const parts = appCreationParts(run);
+  const guideLoaded = (part: DynamicToolUIPart) => {
+    const calls = codeModeToolCalls(part);
+    return skillEvidence(part)?.state === "instructions-loaded" || Boolean(calls?.length && calls.every(call =>
+      isAppGuidePart(call) && skillEvidence(call)?.state === "instructions-loaded",
+    ));
+  };
   return parts.filter((part, index) => (appBuilderResultFailed(part) || skillEvidence(part)?.state === "blocked") && !parts.slice(index + 1).some(next =>
-    next.toolName === part.toolName && next.state === "output-available" && !appBuilderResultFailed(next)
-    && (!isAppGuidePart(next) || skillEvidence(next)?.state === "instructions-loaded"),
+    (isAppGuidePart(part) ? isAppGuidePart(next) && guideLoaded(next) : next.toolName === part.toolName)
+    && next.state === "output-available" && !appBuilderResultFailed(next),
   ));
 }
 

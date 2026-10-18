@@ -4,6 +4,7 @@ import { parseSkillDeliveryEvidence, skillDeliveryEvidence, type SkillDeliveryEv
 /** Use the server's bounded receipt when the inspectable result was truncated.
  * Otherwise only the actual retrieval result can attest delivered instructions. */
 export function skillEvidence(part: DynamicToolUIPart): SkillDeliveryEvidence | null {
+  if (!/(?:^|[_.])(?:get_skill|skill|execute_capability)$/.test(part.toolName)) return null;
   const receipt = parseSkillDeliveryEvidence(part.callProviderMetadata?.openwork?.skillDelivery);
   if (receipt) return part.state === "output-error" || part.state === "output-denied" ? { ...receipt, state: "blocked" } : receipt;
   const mcp = part.callProviderMetadata?.openwork?.mcpResult;

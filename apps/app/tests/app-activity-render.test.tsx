@@ -23,8 +23,8 @@ async function render(parts: UIMessage["parts"]) {
   }];
   await act(async () => root.render(createElement(PlatformProvider, { value: createDefaultPlatform(), children: createElement(MessageListProvider, {
     workspaceId: "fixture", sessionId: "fixture", showThinking: true, developerMode: false, displaySuggestions: false, providerConnectedCount: 0,
-    dispatchAction: () => {}, setPrompt: () => {}, onRevertToUserMessage: () => {}, onForkAtMessage: () => {}, onEditUserMessage: () => {}, onMcpReconnect: async () => {}, onMcpReopenAuthorization: async () => {},
-    children: createElement(MessageList, { messages, status: "ready" }),
+    dispatchAction: () => {}, setPrompt: () => {}, onRevertToUserMessage: () => {}, onForkAtMessage: () => {}, onEditUserMessage: () => {}, onMcpReconnect: async (): Promise<"connected"> => "connected", onMcpReopenAuthorization: async () => {},
+    children: createElement(MessageList, { messages, status: "ready", activityStatus: "idle" }),
   }) })));
   return container;
 }

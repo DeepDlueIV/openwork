@@ -81,20 +81,27 @@ test("older status-only captures retain successful calls without inventing a lau
   expect(app?.state).toMatchObject({ status: "completed", output: JSON.stringify({ unrecorded: true }) });
 });
 
-test("the actual tool wrapper persists delivery metadata before the script can fail", async () => {
+for (const source of [
+  { title: "decoded output", result: { output: result } },
+  { title: "standard MCP envelope", result: { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, _meta: { "openwork/mcpApp": launch } } },
+  { title: "MCP text projection", result: { content: [{ type: "text", text: JSON.stringify(result) }] } },
+]) test(`the actual tool wrapper persists ${source.title} before the script can fail`, async () => {
   type Context = Parameters<typeof plugin.setup>[0];
   type Editor = Parameters<Parameters<Context["tool"]["transform"]>[0]>[0];
   type Editable = Parameters<Parameters<Editor["update"]>[1]>[0];
   let before: ((event: { tool: string; messageID: string; id: string; input: unknown }) => void) | undefined;
   const call = { ...event, tool: "openwork-cloud.create_app", input: { title: "Project board" } };
-  const tool: Editable = { async execute() { return { output: result }; } };
+  const tool: Editable = { async execute() { return source.result; } };
   const context: Context = { tool: {
     async transform(update) {
       update({ get: () => undefined, list: () => [{ id: call.tool }], update: (_id, wrap) => wrap(tool) });
       return { async dispose() {} };
     },
-    async hook(name, callback) {
-      if (name === "execute.before") before = callback;
+    async hook(...args:
+      | ["execute.before", (event: Parameters<ReturnType<typeof createMcpResultsCollector>["before"]>[0] & { input: unknown }) => void]
+      | ["execute.after", (event: Parameters<ReturnType<typeof createMcpResultsCollector>["after"]>[0]) => void]
+    ) {
+      if (args[0] === "execute.before") before = args[1];
       return { async dispose() {} };
     },
   } };

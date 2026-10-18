@@ -22,12 +22,19 @@ test("a failed App read never becomes a successful editing stage", () => {
 });
 
 test("only a successful guide retrieval resolves its failure", () => {
-  const retry: DynamicToolUIPart = { ...guide, toolCallId: "retry", state: "output-available", output: { content: "This is discovery metadata, NOT the skill's instructions or proof of access." } };
+  const retry: DynamicToolUIPart = { type: "dynamic-tool", toolName: guide.toolName, input: guide.input, toolCallId: "retry", state: "output-available", output: { content: "This is discovery metadata, NOT the skill's instructions or proof of access." } };
   const [metadata] = appCreationRuns(messages(guide, retry), true);
   expect(appCreationFailures(metadata!)).toHaveLength(1);
-  const loaded: DynamicToolUIPart = { ...retry, output: { content: "---\nname: build-an-app\n---\nBuild the requested App." } };
+  const loaded: DynamicToolUIPart = { type: "dynamic-tool", toolName: guide.toolName, input: guide.input, toolCallId: "retry", state: "output-available", output: { content: "---\nname: build-an-app\n---\nBuild the requested App." } };
   const [success] = appCreationRuns(messages(guide, loaded), true);
   expect(appCreationFailures(success!)).toHaveLength(0);
+});
+
+test("an unrelated successful script does not resolve a failed guide script", () => {
+  const failed: DynamicToolUIPart = { ...guide, toolName: "execute", callProviderMetadata: { openwork: { codeMode: { calls: [{ tool: "openwork.get_skill", input: { name: "build-an-app" }, status: "error" }] } } } };
+  const unrelated: DynamicToolUIPart = { type: "dynamic-tool", toolName: "execute", toolCallId: "other", input: { code: "await tools.openwork.prepare_app({})" }, state: "output-available", output: "Done", callProviderMetadata: { openwork: { codeMode: { calls: [{ tool: "openwork.search_capabilities", input: {}, status: "completed" }] } } } };
+  const [run] = appCreationRuns(messages(failed, unrelated), true);
+  expect(appCreationFailures(run!)).toHaveLength(1);
 });
 
 test("a script error is not swallowed by its successful App stage", () => {
@@ -52,6 +59,9 @@ describe("skill delivery evidence", () => {
     expect(skillEvidence(loaded)?.state).toBe("instructions-loaded");
     expect(getCapabilityCallSentence(loaded).past).toBe("Loaded “review” instructions");
     expect(getCapabilityCallSentence(loaded).past).not.toMatch(/Used|Using/);
+  });
+  test("a successful status with only an acknowledgement does not attest instructions", () => {
+    expect(skillEvidence({ ...native, toolName: "openwork_get_skill", state: "output-available", output: "Skill selected" })?.state).toBe("metadata-only");
   });
   test("a bounded delivery receipt survives truncated diagnostic output", () => {
     const loaded: DynamicToolUIPart = { ...native, state: "output-available", output: "[Result truncated by OpenWork]", callProviderMetadata: { openwork: { skillDelivery: { name: "review", state: "instructions-loaded" } } } };

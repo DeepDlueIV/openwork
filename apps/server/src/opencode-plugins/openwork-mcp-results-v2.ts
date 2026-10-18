@@ -3,7 +3,22 @@ import { skillDeliveryEvidence, type SkillDeliveryEvidence } from "@openwork/typ
 
 type Registration = { dispose(): Promise<void> };
 type CallEvent = { readonly tool: string; readonly messageID: string; readonly id: string };
-type ToolResult = { output?: unknown; content?: unknown; metadata?: Record<string, unknown> };
+type ToolResult = { output?: unknown; content?: unknown; structuredContent?: unknown; _meta?: unknown; isError?: boolean; metadata?: Record<string, unknown> };
+
+function toolResultOutput(result: ToolResult): unknown {
+  if (result.output !== undefined) return result.output;
+  const preserved = result.metadata?.openworkMcpResult ?? result.metadata?.openworkMcpApp;
+  if (preserved !== undefined) return preserved;
+  // Native MCP tools can return the standard envelope instead of `output`.
+  // Keep its structured payload and launch, not just its text projection.
+  const text = Array.isArray(result.content) ? result.content.flatMap(block => isRecord(block) && block.type === "text" && typeof block.text === "string" ? [block.text] : []).join("\n").trim() : "";
+  const structured = result.structuredContent === undefined && text.startsWith("{") && text.endsWith("}") ? parseRecord(text) : result.structuredContent;
+  return Array.isArray(result.content) ? { content: result.content,
+    ...(structured === undefined || structured === null ? {} : { structuredContent: structured }),
+    ...(result._meta === undefined ? {} : { _meta: result._meta }),
+    ...(result.isError === undefined ? {} : { isError: result.isError }),
+  } : result.content;
+}
 type ToolCall = { readonly messageID: string; readonly id: string; progress(metadata: Record<string, unknown>): Promise<void> };
 type EditableTool = { execute(input: unknown, call: ToolCall): Promise<ToolResult> };
 type ExecuteAfter = CallEvent & { readonly input: unknown } & (
@@ -52,9 +67,10 @@ function parseRecord(text: string): Record<string, unknown> | null {
 /** The same shapes the chat's connection card reads (`connectionResultFromChatToolPart`). */
 export function reportsConnection(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  if ("connectionStatus" in value || "connectionAction" in value) return true;
-  if (typeof value.connectionId === "string" && typeof value.state === "string") return true;
-  return Array.isArray(value.matches) && value.matches.some(match => isRecord(match) && typeof match.connectionId === "string");
+  const payload = isRecord(value.structuredContent) ? value.structuredContent : value;
+  if ("connectionStatus" in payload || "connectionAction" in payload) return true;
+  if (typeof payload.connectionId === "string" && typeof payload.state === "string") return true;
+  return Array.isArray(payload.matches) && payload.matches.some(match => isRecord(match) && typeof match.connectionId === "string");
 }
 
 function errorText(error: unknown): string {
@@ -90,7 +106,8 @@ export function preservedEntry(rawEvent: ExecuteAfter): PreservedMcpResult | nul
   const event = { ...rawEvent, tool: normalizedTool(rawEvent.tool) };
   if (!OPENWORK_CLOUD_TOOL.test(event.tool)) return null;
   const appBuilder = /_(?:search_capabilities|prepare_app|create_app|update_app)$/.test(event.tool);
-  const appLaunch = event.status === "completed" && isRecord(event.result.output) && isRecord(event.result.output.launch);
+  const appLaunch = event.status === "completed" && isRecord(event.result.output) && (isRecord(event.result.output.launch)
+    || (isRecord(event.result.output._meta) && isRecord(event.result.output._meta["openwork/mcpApp"])));
   const input = jsonCopy(event.input);
   const entry: PreservedMcpResult | null = event.status === "completed"
     ? (appBuilder || appLaunch || reportsConnection(event.result.output)) ? { tool: event.tool, input, status: "completed", output: jsonCopy(event.result.output) } : null
@@ -316,7 +333,7 @@ export default {
             await publish();
             try {
               const result = await execute(input, call);
-              collector.settle(event, invocationId, { status: "completed", output: result.output ?? result.content });
+              collector.settle(event, invocationId, { status: "completed", output: toolResultOutput(result) });
               await publish();
               return result;
             } catch (error) {

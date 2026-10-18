@@ -192,6 +192,8 @@ importers:
 
   packages/matchers: {}
 
+  packages/open-workplace: {}
+
   packages/test-artifacts:
     dependencies:
       '@openwork/review':

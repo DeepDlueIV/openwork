@@ -83,6 +83,21 @@ test("a correction failure retains its text, attachments, identity and an unrela
   assert.deepEqual(owner.getSnapshot().pending[0], { id, text: "Use Friday", correctionOf: "message_1", attachments: [saved], sentAt: owner.getSnapshot().pending[0]?.sentAt, uploads: [], failed: "Offline" });
 });
 
+test("removing a chat or identity while a file settles cannot send the discarded pending message", async () => {
+  let finish: (value: typeof saved) => void = () => {};
+  const owner = createComposerState(() => new Promise(resolve => { finish = resolve; }));
+  owner.add([file()]);
+  owner.setText("An unsent question");
+  const id = owner.enqueue({ id: "message_removed", text: "Read this" });
+  let calls = 0;
+  const sending = owner.send(id, async () => { calls++; });
+  owner.dispose();
+  finish(saved);
+  await sending;
+  assert.equal(calls, 0);
+  assert.deepEqual(owner.getSnapshot(), { text: "", uploads: [], pending: [] });
+});
+
 test("per-chat owners keep draft and upload state isolated through unsubscribing and remounting", async () => {
   const main = createComposerState(async () => saved);
   const side = createComposerState(async () => saved);

@@ -98,6 +98,7 @@ export function createComposerState(uploadFile: Uploader) {
           start(upload);
         }
         const saved = await Promise.all(entry.uploads.map(upload => upload.saved ? Promise.resolve(upload.saved) : waiters.get(upload.key)?.promise ?? Promise.resolve(null)));
+        if (!state.pending.some(entry => entry.id === id)) return;
         if (saved.some(file => !file)) throw new Error("A file didn't upload. Send again to retry it.");
         await sender(entry, [...entry.attachments.map(file => file.id), ...saved.flatMap(file => file ? [file.id] : [])]);
       } catch (error: unknown) {
@@ -114,6 +115,7 @@ export function createComposerState(uploadFile: Uploader) {
       for (const upload of [...state.uploads, ...state.pending.flatMap(entry => entry.uploads)]) release(upload);
       for (const url of previewUrls) URL.revokeObjectURL(url);
       previewUrls.clear();
+      state = { text: "", uploads: [], pending: [] };
       listeners.clear();
     },
   };

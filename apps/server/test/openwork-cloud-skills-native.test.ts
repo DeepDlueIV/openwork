@@ -128,6 +128,19 @@ test("native Cloud attachments are ready, authorized, and never a cold ordinary-
         assert.ok(!JSON.stringify(prompted.json).includes("PRIVATE_SKILL_BODY_CANARY"));
         const messages = await engine.fetchJson(`/api/session/${sessionID}/message`);
         assert.ok(!JSON.stringify(messages.json).includes("PRIVATE_SKILL_BODY_CANARY"), "denied instructions never enter history");
+        if (effect === "ask") {
+          const pending = await engine.fetchJson(`/api/session/${sessionID}/permission`);
+          assert.ok(record(pending.json) && Array.isArray(pending.json.data));
+          const request = pending.json.data.filter(record).at(-1);
+          assert.ok(request && typeof request.id === "string");
+          const reply = await engine.fetchJson(`/api/session/${sessionID}/permission/${request.id}/reply`, {
+            method: "POST", body: { decision: "always" },
+          });
+          assert.equal(reply.status, 204);
+          const approved = await engine.fetchJson(`/api/session/${sessionID}/prompt`, { method: "POST", body: { text: "Run fixture-review now" } });
+          assert.equal(approved.status, 200, "saved approval uses the existing engine flow on resend");
+          assert.ok(JSON.stringify(approved.json).includes("PRIVATE_SKILL_BODY_CANARY"));
+        }
       }
     }
     const incomplete = await engine.fetchJson(`/api/session/${await makeSession("allow")}/prompt`, {

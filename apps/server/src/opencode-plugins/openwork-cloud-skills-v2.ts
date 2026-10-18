@@ -267,7 +267,7 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
         .parse(await call("openwork_skill_authorize", { sessionID: event.sessionID, ids }));
       if (permission.data.effect !== "allow") {
         throw new Error(permission.data.effect === "ask"
-          ? "Named skills require permission. Nothing was sent. Allow these skills in the permission request, then send again."
+          ? "Named skills require permission. Nothing was sent. Choose Always allow for these skills in the permission request, then send again."
           : "Named skills are not permitted. Nothing was sent.");
       }
       const selected = ids.map(id => catalog.skills.find(skill => skillId(skill) === id));

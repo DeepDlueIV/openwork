@@ -26,6 +26,14 @@ node scripts/ci/check-codeql-results.mjs
 ```
 
 API failures and missing baselines fail the audit; they are not interpreted as zero required results.
+GitHub has used both `dynamic/github-code-scanning/codeql:upload` and
+`dynamic/github-code-scanning/codeql:analyze` for default setup. The monitor
+recognizes those exact keys, keeps the baseline to one commit and run key, and
+fails on an unsupported latest default-setup key rather than silently using an
+older baseline. Custom-workflow uploads do not stand in for default setup.
+`node --test scripts/ci/check-codeql-results.test.mjs` covers this accounting
+without requesting scans or changing security settings.
+
 The monitor uses baseline uploads because reading default-setup settings requires
 Administration permission, which the workflow token does not have. Newly enabled
 languages become expected once their baseline uploads succeed. Results are read

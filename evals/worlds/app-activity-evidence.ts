@@ -25,7 +25,7 @@ export async function appActivityEvidence(seed: Seed) {
       result: { isError: true, content: [{ type: "text", text: "The build instructions are unavailable. Request access before retrying." }] } },
     { name: "prepare_app", description: "Check App tools", delayMs: 500, inputSchema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
       result: { isError: true, content: [{ type: "text", text: "Tool permissions could not be checked. Review the selected tools." }] } },
-    { name: "create_app", description: "Save an App", delayMs: 700, inputSchema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
+    { name: "create_app", description: "Save an App", delayMs: 700, inputSchema: { type: "object", properties: { title: { type: "string" }, reactSource: { type: "string", maxLength: 200_000 } }, required: ["title"] },
       result: { content: [{ type: "text", text: JSON.stringify({ app, launch }) }], structuredContent: { app, launch }, _meta: { "openwork/mcpApp": launch } } },
     { name: "skill", description: "Load review instructions", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
       result: { content: [{ type: "text", text: JSON.stringify({ name: "review", content: "---\nname: review\n---\nCheck every report section before summarizing." }) }] } },
@@ -34,8 +34,9 @@ export async function appActivityEvidence(seed: Seed) {
       { tool: "execute", arguments: { code: 'return await tools["openwork"].get_skill({name:"build-an-app"});' } },
     ] },
     { promptMarker: BUILD_PROMPT, latestUserTurn: true, finalReply: "The project board was saved. The later script step failed.", steps: [
-      { tool: "execute", arguments: { code: 'try { await tools["openwork"].prepare_app({title:"Project board"}); } catch (error) {} await tools["openwork"].create_app({title:"Project board"}); throw new Error("Later script failure");' } },
+      { tool: "execute", arguments: { code: 'try { await tools["openwork"].prepare_app({title:"Project board"}); } catch (error) {} const prefix = "export default function Board(){return null;}\\n//"; const reactSource = prefix + "x".repeat(200000 - prefix.length); await tools["openwork"].create_app({title:"Project board", reactSource}); throw new Error("Later script failure");' } },
     ] },
+    // Explicit MCP retrieval only; this is not proof of implicit native hydration.
     { promptMarker: SKILL_PROMPT, latestUserTurn: true, finalReply: "All five report sections were checked.", steps: [
       { tool: "execute", arguments: { code: 'return await tools["openwork"].skill({name:"review"});' } },
       ...Array.from({ length: 5 }, (_, index) => ({ tool: "shell", arguments: { command: `printf 'Section ${index + 1} checked\\n'`, description: "Check report section" } })),
@@ -76,7 +77,7 @@ export async function appActivityEvidence(seed: Seed) {
         const before = state.tops[index - 1], after = state.tops[index];
         if (before !== null && before !== undefined && after !== null && after !== undefined && after < before) upwardJumps++;
       }
-      return { upwardJumps, samples: state.tops };
+      return { upwardJumps, samples: state.tops, visibleSamples: state.tops.filter(top => top !== null).length };
     }),
     async savedMessages() {
       const response = await fetch(`${web.openworkUrl}/workspace/${workspace.workspaceId}/opencode2/api/session/${session.sessionId}/message`, {

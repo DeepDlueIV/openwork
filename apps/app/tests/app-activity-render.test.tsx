@@ -48,6 +48,32 @@ test("failed preparation does not complete earlier invented stages", async () =>
   expect(container.textContent).not.toContain("Tools ready");
 });
 
+test("a caught guide failure stays visible when the App and parent script succeed", async () => {
+  const appId = "cob_00000000000000000000000000";
+  const revisionId = "cov_00000000000000000000000000";
+  const resourceUri = `ui://openwork/apps/${appId}/revisions/${revisionId}/index.html`;
+  const app = { appId, revisionId, pluginId: "plg_00000000000000000000000000", title: "Project board", description: null, textFallback: "The board is saved.", toolName: "open_app", resourceUri, serverPath: `/mcp/agent/connections/${appId}`, tools: [] };
+  const launch = { connectionId: appId, toolName: "open_app", resourceUri, arguments: {} };
+  const script: DynamicToolUIPart = { type: "dynamic-tool", toolName: "execute", toolCallId: "script", input: { code: "try { get_skill() } catch {} create_app()" }, state: "output-available", output: "done", callProviderMetadata: { openwork: { codeMode: {
+    calls: [{ tool: "openwork.get_skill", input: { name: "build-an-app" }, status: "error" }, { tool: "openwork.create_app", input: { title: "Project board" }, status: "completed" }],
+    details: [{ invocationId: "script:0", ordinal: 0, tool: "openwork_get_skill", input: { name: "build-an-app" }, status: "error", startedAt: 1, error: "Instructions unavailable. Request access before retrying." }],
+  } } } };
+  const built: DynamicToolUIPart = { type: "dynamic-tool", toolName: "openwork_create_app", toolCallId: "script:app:openwork_create_app:0", input: { title: "Project board" }, state: "output-available", output: { app, launch }, callProviderMetadata: { openwork: { mcpResult: { content: [], structuredContent: { app }, _meta: { "openwork/mcpApp": launch } } } } };
+  const container = await render([...thoughts, script, built]);
+  const failure = container.querySelector("[data-code-mode-failure]");
+  expect(failure?.textContent).toContain("Couldn’t load “build-an-app” instructions");
+  expect(failure?.closest("[hidden]")).toBeNull();
+  expect(container.querySelector("[data-app-builder-status]")?.textContent).toBe("Saved");
+  expect(container.querySelector('[data-testid="completed-work-rail"]')).toBeNull();
+});
+
+for (const output of ["done", "---\nname: review\n---\nThese are only the script's returned words."]) test("a script's return value cannot attest a status-only inner skill read", async () => {
+  const script: DynamicToolUIPart = { type: "dynamic-tool", toolName: "execute", toolCallId: "script", input: { code: "await get_skill(); return text;" }, state: "output-available", output, callProviderMetadata: { openwork: { codeMode: { calls: [{ tool: "openwork.get_skill", input: { name: "review" }, status: "completed" }] } } } };
+  const container = await render([script]);
+  expect(container.textContent).toContain("Found “review” skill details");
+  expect(container.textContent).not.toContain("Loaded “review” instructions");
+});
+
 test("a script's own failure stays visible beside its completed inner App result", async () => {
   const script: DynamicToolUIPart = { type: "dynamic-tool", toolName: "execute", toolCallId: "script", input: { code: "create_app(); throw Error()" }, state: "output-error", errorText: "Later script failure", callProviderMetadata: { openwork: { codeMode: { calls: [{ tool: "openwork.create_app", input: {}, status: "completed" }] } } } };
   const built: DynamicToolUIPart = { type: "dynamic-tool", toolName: "openwork_create_app", toolCallId: "script:app:openwork_create_app:0", input: { title: "Project board" }, state: "output-available", output: { unrecorded: true }, callProviderMetadata: { openwork: { mcpResult: { structuredContent: { unrecorded: true } } } } };

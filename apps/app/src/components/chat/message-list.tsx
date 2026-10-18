@@ -111,7 +111,7 @@ import { CredentialPromptCard } from "@/components/chat/credential-prompt-card"
 import { credentialPromptCall } from "@/components/chat/credential-prompt"
 import { connectionFromChatToolPart } from "@/components/tools/error-attribution"
 import { isReservedConnectionQuestion, type ChatConnectionDecisionBinding } from "@/react-app/domains/session/surface/mcp-chat-reconnect"
-import { codeModeToolCalls } from "@/lib/code-mode-tools"
+import { codeModeHasFailures, codeModeToolCalls } from "@/lib/code-mode-tools"
 import { dedupeRenderedTurnErrors } from "@/react-app/domains/session/sync/transcript-reconcile"
 import { builtMcpAppId, hasPreservedMcpAppResult, isNativeConnectionAppLaunch, McpAppFrame } from "@/components/chat/mcp-app-frame"
 import { ReasoningBlock } from "@/components/chat/reasoning-block"
@@ -281,7 +281,7 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
     const start = remoteThreadFromToolPart(call)
     return start ? [{ start, call }] : []
   }) : []
-  const foldTool = appPanelFold && part.state !== "output-error" && !(part.type === "dynamic-tool" && appBuilderResultFailed(part)) && lifecycle !== "waiting" && !connectionCardParts.has(part.toolCallId) && !promptCall && !isTaskToolPart(part)
+  const foldTool = appPanelFold && part.state !== "output-error" && !(part.type === "dynamic-tool" && (appBuilderResultFailed(part) || codeModeHasFailures(part))) && lifecycle !== "waiting" && !connectionCardParts.has(part.toolCallId) && !promptCall && !isTaskToolPart(part)
   if (foldTool && !remoteStart && remoteStarts.length === 0) return null
 
   // Delegated work has its own lifecycle, even after a parent follow-up/error.
@@ -1610,7 +1610,7 @@ function MessageGroup({
         : `${stepRowCount} steps`
   // Unresolved failures are decisions, not finished work to fold away.
   const hasUnresolvedFailure = creationRuns.some(run => appCreationFailures(run).length > 0) || items.some(item => item.message.parts.some(part =>
-    part.type === "dynamic-tool" && !creationParts.has(part.toolCallId) && appBuilderResultFailed(part),
+    part.type === "dynamic-tool" && !creationParts.has(part.toolCallId) && (appBuilderResultFailed(part) || codeModeHasFailures(part)),
   ))
   const collapseSteps =
     !isLiveGroup && !hasUnresolvedFailure && stepItems.length > 0 && stepRowCount > COLLAPSED_STEP_RUN_MIN_ROWS

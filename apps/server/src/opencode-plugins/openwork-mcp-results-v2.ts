@@ -108,7 +108,11 @@ export function preservedEntry(rawEvent: ExecuteAfter): PreservedMcpResult | nul
   const appBuilder = /_(?:search_capabilities|prepare_app|create_app|update_app)$/.test(event.tool);
   const appLaunch = event.status === "completed" && isRecord(event.result.output) && (isRecord(event.result.output.launch)
     || (isRecord(event.result.output._meta) && isRecord(event.result.output._meta["openwork/mcpApp"])));
-  const input = jsonCopy(event.input);
+  // Delivery needs identity/correlation, not a second copy of authored source.
+  // A valid 200 KB source must not crowd a small complete App launch out of the
+  // separate receipt. The bounded diagnostic entry still keeps its input.
+  const input = jsonCopy(/_(?:create_app|update_app)$/.test(event.tool) && isRecord(event.input)
+    ? Object.fromEntries(Object.entries(event.input).filter(([key]) => ["appId", "title", "preparationId", "expectedRevisionId"].includes(key))) : event.input);
   const entry: PreservedMcpResult | null = event.status === "completed"
     ? (appBuilder || appLaunch || reportsConnection(event.result.output)) ? { tool: event.tool, input, status: "completed", output: jsonCopy(event.result.output) } : null
     : (appBuilder || reportsConnection(parseRecord(errorText(event.error)))) ? { tool: event.tool, input, status: "error", error: errorText(event.error) } : null;
@@ -120,7 +124,7 @@ export function preservedEntry(rawEvent: ExecuteAfter): PreservedMcpResult | nul
 export type ToolDetail = {
   invocationId: string; ordinal: number; tool: string; input?: unknown;
   status: "running" | "completed" | "error"; startedAt: number; endedAt?: number;
-  output?: unknown; error?: string; truncated?: boolean; skillDelivery?: SkillDeliveryEvidence;
+  output?: unknown; error?: string; truncated?: boolean; inputTruncated?: boolean; outputTruncated?: boolean; skillDelivery?: SkillDeliveryEvidence;
 };
 
 const MAX_EXECUTION_BYTES = 1_024 * 1_024;
@@ -201,7 +205,7 @@ export function createMcpResultsCollector() {
     execution.remaining -= result.bytes;
     detail.status = outcome.status;
     detail.endedAt = Date.now();
-    if (result.truncated) detail.truncated = true;
+    if (result.truncated) { detail.truncated = true; detail.outputTruncated = true; }
     if (result.value !== undefined) {
       if (outcome.status === "completed") detail.output = result.value;
       else detail.error = String(result.value);
@@ -232,7 +236,7 @@ export function createMcpResultsCollector() {
       const input = bounded(event.input, Math.min(MAX_ENTRY_BYTES / 2, execution.remaining));
       execution.remaining -= input.bytes;
       if (input.value !== undefined) detail.input = input.value;
-      if (input.truncated) detail.truncated = true;
+      if (input.truncated) { detail.truncated = true; detail.inputTruncated = true; }
       execution.allowance.set(detail, MAX_ENTRY_BYTES - envelope - input.bytes);
       execution.rawInputs.set(detail, event.input);
       const inputKey = input.truncated ? undefined : stableJson(event.input);

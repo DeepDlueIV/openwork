@@ -695,7 +695,9 @@ export function codeModeConnectionParts(part: ToolPart): ToolPart[] {
       || (entry.invocationId === undefined && entry.tool === detail.tool && JSON.stringify(entry.input) === JSON.stringify(detail.input))
     ));
     if (receipt) { consumed.add(receipt); return receipt; }
-    return detail.status === "completed" && (detail.output === undefined || detail.truncated === true)
+    const outputTruncated = detail.outputTruncated === true || (detail.truncated === true
+      && typeof detail.output === "string" && detail.output.includes("[Result truncated by OpenWork]"));
+    return detail.status === "completed" && (detail.output === undefined || outputTruncated)
       ? { ...detail, output: { unrecorded: true } } : detail;
   });
   entries.push(...recorded.filter(entry => !consumed.has(entry)));

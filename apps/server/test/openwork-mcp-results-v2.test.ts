@@ -20,6 +20,20 @@ test("delivery receipts are durable progress before the outer execution succeeds
   assert.deepEqual(collector.metadata(event), {}, "terminal execution releases collector memory");
 });
 
+for (const sourceBytes of [70_000, 200_000]) test(`a ${sourceBytes}-byte authored input retains its small launch independently`, () => {
+  const collector = createMcpResultsCollector();
+  collector.before({ ...event, tool: "execute" });
+  const inner = { ...event, tool: "openwork-cloud.create_app", input: { title: "Project board", preparationId: "preparation", reactSource: "x".repeat(sourceBytes) } };
+  collector.before(inner);
+  collector.settle(event, collector.claim(inner)!, { status: "completed", output });
+  const persisted = JSON.parse(JSON.stringify(collector.metadata(event)));
+  assert.equal(persisted.openworkToolDetails[0].inputTruncated, true);
+  assert.notEqual(persisted.openworkToolDetails[0].outputTruncated, true);
+  assert.deepEqual(persisted.openworkToolDetails[0].output, output);
+  assert.deepEqual(persisted.openworkMcpResults[0].input, { title: "Project board", preparationId: "preparation" });
+  assert.deepEqual(persisted.openworkMcpResults[0].output, output);
+});
+
 test("parallel calls keep invocation order, each result, and each own error", () => {
   const collector = createMcpResultsCollector();
   collector.before({ ...event, tool: "execute" });

@@ -18,6 +18,8 @@ import type { ConnectorToolIdentity } from "@/react-app/domains/connections/conn
 
 type CapabilityCallLineProps = ChatToolReconnectCallbacks & {
   part: DynamicToolUIPart
+  /** Inspection may show the parent script; labels still use only this call. */
+  detailsPart?: DynamicToolUIPart
   className?: string
   connector?: ConnectorToolIdentity | null
   resultUnavailable?: boolean
@@ -157,6 +159,7 @@ export function DetailsToggle({ open, onToggle, label, alwaysVisible = false }: 
  */
 export function CapabilityCallLine({
   part,
+  detailsPart,
   className,
   connector,
 
@@ -171,6 +174,7 @@ export function CapabilityCallLine({
   onReopenAuthorization,
 }: CapabilityCallLineProps) {
   const [open, setOpen] = useState(false)
+  const technicalDetails = <><TechnicalDetailsPanel part={part} />{detailsPart && detailsPart !== part ? <TechnicalDetailsPanel part={detailsPart} /> : null}</>
   const inFlight = !statusUnknown && isToolPartInFlight(part)
   const isFailed = part.state === "output-error" || failureText !== undefined
   const duration = statusUnknown || hideDuration ? null : trackToolCallDuration(part)
@@ -195,7 +199,7 @@ export function CapabilityCallLine({
           {duration ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">{duration}</span> : null}
           <DetailsToggle open={open} onToggle={() => setOpen(!open)} label={label} alwaysVisible />
         </div>
-        {open ? <TechnicalDetailsPanel part={part} /> : null}
+        {open ? technicalDetails : null}
       </div>
     )
   }
@@ -241,7 +245,7 @@ export function CapabilityCallLine({
         {reconnectError ? (
           <p className="mt-1 text-xs text-dls-secondary" role="alert">{describeChatToolFailure(reconnectError)}</p>
         ) : null}
-        {open ? <TechnicalDetailsPanel part={part} /> : null}
+        {open ? technicalDetails : null}
       </div>
     )
   }
@@ -269,7 +273,7 @@ export function CapabilityCallLine({
         ) : null}
         <DetailsToggle open={open} onToggle={() => setOpen(!open)} label={line} />
       </div>
-      {open ? <TechnicalDetailsPanel part={part} /> : null}
+      {open ? technicalDetails : null}
     </div>
   )
 }

@@ -5,7 +5,8 @@ import { CapabilityCallLine, DetailsToggle, TechnicalDetailsPanel } from "./capa
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getCapabilityCallSentence } from "@/lib/capability-call";
 import { codeModeSummary } from "@/lib/code-mode-summary";
-import { codeModeScriptError, codeModeToolCalls } from "@/lib/code-mode-tools";
+import { codeModeHasFailures, codeModeScriptError, codeModeToolCalls } from "@/lib/code-mode-tools";
+import { skillEvidence } from "@/lib/skill-evidence";
 import type { CurrentToolLifecycle } from "@/lib/current-tool-lifecycle";
 import { formatElapsedSeconds, getToolCallStartedAt, trackToolCallDuration } from "@/lib/tool-call-duration";
 import { isToolPartInFlight } from "@/lib/tool-activity";
@@ -24,7 +25,7 @@ function isToolLookup(call: DynamicToolUIPart) {
  */
 export function isSilentCodeModePart(part: DynamicToolUIPart): boolean {
   const calls = codeModeToolCalls(part);
-  if (!calls || isToolPartInFlight(part) || part.state === "output-error") return false;
+  if (!calls || isToolPartInFlight(part) || part.state === "output-error" || codeModeHasFailures(part)) return false;
   return calls.every(isToolLookup);
 }
 
@@ -43,7 +44,7 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
   connectors: ConnectorToolIdentity[];
 }) {
   // Catalog lookups are the agent reading its own toolbox, never shown.
-  const calls = allCalls.filter((call) => !isToolLookup(call));
+  const calls = allCalls.filter((call) => !isToolLookup(call) || call.state === "output-error");
   // A finished group folds unless the person explicitly chose otherwise.
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -64,7 +65,8 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
   // collapsed line, so finishing a step doesn't make the chat jump. Only the
   // person's choice opens a group, and it stays as they left it.
   const open = userOpen ?? false;
-  const failedCalls = calls.filter(call => call.state === "output-error");
+  const failedCalls = calls.filter(call => call.state === "output-error" || skillEvidence(call)?.state === "blocked");
+  const failedCallIds = new Set(failedCalls.map(call => call.toolCallId));
   const failed = part.state === "output-error";
   const startedAt = running ? getToolCallStartedAt(part) : null;
   const liveDuration = startedAt === null ? null : Math.floor((now - startedAt) / 1_000);
@@ -132,14 +134,13 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
     {only && detailsOpen ? <TechnicalDetailsPanel part={part} /> : null}
   </div> : null;
   if (only) {
-    // The call's own input is the readable one (a Den script's source). Its
-    // own captured result wins; otherwise show the script's result.
-    const merged: DynamicToolUIPart = only.state === "output-available" && only.output === undefined && part.state === "output-available"
-      ? { ...only, output: part.output } : only;
+    // The script's arbitrary return value is not the inner call's result.
+    // Its source/output stays inspectable without attesting skill delivery.
     return (
       <div data-code-mode-call={part.toolCallId}>
         <CapabilityCallLine
-          part={merged}
+          part={only}
+          detailsPart={part}
           connector={resolveConnectorToolIdentity(only, connectors)}
           hideDuration
           shimmer={running}
@@ -181,7 +182,7 @@ export function CodeModeTool({ part, calls: allCalls, lifecycle, connectors }: {
       {detailsOpen ? <TechnicalDetailsPanel part={part} /> : null}
       <CollapsibleContent className="h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-180 ease-out data-starting-style:h-0 data-ending-style:h-0 motion-reduce:transition-none [&[hidden]:not([hidden='until-found'])]:hidden">
         <div className="mt-2 flex flex-col gap-1 border-s border-border ps-3">
-          {rows.filter(({ call }) => call.state !== "output-error").map(({ call, repeat }) => (
+          {rows.filter(({ call }) => !failedCallIds.has(call.toolCallId)).map(({ call, repeat }) => (
             <CapabilityCallLine
               key={call.toolCallId}
               part={call}

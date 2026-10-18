@@ -3,7 +3,7 @@ import { prepareMcpAppOutputSchema } from "@openwork/types/mcp-app";
 import { getCapabilityCallSentence } from "@/lib/capability-call";
 import { isToolPartInFlight } from "@/lib/tool-activity";
 import { skillEvidence } from "@/lib/skill-evidence";
-import { codeModeToolCalls } from "@/lib/code-mode-tools";
+import { codeModeHasFailures, codeModeToolCalls } from "@/lib/code-mode-tools";
 import {
   appBuilderResultFailed,
   builtAppSummary,
@@ -300,12 +300,22 @@ export function appCreationFailures(run: AppCreationRun): DynamicToolUIPart[] {
 /** Only calls represented by the App row fold into it. A script's own failure
  * or unrelated work is not an App-stage outcome and keeps its ordinary row. */
 export function foldedAppCreationPartIds(runs: AppCreationRun[]): Set<string> {
-  return new Set(runs.flatMap(run => [
-    ...appCreationParts(run).map(part => part.toolCallId),
-    ...(run.executions ?? []).filter(part => !appBuilderResultFailed(part) && codeModeToolCalls(part)?.every(call =>
-      isAppLeadInPart(call) || isAppPreparationPart(call) || isAppBuilderPart(call),
-    )).map(part => part.toolCallId),
-  ]));
+  return new Set(runs.flatMap(run => {
+    const represented = new Set(appCreationParts(run).filter(part => !codeModeHasFailures(part) || appBuilderResultFailed(part)).map(part => part.toolCallId));
+    const executions = (run.executions ?? []).filter(part => {
+      if (appBuilderResultFailed(part)) return false;
+      const calls = codeModeToolCalls(part);
+      const occurrences = new Map<string, number>();
+      // A lead-in inside a mixed script is not necessarily projected into the
+      // App row. Fold only calls whose individual outcome has a visible home.
+      return Boolean(calls?.length && calls.every(call => {
+        const occurrence = occurrences.get(call.toolName) ?? 0;
+        occurrences.set(call.toolName, occurrence + 1);
+        return represented.has(`${part.toolCallId}:app:${call.toolName}:${occurrence}`);
+      }));
+    });
+    return [...represented, ...executions.map(part => part.toolCallId)];
+  }));
 }
 
 export function appCreationProgress(run: AppCreationRun, active: boolean) {

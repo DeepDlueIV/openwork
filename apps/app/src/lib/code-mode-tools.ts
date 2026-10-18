@@ -7,6 +7,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const NO_INDIVIDUAL_ERROR = "The tool call failed. The engine did not provide an individual error; see the execution details.";
 
+/** Recorded inner failures need a visible home even when the script caught
+ * them and returned successfully. Never infer recovery from the parent. */
+export function codeModeHasFailures(part: DynamicToolUIPart): boolean {
+  const codeMode = part.callProviderMetadata?.openwork?.codeMode;
+  if (!isRecord(codeMode)) return false;
+  const calls = Array.isArray(codeMode.calls) ? codeMode.calls : [];
+  const details = Array.isArray(codeMode.details) ? codeMode.details : [];
+  return calls.some(call => isRecord(call) && call.status === "error") || details.some(detail =>
+    isRecord(detail) && (detail.status === "error" || parseSkillDeliveryEvidence(detail.skillDelivery)?.state === "blocked"),
+  );
+}
+
 function outputText(value: unknown): string | null {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) {

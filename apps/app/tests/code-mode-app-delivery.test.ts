@@ -3,6 +3,7 @@ import type { ToolPart } from "@opencode-ai/sdk/v2/client";
 import { codeModeConnectionParts } from "../src/app/lib/opencode-v2-adapter";
 import plugin, { createMcpResultsCollector } from "../../server/src/opencode-plugins/openwork-mcp-results-v2";
 import { parseDynamicToolUIPart } from "../src/react-app/domains/session/sync/parse-tool-parts";
+import { mcpAppSourceSchema } from "@openwork/types/mcp-app";
 
 const event = { messageID: "message", id: "execute" };
 const launch = { appId: "app", title: "Project board", resourceUri: "ui://project-board" };
@@ -45,6 +46,30 @@ for (const status of ["running", "completed", "error"] as const) {
     if (status === "error") expect(outer.state).toMatchObject({ error: "Later script failure" });
   });
 }
+
+for (const size of [70_000, 200_000]) test(`a supported ${size}-byte source cannot displace its complete App launch`, () => {
+  const prefix = "export default function Board(){return null;}\n//";
+  const source = prefix + "x".repeat(size - prefix.length);
+  expect(source.length).toBe(size);
+  expect(mcpAppSourceSchema.safeParse({ reactSource: source, cssSource: "" }).success).toBe(true);
+  const collector = createMcpResultsCollector();
+  collector.before({ ...event, tool: "execute" });
+  const call = { ...event, tool: "openwork.create_app", input: { title: "Project board", reactSource: source } };
+  collector.before(call);
+  collector.settle(event, collector.claim(call)!, { status: "completed", output: result });
+  const metadata = collector.metadata(event);
+  expect(metadata).toMatchObject({ openworkToolDetails: [{ inputTruncated: true, output: result }],
+    openworkMcpResults: [{ input: { title: "Project board" }, output: result }] });
+  const [app] = codeModeConnectionParts(parent(metadata, "error"));
+  expect(app?.state).toMatchObject({ status: "completed", metadata: { openworkMcpResult: { _meta: { "openwork/mcpApp": launch } } } });
+  expect(app?.state.input.reactSource).toBeUndefined();
+});
+
+test("legacy combined truncation never discards a complete structured output", () => {
+  const [app] = codeModeConnectionParts(parent({ openworkToolDetails: [{ invocationId: "execute:0", ordinal: 0,
+    tool: "openwork_create_app", input: "[Input preview]", status: "completed", startedAt: 1, truncated: true, output: result }] }, "error"));
+  expect(app?.state).toMatchObject({ status: "completed", metadata: { openworkMcpResult: { _meta: { "openwork/mcpApp": launch } } } });
+});
 
 test("the success hook keeps one receipt after the tool wrapper already settled it", () => {
   const collector = createMcpResultsCollector();

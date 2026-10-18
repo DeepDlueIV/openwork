@@ -94,6 +94,10 @@ test("OPE-82: cloud invitations retain identity and organization through authent
     await user.see({ role: "button", label: `Join ${text(world.organization.name)}` }, { timeoutMs: 30_000 });
     await user.click({ role: "button", label: `Join ${text(world.organization.name)}` });
     await joined(person.email);
+    await user.see({ testId: "join-org-joined" });
+    await user.notSee({ testId: "join-org-connected" });
+    await user.notSee({ testId: "desktop-connected" });
+    await user.screenshot();
     await user.notSee({ role: "button", label: "Resend code" });
     expect(await witnesses.emails("verification", person.email)).toEqual(verificationBefore);
     // The member list does not refresh on its own; the owner reloads it.

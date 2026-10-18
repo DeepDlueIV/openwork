@@ -54,6 +54,7 @@ type SidePanelProps = {
   client: OpenworkServerClient | null;
   workspaceId: string | null;
   workspaceRoot: string;
+  isLocalWorkspace?: boolean;
   onClose: () => void;
   onOpenExtensions?: () => void;
 };
@@ -507,6 +508,7 @@ export function SidePanel({
   client,
   workspaceId,
   workspaceRoot,
+  isLocalWorkspace = false,
   onClose,
   onOpenExtensions,
 }: SidePanelProps) {
@@ -772,6 +774,7 @@ export function SidePanel({
               client={client}
               workspaceId={workspaceId}
               workspaceRoot={workspaceRoot}
+              isLocalWorkspace={isLocalWorkspace}
               onClose={onClose}
             />
           </div>

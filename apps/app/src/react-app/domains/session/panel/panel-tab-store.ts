@@ -1,4 +1,5 @@
 import type { DynamicToolUIPart } from "ai";
+import type { OpenworkServerClient } from "@/app/lib/openwork-server";
 import type { McpAppOrigin } from "@/components/chat/mcp-app-origin";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -18,6 +19,13 @@ export type ArtifactPanelTab = {
   label: string;
   preview: OpenTargetPreview;
   target?: OpenTarget;
+  /** Runtime that verified this file; a split pane may belong to another computer. */
+  runtime?: {
+    client: OpenworkServerClient | null;
+    workspaceId: string | null;
+    workspaceRoot: string;
+    isLocalWorkspace: boolean;
+  };
 }
 
 export type AppPanelTab = { id: string; type: "app"; label: string; appId: string; revisionId?: string; receiptId?: string };

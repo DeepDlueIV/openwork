@@ -599,6 +599,7 @@ export type SessionSurfaceProps = {
   environmentClient?: OpenworkServerClient | null;
   workspaceId: string;
   workspaceRoot: string;
+  isLocalWorkspace?: boolean;
   sessionId: string;
   draftScope: string | null;
   isControlTarget: boolean;
@@ -3482,7 +3483,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
                   workspaceId={props.workspaceId}
                   workspaceRoot={props.workspaceRoot}
                   sessionId={props.sessionId}
-                  isLocalWorkspace
+                  isLocalWorkspace={props.isLocalWorkspace === true}
                   openTargets={verifiedOpenTargets}
                   onOpenTarget={handleOpenTarget}
                 >

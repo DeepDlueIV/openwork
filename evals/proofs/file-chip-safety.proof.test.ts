@@ -23,7 +23,10 @@ test("a person using the web app can preview and copy a file reference without a
     await user.see({ role: "menuitem", label: "Copy path" });
     await user.notSee({ role: "menuitem", label: "Open in default app" });
     await user.notSee({ role: "button", label: /^Open in default app:/ });
-    evidence.recordAssertionEvidence("Web references remain usable without pretending the worker path is local", "Copy path and Open file remain; no native app launch or hover action", true);
+    const menu = await probe.text();
+    expect(menu).toContain("Copy path");
+    expect(menu).not.toContain("Open in default app");
+    evidence.recordAssertionEvidence("Web references remain usable without pretending the worker path is local", "Copy path and Open file remain; no native app launch or hover action", menu.includes("Copy path") && !menu.includes("Open in default app"));
     await user.screenshot();
     await user.press("Escape");
   });
@@ -33,7 +36,10 @@ test("a person using the web app can preview and copy a file reference without a
     await user.click("Artifact actions");
     await user.see({ role: "menuitem", label: "Download" });
     await user.notSee({ role: "menuitem", label: "Open externally" });
-    evidence.recordAssertionEvidence("The workspace preview and download still work", "Report contents visible and Download available; no native file-manager actions", true);
+    const preview = await probe.text();
+    expect(preview).toContain("A preserved local report.");
+    expect(preview).toContain("Download");
+    evidence.recordAssertionEvidence("The workspace preview and download still work", "Report contents visible and Download available; no native file-manager actions", preview.includes("A preserved local report.") && preview.includes("Download"));
     await user.screenshot();
   });
 });

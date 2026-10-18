@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ModelOption } from "../src/app/types";
 import { confirmedOrganizationRemoval, closestAvailableModel } from "../src/react-app/domains/session/surface/model-removal";
-import { createUnavailableConfirmationGate } from "../src/react-app/domains/session/surface/model-availability";
+import { computeModelAvailability, createUnavailableConfirmationGate } from "../src/react-app/domains/session/surface/model-availability";
 import { useModelRecoveryStore } from "../src/react-app/domains/session/surface/model-recovery-store";
 
 const old = { providerID: "ipr_gateway", modelID: "gwm_opus", title: "Claude Opus 4.5" };
@@ -15,6 +15,16 @@ const option = (providerID: string, modelID: string, title: string): ModelOption
 const sonnet = option("ipr_gateway", "gwm_sonnet", "Claude Sonnet 4.5");
 const haiku = option("ipr_gateway", "gwm_haiku", "Claude Haiku 4.5");
 const luna = option("openwork", "openai/gpt-6-luna", "GPT-6 Luna");
+
+test("live sync uses its subscribed engine catalog rather than a deliberately absent legacy snapshot", () => {
+  const context = {
+    workspaceReady: true, loading: false, signedIn: true, cloudProviderSyncReady: true,
+    openWorkModelsSyncing: false, restrictToCloud: false, checkRestriction: () => false,
+    cloudProviderList: null, providerList: { all: [], connected: [], default: {} },
+  };
+  expect(computeModelAvailability(old, { ...context, liveProviderSync: true })).toEqual({ status: "unavailable", reason: "model_missing" });
+  expect(computeModelAvailability(old, { ...context, liveProviderSync: false })).toEqual({ status: "pending" });
+});
 
 test("a mature catalog gap neither spins a timer nor hides another model's deadline", () => {
   let now = 0;

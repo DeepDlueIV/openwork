@@ -43,6 +43,8 @@ export type ModelAvailabilityContext = {
   checkRestriction: DesktopAppRestrictionChecker;
   /** Settled cloud-managed catalog for the current context, if any. */
   cloudProviderList: ProviderListResponse | null;
+  /** Live sync deliberately has no app-side cloud snapshot; use the subscribed engine query. */
+  liveProviderSync?: boolean;
   /**
    * Provider catalog for the current workspace (query keyed by server +
    * directory). `null`/`undefined` means the catalog has not settled for this
@@ -86,7 +88,7 @@ export function computeModelAvailability(
     return { status: "unavailable", reason: "provider_blocked" };
   }
 
-  const providerList = usesCloudProvider ? context.cloudProviderList : context.providerList;
+  const providerList = usesCloudProvider && !context.liveProviderSync ? context.cloudProviderList : context.providerList;
   if (!providerList) {
     // Catalog not settled for the current context: pending, not unavailable.
     return { status: "pending" };

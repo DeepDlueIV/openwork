@@ -1319,7 +1319,8 @@ export function SessionRoute() {
       openWorkModelsSyncing,
       restrictToCloud: restrictToCloudProviders,
       checkRestriction: checkDesktopRestriction,
-      cloudProviderList: liveProviderSync ? providerListQuery.data ?? null : cloudProviderList,
+      cloudProviderList,
+      liveProviderSync,
       providerList: providerListQuery.data,
     })), [
     // The tick only forces re-evaluation of denials tracked by the gate.

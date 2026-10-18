@@ -19,7 +19,7 @@ import { getErrorMessage, getRequestError, requestJson } from "../../_lib/den-fl
 import { getOrgAccessFlags, orgFeatureEnabled, permissionLockReason } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { ConfirmDialog } from "./item-list";
-import { deploymentStatus, providerName, readinessMessage, type DeploymentTone, type ProviderReadiness } from "./managed-deployments-state";
+import { deploymentActionError, deploymentStatus, providerName, readinessMessage, type DeploymentTone, type ProviderReadiness } from "./managed-deployments-state";
 export { deploymentStatus } from "./managed-deployments-state";
 
 type Configuration = z.infer<typeof managedDeploymentConfigurationSchema>;
@@ -188,7 +188,10 @@ export function ManagedDeploymentsScreen() {
     try {
       await runReauthableAction(kind === "install" ? `Prepare ${providerName(deployment.provider)} approval` : kind === "update" ? "Prepare update" : "Prepare retry", async () => {
         const result = await requestJson(`/v1/managed-deployments/${deployment.id}/launch`, { method: "POST", body: JSON.stringify({ kind }) });
-        if (!result.response.ok) throw getRequestError(result.payload, result.response, "Couldn't prepare the installer.");
+        if (!result.response.ok) {
+          const recovery = deploymentActionError(result.payload, deployment.provider);
+          throw recovery ? new Error(recovery) : getRequestError(result.payload, result.response, "Couldn't prepare the installer.");
+        }
         const parsed = managedDeploymentLaunchSchema.parse(result.payload);
         if (generation.current === current) { setLaunch(parsed); replace(parsed.deployment); }
       });
@@ -268,7 +271,11 @@ export function ManagedDeploymentsScreen() {
         action: "Remove",
       } : null} onConfirm={async () => { if (deploymentToRemove) await remove(deploymentToRemove); }} onClose={() => setDeploymentToRemove(null)} />
       <CreateDeploymentDialog open={dialogOpen} onOpenChange={setDialogOpen} configuration={configuration} runReauthableAction={runReauthableAction}
-        onCreated={(item) => { replace(item); setSelectedId(item.id); setLaunch(null); setDialogOpen(false); }} />
+        onCreated={(item) => {
+          replace(item); setSelectedId(item.id); setLaunch(null); setDialogOpen(false);
+          // Preparing a handoff does not run it or approve billable cloud work.
+          if (item.provider === "gcp") void prepare(item, "install");
+        }} />
     </section>
   );
 }
@@ -426,7 +433,10 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
     try {
       await runReauthableAction("Create deployment", async () => {
         const result = await requestJson("/v1/managed-deployments", { method: "POST", body: JSON.stringify(parsed.data) });
-        if (!result.response.ok) throw getRequestError(result.payload, result.response, "Couldn't create the deployment.");
+        if (!result.response.ok) {
+          const recovery = deploymentActionError(result.payload, provider);
+          throw recovery ? new Error(recovery) : getRequestError(result.payload, result.response, "Couldn't create the deployment.");
+        }
         onCreated(managedDeploymentSchema.parse(result.payload));
         setConsent(false);
       });
@@ -502,7 +512,7 @@ function CreateDeploymentDialog({ open, onOpenChange, configuration, runReauthab
               <span className="min-w-0" data-testid="deployment-cost-consent">{provider === "gcp" ? "I control this Google Cloud project and public DNS zone, with billing enabled. I'll review the installer's permissions and run its command in Google Cloud Shell to approve. Only running the command creates or changes billable Cloud Run, Cloud SQL, load balancer and storage resources in my project. Removing this record does not delete those resources or stop charges. OpenWork receives deployment progress and health checks, never the first-sign-in code." : `I control this AWS account and hosted zone. AWS bills my account for the containers, database and load balancer${networkMode === "dedicated" ? " and NAT gateway (about $100–150 a month at the small size)" : " (about $60–100 a month at the small size, plus my network's own costs)"}. I'll review the installer's permissions in AWS before approving.`}</span>
             </label>
             {error ? <p role="alert" className="text-[13px] text-red-700">{error}</p> : null}
-            <DenButton type="submit" data-testid="create-deployment-submit" loading={busy} disabled={!consent || !readiness?.available}>Create deployment</DenButton>
+            <DenButton type="submit" data-testid="create-deployment-submit" loading={busy} disabled={!consent || !readiness?.available}>{provider === "gcp" ? "Prepare Google Cloud approval" : "Create deployment"}</DenButton>
           </form>
         </Dialog.Popup>
       </Dialog.Portal>

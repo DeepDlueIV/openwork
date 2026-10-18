@@ -11405,42 +11405,49 @@ export type GetV1ManagedDeploymentsConfigurationErrors = {
    */
   400: {
     error: string;
+    message?: string;
   };
   /**
    * Authentication required.
    */
   401: {
     error: string;
+    message?: string;
   };
   /**
    * Owner or super-admin approval required.
    */
   403: {
     error: string;
+    message?: string;
   };
   /**
    * Deployment or feature unavailable.
    */
   404: {
     error: string;
+    message?: string;
   };
   /**
    * The deployment cannot accept this operation now.
    */
   409: {
     error: string;
+    message?: string;
   };
   /**
    * Too many attempts.
    */
   429: {
     error: string;
+    message?: string;
   };
   /**
    * No installer release is configured.
    */
   503: {
     error: string;
+    message?: string;
   };
 };
 
@@ -11458,6 +11465,7 @@ export type GetV1ManagedDeploymentsConfigurationResponses = {
       version: string | null;
       reason?: "ready" | "not_configured" | "invalid_configuration" | "not_supported" | "feature_disabled";
       missingFields?: Array<string>;
+      message?: string;
     }>;
     updateMode: "approval";
   };
@@ -11479,42 +11487,49 @@ export type GetV1ManagedDeploymentsErrors = {
    */
   400: {
     error: string;
+    message?: string;
   };
   /**
    * Authentication required.
    */
   401: {
     error: string;
+    message?: string;
   };
   /**
    * Owner or super-admin approval required.
    */
   403: {
     error: string;
+    message?: string;
   };
   /**
    * Deployment or feature unavailable.
    */
   404: {
     error: string;
+    message?: string;
   };
   /**
    * The deployment cannot accept this operation now.
    */
   409: {
     error: string;
+    message?: string;
   };
   /**
    * Too many attempts.
    */
   429: {
     error: string;
+    message?: string;
   };
   /**
    * No installer release is configured.
    */
   503: {
     error: string;
+    message?: string;
   };
 };
 
@@ -11795,42 +11810,49 @@ export type PostV1ManagedDeploymentsErrors = {
    */
   400: {
     error: string;
+    message?: string;
   };
   /**
    * Authentication required.
    */
   401: {
     error: string;
+    message?: string;
   };
   /**
    * Owner or super-admin approval required.
    */
   403: {
     error: string;
+    message?: string;
   };
   /**
    * Deployment or feature unavailable.
    */
   404: {
     error: string;
+    message?: string;
   };
   /**
    * The deployment cannot accept this operation now.
    */
   409: {
     error: string;
+    message?: string;
   };
   /**
    * Too many attempts.
    */
   429: {
     error: string;
+    message?: string;
   };
   /**
    * No installer release is configured.
    */
   503: {
     error: string;
+    message?: string;
   };
 };
 
@@ -12058,42 +12080,49 @@ export type DeleteV1ManagedDeploymentsByDeploymentIdErrors = {
    */
   400: {
     error: string;
+    message?: string;
   };
   /**
    * Authentication required.
    */
   401: {
     error: string;
+    message?: string;
   };
   /**
    * Owner or super-admin approval required.
    */
   403: {
     error: string;
+    message?: string;
   };
   /**
    * Deployment or feature unavailable.
    */
   404: {
     error: string;
+    message?: string;
   };
   /**
    * The deployment cannot accept this operation now.
    */
   409: {
     error: string;
+    message?: string;
   };
   /**
    * Too many attempts.
    */
   429: {
     error: string;
+    message?: string;
   };
   /**
    * No installer release is configured.
    */
   503: {
     error: string;
+    message?: string;
   };
 };
 
@@ -12129,42 +12158,49 @@ export type PostV1ManagedDeploymentsByDeploymentIdLaunchErrors = {
    */
   400: {
     error: string;
+    message?: string;
   };
   /**
    * Authentication required.
    */
   401: {
     error: string;
+    message?: string;
   };
   /**
    * Owner or super-admin approval required.
    */
   403: {
     error: string;
+    message?: string;
   };
   /**
    * Deployment or feature unavailable.
    */
   404: {
     error: string;
+    message?: string;
   };
   /**
    * The deployment cannot accept this operation now.
    */
   409: {
     error: string;
+    message?: string;
   };
   /**
    * Too many attempts.
    */
   429: {
     error: string;
+    message?: string;
   };
   /**
    * No installer release is configured.
    */
   503: {
     error: string;
+    message?: string;
   };
 };
 
@@ -12425,42 +12461,49 @@ export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollErrors = {
    */
   400: {
     error: string;
+    message?: string;
   };
   /**
    * Authentication required.
    */
   401: {
     error: string;
+    message?: string;
   };
   /**
    * Owner or super-admin approval required.
    */
   403: {
     error: string;
+    message?: string;
   };
   /**
    * Deployment or feature unavailable.
    */
   404: {
     error: string;
+    message?: string;
   };
   /**
    * The deployment cannot accept this operation now.
    */
   409: {
     error: string;
+    message?: string;
   };
   /**
    * Too many attempts.
    */
   429: {
     error: string;
+    message?: string;
   };
   /**
    * No installer release is configured.
    */
   503: {
     error: string;
+    message?: string;
   };
 };
 
@@ -12514,42 +12557,49 @@ export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsErrors = {
    */
   400: {
     error: string;
+    message?: string;
   };
   /**
    * Authentication required.
    */
   401: {
     error: string;
+    message?: string;
   };
   /**
    * Owner or super-admin approval required.
    */
   403: {
     error: string;
+    message?: string;
   };
   /**
    * Deployment or feature unavailable.
    */
   404: {
     error: string;
+    message?: string;
   };
   /**
    * The deployment cannot accept this operation now.
    */
   409: {
     error: string;
+    message?: string;
   };
   /**
    * Too many attempts.
    */
   429: {
     error: string;
+    message?: string;
   };
   /**
    * No installer release is configured.
    */
   503: {
     error: string;
+    message?: string;
   };
 };
 
@@ -12583,42 +12633,49 @@ export type PostV1ManagedDeploymentsByDeploymentIdHeartbeatErrors = {
    */
   400: {
     error: string;
+    message?: string;
   };
   /**
    * Authentication required.
    */
   401: {
     error: string;
+    message?: string;
   };
   /**
    * Owner or super-admin approval required.
    */
   403: {
     error: string;
+    message?: string;
   };
   /**
    * Deployment or feature unavailable.
    */
   404: {
     error: string;
+    message?: string;
   };
   /**
    * The deployment cannot accept this operation now.
    */
   409: {
     error: string;
+    message?: string;
   };
   /**
    * Too many attempts.
    */
   429: {
     error: string;
+    message?: string;
   };
   /**
    * No installer release is configured.
    */
   503: {
     error: string;
+    message?: string;
   };
 };
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { managedDeploymentSchema } from "@openwork/types/den/managed-deployments";
-import { deploymentStatus, providerName, readinessMessage, type ProviderReadiness } from "./managed-deployments-state";
+import { deploymentActionError, deploymentStatus, providerName, readinessMessage, type ProviderReadiness } from "./managed-deployments-state";
 
 function deployment(provider: "aws" | "gcp" = "aws") {
   return managedDeploymentSchema.parse({
@@ -57,4 +57,27 @@ test("locks name the remediation owner and distinguish readiness causes", () => 
   }
   assert.match(readinessMessage({ provider: "aws", available: false }), /publish and configure a verified installer/);
   assert.equal(providerName("azure"), "Azure");
+});
+
+test("late rollout and publication errors give the same operator recovery as readiness", () => {
+  assert.equal(deploymentActionError({ error: "feature_disabled" }, "gcp"), readinessMessage({ provider: "gcp", available: false, reason: "feature_disabled" }));
+  assert.equal(deploymentActionError({ error: "release_not_configured" }, "gcp"), readinessMessage({ provider: "gcp", available: false, reason: "not_configured" }));
+  assert.equal(deploymentActionError({ error: "release_not_configured", message: "An OpenWork operator must correct the published release configuration." }, "gcp"), "An OpenWork operator must correct the published release configuration.");
+  assert.equal(deploymentActionError({ error: "fresh_auth_required" }, "gcp"), null);
+  assert.equal(deploymentActionError(null, "gcp"), null);
+});
+
+test("approval and services started never stand in for verified health", () => {
+  const item = deployment("gcp");
+  if (!item.run) throw new Error("Missing fixture run");
+  item.installedVersion = null;
+  item.run.state = "provisioning";
+  assert.equal(deploymentStatus(item).label, "Approved · installing");
+  item.run.events.push({ sequence: 5, step: "services_ready", outcome: "succeeded", receivedAt: "2026-10-01T00:01:00.000Z" });
+  assert.equal(deploymentStatus(item).label, "Services started · checking health");
+  item.run.state = "ready";
+  item.health.state = "awaiting_report";
+  assert.equal(deploymentStatus(item).label, "Waiting for first report");
+  item.health.state = "operational";
+  assert.equal(deploymentStatus(item).label, "Operational");
 });

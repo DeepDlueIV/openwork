@@ -8,7 +8,7 @@ import { mediaTypeFor, SavedFiles, SAVED_FILE_TOOL_NAMES } from "./saved-files.j
 import type { Config } from "./config.js"
 import { FILE_TOOL_NAMES } from "./files.js"
 import { remoteMcpConnector } from "./mcp.js"
-import { anthropicModel, fetchGatewayModels, openAIModel, type ModelOption } from "./model.js"
+import { anthropicModel, fetchGatewayModels, openAIModel, openAIResponsesModel, type ModelOption } from "./model.js"
 import { Runner } from "./runner.js"
 import type { Store } from "./store.js"
 import { readToolFile } from "./tool-files.js"
@@ -45,7 +45,9 @@ export async function createRuntime(config: Config, store: Store) {
     model:
       config.model.protocol === "anthropic"
         ? anthropicModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch })
-        : openAIModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch }),
+        : config.model.protocol === "openai-responses"
+          ? openAIResponsesModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch })
+          : openAIModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch }),
     defaultModel: config.model.model,
     defaultModelApiKey: config.model.defaultApiKey,
     mcp: config.mcp

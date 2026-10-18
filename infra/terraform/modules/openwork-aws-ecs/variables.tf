@@ -339,8 +339,8 @@ variable "headless_runner" {
   default = {}
 
   validation {
-    condition     = contains(["anthropic", "openai"], var.headless_runner.model_protocol)
-    error_message = "headless_runner.model_protocol must be anthropic or openai."
+    condition     = contains(["anthropic", "openai", "openai-responses"], var.headless_runner.model_protocol)
+    error_message = "headless_runner.model_protocol must be anthropic, openai or openai-responses."
   }
 
   validation {

@@ -87,6 +87,14 @@ export async function readRemoteThread(entry: RemoteThreadEntry, input: { limit:
 
 type ActionResult = Omit<RemoteThreadAction, "id">
 
+function actionFailure(error: unknown, requestId: string | null, uncertain: string): ActionResult {
+  const problem = failure(error)
+  // A client rejection before any receipt is evidence that this action was
+  // refused. Once a receipt exists, even sign-in loss must preserve recovery.
+  const rejected = requestId === null && error instanceof DenApiError && [400, 401, 403, 404, 409, 422, 429].includes(error.status)
+  return { phase: rejected ? "failed" : "unconfirmed", requestId, message: rejected ? problem.message : `${problem.message} ${uncertain}` }
+}
+
 function actionResult(payload: unknown, action: "send" | "stop"): ActionResult {
   const requestId = remotePendingRequestId(payload)
   if (requestId) return {
@@ -131,7 +139,7 @@ export async function sendRemoteFollowUp(entry: RemoteThreadEntry, prompt: strin
       : { phase: "failed", requestId: null, message: "Wait for the computer to start the task, then send your follow-up." }
   } catch (error) {
     // A lost response is not proof that a send failed. Never replay it automatically.
-    result = { phase: "unconfirmed", requestId, message: `${failure(error).message} Check the conversation before sending this follow-up again.` }
+    result = actionFailure(error, requestId, "Check the conversation before sending this follow-up again.")
   }
   store.update(entry.start.key, (thread) => ({ ...thread, followUps: thread.followUps.map((item) => item.id === id ? { ...item, ...result } : item) }))
   if (result.phase === "accepted") store.followedUp(entry.start.key, stopIdAtSubmission)
@@ -152,7 +160,7 @@ export async function stopRemoteThread(entry: RemoteThreadEntry, latestUserId?: 
   let result: ActionResult
   try {
     const location = remoteThreadLocation(entry)
-    if (!location) throw new Error("not_started")
+    if (!location) throw new DenApiError(409, "not_started", "The task hasn't started yet.")
     let messageId = latestUserId ?? null
     if (!messageId) {
       const tail = await readRemoteThread(entry, { limit: 4 })
@@ -163,7 +171,7 @@ export async function stopRemoteThread(entry: RemoteThreadEntry, latestUserId?: 
       result = { phase: "failed", requestId: null, message: "Couldn't confirm the current turn. Open the conversation and try Stop again." }
     } else result = actionResult(await call("stop", { ...location, ...(messageId ? { messageId } : {}) }, pending), "stop")
   } catch (error) {
-    result = { phase: "unconfirmed", requestId, message: `${failure(error).message} Stop isn't confirmed; the task may still be running.` }
+    result = actionFailure(error, requestId, "Stop isn't confirmed; the task may still be running.")
   }
   store.update(entry.start.key, (thread) => thread.stop?.id === id ? { ...thread, stop: { ...thread.stop, ...result } } : thread)
 }

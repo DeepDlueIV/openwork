@@ -12,11 +12,12 @@ mock.module("@/app/lib/den", () => ({
     remoteSessionAction: (org: string, action: string, input: Record<string, unknown>) => { calls.push(action); return response(action, input) },
     getRemoteSessionStatus: () => new Promise(() => {}),
   }),
-  DenApiError: class extends Error {},
+  DenApiError: class extends Error { constructor(public status: number, public code: string, message: string) { super(message) } },
 }))
 mock.module("@/components/markdown/markdown", () => ({ MarkdownBlock: ({ text }: { text: string }) => <p>{text}</p> }))
 mock.module("@/components/chat/message-list-provider", () => ({ useMessageList: () => ({ workspaceId: "ws_owner", sessionId: "ses_owner", readOnly: false }) }))
 const { RemoteThreadRunLine } = await import("../src/components/chat/remote-thread-run-line")
+const { DenApiError } = await import("../src/app/lib/den")
 const { useRemoteThreadStore } = await import("../src/react-app/domains/session/remote-threads/remote-thread-store")
 const { RemoteThreadPanel } = await import("../src/react-app/domains/session/remote-threads/remote-thread-panel")
 const { sendRemoteFollowUp, stopRemoteThread, checkRemoteThreadAction } = await import("../src/react-app/domains/session/remote-threads/remote-thread-actions")
@@ -212,6 +213,29 @@ test("a guard refusing Stop for a different turn is not acknowledged as accepted
   expect(entry().stop?.message).toContain("different turn")
   expect(remoteThreadView(start, entry(), Date.now()).stopped).toBe(false)
 })
+
+test("a definitive sign-in rejection before a receipt is a failed action, not a permanently disabled Stop", async () => {
+  response = async () => { throw new DenApiError(401, "unauthorized", "Sign in to check this task.") }
+  await stopRemoteThread(entry(), "msg_original")
+  expect(entry().stop).toMatchObject({ phase: "failed", requestId: null })
+  await stopRemoteThread(entry(), "msg_original")
+  expect(calls.filter((kind) => kind === "stop")).toHaveLength(2)
+})
+
+test("a timeout without a receipt is still unconfirmed, not a proven rejection", async () => {
+  response = async () => { throw new DenApiError(408, "request_timeout", "The request timed out.") }
+  await sendRemoteFollowUp(entry(), "Do not replay an uncertain timeout")
+  expect(entry().followUps[0]).toMatchObject({ phase: "unconfirmed", requestId: null })
+})
+
+test("sign-in loss while reading a known receipt keeps that receipt for read-only recovery", async () => {
+  response = async (kind) => { if (kind === "read") throw new DenApiError(401, "unauthorized", "Sign in to check this task."); return { state: "pending", requestId: "receipt_auth" } }
+  await stopRemoteThread(entry(), "msg_original")
+  expect(entry().stop).toMatchObject({ phase: "unconfirmed", requestId: "receipt_auth" })
+  response = async (kind, input) => { expect(kind).toBe("read"); expect(input).toEqual({ requestId: "receipt_auth" }); return { stopped: true } }
+  await checkRemoteThreadAction(entry())
+  expect(calls.filter((kind) => kind === "stop")).toHaveLength(1)
+}, 10_000)
 
 test("an unconfirmed transcript ends the skeleton and offers checking the same receipt", async () => {
   let now = 1_000

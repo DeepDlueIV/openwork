@@ -7,7 +7,7 @@ const test = spec.world(policyAssignmentRecovery, { resources: { surfaces: ["web
 
 test("an owner can recover shared suggestion assignments without unlocking them or exposing policies to a member", async ({ world, user, probe, step, evidence }) => {
   await step("before: shared suggestions stay locked instead of overwriting another audience", async () => {
-    await user.see("Suggestions have shared or overlapping policy assignments.", { timeoutMs: 60_000 });
+    await user.see({ text: /Suggestions have shared or overlapping policy assignments/ }, { timeoutMs: 60_000 });
     await user.notSee({ role: "button", label: "Edit suggestions" });
     const locked = await probe.has("Editing is locked to preserve other teams and members.");
     evidence.recordAssertionEvidence("shared suggestions remain protected", `two team assignments; editing locked=${locked}`, locked);

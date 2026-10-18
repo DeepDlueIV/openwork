@@ -18,7 +18,7 @@ import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-templ
 import { DenButton } from "../../_components/ui/button";
 import { DenInput } from "../../_components/ui/input";
 import { DenTextarea } from "../../_components/ui/textarea";
-import { getDesktopPoliciesRoute, getMembersRoute, getTeamRoute, getOrgAccessFlags, permissionLockReason } from "../../_lib/den-org";
+import { getDesktopPolicyAssignmentsRoute, getDesktopPoliciesRoute, getMembersRoute, getTeamRoute, getOrgAccessFlags, permissionLockReason } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import {
   createDesktopPolicy,
@@ -224,7 +224,7 @@ function policyDocumentFromDraft(draft: PolicyDraft): DesktopPolicyDocumentWrite
   };
 }
 
-export function DesktopPolicyEditorScreen({ desktopPolicyId }: { desktopPolicyId?: string }) {
+export function DesktopPolicyEditorScreen({ desktopPolicyId, assignmentRecovery = false }: { desktopPolicyId?: string; assignmentRecovery?: boolean }) {
   const router = useRouter();
   const { orgId, orgSlug, orgContext, runReauthableAction } = useOrgDashboard();
   const { definitions, desktopPolicies, busy, error, reloadPolicies } = useOrgDesktopPolicies(orgId);
@@ -258,7 +258,7 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId }: { desktopPolicyId
   const canView = access.canViewDesktopPolicies;
   const isEditing = Boolean(desktopPolicyId);
   const isDefault = policy?.isDefault === true;
-  const listRoute = getDesktopPoliciesRoute(orgSlug);
+  const listRoute = assignmentRecovery ? getDesktopPolicyAssignmentsRoute(orgSlug) : getDesktopPoliciesRoute(orgSlug);
 
   const initialLoad = busy && (definitions.length === 0 || (isEditing && !policy));
   const notFound = isEditing && !busy && !policy && desktopPolicies.length > 0;

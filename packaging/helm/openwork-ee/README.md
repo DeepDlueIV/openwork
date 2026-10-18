@@ -384,6 +384,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `workbotSharing` | `DEN_FEATURE_WORKBOT_SHARING` | default off | Members can copy a Workbot link for coworkers; team access still requires an invitation. |
 | `workbotTeamLinks` | `DEN_FEATURE_WORKBOT_TEAM_LINKS` | default off | Members with team management access can open their organization's Workbot settings and app connections from Workbot. |
 | `workbotLunaDefault` | `DEN_FEATURE_WORKBOT_LUNA_DEFAULT` | default off | Workbot uses GPT-6 Luna when no organization model is chosen. Admins can check availability and test a bounded synthetic completion without silently switching providers. |
+| `workbotFirstRun` | `DEN_FEATURE_WORKBOT_FIRST_RUN` | default off | People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable. |
 | `workbotDocuments` | `DEN_FEATURE_WORKBOT_DOCUMENTS` | default off | Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive. |
 | `workbotWorkspaceAssistant` | `DEN_FEATURE_WORKBOT_WORKSPACE_ASSISTANT` | default off | Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar. |
 | `automationCalendar` | `DEN_FEATURE_AUTOMATION_CALENDAR` | default off | Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar. |

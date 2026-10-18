@@ -25,6 +25,8 @@ export const denSessionSchema = z.object({
   organization: z.object({ id: z.string(), name: z.string(), brandAppName: z.string().nullable() }),
   memberId: z.string(),
   enabled: z.boolean(),
+  firstRun: z.boolean().optional(),
+  canEnableWorkbot: z.boolean().optional(),
   canSchedule: z.boolean(),
   /** Workbot's Calendar tab is on (while Workbot is on). Older Dens omit it: off. */
   calendar: z.boolean().optional(),

@@ -238,6 +238,16 @@
               ],
               "description": "Workbot: GPT-6 Luna default: Workbot uses GPT-6 Luna when no organization model is chosen. Admins can check availability and test a bounded synthetic completion without silently switching providers. Renders DEN_FEATURE_WORKBOT_LUNA_DEFAULT."
             },
+            "workbotFirstRun": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: first sign-in: People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable. Renders DEN_FEATURE_WORKBOT_FIRST_RUN."
+            },
             "workbotDocuments": {
               "enum": [
                 "",

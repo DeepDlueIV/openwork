@@ -2452,6 +2452,7 @@
               "workbotSharing",
               "workbotTeamLinks",
               "workbotLunaDefault",
+              "workbotFirstRun",
               "workbotDocuments",
               "workbotWorkspaceAssistant",
               "automationCalendar",
@@ -2711,6 +2712,9 @@
                     "workbotLunaDefault": {
                       "type": "boolean"
                     },
+                    "workbotFirstRun": {
+                      "type": "boolean"
+                    },
                     "workbotDocuments": {
                       "type": "boolean"
                     },
@@ -2798,6 +2802,7 @@
                     "workbotSharing",
                     "workbotTeamLinks",
                     "workbotLunaDefault",
+                    "workbotFirstRun",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -4055,6 +4060,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotFirstRun": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "workbotDocuments": {
                       "type": "object",
                       "properties": {
@@ -5143,6 +5204,7 @@
                     "workbotSharing",
                     "workbotTeamLinks",
                     "workbotLunaDefault",
+                    "workbotFirstRun",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -5597,6 +5659,9 @@
                     "workbotLunaDefault": {
                       "type": "boolean"
                     },
+                    "workbotFirstRun": {
+                      "type": "boolean"
+                    },
                     "workbotDocuments": {
                       "type": "boolean"
                     },
@@ -5684,6 +5749,7 @@
                     "workbotSharing",
                     "workbotTeamLinks",
                     "workbotLunaDefault",
+                    "workbotFirstRun",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -6941,6 +7007,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotFirstRun": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "workbotDocuments": {
                       "type": "object",
                       "properties": {
@@ -8029,6 +8151,7 @@
                     "workbotSharing",
                     "workbotTeamLinks",
                     "workbotLunaDefault",
+                    "workbotFirstRun",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -29616,6 +29739,12 @@
           "enabled": {
             "type": "boolean"
           },
+          "firstRun": {
+            "type": "boolean"
+          },
+          "canEnableWorkbot": {
+            "type": "boolean"
+          },
           "canSchedule": {
             "type": "boolean"
           },
@@ -32219,6 +32348,9 @@
                         "workbotLunaDefault": {
                           "type": "boolean"
                         },
+                        "workbotFirstRun": {
+                          "type": "boolean"
+                        },
                         "workbotDocuments": {
                           "type": "boolean"
                         },
@@ -32306,6 +32438,7 @@
                         "workbotSharing",
                         "workbotTeamLinks",
                         "workbotLunaDefault",
+                        "workbotFirstRun",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -33563,6 +33696,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotFirstRun": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "workbotDocuments": {
                           "type": "object",
                           "properties": {
@@ -34651,6 +34840,7 @@
                         "workbotSharing",
                         "workbotTeamLinks",
                         "workbotLunaDefault",
+                        "workbotFirstRun",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -34854,6 +35044,9 @@
                         "workbotLunaDefault": {
                           "type": "boolean"
                         },
+                        "workbotFirstRun": {
+                          "type": "boolean"
+                        },
                         "workbotDocuments": {
                           "type": "boolean"
                         },
@@ -34941,6 +35134,7 @@
                         "workbotSharing",
                         "workbotTeamLinks",
                         "workbotLunaDefault",
+                        "workbotFirstRun",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -36198,6 +36392,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotFirstRun": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "workbotDocuments": {
                           "type": "object",
                           "properties": {
@@ -37286,6 +37536,7 @@
                         "workbotSharing",
                         "workbotTeamLinks",
                         "workbotLunaDefault",
+                        "workbotFirstRun",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",

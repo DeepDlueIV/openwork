@@ -4,6 +4,7 @@ import { StrictMode, useEffect, useMemo } from "react"
 import { createRoot } from "react-dom/client"
 import { createHost, fetchMe, signIn, type Me } from "./host"
 import "./styles.css"
+import { WorkspaceAccess } from "./workspace-access"
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } })
 
@@ -31,6 +32,7 @@ function App() {
     )
   }
   if (!me.data) return null
+  if (!me.data.enabled && me.data.firstRun) return <WorkspaceAccess me={me.data} />
   return <Signed me={me.data} />
 }
 

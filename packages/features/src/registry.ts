@@ -207,6 +207,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotFirstRun: {
+    label: "Workbot: first sign-in",
+    description: "People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   workbotDocuments: {
     label: "Workbot Documents",
     description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",

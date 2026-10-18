@@ -135,6 +135,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       email: who.user.email,
       organizationName: who.organization.name,
       enabled: who.enabled,
+      firstRun: who.firstRun === true,
+      canEnableWorkbot: who.canEnableWorkbot === true,
       calendar: who.enabled && who.calendar === true,
       documents: who.enabled && who.documents === true,
       workspaceAssistant: who.enabled && who.workspaceAssistant,

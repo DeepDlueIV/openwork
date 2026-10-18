@@ -16,6 +16,7 @@ import { DEN_MCP_READ_SCOPE, DEN_MCP_WRITE_SCOPE } from "../mcp/scopes.js"
 import { jsonResponse, unauthorizedSchema } from "../openapi.js"
 import { getOrganizationFeatures, organizationFeatureEnabled } from "../features.js"
 import { jsonValidator, tokenRoute } from "../middleware/index.js"
+import { isPlatformAdminUserId } from "../middleware/admin.js"
 import { checkRateLimit } from "../utils/rate-limit.js"
 import { openworkYourConnectionsUrl } from "../mcp/connection-navigation.js"
 import { createInternalMcpPrincipalHeader } from "../session.js"
@@ -42,6 +43,9 @@ const sessionSchema = z.object({
   memberId: z.string(),
   /** A platform admin turned Workbot on for this organization. */
   enabled: z.boolean(),
+  /** First-sign-in recovery presentation; older deployments omit both fields. */
+  firstRun: z.boolean().optional(),
+  canEnableWorkbot: z.boolean().optional(),
   /** Workbot may set up recurring work: the organization runs Automations on the headless runner. */
   canSchedule: z.boolean(),
   /** Workbot shows its Calendar tab: Workbot is on. Older Dens omit it. */
@@ -291,6 +295,8 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         organization: { id: organization.id, name: organization.name, brandAppName: readBrandAppName(organization.metadata) },
         memberId,
         enabled: features.workbot,
+        firstRun: features.workbotFirstRun,
+        canEnableWorkbot: features.workbotFirstRun && !features.workbot && await isPlatformAdminUserId(user.id),
         canSchedule,
         calendar: features.workbot,
         documents: features.workbot && features.workbotDocuments,

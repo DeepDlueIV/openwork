@@ -754,6 +754,7 @@ export type AdminFeature = {
     | "workbotSharing"
     | "workbotTeamLinks"
     | "workbotLunaDefault"
+    | "workbotFirstRun"
     | "workbotDocuments"
     | "workbotWorkspaceAssistant"
     | "automationCalendar"
@@ -833,6 +834,7 @@ export type AdminOrganizationsPageResponse = {
       workbotSharing: boolean;
       workbotTeamLinks: boolean;
       workbotLunaDefault: boolean;
+      workbotFirstRun: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1053,6 +1055,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       workbotLunaDefault: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotFirstRun: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1317,6 +1328,7 @@ export type AdminOverviewResponse = {
       workbotSharing: boolean;
       workbotTeamLinks: boolean;
       workbotLunaDefault: boolean;
+      workbotFirstRun: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1537,6 +1549,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       workbotLunaDefault: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotFirstRun: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6912,6 +6933,8 @@ export type WorkbotSession = {
   };
   memberId: string;
   enabled: boolean;
+  firstRun?: boolean;
+  canEnableWorkbot?: boolean;
   canSchedule: boolean;
   calendar?: boolean;
   documents?: boolean;
@@ -7905,6 +7928,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbotSharing: boolean;
       workbotTeamLinks: boolean;
       workbotLunaDefault: boolean;
+      workbotFirstRun: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8125,6 +8149,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotLunaDefault: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotFirstRun: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8377,6 +8410,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbotSharing: boolean;
       workbotTeamLinks: boolean;
       workbotLunaDefault: boolean;
+      workbotFirstRun: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8597,6 +8631,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotLunaDefault: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotFirstRun: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

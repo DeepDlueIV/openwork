@@ -133,6 +133,18 @@ test("a sign-in only finishes in the browser that started it, with its state, wi
   assert.equal((await app.request(`/auth/callback?state=${state}&code=c`, { headers: { cookie: `__Host-workbot-login=${loginCookie}` } })).status, 400)
 })
 
+test("workspace sign-in preserves a local destination but never returns to another site", async () => {
+  const app = world().instance()
+  for (const [destination, expected] of [["/documents?chat=example", "/documents?chat=example"], ["https://other.example.test", "/"], ["//other.example.test", "/"], ["/\\other.example.test", "/"]]) {
+    const login = await app.request(`/auth/login?return=${encodeURIComponent(destination)}`)
+    const cookie = cookieValue(login, "__Host-workbot-login") ?? ""
+    const state = new URL(login.headers.get("location") ?? "").searchParams.get("state") ?? ""
+    const callback = await app.request(`/auth/callback?state=${state}&code=example-code`, { headers: { cookie: `__Host-workbot-login=${cookie}` } })
+    assert.equal(callback.status, 302)
+    assert.equal(callback.headers.get("location"), expected)
+  }
+})
+
 test("a refresh token is spent once, even by requests still carrying the previous cookie", async () => {
   const w = world()
   const app = w.instance()

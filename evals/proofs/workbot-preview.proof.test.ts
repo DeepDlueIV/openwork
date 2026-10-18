@@ -1,4 +1,5 @@
-import { expect, spec } from "@openwork/testkit";
+import { expect } from "vitest";
+import { spec } from "@openwork/testkit";
 import { workbotPreview } from "../worlds/workbot-preview.ts";
 
 const test = spec.world(workbotPreview, { timeout: 90_000, needs: { placement: "local" }, resources: { surfaces: [], services: [] } });

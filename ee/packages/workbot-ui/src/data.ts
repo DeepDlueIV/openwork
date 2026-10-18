@@ -426,7 +426,7 @@ export function useDeleteWorkbotMessage() {
   });
 }
 
-/** Edits one of the person's messages; Workbot answers the edited message fresh, from that point on. */
+/** Sends a correction as a new message; earlier messages and replies remain in the conversation. */
 export function useEditWorkbotMessage() {
   const queryClient = useQueryClient();
   const chat = useWorkbotChat();

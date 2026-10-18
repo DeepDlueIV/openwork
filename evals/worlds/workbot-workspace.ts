@@ -13,7 +13,10 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
   const resources = new AsyncDisposableStack();
   const messages: Record<string, unknown>[] = [];
   const opened: string[] = [];
+  const editorReads: string[] = [];
   let driveDenied = false;
+  let listingFailure = false;
+  let fileDenied = false;
   let documentsOff = false;
   const files = [
     { id: "file_brief", name: "Project brief.txt", mimeType: "text/plain", modifiedTime: "2026-10-12T09:00:00Z", size: "42", webViewLink: "https://drive.google.com/file/d/file_brief/view" },
@@ -49,11 +52,12 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
           if (url.pathname.startsWith("/v1/workbot/documents")) {
             if (!documents) return json({ error: "workbot_documents_not_enabled" }, 403);
             if (denied) return json({ error: "needs_connection" }, 409);
-            if (url.pathname.endsWith("/drive-files")) return json({ ok: true, files });
+            if (url.pathname.endsWith("/drive-files")) return listingFailure ? json({ error: "upstream_unavailable" }, 503) : json({ ok: true, files });
             const match = /\/files\/([^/]+)\/(metadata|editor)$/.exec(url.pathname);
             if (match) {
               const file = files.find(file => file.id === match[1]);
-              if (!file) return json({ error: "permission_denied" }, 403);
+              if (match[2] === "editor") editorReads.push(match[1]!);
+              if (!file || fileDenied) return json({ error: "permission_denied" }, 403);
               if (match[2] === "metadata") { opened.push(file.id); return json({ id: file.id, name: file.name, mimeType: file.mimeType, modifiedTime: file.modifiedTime, size: Number(file.size), openUrl: file.webViewLink }); }
               return json({ kind: "text", fileId: file.id, connectionId: "google-workspace", name: file.name, revision: "v1", canEdit: true, text: file.id === "file_brief" ? "Project overview" : "Budget overview" });
             }
@@ -75,6 +79,6 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
     const url = vite.resolvedUrls?.local[0];
     if (!url) throw new Error("Workbot fixture did not start");
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-workspace", startUrl: `${url}documents?assistant=off`, headless: true }));
-    return { web, url, messages: () => [...messages], opened: () => [...opened], revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; }, disableDocuments: () => { documentsOff = true; }, enableDocuments: () => { documentsOff = false; }, async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
+    return { web, url, messages: () => [...messages], opened: () => [...opened], editorReads: () => [...editorReads], revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; }, failListing: () => { listingFailure = true; }, restoreListing: () => { listingFailure = false; }, denyFile: () => { fileDenied = true; }, allowFile: () => { fileDenied = false; }, disableDocuments: () => { documentsOff = true; }, enableDocuments: () => { documentsOff = false; }, async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
   } catch (error) { await resources.disposeAsync(); throw error; }
 }

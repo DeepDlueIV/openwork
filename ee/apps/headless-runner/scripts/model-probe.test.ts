@@ -1,7 +1,18 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { MODEL_PROBE_OUTPUT_TOKENS } from "../src/model-probe.js"
+import { MODEL_PROBE_OUTPUT_TOKENS, sanitizeModelError } from "../src/model-probe.js"
+import { ModelError } from "../src/model.js"
 import { modelProbeFixture, type ProbeFixtureMode } from "./model-probe-fixture.js"
+
+test("probe errors retain a closed vocabulary even when a provider supplies an arbitrary private slug", () => {
+  for (const error of [new ModelError("private-provider-slug", "private provider text", false), new Error("private provider text"), { type: "private-provider-slug" }, null]) {
+    assert.equal(sanitizeModelError(error), "provider_unavailable")
+  }
+  assert.equal(sanitizeModelError(new ModelError("model_http_401", "private", false)), "authentication_failed")
+  assert.equal(sanitizeModelError(new ModelError("model_http_403", "private", false)), "authentication_failed")
+  assert.equal(sanitizeModelError(new ModelError("model_http_402", "private", false)), "payment_required")
+  assert.equal(sanitizeModelError(new ModelError("model_bad_response", "private", false)), "invalid_response")
+})
 
 function record(value: unknown): Record<string, unknown> {
   assert.ok(typeof value === "object" && value !== null && !Array.isArray(value))

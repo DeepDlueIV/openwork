@@ -8,6 +8,17 @@ are refused rather than choosing a provider arbitrarily. A saved organization
 choice always wins, even when unavailable: Workbot never silently replaces it.
 Slack and Automations retain their existing default policy.
 
+## Required correction-safety dependency
+
+Integrate [PR #6147](https://github.com/different-ai/openwork/pull/6147) at
+`fc5f230f3ecf8febfab625bd5fb7ae6b7e8eb63a` **before the Luna default rollout**.
+This branch is stacked on that exact head, without replacing its UI, pending,
+context or correction work. Corrections append instead of deleting earlier
+turns. An earlier successful catalog check is not a safety boundary: the next
+lookup inside `modelFor` can fail. Append-only corrections keep the original
+history and failed correction recoverable even in that race. There is no
+second delete-preflight workaround.
+
 ## Readiness and recovery
 
 Den's existing Manage → Workbot page shows **Default: GPT-6 Luna** and a compact
@@ -61,11 +72,11 @@ green health response. No live provider was contacted to verify this change.
 Before starting a new answer, Workbot checks the actual runner's verified
 catalog for the explicit model. When it cannot verify that model, it does not
 send on a different model. The failure asks the person to have their workspace
-admin check the model. The edit route preflights before removing later turns.
-History reads, files, active turns and stored model choices are not removed by
-this rollout. Turning off `workbotLunaDefault` restores the old next-turn
-routing and hides the new readiness row; it does not clear organization
-metadata or restart conversations. Workbot's existing Den-session cache can
+admin check the model. Corrections use #6147's append-only path, so a lookup
+failure cannot remove the original or later turns. History reads, files,
+active turns and stored model choices are not removed by this rollout. Turning off `workbotLunaDefault` restores the old next-turn
+routing and hides the new readiness row; it does not roll back append-only
+corrections, clear organization metadata or restart conversations. Workbot's existing Den-session cache can
 delay a changed model or rollout by up to 30 seconds. Existing accepted turns retain their
 runner-stored model, including when resumed after interruption.
 
@@ -83,7 +94,7 @@ values or credentials into a PR, log, screenshot, or chat:
 - Workbot's Den connection: `WORKBOT_DEN_API_URL`.
 - Existing cost-exposure controls to review, not change here:
   `HEADLESS_MAX_CONCURRENT_TURNS`, `HEADLESS_MAX_STEPS`,
-  `HEADLESS_MAX_OUTPUT_TOKENS`.
+  `HEADLESS_MAX_OUTPUT_TOKENS`, `HEADLESS_TURN_TIMEOUT_MS`.
 
 Confirm that Den and Workbot point at the same intended runner and that its
 authorized alias really maps to Luna. Confirm the runner default as well:
@@ -124,9 +135,11 @@ and claims no durable per-member spend protection.
 
 Options for the owner:
 
-1. Keep this rollout off until shared-key exposure is explicitly accepted and
-   the actual provider-side cap, alerting and operating limits are confirmed.
-   Those controls are deployment-wide, not member fairness or a hard guarantee.
+1. Keep the **Workbot rollout (`workbot`) off** until shared-key exposure is
+   explicitly accepted and actual provider-side caps, alerting and operating
+   limits are confirmed. Turning off only `workbotLunaDefault` does not cap
+   spend: the earlier runner-model policy still allows answers. Those controls
+   are deployment-wide, not member fairness or a hard monetary guarantee.
 2. Follow up with member-scoped Gateway delegation and reuse its existing
    usage-limit admission/settlement primitives at each inference request.
    Define what greetings and helper work debit and how concurrent overshoot is

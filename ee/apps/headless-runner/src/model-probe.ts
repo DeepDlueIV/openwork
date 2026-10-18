@@ -11,6 +11,16 @@ export type ModelProbeError = "credentials_unavailable" | "authentication_failed
 export type ModelProbeResult = { status: "answered" | "failed"; errorCode: ModelProbeError | null; requestedModel: string; reportedModel: string | null }
 export type ModelProbe = (model: string, signal: AbortSignal) => Promise<ModelProbeResult>
 
+/** Closed vocabulary only: neither a provider error type/code nor its text becomes a diagnostic result. */
+export function sanitizeModelError(error: unknown): ModelProbeError {
+  if (error instanceof ModelError) {
+    if (error.code === "model_http_401" || error.code === "model_http_403") return "authentication_failed"
+    if (error.code === "model_http_402") return "payment_required"
+    if (error.code === "model_bad_response") return "invalid_response"
+  }
+  return "provider_unavailable"
+}
+
 /** The probe never uses a session, runner instructions, tools, files, MCP or member content. */
 export function createModelProbe(config: Config, transport: typeof fetch = fetch): ModelProbe {
   let active = false
@@ -70,12 +80,7 @@ export function createModelProbe(config: Config, transport: typeof fetch = fetch
       return { status: "answered", errorCode: null, requestedModel, reportedModel }
     } catch (error) {
       if (signal.aborted) return failed("timed_out")
-      if (error instanceof ModelError) {
-        if (error.code === "model_http_401" || error.code === "model_http_403") return failed("authentication_failed")
-        if (error.code === "model_http_402") return failed("payment_required")
-        if (error.code === "model_bad_response") return failed("invalid_response")
-      }
-      return failed("provider_unavailable")
+      return failed(sanitizeModelError(error))
     } finally {
       active = false
     }

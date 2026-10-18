@@ -40,10 +40,24 @@ export async function appPresentationHttp(app: AppWeb, resolve: () => Promise<un
       const original = await fetch(params.request.url, { signal: AbortSignal.timeout(10_000) });
       const html = await original.text();
       const relay = 'inner.contentWindow?.postMessage(event.data, "*");';
-      if (!original.ok || !html.includes(relay)) throw new Error("The shipping sandbox relay did not match the bootstrap fixture");
-      const delayed = html.replace(relay, `if (event.data?.method === "ui/notifications/tool-input" || event.data?.method === "ui/notifications/tool-result") {
-        const data = event.data; setTimeout(() => inner.contentWindow?.postMessage(data, "*"), 250);
-      } else { ${relay} }`);
+      const declaration = 'let resourceAssigned = false;';
+      const report = 'window.parent.postMessage(event.data, hostTargetOrigin);';
+      if (!original.ok || ![relay, declaration, report].every(part => html.includes(part))) throw new Error("The shipping sandbox relay did not match the bootstrap fixture");
+      // Hold real launch messages until the real generated runtime has reported
+      // a pre-result render error. A fixed delay cannot prove that risky state.
+      const delayed = html.replace(declaration, `${declaration} let heldLaunch = []; let bootstrapSeen = false;`)
+        .replace(relay, `if (!bootstrapSeen && (event.data?.method === "ui/notifications/tool-input" || event.data?.method === "ui/notifications/tool-result")) {
+          heldLaunch.push(event.data);
+        } else { ${relay} }`)
+        .replace(report, `if (event.data?.method === "notifications/message" && event.data.params?.logger === "generated-mcp-app"
+          && event.data.params?.data?.hasLaunchResult === false) {
+          bootstrapSeen = true;
+          ${report}
+          for (const message of heldLaunch) inner.contentWindow?.postMessage(message, "*");
+          heldLaunch = [];
+          return;
+        }
+        ${report}`);
       bootstrapDelayedDocuments++;
       return command("Fetch.fulfillRequest", { requestId, responseCode: original.status,
         responseHeaders: Array.from(original.headers).filter(([name]) => !["content-length", "content-encoding", "transfer-encoding"].includes(name)).map(([name, value]) => ({ name, value })),

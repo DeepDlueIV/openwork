@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as wait } from "node:timers/promises";
 import { evaluate } from "@openwork/cdp";
 import { z } from "zod";
-import type { Seed } from "@openwork/env";
+import { eventually, type Seed } from "@openwork/env";
 import { mcpAppResourceUri } from "@openwork/types/mcp-app";
 import { buildGeneratedMcpApp } from "../../ee/apps/den-api/src/generated-artifact-view-builder.ts";
 import { configureProvider } from "./chat.ts";
@@ -120,7 +120,15 @@ export async function appPresentation(seed: Seed) {
     },
     async warmBrowserCache() { await app.client.send("Network.setCacheDisabled", { cacheDisabled: false }); },
     published: () => witness.toolCalls(),
-    releaseReply: () => witness.releaseAgentReply(APP_REQUEST, 1),
+    releaseReply: async () => {
+      // Open may appear before the engine requests the next model round. Observe
+      // the actual held reply before issuing one release; never race a 404 write.
+      await eventually(() => witness.agentReplyState(APP_REQUEST), {
+        within: 15_000, intervalMs: 100, label: "the model's held final reply",
+        until: state => state.waiting > 0 && !state.complete,
+      });
+      return witness.releaseAgentReply(APP_REQUEST, 1);
+    },
     armFlicker: () => runFlicker("arm"),
     flicker: () => z.object({ upwardJumps: z.number(), downwardMoves: z.number(), samples: z.string() }).parse(JSON.parse(runFlicker("report"))),
     // Read-only observations: actual layout, focus and bounded diagnostic timing.

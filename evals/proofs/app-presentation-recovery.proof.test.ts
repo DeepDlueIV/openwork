@@ -31,7 +31,7 @@ test("a member's generated App recovers from missing bootstrap data without bein
     expect(bootstrap.length).toBeGreaterThan(0);
     expect(resolutions).toHaveLength(1);
     expect(world.bootstrapDelayedDocuments()).toBe(1);
-    evidence.recordAssertionEvidence("An actual pre-result React failure recovers without retrying or re-resolving", `shipping proxy documents with a 250ms launch-delivery fault=${world.bootstrapDelayedDocuments()}; actual bootstrap events=${bootstrap.length}; resource resolutions=${resolutions.length}; delivered heading visible; no Retry; event counts are not latency`, bootstrap.length > 0 && resolutions.length === 1 && world.bootstrapDelayedDocuments() === 1);
+    evidence.recordAssertionEvidence("An actual pre-result React failure recovers without retrying or re-resolving", `shipping proxy documents holding launch delivery until an actual pre-result error=${world.bootstrapDelayedDocuments()}; actual bootstrap events=${bootstrap.length}; resource resolutions=${resolutions.length}; delivered heading visible; no Retry; event counts are not latency`, bootstrap.length > 0 && resolutions.length === 1 && world.bootstrapDelayedDocuments() === 1);
     await user.screenshot();
   });
   await step("the assistant can finish without replacing the recovered view", async () => {
@@ -96,9 +96,15 @@ test("a member's saved fallback is masked after access is denied but retained du
     await user.click({ role: "button", label: /^Retry$/ });
     await user.see({ text: "Unavailable" });
     await user.notSee({ text: APP_FALLBACK });
+    const beforeRemount = world.resolutions().length;
+    await user.click("Close panel");
+    await user.click({ role: "button", label: "Open preview" });
+    await user.see({ text: "Unavailable" });
+    await user.notSee({ text: APP_FALLBACK });
     const available = await fallbackCount();
     expect(available).toBe(0);
-    evidence.recordAssertionEvidence("Retry does not clear a known denial without fresh successful authorization", `HTTP 401 after the known denial; fallback count=${available}`, available === 0);
+    expect(world.resolutions()).toHaveLength(beforeRemount);
+    evidence.recordAssertionEvidence("Retry and panel remount do not clear a known denial without fresh authorization", `HTTP 401 after known denial; panel closed/reopened; cached transient response made no new resource read (${beforeRemount} before/${world.resolutions().length} after); fallback count=${available}`, available === 0 && world.resolutions().length === beforeRemount);
     await user.screenshot();
   });
   await step("fresh successful discovery restores the permitted view and fallback", async () => {
@@ -108,7 +114,7 @@ test("a member's saved fallback is masked after access is denied but retained du
     await user.see({ text: APP_FALLBACK });
     const available = await fallbackCount();
     expect(available).toBe(1);
-    evidence.recordAssertionEvidence("Only a new allowed resource response restores the saved text", `fresh discovery and read completed; fallback count=${available}`, available === 1);
+    evidence.recordAssertionEvidence("Only a new allowed resource response restores the saved text", `fresh resource authorization and permitted read/recheck completed; fallback count=${available}`, available === 1);
     await user.screenshot();
     await world.releaseReply();
   });

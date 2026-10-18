@@ -31,9 +31,10 @@ runner instructions, tools, MCP credentials, files, memory or a conversation.
 It uses the existing runner service token and configured model key, resolves
 the saved organization default on the server, and accepts only an empty browser
 request. Node and Worker hosts use the same probe; Workers do not create or
-enter a conversation cell. No chat, result or response text is persisted. Only
-status, an allowlisted error code and requested/provider-reported model IDs
-are returned; raw provider errors, answer text and credentials are discarded.
+enter a conversation cell. No chat or answer text is persisted; the completion
+indicator stays local to the page. Only status, an allowlisted error code and
+requested/provider-reported model IDs are returned; raw provider errors,
+answer text and credentials are discarded.
 The IDs are available under the inline Test details disclosure.
 
 The completion has an eight-second deadline, a 32-output-token request cap,

@@ -86,6 +86,19 @@ test("provider-defined error slugs are bucketed, not copied into telemetry", asy
   } finally { world.close() }
 })
 
+test("a provider cannot reflect the model key into model telemetry", async () => {
+  const world = setup({ complete: async () => ({ text: "answer", model: "test-key", toolCalls: [], usage }) })
+  try {
+    world.runner.send({ sessionId, messageId: "wb_hello", prompt: "private prompt", credentials: { mcpToken: "member-token" } })
+    await world.runner.idle()
+    const outcome = world.facts.find((fact) => fact.event === "completed")
+    assert.ok(outcome?.event === "completed")
+    assert.equal(outcome.model, "unreported")
+    assert.notEqual(outcome.modelSource, "response")
+    assert.equal(JSON.stringify(world.facts).includes("test-key"), false)
+  } finally { world.close() }
+})
+
 test("model adapters keep the provider-reported model for both protocols and streams", async () => {
   for (const stream of [false, true]) {
     const request = { system: "test", messages: [], tools: [], model: "requested-alias", apiKey: "test-key", signal: new AbortController().signal, ...(stream ? { onText: () => undefined } : {}) }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { telemetryFailureCode } from "@openwork-ee/headless-protocol"
+import { telemetryFailureCode, telemetryModelId } from "@openwork-ee/headless-protocol"
 import type { ErrorReporter } from "./error-reporting.js"
 import { isWorkbotTurn, type WorkbotTurnFact } from "./workbot-telemetry.js"
 import type { SessionEvents } from "./events.js"
@@ -338,19 +338,23 @@ export class Runner {
 
   constructor(private readonly options: RunnerOptions) {}
 
-  private reportWorkbot(fact: WorkbotTurnFact, token: string | undefined) {
+  private reportWorkbot(fact: WorkbotTurnFact, token: string | undefined, modelApiKey?: string) {
     if (!token || !this.options.workbotTelemetry || !isWorkbotTurn(fact.sessionId, fact.messageId)) return
-    const report = Promise.resolve().then(() => this.options.workbotTelemetry?.(fact, token)).catch(() => undefined).then(() => undefined)
+    const privateValues = [this.options.defaultModelApiKey, modelApiKey, token].filter((value): value is string => typeof value === "string")
+    const model = telemetryModelId(fact.model, privateValues)
+    const safeFact: WorkbotTurnFact = fact.event === "accepted" ? { ...fact, model: model ?? "unreported" }
+      : { ...fact, model: model ?? "unreported", modelSource: model ? fact.modelSource : "configured" }
+    const report = Promise.resolve().then(() => this.options.workbotTelemetry?.(safeFact, token)).catch(() => undefined).then(() => undefined)
     this.pendingTelemetry.add(report)
     void report.finally(() => this.pendingTelemetry.delete(report))
   }
 
-  private reportWorkbotOutcome(turn: Turn | null, token: string | undefined, answeredModel?: string) {
+  private reportWorkbotOutcome(turn: Turn | null, token: string | undefined, answeredModel?: string, modelApiKey?: string) {
     if (!turn || !["completed", "failed", "aborted"].includes(turn.status) || (turn.messageId !== "wb_hello" && turn.status !== "completed")) return
     const event = turn.status === "completed" ? "completed" : turn.status === "aborted" ? "aborted" : "failed"
     this.reportWorkbot({ event, sessionId: turn.sessionId, messageId: turn.messageId, timestamp: turn.updatedAt, attempt: turn.createdAt,
       model: answeredModel ?? turn.model ?? this.options.defaultModel, modelSource: answeredModel ? "response" : "configured",
-      errorCode: turn.error ? telemetryFailureCode(turn.error) : null }, token)
+      errorCode: turn.error ? telemetryFailureCode(turn.error) : null }, token, modelApiKey)
   }
 
   /**
@@ -418,7 +422,7 @@ export class Runner {
     if (!turn) throw new Error("turn_missing_after_admission")
     if (state === "accepted") this.reportWorkbot({ event: "accepted", sessionId: input.sessionId, messageId: input.messageId,
       timestamp: turn.createdAt, model: turn.model ?? this.options.defaultModel, attachmentCount: input.attachments?.length ?? 0,
-      hasContext: input.messageId !== "wb_hello" && input.credentials.readOnly === true }, input.credentials.mcpToken)
+      hasContext: input.messageId !== "wb_hello" && input.credentials.readOnly === true }, input.credentials.mcpToken, input.credentials.modelApiKey)
     if (input.interrupt && turn.kind === undefined) this.supersede(input.sessionId, input.messageId)
     // Resuming a task or a report keeps it in its lane.
     this.enqueue({ sessionId: input.sessionId, messageId: input.messageId, kind: turn.kind ?? "message" }, { credentials: input.credentials, at: Date.now() })
@@ -448,10 +452,10 @@ export class Runner {
       const job = this.queue[index]
       if (!matches(job)) continue
       this.queue.splice(index, 1)
-      const token = this.credentials.get(`${job.sessionId}:${job.messageId}`)?.credentials.mcpToken
+      const credentials = this.credentials.get(`${job.sessionId}:${job.messageId}`)?.credentials
       this.credentials.delete(`${job.sessionId}:${job.messageId}`)
       this.options.store.setTurnStatus(job.sessionId, job.messageId, "aborted")
-      this.reportWorkbotOutcome(this.options.store.getTurn(job.sessionId, job.messageId), token)
+      this.reportWorkbotOutcome(this.options.store.getTurn(job.sessionId, job.messageId), credentials?.mcpToken, undefined, credentials?.modelApiKey)
       stopped = true
     }
     // A task paused for fresh credentials is in neither place; stopping it means it won't be resumed.
@@ -889,7 +893,7 @@ export class Runner {
         console.error("[headless-runner] turn failed", { sessionId, messageId, error: error instanceof Error ? error.message : "unknown" })
       }
     } finally {
-      this.reportWorkbotOutcome(store.getTurn(sessionId, messageId), credentials.mcpToken, answeredModel)
+      this.reportWorkbotOutcome(store.getTurn(sessionId, messageId), credentials.mcpToken, answeredModel, credentials.modelApiKey)
       clearTimeout(timeout)
       await tools?.close()
       // A no-op for conversations whose computer never started; pauses one that did, even if since switched off.

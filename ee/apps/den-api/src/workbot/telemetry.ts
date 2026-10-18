@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto"
 import { sql } from "@openwork-ee/den-db/drizzle"
 import { TelemetryEventTable, TelemetrySessionDimensionTable } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
-import { headlessRunnerConfig, telemetryFailureCode } from "@openwork-ee/headless-protocol"
+import { headlessRunnerConfig, telemetryFailureCode, telemetryModelId } from "@openwork-ee/headless-protocol"
 import { z } from "zod"
 import { db } from "../db.js"
 
@@ -33,7 +33,7 @@ type Facts = {
   has_context?: boolean
   error_code?: string
   model?: string
-  model_source?: "response" | "configured"
+  model_source?: "response" | "configured" | "unknown"
   connection_id?: string
   app_id?: string
 }
@@ -111,17 +111,18 @@ export async function recordWorkbotTelemetry(actor: WorkbotTelemetryActor, event
   }
   const greeting = event.messageId === "wb_hello"
   if (greeting && event.sessionId !== workbotMainSession(actor)) return
+  const model = telemetryModelId(event.model)
   if (event.event === "accepted") {
-    if (greeting) return recordWorkbotEvent(actor, "workbot.greeting_started", "first", { ready_count: await readyCount().catch(() => null), model: event.model }, event.timestamp)
+    if (greeting) return recordWorkbotEvent(actor, "workbot.greeting_started", "first", { ready_count: await readyCount().catch(() => null), ...(model ? { model } : {}) }, event.timestamp)
     return recordWorkbotEvent(actor, "workbot.message_sent", `${event.sessionId}:${event.messageId}`, {
-      attachment_count: event.attachmentCount, chat: event.sessionId.startsWith("hs_wbs_") ? "side" : "main", has_context: event.hasContext, model: event.model,
+      attachment_count: event.attachmentCount, chat: event.sessionId.startsWith("hs_wbs_") ? "side" : "main", has_context: event.hasContext, ...(model ? { model } : {}),
     }, event.timestamp)
   }
-  if (event.event === "completed") return recordWorkbotEvent(actor, greeting ? "workbot.greeting_completed" : "workbot.turn_completed", greeting ? "first" : `${event.sessionId}:${event.messageId}`, { model: event.model, model_source: event.modelSource }, event.timestamp)
+  if (event.event === "completed") return recordWorkbotEvent(actor, greeting ? "workbot.greeting_completed" : "workbot.turn_completed", greeting ? "first" : `${event.sessionId}:${event.messageId}`, { ...(model ? { model } : {}), model_source: model ? event.modelSource : "unknown" }, event.timestamp)
   if (!greeting) return
   const errorCode = telemetryFailureCode(event.errorCode ?? (event.event === "aborted" ? "aborted" : "runner_error"))
   return recordWorkbotEvent(actor, "workbot.greeting_failed", `${event.attempt}:${event.timestamp}:${errorCode}`, {
-    model: event.model, error_code: errorCode,
+    ...(model ? { model } : {}), error_code: errorCode,
   }, event.timestamp)
 }
 

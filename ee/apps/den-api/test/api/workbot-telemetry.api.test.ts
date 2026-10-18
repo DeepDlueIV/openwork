@@ -58,6 +58,7 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
   assert.equal((await call({ ...failed, errorCode: "provider text includes an email@example.test" })).status, 400)
   assert.equal((await call({ ...failed, event: "completed", timestamp: timestamp + 2, errorCode: null })).status, 204)
   assert.equal((await call({ ...failed, event: "completed", timestamp: timestamp + 2, errorCode: null })).status, 204)
+  assert.equal((await call({ ...failed, event: "completed", timestamp: timestamp + 5, messageId: "wb_private0001", model: "sk-private-model-marker", modelSource: "response", errorCode: null })).status, 204)
   assert.equal((await call({ ...accepted, timestamp: timestamp + 3, messageId: "wb_message0001", attachmentCount: 2, hasContext: true })).status, 204)
   assert.equal((await call({ ...accepted, timestamp: timestamp + 3, messageId: "wb_message0001", attachmentCount: 2, hasContext: true })).status, 204)
   // A greeting for another identity's deterministic conversation cannot become this person's greeting.
@@ -74,8 +75,11 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
     attachment_count: 2, chat: "main", has_context: true, model: "test-answer-model",
   })
   const raw = JSON.stringify({ stored, dimensions })
-  for (const forbidden of [workspace.owner.email, teammate.email, "private-message-must-never-be-stored", "private_marker", token, service]) assert.equal(raw.includes(forbidden), false)
+  for (const forbidden of [workspace.owner.email, teammate.email, "private-message-must-never-be-stored", "private_marker", "sk-private-model-marker", token, service]) assert.equal(raw.includes(forbidden), false)
   assert.ok(facts.some((row) => row.metadata?.error_code === "model_stream_error"), "unrecognized provider error types become a server-owned bucket")
+  const unreported = facts.find((row) => row.dimension_value === "workbot.turn_completed")
+  assert.equal(unreported?.metadata?.model_source, "unknown")
+  assert.equal(Object.hasOwn(unreported?.metadata ?? {}, "model"), false, "credential-like identities are omitted, not stored as model IDs")
 
   // Ordinary telemetry ingest must not let a signed-in client forge server Workbot outcomes or source.
   const forged = await den.as(workspace.owner, workspace.orgId)("POST", "/v1/telemetry/ingest", { events: [

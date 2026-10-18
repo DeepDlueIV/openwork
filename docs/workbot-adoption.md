@@ -89,7 +89,7 @@ slug). Do not join on label or assume these events share a session id.
 
 Metadata is typed and allowlisted: `ready_count`, `attachment_count`,
 `chat` (`main`/`side`), `has_context`, `error_code`, `model`,
-`model_source` (`response`/`configured`), `connection_id`, `app_id`.
+`model_source` (`response`/`configured`/`unknown`), `connection_id`, `app_id`.
 `has_context` follows the host's validated contextual-turn policy, not a marker
 someone can type into a message. Not every fact exists on every event. Optional model dimensions use
 `dimension_type = 'model'` and the model id as value/label. Failure grouping
@@ -97,7 +97,10 @@ prefers the fixed metadata `model`, falling back to the model dimension value;
 missing error/model stays `null`. Failure codes use a shared, closed server-owned
 vocabulary (plus numeric HTTP status codes); unknown provider-defined error types
 are bucketed, never copied into telemetry even when they look like short slugs.
-The report extracts only the fields it uses, not the metadata object or dimension labels.
+Credential-like or unreportable model identifiers are omitted, with an unknown
+source, rather than collected as model data. The runner also rejects any identity
+reflecting its known model key or turn token before delivery. The report extracts
+only the fields it uses, not the metadata object or dimension labels.
 
 A nonnegative integer `ready_count` is a successful ready-connection probe.
 **Null/missing means the probe was unavailable, not zero.** A positive count on

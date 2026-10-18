@@ -266,7 +266,7 @@ export function CalendarPage(props: {
   }
 
   const goToday = () => updateParams((params) => { params.delete("date") })
-  const noAutomations = (automationItems ?? []).every((item) => item.automation.state === "archived")
+  const noAutomations = listQuery.data !== undefined && !listQuery.hasNextPage && !listQuery.isError && listQuery.data.items.every((item) => item.automation.state === "archived")
   const providersOffered = PROVIDERS.filter((provider) => presence[provider]?.presence !== "absent")
 
   return (
@@ -419,7 +419,7 @@ export function CalendarPage(props: {
           {noAutomations && layers.automations ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
               <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-2.5 text-sm shadow-[var(--dls-card-shadow)]" data-calendar-empty>
-                <span>No automations yet.</span>
+                <span>No active automations.</span>
                 <Button size="sm" onClick={() => navigate("/automations?create=1")}>New automation</Button>
               </div>
             </div>

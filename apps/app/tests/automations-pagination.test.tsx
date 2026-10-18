@@ -73,10 +73,20 @@ test("a failed continuation preserves the first page and Retry reaches item 101 
     expect(container.querySelector("[data-complete]")?.textContent).toBe("true");
     expect(requests.filter(value => value.includes("cursor=cursor_100"))).toHaveLength(2);
     for (const status of [401, 403]) {
+      const detailKey = [...context.queryRoot, "detail", "automation_0"];
+      const meetingKey = [...context.queryRoot, "meetings", "google"];
+      queryClient.setQueryDefaults(detailKey, { gcTime: Infinity });
+      queryClient.setQueryDefaults(meetingKey, { gcTime: Infinity });
+      queryClient.setQueryData(detailKey, { instructions: "Previously authorized instructions" });
+      queryClient.setQueryData(meetingKey, { title: "Previously authorized meeting" });
+      expect(queryClient.getQueryData(detailKey)).toEqual({ instructions: "Previously authorized instructions" });
+      expect(queryClient.getQueryData(meetingKey)).toEqual({ title: "Previously authorized meeting" });
       nextFailure = status === 401 ? 401 : 403;
       await act(async () => container.querySelector<HTMLButtonElement>("[data-refresh]")?.click());
       await until(() => container.textContent?.includes("Access blocked") === true);
       expect(container.querySelector("[data-loaded]")?.textContent).toBe("0");
+      expect(queryClient.getQueryData(detailKey)).toBeUndefined();
+      expect(queryClient.getQueryData(meetingKey)).toBeUndefined();
       nextFailure = 503;
       await act(async () => container.querySelector<HTMLButtonElement>("[data-refresh]")?.click());
       await until(() => container.textContent?.includes("Could not verify more") === true);

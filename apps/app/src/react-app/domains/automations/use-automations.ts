@@ -55,6 +55,7 @@ export function useAutomationsDenContext(): AutomationsDenContext {
 type AutomationInventoryPage = AutomationList & { accessDenied?: boolean }
 
 export function useAutomationListQuery(context: AutomationsDenContext) {
+  const queryClient = useQueryClient()
   const query = useInfiniteQuery({
     queryKey: [...context.queryRoot, "list"],
     initialPageParam: "",
@@ -67,7 +68,12 @@ export function useAutomationListQuery(context: AutomationsDenContext) {
         // Cache the denial as a page, not only a transient query error. A later network failure must
         // not uncover previously cached names/instructions in another observer (including Calendar).
         // Only a successful authorized refetch replacing every page can remove this barrier.
-        if (error instanceof DenApiError && (error.status === 401 || error.status === 403)) return { items: [], nextCursor: null, accessDenied: true }
+        if (error instanceof DenApiError && (error.status === 401 || error.status === 403)) {
+          // Retain only the denial barrier. Details, receipts, models and meetings need their own fresh
+          // authorized reads before recovery can expose them again, even when their staleTime has not elapsed.
+          queryClient.removeQueries({ queryKey: context.queryRoot, predicate: (entry) => entry.queryKey.length !== context.queryRoot.length + 1 || entry.queryKey[context.queryRoot.length] !== "list" })
+          return { items: [], nextCursor: null, accessDenied: true }
+        }
         throw error
       }
     },

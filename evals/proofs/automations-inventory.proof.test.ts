@@ -63,6 +63,7 @@ test("a member keeps a cached calendar through a partial refresh but cannot see 
     await user.screenshot();
   });
   await step("only a fresh authorized read restores the inventory", async () => {
+    const before = (await world.requests()).length;
     await world.authorize();
     await user.click({ role: "button", label: "Retry" });
     await user.see({ role: "button", label: /Inventory brief 000/ });
@@ -72,7 +73,9 @@ test("a member keeps a cached calendar through a partial refresh but cannot see 
     await user.see({ role: "heading", label: "Inventory brief 000" });
     await user.notSee({ role: "heading", label: "Automation access is blocked" });
     expect((await probe.dom("[data-automation-id]")).elements).toHaveLength(20);
-    evidence.recordAssertionEvidence("Authorized recovery returns one bounded page", "Fresh first and second pages return 200; 120 loaded, 20 mounted cards", (await probe.dom("[data-automation-id]")).elements.length === 20);
+    const freshMeeting = (await world.requests()).slice(before).some(row => row.path.includes("google-workspace/calendar-events") && row.status === 200);
+    expect(freshMeeting).toBe(true);
+    evidence.recordAssertionEvidence("Authorized recovery requires fresh inventory and meeting reads", "Fresh inventory and meeting reads return 200; 120 loaded, 20 mounted cards", freshMeeting && (await probe.dom("[data-automation-id]")).elements.length === 20);
     await user.screenshot();
   });
 });

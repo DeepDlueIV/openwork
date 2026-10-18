@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import type { AutomationList, AutomationRun } from "@openwork/types/automations"
 
 import { createCalendarAdapter, type CalendarTransport } from "./adapters"
-import type { CalendarConnectionError, CalendarProviderId, CalendarRangeRead } from "./event"
+import { CalendarConnectionError, type CalendarProviderId, type CalendarRangeRead } from "./event"
 import { readRunsInRange, type AutomationRunsSource, type RunsInRange } from "./runs"
 
 /**
@@ -37,9 +37,19 @@ export function useMeetingsQuery(input: {
   range: { start: number; end: number }
   enabled: boolean
 }) {
-  return useQuery<CalendarRangeRead, CalendarConnectionError>({
+  const query = useQuery<CalendarRangeRead | { accessError: CalendarConnectionError }, CalendarConnectionError>({
     queryKey: [...input.keyPrefix, "meetings", input.transport?.kind ?? "none", input.provider, input.range.start, input.range.end],
-    queryFn: ({ signal }) => createCalendarAdapter(input.provider, input.transport!).readRange({ ...input.range, signal }),
+    queryFn: async ({ signal }) => {
+      try {
+        return await createCalendarAdapter(input.provider, input.transport!).readRange({ ...input.range, signal })
+      } catch (error) {
+        if (error instanceof CalendarConnectionError && ["policy_blocked", "permission_missing", "not_connected", "auth_expired"].includes(error.kind)) {
+          // Persist the denial with the read, so a later network error cannot reveal cached meetings.
+          return { accessError: error }
+        }
+        throw error
+      }
+    },
     enabled: input.enabled && input.transport !== null,
     staleTime: 2 * 60_000,
     refetchInterval: 5 * 60_000,
@@ -47,4 +57,7 @@ export function useMeetingsQuery(input: {
     retry: (failureCount, error) => error.retryable && failureCount < 2,
     retryDelay: (attempt) => Math.min(30_000, 2_000 * 2 ** attempt),
   })
+  const accessError = query.data && "accessError" in query.data ? query.data.accessError : undefined
+  const data = query.data && !("accessError" in query.data) ? query.data : undefined
+  return { ...query, data, error: accessError ?? query.error, isError: accessError ? true : query.isError, isSuccess: accessError ? false : query.isSuccess, status: accessError ? "error" : query.status }
 }

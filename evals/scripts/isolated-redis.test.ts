@@ -1,4 +1,4 @@
-import { createServer } from "node:net";
+import { createServer, type Socket } from "node:net";
 import { expect, test, type TestContext } from "vitest";
 import { SkipError } from "@openwork/env";
 import { isolatedRedis, isolatedRedisImage, isolatedRedisPing } from "../worlds/isolated-redis.ts";
@@ -26,12 +26,16 @@ test("the Docker fallback uses the existing digest-pinned local Den image", asyn
   expect(await isolatedRedisImage()).toMatch(/^redis:[^\s]+@sha256:[a-f0-9]{64}$/);
 });
 
-test("an open TCP port without a Redis PONG is not readiness", async () => {
-  const server = createServer(socket => socket.end("+NOT_REDIS\r\n"));
+test("an open TCP port without a Redis PONG is not readiness", { timeout: 5_000 }, async () => {
+  const sockets: Socket[] = [];
+  const server = createServer(socket => { sockets.push(socket); socket.resume(); socket.end("+NOT_REDIS\r\n"); });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   try {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("TCP fixture has no loopback port");
     expect(await isolatedRedisPing(address.port)).toBe(false);
-  } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
 });

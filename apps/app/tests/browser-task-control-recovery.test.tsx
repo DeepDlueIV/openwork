@@ -79,6 +79,21 @@ test("Resume failure leaves human control intact and recovery is scoped to its c
   expect(calls).toEqual([{ tabId: "tab_owned", action: "resume" }])
 })
 
+test("an accepted request settles while off screen but still waits for native control confirmation", async () => {
+  let accept: () => void = () => {}
+  control = () => new Promise((resolve) => { accept = resolve })
+  await render()
+  await click("Take over")
+  await render({ ...tab, id: "tab_other", ownerSessionId: "ses_other" }, "ses_other")
+  await act(async () => accept())
+  expect(container.textContent).not.toContain("Control requested")
+  await render()
+  expect(container.textContent).toContain("Control requested · waiting for the browser")
+  expect(container.textContent).not.toContain("You have control")
+  await render({ ...tab, browserTask: { status: "paused", operation: null } })
+  expect(container.textContent).toContain("You have control")
+})
+
 test("an old IPC rejection cannot replace the next conversation's status", async () => {
   let reject: (error: Error) => void = () => {}
   control = () => new Promise((_, refuse) => { reject = refuse })
@@ -87,5 +102,9 @@ test("an old IPC rejection cannot replace the next conversation's status", async
   await render({ ...tab, id: "tab_other", ownerSessionId: "ses_other" }, "ses_other")
   await act(async () => reject(new Error("Old owner refused")))
   expect(container.textContent).not.toContain("Could not take over")
+  expect(container.textContent).not.toContain("Requesting control")
+  await render()
+  const button = [...container.querySelectorAll("button")].find((item) => item.textContent === "Take over")
+  expect(button?.disabled).toBe(false)
   expect(container.textContent).not.toContain("Requesting control")
 })

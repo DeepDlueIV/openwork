@@ -216,11 +216,13 @@ export function BrowserPanelContent({
       const control = getElectronBrowser()?.taskControl;
       if (!control) throw new Error("Browser task control is unavailable.");
       await control(tab.id, action);
-      if (taskRequestRef.current === request && ownerRef.current === failureOwner) setTaskRequest({ owner: failureOwner, action, phase: "accepted" });
+      if (taskRequestRef.current === request) setTaskRequest((current) => current?.owner === failureOwner ? { ...current, phase: "accepted" } : current);
     } catch (error) {
-      if (taskRequestRef.current !== request || ownerRef.current !== failureOwner) return;
-      setTaskRequest(null);
-      reportFailure(action === "pause" ? "Could not take over this browser. Try again." : "Could not resume this browser. Try again.", error);
+      if (taskRequestRef.current !== request) return;
+      // Settle the request even while its conversation is off screen. Leaving
+      // and returning must not revive a permanently pending, disabled control.
+      setTaskRequest((current) => current?.owner === failureOwner ? null : current);
+      if (ownerRef.current === failureOwner) reportFailure(action === "pause" ? "Could not take over this browser. Try again." : "Could not resume this browser. Try again.", error);
     }
   };
 

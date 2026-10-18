@@ -1,5 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+/** Denial markers must be re-readable immediately when their scope is enabled. */
+export const PERMISSION_READ_STALE_TIME = 0;
+
 export const permissionsQueryKeys = {
   all: (orgId: string) => ["permissions", orgId],
   sets: (orgId: string, viewerId?: string) => viewerId === undefined ? ["permissions", orgId, "sets"] : ["permissions", orgId, "sets", viewerId],

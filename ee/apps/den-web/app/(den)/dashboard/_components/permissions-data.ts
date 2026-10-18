@@ -7,7 +7,7 @@ import { getErrorMessage, getReauthRequiredError, requestJson } from "../../_lib
 import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
 import { getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
-import { clearDeniedRoleReads, permissionsQueryKeys } from "./permissions-query-keys";
+import { clearDeniedRoleReads, permissionsQueryKeys, PERMISSION_READ_STALE_TIME } from "./permissions-query-keys";
 
 /**
  * Den API Permissions endpoints (ee/apps/den-api/src/routes/org/permissions.ts).
@@ -241,6 +241,8 @@ function deniedRoleRead(cause: unknown): boolean {
   return cause instanceof PermissionsRequestError && [401, 403, 404].includes(cause.status);
 }
 
+// Re-enabled reads must fetch even when the denial marker was just cached;
+// the dashboard's ordinary freshness window must never strand that barrier.
 export function usePermissionSets(orgId: string | null, enabled = true) {
   const viewerId = usePermissionReadViewer(orgId);
   const client = useQueryClient();
@@ -248,6 +250,7 @@ export function usePermissionSets(orgId: string | null, enabled = true) {
     queryKey: permissionsQueryKeys.sets(orgId ?? "", viewerId),
     enabled: enabled && Boolean(orgId) && Boolean(viewerId),
     retry: false,
+    staleTime: PERMISSION_READ_STALE_TIME,
     refetchOnMount: "always",
     queryFn: async ({ signal }) => {
       try {
@@ -286,6 +289,7 @@ export function usePermissionSet(orgId: string | null, setId: string, enabled = 
     queryKey: permissionsQueryKeys.set(orgId ?? "", setId, viewerId),
     enabled: enabled && Boolean(orgId) && Boolean(setId) && Boolean(viewerId),
     retry: false,
+    staleTime: PERMISSION_READ_STALE_TIME,
     refetchOnMount: "always",
     queryFn: async ({ signal }) => {
       try {
@@ -307,6 +311,7 @@ export function useRoleGrantLocks(orgId: string | null, sets: readonly Permissio
     queryKey: permissionsQueryKeys.set(orgId ?? "", set.id, viewerId),
     enabled: Boolean(orgId) && Boolean(viewerId) && !isOwner,
     retry: false,
+    staleTime: PERMISSION_READ_STALE_TIME,
     refetchOnMount: (): "always" => "always",
     queryFn: async ({ signal }: { signal: AbortSignal }): Promise<PermissionSetDetail | null> => {
       try {

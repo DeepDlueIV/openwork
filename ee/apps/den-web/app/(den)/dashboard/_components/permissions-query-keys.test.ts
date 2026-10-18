@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { QueryClient, QueryObserver, isCancelledError } from "@tanstack/react-query";
-import { clearDeniedRoleReads, permissionsQueryKeys } from "./permissions-query-keys";
+import { clearDeniedRoleReads, permissionsQueryKeys, PERMISSION_READ_STALE_TIME } from "./permissions-query-keys";
 
 test("a denied role read stays masked across remount and network failure, without clearing another viewer", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
@@ -36,5 +36,22 @@ test("a denied role read stays masked across remount and network failure, withou
   await client.fetchQuery({ queryKey: roleA, queryFn: async () => ["fresh authorized response"] });
   assert.deepEqual(client.getQueryData(roleA), ["fresh authorized response"]);
   assert.equal(client.getQueryData(listA), null, "the separate list also needs a fresh authorized read");
+  client.clear();
+});
+
+test("re-enabling a denied detail key fetches authorized data instead of treating null as fresh", { timeout: 1000 }, async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000, gcTime: Infinity } } });
+  const deniedKey = permissionsQueryKeys.set("org", "role", "viewer");
+  client.setQueryData(deniedKey, null);
+  let reads = 0;
+  const read = async () => { reads++; return ["fresh authorized detail"]; };
+  const observer = new QueryObserver<string[] | null>(client, { queryKey: permissionsQueryKeys.set("org", "", "viewer"), enabled: false, staleTime: PERMISSION_READ_STALE_TIME, queryFn: read });
+  let stop: () => void = () => undefined;
+  const restored = new Promise<void>((resolve) => { stop = observer.subscribe((result) => { if (result.data?.[0] === "fresh authorized detail") resolve(); }); });
+  observer.setOptions({ queryKey: deniedKey, enabled: true, staleTime: PERMISSION_READ_STALE_TIME, queryFn: read });
+  await restored;
+  assert.equal(reads, 1);
+  assert.deepEqual(client.getQueryData(deniedKey), ["fresh authorized detail"]);
+  stop();
   client.clear();
 });

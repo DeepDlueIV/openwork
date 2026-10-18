@@ -1030,11 +1030,11 @@ function McpAppFallbackFrame({ part, origin, onStateChange }: McpAppRendererObse
   const fallback = mcpAppTextFallback(part)
   return <>
     {fallback && !accessDenied ? <McpAppTextFallback text={fallback} /> : null}
-    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} accessKey={accessKey} />
+    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} accessKey={accessKey} accessDenied={Boolean(fallback) && accessDenied} />
   </>
 }
 
-function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, accessKey }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin; accessKey: string | null }) {
+function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, accessKey, accessDenied }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin; accessKey: string | null; accessDenied: boolean }) {
   const stagedLoading = useAppBuildProgressEnabled()
   const context = useOptionalMessageList()
   const nextOrigin = surfaceOrigin ?? context?.mcpAppOrigin ?? null
@@ -1104,8 +1104,8 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, acces
   const onStateChangeRef = useRef(onStateChange)
   onStateChangeRef.current = onStateChange
   useLayoutEffect(() => {
-    onStateChangeRef.current?.(origin && result ? "loading" : "unavailable")
-  }, [resolution])
+    onStateChangeRef.current?.(!accessDenied && origin && result ? "loading" : "unavailable")
+  }, [resolution, accessDenied])
 
   useEffect(() => {
     let cancelled = false
@@ -1210,6 +1210,10 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, acces
   if (!origin) return <p role="status">This artifact is missing its conversation origin. Reopen the conversation to use it.</p>
   if (error) return <div style={{ minHeight: heightRef.current }}>
     <McpAppDiagnosticNotice error={error} notice={CHAT_MCP_APP_UNAVAILABLE_NOTICE} onRetry={() => setResolveToken((token) => token + 1)} engine={origin.engine} />
+  </div>
+  if (accessDenied) return <div className="py-3 text-sm text-muted-foreground" style={{ minHeight: heightRef.current }}>
+    <p role="status">Access to this App was denied. Retry to check access.</p>
+    <Button type="button" variant="link" size="xs" className="mt-1 px-0" onClick={() => setResolveToken(token => token + 1)}>{t("common.retry")}</Button>
   </div>
   if (!app || resolvedFor.current !== resolution) return launch && resolvedFor.current !== resolution
     ? mcpAppTextFallback(part) ? <div style={{ minHeight: heightRef.current }}><McpAppLoading /></div>

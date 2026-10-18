@@ -4,6 +4,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import * as features from "../src/react-app/domains/cloud/use-org-feature";
+import * as den from "../src/app/lib/den";
 import { ModelRecoveryNote } from "../src/react-app/domains/session/surface/composer/model-recovery-note";
 import { modelRecoveryChatKey, useModelRecoveryStore } from "../src/react-app/domains/session/surface/model-recovery-store";
 
@@ -76,6 +77,20 @@ test("dismissal affects only this chat", async () => {
 test("an unrelated chat does not inherit the note", async () => {
   record();
   expect((await mount({ sessionId: "chat-b" })).host.textContent).toBe("");
+});
+
+test("a visible side composer verifies return independently of the selected route", async () => {
+  record();
+  useModelRecoveryStore.getState().dismiss(key);
+  const settings = { ...den.readDenSettings(), baseUrl: "https://den.example.test", authToken: "member-token", activeOrgId: "org-a" };
+  const client = den.createDenClient({ baseUrl: settings.baseUrl, token: settings.authToken });
+  const inventory = spyOn(client, "getModelRemovalInventory").mockResolvedValue({ models: [previous, replacement], lockedModels: [] });
+  spyOn(den, "createDenClient").mockReturnValue(client);
+  spyOn(den, "readDenSettings").mockReturnValue(settings);
+  const view = await mount();
+  expect(inventory).toHaveBeenCalledWith("org-a");
+  expect(view.host.textContent).toContain("Claude Opus 4.5 is available again");
+  expect(view.host.textContent).toContain("Switch back");
 });
 
 test("Switch back is offered only after return and restores the prior choice", async () => {

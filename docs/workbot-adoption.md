@@ -37,14 +37,23 @@ the existing session-dimension JSON holds the bounded facts.
 Confirm configuration by **name only** (never paste values into tickets):
 - Den: `DEN_HEADLESS_RUNNER_URL`, `DEN_HEADLESS_RUNNER_TOKEN`.
 - Workbot: `WORKBOT_DEN_API_URL`, `WORKBOT_RUNNER_TOKEN`.
-- Runner: `HEADLESS_MCP_URL`, `HEADLESS_API_TOKEN`.
+- Runner: `HEADLESS_MCP_URL`, `HEADLESS_API_TOKEN`, **`HEADLESS_WORKBOT_DEN_API_URL`**.
+
+`HEADLESS_WORKBOT_DEN_API_URL` is a new, non-secret, explicitly trusted Den API
+origin (HTTPS, with HTTP allowed only on loopback for development). Do not include
+credentials, a path, query or fragment. The runner constructs `/v1/workbot/telemetry`
+on that origin and refuses redirects. Set it on either the Node or cells runner
+before validating adoption. **Unset means no runner admission or outcome events**;
+a generic `HEADLESS_MCP_URL`, even one pointing to Den, never opts into telemetry
+or receives the runner's service credential for it.
 
 The three service-token settings must identify the same existing runner service
-credential; the two Den URLs must address the same Den deployment. The service
-credential plus the turn/member's live MCP token authenticates telemetry. Org
-and member are resolved from that token, never from the payload. The public
-client ingest cannot submit these events or the `workbot` source. No new secret
-or production environment change is required by this code.
+credential. Workbot's Den URL and the runner's explicitly trusted Den origin must
+address the same Den deployment. The service credential plus the turn/member's
+live MCP token authenticates telemetry. Org and member are resolved from that
+token, never from the payload. The public client ingest cannot submit these
+events or the `workbot` source. No new secret is needed; the rollout owner must
+configure the new trusted-origin binding before treating the funnel as complete.
 
 Greeting and message admission/outcome facts originate in the runner, not its
 browser event stream. Workbot records sign-in only after writing the authenticated

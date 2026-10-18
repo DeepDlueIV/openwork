@@ -25,6 +25,13 @@ const optionalText = z
   .optional()
   .transform((value) => value?.trim() || undefined)
 
+const telemetryDenOrigin = safeUrl
+  .refine((value) => {
+    const url = new URL(value)
+    return !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash
+  }, "must be the trusted Den API origin, without credentials, a path, query or fragment")
+  .transform((value) => new URL(value).origin)
+
 const configSchema = z.object({
   HEADLESS_API_TOKEN: z.string().min(32, "HEADLESS_API_TOKEN must be at least 32 characters"),
   HEADLESS_PORT: z.coerce.number().int().min(1).max(65_535).default(8795),
@@ -34,6 +41,8 @@ const configSchema = z.object({
   HEADLESS_MODEL: z.string().min(1),
   HEADLESS_MODEL_API_KEY: z.string().min(1).optional(),
   HEADLESS_MCP_URL: safeUrl.optional(),
+  /** Explicit trusted Den destination; never inferred from the generic MCP host. Unset: no Workbot telemetry. */
+  HEADLESS_WORKBOT_DEN_API_URL: optionalText.pipe(telemetryDenOrigin.optional()),
   HEADLESS_MCP_TOOL_ALLOWLIST: csv,
   HEADLESS_MAX_CONCURRENT_TURNS: z.coerce.number().int().min(1).max(1_000).default(32),
   /** Model calls per turn; 0 means no limit, so a long task is bounded by the turn timeout and Stop instead. */
@@ -107,6 +116,8 @@ export type Config = {
     maxOutputTokens: number
   }
   mcp?: { url: string; toolAllowlist: string[] }
+  /** Constructed only from the separately configured, trusted Den API origin. */
+  workbotTelemetryUrl?: string
   limits: {
     maxConcurrentTurns: number
     maxSteps: number
@@ -145,6 +156,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     },
     mcp: value.HEADLESS_MCP_URL
       ? { url: value.HEADLESS_MCP_URL, toolAllowlist: value.HEADLESS_MCP_TOOL_ALLOWLIST }
+      : undefined,
+    workbotTelemetryUrl: value.HEADLESS_WORKBOT_DEN_API_URL
+      ? new URL("/v1/workbot/telemetry", value.HEADLESS_WORKBOT_DEN_API_URL).toString()
       : undefined,
     limits: {
       maxConcurrentTurns: value.HEADLESS_MAX_CONCURRENT_TURNS,

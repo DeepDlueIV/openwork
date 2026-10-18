@@ -130,7 +130,7 @@ test("the runner reports a completed greeting without a browser, even when sign-
   await new Promise<void>((resolve) => server.once("listening", resolve))
   const address = server.address()
   assert.ok(address && typeof address !== "string")
-  const reporter = workbotTelemetryReporter({ apiToken: service, mcp: { url: `http://127.0.0.1:${address.port}/mcp/agent` } })
+  const reporter = workbotTelemetryReporter({ apiToken: service, workbotTelemetryUrl: `http://127.0.0.1:${address.port}/v1/workbot/telemetry` })
   const runner = new Runner({ store, model: { complete: async () => ({ text: "private greeting response", model: "actual-greeting-model", toolCalls: [], usage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 } }) },
     defaultModel: "requested-model-alias", defaultModelApiKey: "fake-key",
     limits: { maxConcurrentTurns: 1, maxSteps: 2, turnTimeoutMs: 30_000, credentialRefreshMs: 60_000, contextCharBudget: 10_000 }, workbotTelemetry: reporter })

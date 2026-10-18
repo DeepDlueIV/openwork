@@ -130,8 +130,8 @@ test("cached orchestrator re-resolves policy on fresh launch, wake, and restored
   assertRollout(scripts.at(-1) ?? "", policy)
 
   // A checkpoint restored onto a replacement image uses the current policy,
-  // not the value the old sandbox was created with. Explicit OFF blocks
-  // future upgrades without reverting an already-selected engine.
+  // not the value the old sandbox was created with. Explicit OFF lets the
+  // server safely revert only profiles marked as force-upgraded.
   policy = { engineV2ForceUpgrade: false }
   await runtime.stop(provisionInput.workerId)
   store.imageVersions.set(provisionInput.workerId, image.version)

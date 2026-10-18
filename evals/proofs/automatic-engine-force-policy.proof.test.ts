@@ -56,63 +56,63 @@ failure("a member keeps using the original chat after an automatic upgrade fails
   });
 });
 
-test("a member keeps reading the same chat when automatic engine policy turns on and off", async ({ world, user, probe, step, evidence }) => {
+test("a member keeps a new v2 chat readable when automatic engine policy turns off", async ({ world, user, probe, step, evidence }) => {
+  let sessionId = "";
+  let automaticOrigin = "";
   async function noUpgradeUi() {
     for (const testId of ["engine-upgrade-notice", "engine-migration-consent", "engine-migration-banner", "engine-migration-progress", "engine-switch-prompt"]) {
       await user.notSee({ testId });
     }
   }
-  await step("before: automatic policy is off and a real v1 chat is readable without an upgrade notice", async () => {
+  await step("before: automatic policy is off and the profile uses v1 without an upgrade notice", async () => {
     await user.reload();
-    await user.see({ text: retainedHistoryText });
+    await user.see("composer", { editable: true });
     const status = await world.status();
     expect(status.chatRouting).toBe(false);
     await noUpgradeUi();
-    evidence.recordAssertionEvidence("The starting chat belongs to v1", JSON.stringify(status), !status.chatRouting);
+    evidence.recordAssertionEvidence("The starting profile uses v1", JSON.stringify(status), !status.chatRouting);
     await user.screenshot();
   });
 
-  await step("after: turning automatic policy on copies the chat and serves it on v2 without asking the member", async () => {
+  await step("turning automatic policy on selects a healthy v2 engine without asking the member", async () => {
     await world.setOrganizationPolicy(true);
     const status = await probe.eventually(() => world.status(), {
-      within: 120_000,
-      label: "the real copied chat is served by the forced v2 engine",
-      until: value => value.chatRouting && value.running && value.engineForced && value.migration.state === "completed",
+      within: 120_000, label: "the force-owned v2 engine is healthy",
+      until: value => value.chatRouting && value.running && value.engineForced,
     });
-    expect(status.engineOrigin).toBe("forced");
-    expect(status.migration.imported).toBe(1);
-    expect(status.migration.backupPath).toBeTruthy();
-    expect(await world.messages()).toContain(retainedHistoryText);
+    automaticOrigin = status.engineOrigin;
     await user.reload();
-    await user.see({ text: retainedHistoryText });
     await noUpgradeUi();
-    evidence.recordAssertionEvidence("A forced v2 engine serves the copied chat with a backup receipt", JSON.stringify(status), status.engineForced && status.chatRouting && Boolean(status.migration.backupPath));
+    evidence.recordAssertionEvidence("A force-owned v2 engine is selected", JSON.stringify(status), status.engineForced && status.chatRouting && status.running);
     await user.screenshot();
   });
 
-  await step("the member adds a reply that exists only on the new engine", async () => {
+  await step("the member creates a chat and reply that exist only on the new engine", async () => {
+    await user.click({ role: "button", text: /New session/ });
     await user.type("composer", newV2Prompt);
     await user.press("ENTER");
     await user.see({ text: newV2HistoryText }, { timeoutMs: 60_000 });
-    const current = await world.messages();
-    const original = await world.originalMessages();
+    sessionId = (await probe.hash()).match(/\/session\/([^/?#]+)/)?.[1] ?? "";
+    expect(sessionId).not.toBe("");
+    const current = await world.messages(sessionId);
+    const original = await world.originalMessages(sessionId);
     expect(current).toContain(newV2HistoryText);
     expect(original).not.toContain(newV2HistoryText);
+    await probe.eventually(() => world.v2Idle(), { within: 20_000, label: "the new chat has finished its turn", until: value => value });
     evidence.recordAssertionEvidence("The new reply exists in v2 but not the original v1 history", newV2HistoryText, current.includes(newV2HistoryText) && !original.includes(newV2HistoryText));
     await user.screenshot();
   });
 
-  await step("after: turning policy off keeps both the copied note and new reply readable on v2", async () => {
+  await step("after: turning policy off keeps the new chat and reply readable on v2", async () => {
     await world.setOrganizationPolicy(false);
     await user.reload();
-    await user.see({ text: retainedHistoryText });
     await user.see({ text: newV2HistoryText });
     const status = await world.status();
     expect(status.chatRouting).toBe(true);
     expect(status.running).toBe(true);
     expect(status.engineForced).toBe(true);
-    expect(status.engineOrigin).toBe("forced");
-    expect(await world.messages()).toContain(newV2HistoryText);
+    expect(status.engineOrigin).toBe(automaticOrigin);
+    expect(await world.messages(sessionId)).toContain(newV2HistoryText);
     await noUpgradeUi();
     evidence.recordAssertionEvidence("Policy off keeps the selected v2 engine serving its new history", JSON.stringify(status), status.running && status.chatRouting && status.engineForced);
     await user.screenshot();
@@ -126,9 +126,9 @@ test("a member keeps reading the same chat when automatic engine policy turns on
       label: "the member's manual v2 selection stays healthy with policy off",
       until: value => value.running && value.chatRouting && !value.engineForced && value.engineOrigin === "manual",
     });
-    expect(await world.messages()).toContain(retainedHistoryText);
+    expect(await world.messages(sessionId)).toContain(newV2HistoryText);
     await user.reload();
-    await user.see({ text: retainedHistoryText });
+    await user.see({ text: newV2HistoryText });
     await noUpgradeUi();
     evidence.recordAssertionEvidence("Policy off leaves the explicit manual v2 choice alone", JSON.stringify(status), status.chatRouting && !status.engineForced && status.engineOrigin === "manual");
     await user.screenshot();

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Seed } from "@openwork/env";
-import { configureProvider } from "./chat.ts";
 import { browserScript } from "@openwork/cdp";
+import { configureProvider } from "./chat.ts";
 
 export const newV2HistoryText = "This reply was written only after switching to OpenCode v2.";
 export const newV2Prompt = "Add the new engine checkpoint to this project note.";
@@ -14,7 +14,6 @@ interface EngineStatus {
   engineForced: boolean;
   chatRouting: boolean;
   running: boolean;
-  version?: string;
   automaticRetryAt?: number;
   migration: { state: string; imported: number; total: number; backupPath?: string };
 }
@@ -39,13 +38,12 @@ async function engineForcePolicyWorld(seed: Seed, options: { unavailableV2?: boo
       { promptMarker: continuedWorkPrompt, finalReply: continuedWorkText, steps: [] },
     ] }) },
     env: {
-      ...(options.unavailableV2 ? { OPENWORK_OPENCODE2_BIN: "/unavailable-fixture-engine/opencode2" } : {}),
-      OPENWORK_TOKEN: token,
-      OPENWORK_HOST_TOKEN: hostToken,
-      OPENWORK_ENGINE_V2_PREVIEW: "",
-      OPENWORK_ENGINE_FORCE_POLICY: "1",
-      OPENWORK_ENGINE_AUTO_UPGRADE: "0",
-      OPENWORK_FRESH_INSTALL_ENGINE: "v1",
+      // An executable that exits unsuccessfully exercises the real startup
+      // failure path on both Bun and Node, without contacting a provider.
+      ...(options.unavailableV2 ? { OPENWORK_OPENCODE2_BIN: "/bin/false" } : {}),
+      OPENWORK_TOKEN: token, OPENWORK_HOST_TOKEN: hostToken,
+      OPENWORK_ENGINE_V2_PREVIEW: "", OPENWORK_ENGINE_FORCE_POLICY: "1",
+      OPENWORK_ENGINE_AUTO_UPGRADE: "0", OPENWORK_FRESH_INSTALL_ENGINE: "v1",
     },
   });
   const workspace = await seed.workspace(app, app.workspaceRoot);
@@ -55,43 +53,46 @@ async function engineForcePolicyWorld(seed: Seed, options: { unavailableV2?: boo
     provider: { "engine-history": { npm: "@ai-sdk/openai-compatible", name: "History model",
       options: { baseURL: `${model.url}/v1`, apiKey: "sk-local-history" }, models: { "history-model": { name: "History model" } } } },
   }, "v1");
-  const session = await seed.session(app, { title: "A project note that survives engine policy changes" });
+
   async function request(path: string, init: { method?: string; body?: string } = {}, expectedStatus?: number) {
-    // App-web's host URL is sandbox-loopback on remote placements. Use the
-    // browser's network, not the runner's localhost. This escape hatch calls
-    // shipping authenticated HTTP APIs only; it never reads/writes UI state.
+    // The host URL is sandbox-loopback remotely. This escape hatch uses the
+    // browser's network for shipping HTTP APIs only, never internal UI state.
     const result = await seed.evalIn(app, browserScript(async (url, token, hostToken, init) => {
       const response = await fetch(url, { ...init, headers: {
         Authorization: `Bearer ${token}`, "x-openwork-host-token": hostToken, "Content-Type": "application/json",
       } });
       return { status: response.status, text: await response.text() };
     }, [`${app.openworkUrl}${path}`, token, hostToken, init]), { awaitPromise: true, timeoutMs: 30_000 });
-    if (result.status !== expectedStatus && (result.status < 200 || result.status >= 300)) throw new Error(`${init.method ?? "GET"} ${path}: ${result.status} ${result.text}`);
+    if (result.status !== expectedStatus && (result.status < 200 || result.status >= 300)) {
+      throw new Error(`${init.method ?? "GET"} ${path}: ${result.status} ${result.text}`);
+    }
     return new Response(result.status === 204 ? null : result.text, { status: result.status });
   }
-  const sessionPath = `/workspace/${workspace.workspaceId}/opencode/session/${session.sessionId}`;
-  // The real v1 prompt API supports noReply: arrange persisted user history
-  // without a provider call or a mock engine, before the person's first act.
-  await request(`${sessionPath}/message`, {
-    method: "POST",
-    body: JSON.stringify({ noReply: true, parts: [{ type: "text", text: retainedHistoryText }] }),
+  const mount = `/workspace/${workspace.workspaceId}`;
+  // The failure control has actual v1 history. The policy-off proof instead
+  // creates its chat on v2, so retaining only the old v1 copy cannot pass it.
+  const original = options.unavailableV2
+    ? await seed.session(app, { title: "Work continues on the current engine" }) : null;
+  if (original) await request(`${mount}/opencode/session/${original.sessionId}/message`, {
+    method: "POST", body: JSON.stringify({ noReply: true, parts: [{ type: "text", text: retainedHistoryText }] }),
   });
+  async function status(): Promise<EngineStatus> {
+    return (await request("/experimental/engine-v2-preview/status")).json();
+  }
   return {
     app,
-    session,
-    async status(): Promise<EngineStatus> {
-      const response = await request("/experimental/engine-v2-preview/status");
-      return response.json();
+    status,
+    async v2Idle(): Promise<boolean> {
+      const activity: { v2: { verdict: string } | null } = await (await request("/experimental/engine-v2-preview/activity")).json();
+      return activity.v2?.verdict === "idle";
     },
-    async messages(): Promise<string> {
-      const status: EngineStatus = await (await request("/experimental/engine-v2-preview/status")).json();
-      const path = status.chatRouting
-        ? `/workspace/${workspace.workspaceId}/opencode2/api/session/${session.sessionId}/message`
-        : `${sessionPath}/message`;
-      return (await request(path)).text();
+    async messages(sessionId = original?.sessionId): Promise<string> {
+      if (!sessionId) throw new Error("A visible chat is required for the history read");
+      const engine = (await status()).chatRouting ? "opencode2/api" : "opencode";
+      return (await request(`${mount}/${engine}/session/${sessionId}/message`)).text();
     },
-    async originalMessages(): Promise<string> {
-      return (await request(`${sessionPath}/message`)).text();
+    async originalMessages(sessionId: string): Promise<string> {
+      return (await request(`${mount}/opencode/session/${sessionId}/message`, {}, 404)).text();
     },
     async manualRetry(): Promise<{ status: number; body: string }> {
       const response = await request("/experimental/engine-v2-preview/migrate", {
@@ -99,7 +100,6 @@ async function engineForcePolicyWorld(seed: Seed, options: { unavailableV2?: boo
       }, 409);
       return { status: response.status, body: await response.text() };
     },
-    // These are the shipping host/client APIs, not browser state setters.
     async setOrganizationPolicy(upgrade: boolean): Promise<void> {
       await request("/experimental/engine-v2-preview/force", { method: "POST", body: JSON.stringify({ upgrade }) });
     },

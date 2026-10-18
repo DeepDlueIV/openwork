@@ -370,6 +370,15 @@ test("a durable forced failure is recovered after reload, stays compact on close
   expect(document.querySelector('[data-testid="engine-migration-recovery"]')).toBeNull();
   expect(document.querySelector('[data-testid="engine-migration-banner"]')).not.toBeNull();
   expect(useEngineMigrationStore.getState().progress?.migration.state).toBe("error");
+  const reviewAgain = document.querySelector('[data-testid="engine-migration-banner"] button');
+  if (!(reviewAgain instanceof HTMLButtonElement)) throw new Error("Missing retained recovery action");
+  await act(async () => reviewAgain.click());
+  const restart = Array.from(document.querySelectorAll('[data-testid="engine-migration-recovery"] button')).find(button => button.textContent === "Restart OpenWork");
+  if (!(restart instanceof HTMLButtonElement)) throw new Error("Missing explicit restart action");
+  await act(async () => restart.click());
+  expect(relaunch).toHaveBeenCalledTimes(1);
+  expect(client.migrateOpencodeHistory).not.toHaveBeenCalled();
+  expect(client.switchOpencodeEngine).not.toHaveBeenCalled();
 });
 
 test("a fresh forced v2 status refreshes routing without any migration UI or renderer switch", async () => {

@@ -72,6 +72,7 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     evidence.recordAssertionEvidence("The actual partial-grant callback gives safe recovery and never unlocks Drive", `ready=${await world.ready()}; URL=${await probe.on(standalone).url()}`, !await world.ready());
     await user.on(standalone).screenshot();
     await user.click({ role: "button", label: "Cancel" });
+    await probe.eventually(() => probe.dom("button:not(:disabled)"), { within: 5000, label: "the original Documents view is ready to connect again", until: value => value.elements.some(element => element.text === "Connect Google Drive") });
   });
   await step("a callback without an opener reports sign-in and returns to the same Documents view", async () => {
     await user.click({ role: "button", label: "Connect Google Drive" });
@@ -93,6 +94,7 @@ test("a member connects Drive from Documents without a dashboard detour or a fal
     await user.on(standalone).screenshot();
     // The original consent window was intentionally left open; cancelling it must not revoke the verified grant.
     await user.click({ role: "button", label: "Cancel" });
+    await probe.eventually(() => probe.dom("button:not(:disabled)"), { within: 5000, label: "the original Documents view is ready to connect again", until: value => value.elements.some(element => element.text === "Connect Google Drive") });
   });
   await step("after: reconnecting with full access opens the real Drive list in place", async () => {
     await user.click({ role: "button", label: "Connect Google Drive" });

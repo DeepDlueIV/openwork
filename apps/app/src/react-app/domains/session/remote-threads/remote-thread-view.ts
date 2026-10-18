@@ -36,7 +36,8 @@ export function remoteThreadView(start: RemoteThreadStart, entry: RemoteThreadEn
   const stopped = state === "error" && STOPPED.test(`${error?.code ?? ""} ${error?.message ?? ""}`)
   const waitingFor = state === "waiting" ? status?.waitingFor ?? "question" : null
   const since = entry?.activeSince ?? null
-  const elapsed = since === null ? "" : formatElapsedSeconds(Math.max(0, Math.floor((now - since) / 1000)))
+  const elapsedAt = entry?.stale ? entry.checkedAt ?? now : now
+  const elapsed = since === null ? "" : formatElapsedSeconds(Math.max(0, Math.floor((elapsedAt - since) / 1000)))
   const line = state === "starting" ? t("session.remote_task_starting", { computer })
     : waitingFor === "permission" ? t("session.remote_task_permission", { computer })
     : waitingFor === "question" ? t("session.remote_task_question", { computer })

@@ -243,8 +243,10 @@ function listen() {
   listening = true
   const onChange = () => {
     // Hidden: drop the waiting call. Visible or back online: look again now.
-    if (!canCall()) inflight?.controller.abort()
-    else kick(true)
+    if (!canCall()) {
+      inflight?.controller.abort()
+      if (navigator.onLine === false) useRemoteThreadStore.getState().markStale([...lastKeys])
+    } else kick(true)
   }
   document.addEventListener("visibilitychange", onChange)
   window.addEventListener("online", onChange)

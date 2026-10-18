@@ -1,4 +1,5 @@
 import { createDenClient, DenApiError, readDenSettings } from "@/app/lib/den"
+import { parseRecord } from "@/lib/capability-call"
 import {
   latestUserMessageId,
   parseRemoteRead,
@@ -87,7 +88,14 @@ function actionResult(payload: unknown, action: "send" | "stop"): RemoteThreadAc
   }
   const error = remoteActionError(payload)
   if (error) return { phase: "failed", requestId: null, message: error.message }
-  return { phase: "accepted", requestId: null, message: null }
+  const record = parseRecord(payload)
+  if (action === "stop" && (record?.stopped === false || record?.accepted === false)) return {
+    phase: "failed", requestId: null,
+    message: record.reason === "different_turn" ? "The task moved to a different turn before Stop arrived. Check the conversation before stopping that turn." : "The task didn't accept Stop. Check the conversation and try again.",
+  }
+  const accepted = action === "send" ? record?.state === "accepted" : record?.stopped === true || record?.accepted === true
+  return accepted ? { phase: "accepted", requestId: null, message: null }
+    : { phase: "unconfirmed", requestId: null, message: "Couldn't confirm the response. Check the conversation before repeating this action." }
 }
 
 const requesting: RemoteThreadAction = { phase: "requesting", requestId: null, message: null }
@@ -96,7 +104,8 @@ const requesting: RemoteThreadAction = { phase: "requesting", requestId: null, m
 export async function sendRemoteFollowUp(entry: RemoteThreadEntry, prompt: string): Promise<void> {
   const store = useRemoteThreadStore.getState()
   const current = store.threads[entry.start.key]
-  if (!current || current.followUps.some((item) => item.phase === "requesting")) return
+  if (!current || current.followUps.some((item) => item.phase === "requesting")
+    || (current.stop && current.stop.phase !== "failed" && current.status?.state !== "idle" && current.status?.state !== "error")) return
   const id = remoteFollowUpMessageId()
   store.update(entry.start.key, (thread) => ({ ...thread, followUps: [...thread.followUps, { ...requesting, id, text: prompt }] }))
   const location = remoteThreadLocation(entry)

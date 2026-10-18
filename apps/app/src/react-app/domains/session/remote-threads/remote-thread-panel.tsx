@@ -134,7 +134,7 @@ function RemoteThreadConversation({ entry }: { entry: RemoteThreadEntry }) {
 
   const messages = page?.messages ?? []
   const shownPrompt = !page && entry.start.prompt ? entry.start.prompt : null
-  const canFollowUp = view.started && !sending
+  const canFollowUp = view.started && !sending && !(view.active && stopPending)
 
   function sendFollowUp() {
     const text = draft.trim()

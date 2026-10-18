@@ -77,10 +77,11 @@ test("duplicate Send again presses do not dispatch concurrent copies", async () 
 test("a correction failure retains its text, attachments, identity and an unrelated next draft", async () => {
   const owner = createComposerState(async () => saved);
   owner.setText("My next question");
-  const id = owner.enqueue({ id: "correction_1", text: "Use Friday", correctionOf: "message_1", attachments: [saved] });
+  const correctionReference = { messageId: "wb_message_1", quote: "Use Monday", sentAt: 100 };
+  const id = owner.enqueue({ id: "correction_1", text: "Use Friday", correctionOf: "message_1", correctionReference, attachments: [saved] });
   await owner.send(id, async () => { throw new Error("Offline"); });
   assert.equal(owner.getSnapshot().text, "My next question");
-  assert.deepEqual(owner.getSnapshot().pending[0], { id, text: "Use Friday", correctionOf: "message_1", attachments: [saved], sentAt: owner.getSnapshot().pending[0]?.sentAt, uploads: [], failed: "Offline" });
+  assert.deepEqual(owner.getSnapshot().pending[0], { id, text: "Use Friday", correctionOf: "message_1", correctionReference, attachments: [saved], sentAt: owner.getSnapshot().pending[0]?.sentAt, uploads: [], failed: "Offline" });
 });
 
 test("removing a chat or identity while a file settles cannot send the discarded pending message", async () => {

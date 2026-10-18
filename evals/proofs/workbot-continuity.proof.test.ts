@@ -42,10 +42,13 @@ test("a member keeps separate chat drafts and one draft across Home and Document
     await user.click({ role: "button", label: "Show workspace chat" });
     await user.see({ text: "A follow-up about this view" });
     await user.type({ role: "textbox", label: "Message Workbot" }, "Another follow-up");
+    await user.see({ role: "button", label: "Hide workspace chat", nth: 0 });
     await user.press("Enter");
     await user.see({ text: "Another follow-up" });
     await user.see({ role: "button", label: "Hide workspace chat", nth: 0 });
-    evidence.recordAssertionEvidence("Explicit chat disclosure stays open for a follow-up", "Both questions are visible; the document draft remains mounted", world.attempts().length === 2);
+    const attempts = await probe.eventually(() => world.attempts(), { within: 5000, label: "both follow-ups reach the API", until: attempts => attempts.length === 2 });
+    expect(attempts).toHaveLength(2);
+    evidence.recordAssertionEvidence("Explicit chat disclosure stays open for a follow-up", "Both questions reached the API and are visible; the document draft remains mounted", attempts.length === 2);
     await user.screenshot();
   });
 });
@@ -54,6 +57,7 @@ test("a member retries a refused correction without losing earlier messages or t
   await step("the member corrects an earlier question while both earlier replies stay visible", async () => {
     await user.see({ text: "Use Monday" });
     await user.click({ role: "button", label: /^(Correct|Edit) message$/, nth: 0 });
+    await user.see({ text: "Correcting: Use Monday" });
     await user.type({ role: "textbox", label: /^(Correct|Edit) your message$/ }, "Use Friday", { replace: true });
     await user.click({ role: "button", label: /^(Send correction|Send)$/, nth: 0 });
     await user.see({ text: "Use Monday" });
@@ -63,7 +67,11 @@ test("a member retries a refused correction without losing earlier messages or t
   });
   await step("after: a refused correction remains visible with Send again", async () => {
     await user.see({ role: "button", label: "Send again" });
-    await user.see({ text: /Correction to an earlier message:\s*Use Friday/ });
+    await user.see({ text: "Use Friday" });
+    const references = await probe.dom("[data-workbot-correction-reference]");
+    expect(references.elements).toHaveLength(1);
+    expect(references.elements[0]?.text).toContain("Use Monday");
+    expect(await probe.text()).not.toContain("wb_message0000");
     const attempts = world.attempts();
     expect(attempts).toHaveLength(1);
     evidence.recordAssertionEvidence("The refusal was exercised and the correction is recoverable", "One correction request refused; its replacement text remains visible", attempts.length === 1);
@@ -117,13 +125,39 @@ test("a member retries a message after its file uploaded without uploading or se
   });
 });
 
+// This native form fixture verifies the testkit's file-selection boundary, not a substitute Workbot UI.
+test("a member's browser honors disabled file pickers while allowing an intentionally hidden picker", async ({ world, user, probe, step, evidence }) => {
+  await step("a disabled input and disabled fieldset refuse file selection", async () => {
+    await user.navigate(`${world.url}fixture-file-inputs`);
+    await user.see({ role: "heading", label: "File input boundaries" });
+    await expect(user.attachFiles("#disabled-direct", [world.notesPath])).rejects.toThrow("File input unavailable: disabled");
+    await expect(user.attachFiles("#disabled-fieldset", [world.notesPath])).rejects.toThrow("File input unavailable: disabled");
+    await user.see({ text: "No file selected" });
+    evidence.recordAssertionEvidence("Disabled controls cannot transfer files", "Native disabled input and fieldset were both rejected; no change event selected a file", !(await probe.text()).includes("Selected notes.txt"));
+    await user.screenshot();
+  });
+  await step("a hidden or inert parent surface also refuses selection", async () => {
+    await expect(user.attachFiles("#unavailable-parent", [world.notesPath])).rejects.toThrow("File input unavailable: unavailable parent surface");
+    await expect(user.attachFiles("#inert-parent", [world.notesPath])).rejects.toThrow("File input unavailable: disabled");
+    await user.see({ text: "No file selected" });
+    evidence.recordAssertionEvidence("Unavailable surfaces cannot be bypassed by file selection", "Hidden and inert parent surfaces were rejected; no file selected", !(await probe.text()).includes("Selected notes.txt"));
+    await user.screenshot();
+  });
+  await step("an enabled picker may hide its native file input intentionally", async () => {
+    await user.attachFiles("#hidden-enabled", [world.notesPath]);
+    await user.see({ text: "Selected notes.txt" });
+    evidence.recordAssertionEvidence("The ordinary hidden-input picker path still works", "The enabled hidden input emitted its native change event for notes.txt", (await probe.text()).includes("Selected notes.txt"));
+    await user.screenshot();
+  });
+});
+
 test("a member reaches an honest history limit instead of an inert Show earlier button", async ({ world, user, probe, step, evidence }) => {
-  await step("the member opens a conversation with more than two hundred messages", async () => {
+  await step("the member opens a long conversation that includes background work", async () => {
     await user.navigate(`${world.url}?assistant=off&history=long&chat=sidechat000000001`);
     await user.see({ role: "textbox", label: "Message Workbot" });
     await user.wheelAt({ x: 640, y: 200, deltaY: -100000 });
     await user.see({ role: "button", label: "Show earlier messages" });
-    evidence.recordAssertionEvidence("Earlier history exists beyond the initial page", "The fixture serves 230 messages; the first page requests 30", world.windows().includes(30));
+    evidence.recordAssertionEvidence("Earlier history exists beyond the initial page", "The fixture has 230 mixed records; the first page requests 30", world.windows().includes(30));
     await user.screenshot();
   });
   await step("the member repeatedly requests earlier messages", async () => {
@@ -131,17 +165,19 @@ test("a member reaches an honest history limit instead of an inert Show earlier 
       await user.click({ role: "button", label: "Show earlier messages" });
       await probe.eventually(() => world.windows(), { within: 5000, label: `history grows to ${window} messages`, until: windows => windows.includes(window) });
       await user.see(window === 200
-        ? { text: "Showing the latest 200 messages. Earlier messages aren't available here." }
+        ? { text: "History limit reached. Earlier messages aren't available here." }
         : { role: "button", label: "Show earlier messages" });
     }
     evidence.recordAssertionEvidence("Each request grows the window until the supported limit", "30, 60, 90, 120, 150, 180, 200 requested", world.windows().includes(200));
     await user.screenshot();
   });
   await step("after: the limit names the unavailable history and offers no inert action", async () => {
-    await user.see({ text: "Showing the latest 200 messages. Earlier messages aren't available here." });
+    await user.see({ text: "History limit reached. Earlier messages aren't available here." });
     await user.notSee({ role: "button", label: "Show earlier messages" });
-    expect((await probe.dom('ol[aria-label="Conversation"] > li')).elements).toHaveLength(200);
-    evidence.recordAssertionEvidence("The supported history boundary is honest", "200 conversation messages; no Show earlier action remains", (await probe.dom('ol[aria-label="Conversation"] > li')).elements.length === 200);
+    expect(world.historyPages().at(-1)).toEqual({ records: 200, messages: 100 });
+    expect((await probe.dom('ol[aria-label="Conversation"] > li')).elements).toHaveLength(100);
+    expect(await probe.text()).not.toContain("latest 200 messages");
+    evidence.recordAssertionEvidence("The supported history boundary is honest", "200 mixed records yield 100 conversation messages; no numeric completeness claim or inert Show earlier action remains", (await probe.dom('ol[aria-label="Conversation"] > li')).elements.length === 100);
     await user.screenshot();
   });
 });

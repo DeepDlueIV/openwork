@@ -35,7 +35,7 @@ import { ShareWorkbot } from "./share-controls";
 import { TeamControls } from "./team-controls";
 import { WorkbotCalendar } from "./calendar";
 import { WorkbotDocuments } from "./documents";
-import { workbotViewContextSchema, type WorkbotViewContext } from "@openwork/types/workbot-context";
+import { readWorkbotCorrectionPrompt, workbotCorrectionPrompt, workbotViewContextSchema, type WorkbotViewContext } from "@openwork/types/workbot-context";
 import type { DocumentOpenRequest } from "@openwork/documents";
 import { SentContext, WorkspaceAssistant, WorkspaceMenu, WorkspaceNavigationContext } from "./workspace";
 import { useQueryClient } from "@tanstack/react-query";
@@ -211,7 +211,8 @@ function ChatScreen({ host, composerState, navigation, onDraftsChange }: { host:
     const trimmed = text.trim();
     if (!trimmed && turn.attachments.length === 0) return;
     const context = host.workspaceAssistant && (turn.context?.kind === "calendar" || host.documents) ? turn.context : undefined;
-    const id = composerState.enqueue({ id: newMessageId(), text: trimmed, context, correctionOf: turn.id, attachments: turn.attachments });
+    const correctionReference = { messageId: `wb_${turn.id}`, quote: readWorkbotCorrectionPrompt(turn.text).text.slice(0, 1000), sentAt: turn.sentAt };
+    const id = composerState.enqueue({ id: newMessageId(), text: trimmed, context, correctionOf: turn.id, correctionReference, attachments: turn.attachments });
     sendPending(id);
   };
 
@@ -223,7 +224,7 @@ function ChatScreen({ host, composerState, navigation, onDraftsChange }: { host:
     const conversation = data ? <Conversation
       turns={data.turns}
       canChange={!busy} onEdit={editTurn} editErrors={editErrors} pending={pending} live={stream.live}
-      hasEarlier={data.hasEarlier} earlierLimit={turnWindow >= MAX_TURNS && !thread.isPlaceholderData} loadingEarlier={thread.isFetching && turnWindow > data.turns.length}
+      hasEarlier={data.hasEarlier} earlierLimit={turnWindow >= MAX_TURNS && !thread.isPlaceholderData} loadingEarlier={thread.isFetching && thread.isPlaceholderData}
       onLoadEarlier={() => setTurnWindow(current => Math.min(MAX_TURNS, current + PAGE_TURNS))}
       onRetry={entry => submit(entry.text, entry)}
       onRetryTurn={turn => {
@@ -387,7 +388,7 @@ function ChatScreen({ host, composerState, navigation, onDraftsChange }: { host:
             live={stream.live}
             hasEarlier={data.hasEarlier}
             earlierLimit={turnWindow >= MAX_TURNS && !thread.isPlaceholderData}
-            loadingEarlier={thread.isFetching && turnWindow > data.turns.length}
+            loadingEarlier={thread.isFetching && thread.isPlaceholderData}
             onLoadEarlier={() => setTurnWindow((current) => Math.min(MAX_TURNS, current + PAGE_TURNS))}
             onRetry={(entry) => submit(entry.text, entry)}
             onRetryTurn={(turn) => {
@@ -821,7 +822,7 @@ function Conversation(props: {
       <div ref={content} className="flex min-h-full flex-col items-center justify-end px-4 pb-2 pt-6 sm:px-10">
         <div className={`${COLUMN} flex flex-col`}>
           {props.hasEarlier && props.earlierLimit ? (
-            <p className="mb-6 text-center text-[12px] text-[var(--wb-muted)]" role="status">Showing the latest {MAX_TURNS} messages. Earlier messages aren&apos;t available here.</p>
+            <p className="mb-6 text-center text-[12px] text-[var(--wb-muted)]" role="status">History limit reached. Earlier messages aren&apos;t available here.</p>
           ) : props.hasEarlier ? (
             <button
               type="button"
@@ -901,7 +902,8 @@ function Reaction({ emoji }: { emoji: string }) {
 }
 
 function UserBubble({ text, muted = false, reaction = null, action }: { text: string; muted?: boolean; reaction?: string | null; action?: ReactNode }) {
-  if (!text) {
+  const visible = readWorkbotCorrectionPrompt(text);
+  if (!visible.text && !visible.correction) {
     return reaction ? (
       <div className="flex justify-end">
         <Reaction emoji={reaction} />
@@ -911,8 +913,12 @@ function UserBubble({ text, muted = false, reaction = null, action }: { text: st
   return (
     <div className="flex justify-end">
       <div className="group/own relative max-w-[85%] sm:max-w-[480px]">
+        {visible.correction && <div className="mb-1 px-3 text-[12px] text-[var(--wb-muted)]" data-workbot-correction-reference>
+          <p>Correction to your message{visible.correction.sentAt !== null ? ` from ${new Date(visible.correction.sentAt).toLocaleString()}` : ""}</p>
+          {visible.correction.quote && <blockquote className="line-clamp-3 border-l-2 border-[var(--wb-hairline)] pl-2" title={visible.correction.quote}>{visible.correction.quote}{visible.correction.quote.length === 1000 ? "…" : ""}</blockquote>}
+        </div>}
         <p className={`whitespace-pre-wrap break-words rounded-[20px] bg-[var(--wb-user-bubble)] px-4 py-2.5 text-[15px] leading-[22px] text-[var(--wb-text)] transition-opacity duration-150 ${muted ? "opacity-60" : ""}`}>
-          {text}
+          {visible.text}
         </p>
         {action ? <span className={ownAction}>{action}</span> : null}
         {reaction ? (
@@ -957,8 +963,9 @@ function OwnMessage(props: {
   error: string | null;
 }) {
   const { turn, error } = props;
+  const originalText = readWorkbotCorrectionPrompt(turn.text).text;
   const [mode, setMode] = useState<"idle" | "editing">("idle");
-  const [draft, setDraft] = useState(turn.text);
+  const [draft, setDraft] = useState(originalText);
   const field = useRef<HTMLTextAreaElement>(null);
 
   useLayoutEffect(() => {
@@ -978,7 +985,7 @@ function OwnMessage(props: {
     const text = draft.trim();
     if (!text) return;
     setMode("idle");
-    if (text === turn.text.trim()) return;
+    if (text === originalText.trim()) return;
     props.onEdit(turn, text);
   };
 
@@ -986,6 +993,7 @@ function OwnMessage(props: {
     return (
       <div className="flex justify-end">
         <div className="flex w-full max-w-[85%] flex-col gap-2 sm:max-w-[480px]">
+          <blockquote className="line-clamp-3 border-l-2 border-[var(--wb-hairline)] pl-2 text-[12px] text-[var(--wb-muted)]" title={originalText}>Correcting: {originalText}</blockquote>
           <textarea
             ref={field}
             value={draft}
@@ -995,7 +1003,7 @@ function OwnMessage(props: {
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
-                setDraft(turn.text);
+                setDraft(originalText);
                 setMode("idle");
               } else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
@@ -1009,7 +1017,7 @@ function OwnMessage(props: {
             <button
               type="button"
               onClick={() => {
-                setDraft(turn.text);
+                setDraft(originalText);
                 setMode("idle");
               }}
               className="h-8 rounded-full px-3 text-[13px] font-medium text-[var(--wb-muted)] transition-colors duration-150 hover:bg-[var(--wb-chip)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
@@ -1148,7 +1156,7 @@ function PendingView({ entry, onRetry, waiting }: { entry: Pending; onRetry: () 
       <SentAttachments attachments={attachments} localUrls={urls} />
       {/* Holds Edit's place while sending, so the bubble doesn't move when its turn arrives. */}
       <SentContext context={entry.context} />
-      <UserBubble text={entry.correctionOf ? `Correction to an earlier message:\n${entry.text}` : entry.text} muted={Boolean(entry.failed)} action={entry.failed ? undefined : <EditButton disabled />} />
+      <UserBubble text={entry.correctionReference ? workbotCorrectionPrompt(entry.text, entry.correctionReference) : entry.text} muted={Boolean(entry.failed)} action={entry.failed ? undefined : <EditButton disabled />} />
       {entry.failed ? (
         <ErrorLine align="end" action={{ label: "Send again", onClick: onRetry }}>{entry.failed}</ErrorLine>
       ) : uploading || waiting ? (

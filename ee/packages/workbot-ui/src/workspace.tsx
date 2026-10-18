@@ -75,7 +75,11 @@ export function WorkspaceAssistant({ name, context, includeContext, onIncludeCon
   return <div ref={anchor} className="fixed bottom-3 right-3 z-30 w-[min(26rem,calc(100vw-1.5rem))] sm:bottom-5 sm:right-5" data-workbot-workspace-assistant>
     <Popover.Root open={open} onOpenChange={(next, details) => {
       // The composer belongs to this explicit disclosure, not to the document behind it.
-      if (!next && details.reason === "outside-press" && details.event.target instanceof Node && anchor.current?.contains(details.event.target)) return;
+      const target = details.reason === "focus-out" && details.event instanceof FocusEvent ? details.event.relatedTarget : details.event.target;
+      if (!next && (details.reason === "outside-press" || details.reason === "focus-out") && target instanceof Node && anchor.current?.contains(target)) {
+        details.cancel();
+        return;
+      }
       setOpen(next);
     }}>
       <div className="mb-1 flex min-w-0 items-center justify-end gap-1.5">

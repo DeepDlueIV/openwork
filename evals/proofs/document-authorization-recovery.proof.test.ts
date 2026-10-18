@@ -25,7 +25,7 @@ for (const fault of [
     });
     await step("after: real parent identity revalidation masks rather than removes those owners", async () => {
       if (fault.status === 401) world.expireIdentity(); else world.failIdentity();
-      await world.reconnect();
+      await world.reconnectAfterStaleMinute();
       await probe.eventually(() => world.identityReads(), { within: 5000, label: "the parent identity request really failed", until: values => values.includes(fault.status) });
       const documentStatus = await world.documentReadStatus();
       expect(documentStatus).toBe(200);

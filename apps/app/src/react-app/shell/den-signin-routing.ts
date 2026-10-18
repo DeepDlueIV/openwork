@@ -40,7 +40,7 @@ export function resolveDenSigninRedirect(input: DenSigninRouteInput): DenSigninR
   if (input.authChecking) return null;
   // A real uncommitted organization decision needs the chooser in every
   // distribution. Ordinary verification with no pending choice keeps its route.
-  if (input.isSignedIn && input.orgSelectionPending && !input.onOnboarding && !input.onSignin) return "/onboarding";
+  if (input.isSignedIn && input.orgSelectionPending && !input.onOnboarding) return "/onboarding";
 
   if (input.requireSignin) {
     if (!input.isSignedIn) {

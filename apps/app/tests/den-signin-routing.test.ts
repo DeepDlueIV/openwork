@@ -53,6 +53,7 @@ describe("den sign-in gate routing", () => {
     for (const requireSignin of [false, true]) {
       expect(route({ requireSignin, isSignedIn: true, orgSelectionPending: true })).toBe("/onboarding");
       expect(route({ requireSignin, isSignedIn: true, orgSelectionPending: true, onOnboarding: true })).toBeNull();
+      expect(route({ requireSignin, isSignedIn: true, orgSelectionPending: true, onSignin: true })).toBe("/onboarding");
       expect(route({ requireSignin, isSignedIn: true, orgSelectionPending: false })).toBeNull();
       expect(route({ requireSignin, isSignedIn: true, orgSelectionPending: true, authChecking: true })).toBeNull();
     }

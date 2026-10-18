@@ -191,7 +191,9 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
     world.markScene("D1:run-done");
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Open this run's receipt so the page shows the finished state (what a person clicks after Run now).
+    if (run.id) await evaluateOnSurface(world.app, browserScript((id: string, runId: string) => { const url = new URL(location.href); url.searchParams.set("automation", id); url.searchParams.set("run", runId); history.pushState(history.state, "", url.pathname + url.search); window.dispatchEvent(new PopStateEvent("popstate", { state: history.state })); return true; }, [automationId, String(run.id)])).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 3500));
     world.markScene("D1:run-visible");
     const after = await world.observe();
     const draft = newItems(mails(before), mails(after)).find((mail) => mail.isDraft === true && [/france/i, /germany/i, /japan/i].every((country) => country.test(text(mail.body))));

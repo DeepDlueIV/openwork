@@ -87,6 +87,7 @@ import {
   isCloudProviderOutOfSync,
   isGatewayModelReady,
   isGatewaySetConnected,
+  GatewayModelVerificationError,
   type GatewayConnectProvider,
   resolveCloudProviderCredentials,
 } from "./cloud-provider-config";
@@ -2378,33 +2379,49 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
       && scope === readGatewayUsageScope();
     const result = await runCloudProviderSync("manual");
     if (!isCurrent()) return false;
+    const allowed = (candidate: { providerID: string; modelID: string }) =>
+      isProviderAllowedByDesktopPolicy({ providerId: candidate.providerID,
+        restrictToCloud: options.checkDesktopAppRestriction({ restriction: "allowCustomProviders" }),
+        checkRestriction: options.checkDesktopAppRestriction }) && !options.disabledProviders().includes(candidate.providerID);
+    const present = (catalog: ProviderListResponse, candidate: { providerID: string; modelID: string }) =>
+      catalog.connected.includes(candidate.providerID)
+      && catalog.all.some((entry) => entry.id === candidate.providerID && Boolean(entry.models[candidate.modelID]));
     if (result?.outcome === "handled_live") {
       // Live ownership does not populate legacy imports or their usage scope.
       // A cached native catalog alone cannot prove a newly authorized account:
       // require a fresh usable assignment, then reread the native engine.
       const settings = readDenSettings();
       const inventory = await createDenClient({ baseUrl: settings.baseUrl, token: settings.authToken,
-        requireCompleteInventory: true }).getModelRemovalInventory(settings.activeOrgId ?? "");
+        requireCompleteInventory: true }).getModelRemovalInventory(settings.activeOrgId ?? "")
+        .catch(() => { throw new GatewayModelVerificationError(); });
       if (!isCurrent()) return false;
       const catalog = await refreshProviders({ force: true }, isCurrent);
-      if (!isCurrent() || !catalog || !provider.credentialSetId) return false;
-      return inventory.models.some((candidate) => candidate.providerID === provider.providerId
+      if (!isCurrent()) return false;
+      if (!catalog) throw new GatewayModelVerificationError();
+      if (!provider.credentialSetId) return false;
+      const candidates = inventory.models.filter((candidate) => candidate.providerID === provider.providerId
         && candidate.modelID.split("_")[2] === provider.credentialSetId?.slice(4)
         && (!model || (candidate.providerID === model.providerID && candidate.modelID === model.modelID))
         && !inventory.lockedModels.some((locked) => locked.providerID === candidate.providerID && locked.modelID === candidate.modelID)
-        && isProviderAllowedByDesktopPolicy({ providerId: candidate.providerID,
-          restrictToCloud: options.checkDesktopAppRestriction({ restriction: "allowCustomProviders" }),
-          checkRestriction: options.checkDesktopAppRestriction })
-        && !options.disabledProviders().includes(candidate.providerID)
-        && catalog.connected.includes(candidate.providerID)
-        && catalog.all.some((entry) => entry.id === candidate.providerID && Boolean(entry.models[candidate.modelID])));
+        && allowed(candidate));
+      if (!candidates.length) return false;
+      if (!candidates.some((candidate) => present(catalog, candidate))) throw new GatewayModelVerificationError();
+      return true;
     }
-    // Older engines still own materialized providers, reload state and scope.
-    return result?.outcome === "handled_server_side" && (model
-      ? isGatewayModelAvailable(provider, model)
-      : state.gatewayUsageProviderScope === scope.generation && verifiedGatewayUsageContext === context
-        && state.cloudProviderServerSync?.reloadPending === false
-        && isGatewaySetConnected(provider, state.importedCloudProviders));
+    // Legacy imports prove authorization, not that a cached native catalog is
+    // still usable. Confirm only against THIS successful run's fresh read.
+    if (result?.outcome !== "handled_server_side") return false;
+    const catalog = result.providerList;
+    if (!catalog) throw new GatewayModelVerificationError();
+    if (state.gatewayUsageProviderScope !== scope.generation || verifiedGatewayUsageContext !== context
+      || state.cloudProviderServerSync?.reloadPending !== false) return false;
+    if (model ? !isGatewayModelReady(provider, model, state) : !isGatewaySetConnected(provider, state.importedCloudProviders)) return false;
+    const candidates = model ? [model] : (state.importedCloudProviders[provider.cloudProviderId]?.modelIds ?? [])
+      .filter((modelID) => !provider.credentialSetId || modelID.split("_")[2] === provider.credentialSetId.slice(4))
+      .map((modelID) => ({ providerID: provider.providerId, modelID }));
+    if (!candidates.some(allowed)) return false;
+    if (!candidates.some((candidate) => allowed(candidate) && present(catalog, candidate))) throw new GatewayModelVerificationError();
+    return true;
   }
 
   async function startGatewayProviderOAuth(providerId: string, credentialSetId?: string, signal?: AbortSignal) {
@@ -2425,7 +2442,7 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
     return result;
   }
 
-  async function runCloudProviderSync(reason: CloudProviderSyncReason): Promise<void | { outcome: "handled_server_side" | "handled_live" }> {
+  async function runCloudProviderSync(reason: CloudProviderSyncReason): Promise<void | { outcome: "handled_live" } | { outcome: "handled_server_side"; providerList: ProviderListResponse | null }> {
     if (disposed) return;
     const delivery = syncDenSessionDelivery();
     const contextKey = getCloudProviderSyncContextKey();
@@ -2466,10 +2483,9 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
           `[cloud-provider-sync:${reason}] Provider materialization is handled server-side in gateway mode.`,
         );
       }
-      if (reason === "manual" || reason === "settings_cloud_opened") {
-        await refreshProvidersAfterCloudSync({ force: true }, isCurrent);
-      }
-      return { outcome: "handled_server_side" };
+      const providerList = reason === "manual" || reason === "settings_cloud_opened"
+        ? await refreshProvidersAfterCloudSync({ force: true }, isCurrent) : null;
+      return { outcome: "handled_server_side", providerList };
     }
 
     if (serverHandlesProviderSync()) {
@@ -2544,9 +2560,9 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
         // a removed managed-model default. Always reread the live catalog and
         // reconcile that preference so Settings diagnostics recover in place,
         // including after a noop server sync.
-        await refreshProvidersAfterCloudSync({ force: true }, isCurrent);
+        const providerList = await refreshProvidersAfterCloudSync({ force: true }, isCurrent);
         if (!isCurrent()) return;
-        return { outcome: "handled_server_side" };
+        return { outcome: "handled_server_side", providerList };
       } catch (error) {
         if (!isCurrent()) return;
         const message = logCloudProviderSyncError(reason, error);

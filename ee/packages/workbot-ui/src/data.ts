@@ -503,6 +503,7 @@ export async function uploadWorkbotFile(file: File, onProgress: (loaded: number)
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const path = inChat(`/v1/workbot/files?${new URLSearchParams({ name: file.name || "file", timeZone }).toString()}`, chat);
   const target = await workbotHost().prepare(path);
+  if (signal.aborted) throw new Error("Canceled.");
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", target.url);

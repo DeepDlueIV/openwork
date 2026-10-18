@@ -214,6 +214,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotInlineConnect: {
+    label: "Workbot: connect accounts",
+    description: "Members connect their assigned apps directly from Workbot and return to the same view after consent.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   workbotDocuments: {
     label: "Workbot Documents",
     description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",

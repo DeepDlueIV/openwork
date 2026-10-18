@@ -25,6 +25,7 @@ import {
   verifyOAuthStateToken,
 } from "../../capability-sources/generic-oauth.js"
 import { connectCallbackPage } from "../../capability-sources/oauth-callback-page.js"
+import { workbotConnectReturn, workbotCallbackReturn } from "../../workbot/connect-return.js"
 import { revokeAccountsBeforeOAuthClientIdentityChange } from "../../capability-sources/oauth-client-rotation.js"
 import {
   clientSelectedFeatures,
@@ -207,6 +208,7 @@ export async function beginNativeProviderConnect(input: OrgIds & {
     orgMembershipId: input.orgMembershipId,
     providerId: input.credentialProviderId,
     binding: input.provider.providerId,
+    workbotReturn: workbotConnectReturn(input.request),
     secret: env.betterAuthSecret,
   })
 
@@ -580,8 +582,8 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
       const url = new URL(c.req.url)
       const code = url.searchParams.get("code")
       const state = url.searchParams.get("state")
-      if (!code || !state) {
-        return c.json({ error: "invalid_request", message: "Missing code or state." }, 400)
+      if (!state) {
+        return c.json({ error: "invalid_request", message: "Missing state." }, 400)
       }
 
       const statePayload = verifyOAuthStateToken({ token: state, secret: env.betterAuthSecret })
@@ -592,6 +594,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
         return c.json({ error: "invalid_request", message: "Invalid or expired state." }, 400)
       }
 
+      const completionPage = (result: Parameters<typeof connectCallbackPage>[0]) => connectCallbackPage(result, workbotCallbackReturn(statePayload.workbotReturn, statePayload.providerId))
       const memberTeams = await listTeamsForMember({
         organizationId: statePayload.organizationId,
         memberId: statePayload.orgMembershipId,
@@ -620,6 +623,10 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
       // organization and initiating member: attribute before the token exchange.
       const auditBlocked = await attributeOAuthCallbackMember(c, { organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId })
       if (auditBlocked) return auditBlocked
+
+      if (url.searchParams.has("error") || !code) {
+        return c.html(completionPage({ ok: false, name: provider.displayName, message: "The account was not connected. Try Connect again and approve the requested access." }), 400)
+      }
 
       let grantedScopes: string[] = []
       try {
@@ -659,7 +666,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
             providerId,
             code: "connection_request_superseded",
           })
-          return c.html(connectCallbackPage({
+          return c.html(completionPage({
             ok: false,
             name: provider.displayName,
             message: "This OpenWork connection request is no longer active.",
@@ -676,7 +683,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
             code: error.code,
             ...error.details,
           })
-          return c.html(connectCallbackPage({
+          return c.html(completionPage({
             ok: false,
             name: provider.displayName,
             message: error.message,
@@ -692,7 +699,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
           code: "oauth_callback_failed",
           errorName: error instanceof Error ? error.name : "UnknownError",
         })
-        return c.html(connectCallbackPage({
+        return c.html(completionPage({
           ok: false,
           name: provider.displayName,
           message: "OpenWork could not finish the OAuth connection. Try Connect again; if it still fails, contact support with the diagnostic reference.",
@@ -711,7 +718,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
           providerId,
           missingScopes,
         })
-        return c.html(connectCallbackPage({
+        return c.html(completionPage({
           ok: false,
           name: provider.displayName,
           message: `You signed in, but ${provider.displayName} did not grant: ${missingScopes.join(", ")}. Ask your administrator to grant these permissions to the OpenWork app with your identity provider, or to turn off the matching features, then connect again.`,
@@ -722,7 +729,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
       void recordWorkbotConnection({ organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId }, {
         attemptId: statePayload.nonce, connectionId: credentialProviderId, appId: provider.providerId,
       })
-      return c.html(connectCallbackPage({ ok: true, name: provider.displayName }))
+      return c.html(completionPage({ ok: true, name: provider.displayName }))
     },
   )
 

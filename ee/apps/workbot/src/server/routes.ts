@@ -233,12 +233,20 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     }
   })
 
-  /** The everyday apps to connect on the welcome screen; connecting happens in Den, in a new tab. */
+  /** Provider consent starts server-to-server; browser requests keep Workbot's same-origin/CSRF guard. */
+  app.post("/v1/workbot/connections/:connectionId/connect/start", bodyLimit({ maxSize: 4096 }), async (c) => {
+    if (!enabled(c)) return c.json({ error: "workbot_not_enabled" }, 409)
+    const member = c.get("member")
+    const { status, payload } = await den.connect(member.accessToken, c.req.param("connectionId"), await c.req.json().catch(() => null))
+    return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
+  })
+
+  /** The everyday apps to connect on the welcome screen and workspace recovery actions. */
   app.get("/v1/workbot/connections", async (c) => {
     if (!enabled(c)) return c.json({ error: "workbot_not_enabled" }, 409)
     const member = c.get("member")
     const connections = await den.connections(member.accessToken).catch(() => null)
-    if (!connections) return c.json({ connections: [] })
+    if (!connections) return c.json({ error: "connections_unavailable", message: "Couldn't verify your connections. Try again." }, 502)
     const denWeb = config.denWebUrl ?? (await den.webUrl().catch(() => null))
     return c.json({
       connections: connections.map((connection) => ({

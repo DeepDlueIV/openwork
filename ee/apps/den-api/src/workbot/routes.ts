@@ -27,6 +27,11 @@ import { headlessModelCatalog, organizationDefaultModel } from "./model.js"
 import { explicitWorkbotModel } from "./readiness.js"
 import { recordWorkbotTelemetry, workbotTelemetrySchema, workbotTelemetryServiceAuthorized } from "./telemetry.js"
 import { resolvePermissionsForMember } from "../permissions/resolve.js"
+import { workbotOrigin } from "./config.js"
+import { workbotConnectRequestSchema } from "./connect-return-schema.js"
+import { resolvePublicApiBaseUrl } from "../capability-sources/generic-oauth.js"
+import { env } from "../env.js"
+import { getNativeOAuthProvider } from "../capability-sources/provider-registry.js"
 
 /**
  * What Den tells the Workbot app (ee/apps/workbot) about a signed-in person. Workbot calls these server-to-server
@@ -108,6 +113,8 @@ const workbotConnectionsSchema = z.object({
     app: z.enum(["gmail", "googleCalendar", "slack", "microsoft"]),
     ready: z.boolean(),
     connectUrl: z.string().nullable(),
+    nativeProviderKey: z.string().nullable().optional(),
+    connectMode: z.enum(["inline", "external", "admin"]).optional(),
   })),
 })
 
@@ -336,15 +343,59 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       if (!organizationContext) return c.json({ connections: [] })
       const memberTeams = await listTeamsForMember({ organizationId: resolved.organization.id, memberId: normalizeDenTypeId("member", resolved.memberId) })
       const facts = await listMemberUsableConnectionFacts({ context: { organizationContext, memberTeams, session: null } })
+      const inline = Boolean(workbotOrigin()) && await organizationFeatureEnabled(resolved.organization.id, "workbotInlineConnect")
       const connections = facts.flatMap((fact) => {
         const app = everydayApp(fact)
         if (!app) return []
         // Set up by an admin but not finished there: not something the member can do anything about yet.
-        if (fact.setupRequired === true) return []
+        if (fact.setupRequired === true && !inline) return []
         const ready = fact.connectedForMe && !fact.needsReconnect
-        return [{ id: fact.id, name: fact.name, app, ready, connectUrl: ready ? null : openworkYourConnectionsUrl(fact.id) }]
+        const connectMode: "admin" | "inline" | "external" = fact.setupRequired === true ? "admin" : inline ? "inline" : "external"
+        return [{ id: fact.id, name: fact.name, app, ready, connectUrl: ready ? null : openworkYourConnectionsUrl(fact.id), nativeProviderKey: fact.nativeProviderKey, connectMode }]
       })
       return c.json({ connections })
+    },
+  )
+
+  app.post(
+    "/v1/workbot/connections/:connectionId/connect/start",
+    describeWorkbotRoute({
+      tags: ["Workbot"], operationId: "startWorkbotConnection", "x-mcp": false,
+      summary: "Connect the member's assigned account from Workbot",
+      description: "Requires a live Workbot OAuth grant with write scope and active membership. Re-enters the existing connection start as that member in the token's organization; the same connection grants and permissions apply. Only a path on the configured Workbot origin can be signed into OAuth state.",
+      responses: {
+        200: jsonResponse("Provider consent URL and its callback origin.", z.object({ authorizeUrl: z.string().nullable(), status: z.string().optional(), callbackOrigin: z.string() })),
+        400: jsonResponse("Invalid connection or return path.", signedOutSchema),
+        401: jsonResponse("The token or membership is no longer valid.", unauthorizedSchema),
+        403: jsonResponse("The grant or connection permission is missing.", signedOutSchema),
+        404: jsonResponse("The feature or connection is unavailable.", signedOutSchema),
+      },
+    }),
+    tokenRoute,
+    bodyLimit({ maxSize: 4096 }),
+    jsonValidator(workbotConnectRequestSchema),
+    async (c) => {
+      c.header("cache-control", "no-store")
+      const resolved = await resolve(c.req.raw.headers)
+      if (resolved instanceof Response) return resolved
+      const auditBlocked = await attributeWorkbot(c, resolved)
+      if (auditBlocked) return auditBlocked
+      const features = await getOrganizationFeatures(resolved.organization.id)
+      if (!features.workbot || !features.workbotInlineConnect || !workbotOrigin()) return c.json({ error: "feature_disabled", message: "Connect from your workspace connections page instead." }, 404)
+      if (!resolved.scopes.has(DEN_MCP_WRITE_SCOPE)) return c.json({ error: "insufficient_scope", message: "Sign in again with permission to connect accounts." }, 403)
+      const input = c.req.valid("json")
+      const connectionId = c.req.param("connectionId")
+      if (!getNativeOAuthProvider(connectionId)) {
+        try { normalizeDenTypeId("externalMcpConnection", connectionId) } catch { return c.json({ error: "invalid_request" }, 400) }
+      }
+      const query = new URLSearchParams({ workbotReturnPath: input.returnPath, workbotRequestId: input.requestId })
+      const headers = new Headers({ accept: "application/json", "x-den-internal-mcp-principal": createInternalMcpPrincipalHeader({ userId: resolved.principal.userId, organizationId: resolved.principal.organizationId, credentialId: resolved.credentialId }) })
+      const base = resolvePublicApiBaseUrl(c.req.raw, env.apiPublicUrl)
+      const response = await app.fetch(new Request(new URL(`/v1/mcp-connections/${encodeURIComponent(connectionId)}/connect/start?${query}`, c.req.url), { headers }))
+      const payload: unknown = await response.json().catch(() => null)
+      const started = z.object({ authorizeUrl: z.string().nullable(), status: z.string().optional() }).safeParse(payload)
+      if (response.ok && started.success) return c.json({ ...started.data, callbackOrigin: new URL(base).origin })
+      return new Response(JSON.stringify(payload), { status: response.status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
     },
   )
 

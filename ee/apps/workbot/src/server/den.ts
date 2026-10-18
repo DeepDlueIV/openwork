@@ -195,6 +195,9 @@ export function createDen(options: { apiUrl: string; publicUrl: string; serviceT
       if (status !== 200 || !parsed.success) throw new Error(`den_connections_${status}`)
       return parsed.data.connections
     },
+    async connect(accessToken: string, connectionId: string, body: unknown) {
+      return authorized("POST", `/v1/workbot/connections/${encodeURIComponent(connectionId)}/connect/start`, accessToken, body)
+    },
     /**
      * One request Workbot's Calendar makes for the person (their Automations, runs and calendar meetings), through
      * Den's allowlisted `/v1/workbot/calendar/*`. Den's status and body come back as they are.
@@ -225,6 +228,8 @@ const workbotConnectionsSchema = z.object({
     app: z.enum(["gmail", "googleCalendar", "slack", "microsoft"]),
     ready: z.boolean(),
     connectUrl: z.string().nullable(),
+    nativeProviderKey: z.string().nullable().optional(),
+    connectMode: z.enum(["inline", "external", "admin"]).optional(),
   })),
 })
 

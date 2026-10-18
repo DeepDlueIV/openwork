@@ -1034,6 +1034,8 @@ import type {
   SendGmailDraftResponses,
   SendMicrosoft365MailDraftErrors,
   SendMicrosoft365MailDraftResponses,
+  StartWorkbotConnectionErrors,
+  StartWorkbotConnectionResponses,
   TeamPermissionSetBody,
   TrashGmailMessageErrors,
   TrashGmailMessageResponses,
@@ -16531,6 +16533,47 @@ export class DenClient extends HeyApiClient {
       ListWorkbotConnectionsErrors,
       ThrowOnError
     >({ url: "/v1/workbot/connections", ...options });
+  }
+
+  /**
+   * Connect the member's assigned account from Workbot
+   *
+   * Requires a live Workbot OAuth grant with write scope and active membership. Re-enters the existing connection start as that member in the token's organization; the same connection grants and permissions apply. Only a path on the configured Workbot origin can be signed into OAuth state.
+   */
+  public startWorkbotConnection<ThrowOnError extends boolean = false>(
+    parameters: {
+      connectionId: string;
+      returnPath: string;
+      requestId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "connectionId" },
+            { in: "body", key: "returnPath" },
+            { in: "body", key: "requestId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      StartWorkbotConnectionResponses,
+      StartWorkbotConnectionErrors,
+      ThrowOnError
+    >({
+      url: "/v1/workbot/connections/{connectionId}/connect/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
   }
 
   /**

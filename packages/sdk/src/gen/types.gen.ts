@@ -755,6 +755,7 @@ export type AdminFeature = {
     | "workbotTeamLinks"
     | "workbotLunaDefault"
     | "workbotFirstRun"
+    | "workbotInlineConnect"
     | "workbotDocuments"
     | "workbotWorkspaceAssistant"
     | "automationCalendar"
@@ -835,6 +836,7 @@ export type AdminOrganizationsPageResponse = {
       workbotTeamLinks: boolean;
       workbotLunaDefault: boolean;
       workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1064,6 +1066,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1329,6 +1340,7 @@ export type AdminOverviewResponse = {
       workbotTeamLinks: boolean;
       workbotLunaDefault: boolean;
       workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1558,6 +1570,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7929,6 +7950,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbotTeamLinks: boolean;
       workbotLunaDefault: boolean;
       workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8158,6 +8180,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8411,6 +8442,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbotTeamLinks: boolean;
       workbotLunaDefault: boolean;
       workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8640,6 +8672,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -35029,11 +35070,68 @@ export type ListWorkbotConnectionsResponses = {
       app: "gmail" | "googleCalendar" | "slack" | "microsoft";
       ready: boolean;
       connectUrl: string | null;
+      nativeProviderKey?: string | null;
+      connectMode?: "inline" | "external" | "admin";
     }>;
   };
 };
 
 export type ListWorkbotConnectionsResponse = ListWorkbotConnectionsResponses[keyof ListWorkbotConnectionsResponses];
+
+export type StartWorkbotConnectionData = {
+  body: {
+    returnPath: string;
+    requestId: string;
+  };
+  path: {
+    connectionId: string;
+  };
+  query?: never;
+  url: "/v1/workbot/connections/{connectionId}/connect/start";
+};
+
+export type StartWorkbotConnectionErrors = {
+  /**
+   * Invalid connection or return path.
+   */
+  400: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * The token or membership is no longer valid.
+   */
+  401: UnauthorizedError;
+  /**
+   * The grant or connection permission is missing.
+   */
+  403: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * The feature or connection is unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type StartWorkbotConnectionError = StartWorkbotConnectionErrors[keyof StartWorkbotConnectionErrors];
+
+export type StartWorkbotConnectionResponses = {
+  /**
+   * Provider consent URL and its callback origin.
+   */
+  200: {
+    authorizeUrl: string | null;
+    status?: string;
+    callbackOrigin: string;
+  };
+};
+
+export type StartWorkbotConnectionResponse = StartWorkbotConnectionResponses[keyof StartWorkbotConnectionResponses];
 
 export type CreateWorkbotRunTokenData = {
   body: {

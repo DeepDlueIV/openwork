@@ -248,6 +248,16 @@
               ],
               "description": "Workbot: first sign-in: People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable. Renders DEN_FEATURE_WORKBOT_FIRST_RUN."
             },
+            "workbotInlineConnect": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: connect accounts: Members connect their assigned apps directly from Workbot and return to the same view after consent. Renders DEN_FEATURE_WORKBOT_INLINE_CONNECT."
+            },
             "workbotDocuments": {
               "enum": [
                 "",

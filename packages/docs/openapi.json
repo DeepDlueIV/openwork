@@ -2453,6 +2453,7 @@
               "workbotTeamLinks",
               "workbotLunaDefault",
               "workbotFirstRun",
+              "workbotInlineConnect",
               "workbotDocuments",
               "workbotWorkspaceAssistant",
               "automationCalendar",
@@ -2715,6 +2716,9 @@
                     "workbotFirstRun": {
                       "type": "boolean"
                     },
+                    "workbotInlineConnect": {
+                      "type": "boolean"
+                    },
                     "workbotDocuments": {
                       "type": "boolean"
                     },
@@ -2803,6 +2807,7 @@
                     "workbotTeamLinks",
                     "workbotLunaDefault",
                     "workbotFirstRun",
+                    "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -4116,6 +4121,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotInlineConnect": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "workbotDocuments": {
                       "type": "object",
                       "properties": {
@@ -5205,6 +5266,7 @@
                     "workbotTeamLinks",
                     "workbotLunaDefault",
                     "workbotFirstRun",
+                    "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -5662,6 +5724,9 @@
                     "workbotFirstRun": {
                       "type": "boolean"
                     },
+                    "workbotInlineConnect": {
+                      "type": "boolean"
+                    },
                     "workbotDocuments": {
                       "type": "boolean"
                     },
@@ -5750,6 +5815,7 @@
                     "workbotTeamLinks",
                     "workbotLunaDefault",
                     "workbotFirstRun",
+                    "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -7063,6 +7129,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotInlineConnect": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "workbotDocuments": {
                       "type": "object",
                       "properties": {
@@ -8152,6 +8274,7 @@
                     "workbotTeamLinks",
                     "workbotLunaDefault",
                     "workbotFirstRun",
+                    "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -32351,6 +32474,9 @@
                         "workbotFirstRun": {
                           "type": "boolean"
                         },
+                        "workbotInlineConnect": {
+                          "type": "boolean"
+                        },
                         "workbotDocuments": {
                           "type": "boolean"
                         },
@@ -32439,6 +32565,7 @@
                         "workbotTeamLinks",
                         "workbotLunaDefault",
                         "workbotFirstRun",
+                        "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -33752,6 +33879,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotInlineConnect": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "workbotDocuments": {
                           "type": "object",
                           "properties": {
@@ -34841,6 +35024,7 @@
                         "workbotTeamLinks",
                         "workbotLunaDefault",
                         "workbotFirstRun",
+                        "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -35047,6 +35231,9 @@
                         "workbotFirstRun": {
                           "type": "boolean"
                         },
+                        "workbotInlineConnect": {
+                          "type": "boolean"
+                        },
                         "workbotDocuments": {
                           "type": "boolean"
                         },
@@ -35135,6 +35322,7 @@
                         "workbotTeamLinks",
                         "workbotLunaDefault",
                         "workbotFirstRun",
+                        "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -36448,6 +36636,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotInlineConnect": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "workbotDocuments": {
                           "type": "object",
                           "properties": {
@@ -37537,6 +37781,7 @@
                         "workbotTeamLinks",
                         "workbotLunaDefault",
                         "workbotFirstRun",
+                        "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -108559,6 +108804,24 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "nativeProviderKey": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "connectMode": {
+                            "type": "string",
+                            "enum": [
+                              "inline",
+                              "external",
+                              "admin"
+                            ]
                           }
                         },
                         "required": [
@@ -108610,6 +108873,168 @@
             }
           }
         },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/workbot/connections/{connectionId}/connect/start": {
+      "post": {
+        "operationId": "startWorkbotConnection",
+        "tags": [
+          "Workbot"
+        ],
+        "x-mcp": false,
+        "summary": "Connect the member's assigned account from Workbot",
+        "description": "Requires a live Workbot OAuth grant with write scope and active membership. Re-enters the existing connection start as that member in the token's organization; the same connection grants and permissions apply. Only a path on the configured Workbot origin can be signed into OAuth state.",
+        "responses": {
+          "200": {
+            "description": "Provider consent URL and its callback origin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizeUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "callbackOrigin": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "authorizeUrl",
+                    "callbackOrigin"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid connection or return path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token or membership is no longer valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The grant or connection permission is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The feature or connection is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "returnPath": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "returnPath",
+                  "requestId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "connectionId",
+            "required": true
+          }
+        ],
         "security": [
           {
             "denApiKey": []

@@ -3,13 +3,15 @@
  * connection callbacks and native provider callbacks.
  */
 
+import type { WorkbotOAuthReturn } from "../workbot/connect-return-schema.js"
+
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
 export function connectCallbackPage(input:
   | { ok: true; name: string }
-  | { ok: false; name: string; message: string; referenceId?: string }): string {
+  | { ok: false; name: string; message: string; referenceId?: string }, workbotReturn?: WorkbotOAuthReturn & { connectionId: string }): string {
   const title = input.ok ? "You're connected" : "Connection failed"
   const body = input.ok
     ? `<div class="status-row success">
@@ -23,6 +25,10 @@ export function connectCallbackPage(input:
       </div>
       ${input.referenceId ? `<p class="reference">Diagnostic reference: <code>${escapeHtml(input.referenceId)}</code></p>` : ""}
       <p>Return to OpenWork to try connecting again. You can close this window.</p>`
+  // No token, account detail, or provider error crosses the popup boundary. The opener must re-read readiness.
+  const completion = workbotReturn ? JSON.stringify({ type: "openwork:connection-result", requestId: workbotReturn.requestId, connectionId: workbotReturn.connectionId, ok: input.ok }).replace(/</g, "\\u003c") : null
+  const returnUrl = workbotReturn ? new URL(workbotReturn.returnPath, workbotReturn.origin).toString() : null
+  const targetOrigin = workbotReturn ? JSON.stringify(workbotReturn.origin).replace(/</g, "\\u003c") : null
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -87,7 +93,9 @@ export function connectCallbackPage(input:
 </svg><span>OpenWork</span></div>
       <h1>${title}</h1>
       ${body}
+      ${returnUrl ? `<p><a href="${escapeHtml(returnUrl)}">Return to Workbot</a></p>` : ""}
     </main>
+    ${completion ? `<script>if (window.opener) { window.opener.postMessage(${completion}, ${targetOrigin}); window.close(); }</script>` : ""}
   </body>
 </html>`
 }

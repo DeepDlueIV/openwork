@@ -802,6 +802,7 @@ export function toResponsesInput(messages: readonly Message[]): ResponsesItem[] 
 
 const responsesResult = z
   .object({
+    model: z.string().nullish(),
     status: z.string().optional(),
     output: z.array(
       z
@@ -836,6 +837,7 @@ function responsesStep(result: z.infer<typeof responsesResult>): ModelStep {
   return {
     text,
     toolCalls,
+    ...(reportedModel(result.model) ? { model: reportedModel(result.model) } : {}),
     usage: {
       inputTokens: result.usage?.input_tokens ?? 0,
       cachedInputTokens: result.usage?.input_tokens_details?.cached_tokens ?? 0,

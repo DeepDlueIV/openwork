@@ -131,7 +131,8 @@ test("the runner reports a completed greeting without a browser, even when sign-
   const address = server.address()
   assert.ok(address && typeof address !== "string")
   const reporter = workbotTelemetryReporter({ apiToken: service, workbotTelemetryUrl: `http://127.0.0.1:${address.port}/v1/workbot/telemetry` })
-  const runner = new Runner({ store, model: { complete: async () => ({ text: "private greeting response", model: "actual-greeting-model", toolCalls: [], usage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 } }) },
+  let answeringModel = "actual-greeting-model"
+  const runner = new Runner({ store, model: { complete: async () => ({ text: "private greeting response", model: answeringModel, toolCalls: [], usage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 } }) },
     defaultModel: "requested-model-alias", defaultModelApiKey: "fake-key",
     limits: { maxConcurrentTurns: 1, maxSteps: 2, turnTimeoutMs: 30_000, credentialRefreshMs: 60_000, contextCharBudget: 10_000 }, workbotTelemetry: reporter })
   const app = runnerApp({ store, runner, apiToken: service })
@@ -167,6 +168,18 @@ test("the runner reports a completed greeting without a browser, even when sign-
     assert.equal(report.funnel.greetingCompleted, 1, "a slow sign-in probe cannot erase the completed greeting from its cohort")
     assert.equal(report.members.rows[0]?.greetingState, "completed")
     assert.equal(report.members.rows[0]?.readyCountAtSignIn, 0)
+
+    // A provider reflecting most of a per-turn key must not reach either database dimension.
+    answeringModel = "provider-private-ke"
+    const reflected = await app.request(`/v1/sessions/${sessionId}/turns`, { method: "POST", headers, body: JSON.stringify({ messageId: "wb_message0009", prompt: "private message", credentials: { mcpToken: token, modelApiKey: "provider-private-key" } }) })
+    assert.equal(reflected.status, 202)
+    await runner.idle()
+    assert.equal(store.getTurn(sessionId, "wb_message0009")?.status, "completed")
+    const protectedDimensions = await db.select().from(TelemetrySessionDimensionTable).where(eq(TelemetrySessionDimensionTable.org_id, workspace.orgId))
+    const protectedOutcome = protectedDimensions.find((row) => row.dimension_value === "workbot.turn_completed")
+    assert.equal(protectedOutcome?.metadata?.model_source, "unknown")
+    assert.equal(Object.hasOwn(protectedOutcome?.metadata ?? {}, "model"), false)
+    for (const forbidden of [answeringModel, "provider-private-key", token, service]) assert.equal(JSON.stringify(protectedDimensions).includes(forbidden), false)
   } finally {
     finishProbe?.(0)
     await signIn

@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { anthropicModel, ModelError, openAIModel, type ModelClient } from "../src/model.js"
+import { anthropicModel, ModelError, openAIModel, openAIResponsesModel, type ModelClient } from "../src/model.js"
 import { nodeSqlite } from "../src/node-sqlite.js"
 import { Runner } from "../src/runner.js"
 import { Store } from "../src/store.js"
@@ -149,11 +149,11 @@ test("provider-defined error slugs are bucketed, not copied into telemetry", asy
   } finally { world.close() }
 })
 
-test("a provider cannot reflect a model key or its fragments into model telemetry", async () => {
-  for (const reflected of ["test-key", "test-ke", "est-key", "prefix-test-key", "member-toke", "ember-token", "prefix-member-token"]) {
+test("a provider cannot reflect a default key, per-turn key or member token fragment into model telemetry", async () => {
+  for (const reflected of ["test-key", "test-ke", "est-key", "prefix-test-key", "turn-private-key", "urn-private-key", "turn-private-ke", "member-toke", "ember-token", "prefix-member-token"]) {
     const world = setup({ complete: async () => ({ text: "answer", model: reflected, toolCalls: [], usage }) })
     try {
-      world.runner.send({ sessionId, messageId: "wb_hello", prompt: "private prompt", credentials: { mcpToken: "member-token" } })
+      world.runner.send({ sessionId, messageId: "wb_hello", prompt: "private prompt", credentials: { mcpToken: "member-token", modelApiKey: "turn-private-key" } })
       await world.runner.idle()
       const outcome = world.facts.find((fact) => fact.event === "completed")
       assert.ok(outcome?.event === "completed")
@@ -164,7 +164,7 @@ test("a provider cannot reflect a model key or its fragments into model telemetr
   }
 })
 
-test("model adapters keep the provider-reported model for both protocols and streams", async () => {
+test("model adapters keep the provider-reported model for all protocols and streams", async () => {
   for (const stream of [false, true]) {
     const request = { system: "test", messages: [], tools: [], model: "requested-alias", apiKey: "test-key", signal: new AbortController().signal, ...(stream ? { onText: () => undefined } : {}) }
     const openAI = openAIModel({ baseUrl: "https://model.example.test/v1", maxOutputTokens: 256, fetch: async () => stream
@@ -175,5 +175,9 @@ test("model adapters keep the provider-reported model for both protocols and str
       ? new Response('data: {"type":"message_start","message":{"model":"actual-anthropic","usage":{}}}\n\ndata: {"type":"message_stop"}\n\n', { headers: { "content-type": "text/event-stream" } })
       : Response.json({ model: "actual-anthropic", content: [{ type: "text", text: "answer" }] }) })
     assert.equal((await anthropic.complete(request)).model, "actual-anthropic")
+    const responses = openAIResponsesModel({ baseUrl: "https://model.example.test/v1", maxOutputTokens: 256, fetch: async () => stream
+      ? new Response('data: {"type":"response.completed","response":{"model":"actual-responses","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"answer"}]}]}}\n\n', { headers: { "content-type": "text/event-stream" } })
+      : Response.json({ model: "actual-responses", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "answer" }] }] }) })
+    assert.equal((await responses.complete(request)).model, "actual-responses")
   }
 })

@@ -90,6 +90,9 @@ function WorkspaceFileTreeView({ client, workspaceId, workspaceName, selectedPat
     queryKey: ["workspace-file-tree", ...workspaceFileTreeScope(client, workspaceId)],
     queryFn: () => client.listWorkspaceFiles(workspaceId),
     staleTime: 30_000,
+    // Explicit browsing must find newly written files, including files the
+    // engine did not report. Do not rely on another pane's cached catalog.
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
   });
   const entries = query.data?.items ?? [];
@@ -185,7 +188,7 @@ function WorkspaceFileTreeView({ client, workspaceId, workspaceName, selectedPat
       </div>
       {query.isError ? (
         <p role="alert" className="p-3 text-xs text-dls-secondary">Could not load workspace files. Use Refresh to try again.</p>
-      ) : query.isPending ? (
+      ) : query.isPending || (query.isFetching && entries.length === 0) ? (
         <div className="space-y-2 p-2"><Skeleton className="h-7" /><Skeleton className="h-7" /><Skeleton className="h-7" /></div>
       ) : entries.length === 0 ? (
         <p className="p-3 text-xs text-muted-foreground">No workspace files available.</p>

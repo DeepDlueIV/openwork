@@ -72,6 +72,27 @@ test("references include plain text and download-only files and keep producing-t
   } finally { store.clearSession(sessionId); }
 });
 
+test("explicit browsing refreshes a fresh cached empty catalog instead of claiming no files while checking", async () => {
+  const { WorkspaceFileTree, workspaceFileTreeScope } = await import("../src/react-app/domains/session/artifacts/workspace-file-tree");
+  const connection = createOpenworkServerClient({ baseUrl: "http://refresh.example.test", token: "fixture-refresh" });
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof connection.listWorkspaceFiles>>>();
+  const read = spyOn(connection, "listWorkspaceFiles").mockImplementation(() => pending.promise);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  client.setQueryData(["workspace-file-tree", ...workspaceFileTreeScope(connection, "workspace")], { items: [], total: 0, truncated: false });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<PlatformProvider value={createDefaultPlatform()}><QueryClientProvider client={client}>
+      <WorkspaceFileTree client={connection} workspaceId="workspace" workspaceName="Workspace" selectedPath="" onOpenFile={() => {}} />
+    </QueryClientProvider></PlatformProvider>));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(host.textContent).not.toContain("No workspace files available.");
+    await act(async () => { pending.resolve({ items: [{ path: "new.md", kind: "file", size: 1, mtimeMs: 2, revision: "2" }], total: 1, truncated: false }); await new Promise(resolve => setTimeout(resolve, 20)); });
+    expect(host.querySelector("[data-workspace-file-count]")?.getAttribute("data-workspace-file-count")).toBe("1");
+  } finally { await act(async () => root.unmount()); client.clear(); host.remove(); read.mockRestore(); }
+});
+
 test("the bounded tree reports truncation and clears both model and query rows on account/server changes", async () => {
   const { WorkspaceFileTree, workspaceFileTreeScope } = await import("../src/react-app/domains/session/artifacts/workspace-file-tree");
   const first = createOpenworkServerClient({ baseUrl: "http://worker-a.example.test", token: "fixture-account-a" });

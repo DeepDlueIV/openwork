@@ -3,6 +3,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { act, createElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import type { UIMessage } from "ai"
+import type { ModelOption } from "../src/app/types"
 
 GlobalRegistrator.register({ url: "https://web.example/" })
 const previousAct = Reflect.get(globalThis, "IS_REACT_ACT_ENVIRONMENT")
@@ -15,6 +16,7 @@ mock.module("../src/react-app/domains/session/sync/use-last-turn-model-footer-fe
 const { PlatformProvider, createDefaultPlatform } = await import("../src/react-app/kernel/platform")
 const { MessageListProvider } = await import("../src/components/chat/message-list-provider")
 const { MessageList } = await import("../src/components/chat/message-list")
+const { useModelPickerCatalogStore } = await import("../src/react-app/domains/session/models/model-collections-store")
 let mounted: { root: Root; container: HTMLElement } | null = null
 
 afterEach(async () => {
@@ -25,6 +27,7 @@ afterEach(async () => {
     mounted = null
   }
   enabled = false
+  useModelPickerCatalogStore.setState({ bySession: {} })
 })
 afterAll(() => {
   Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", previousAct)
@@ -38,7 +41,8 @@ function answer(id: string): UIMessage {
     metadata: { opencode: { created: 1000, completed: 8000, replyModel: { providerID: "anthropic", modelID: "claude-sonnet", name: "Claude Sonnet", resolved: true } } },
   }
 }
-async function render(messages: UIMessage[], streaming = false) {
+async function render(messages: UIMessage[], streaming = false, modelOptions?: readonly ModelOption[]) {
+  if (modelOptions) useModelPickerCatalogStore.getState().publish("session_fixture", Symbol(), modelOptions)
   const container = document.createElement("div")
   document.body.append(container)
   const root = createRoot(container)
@@ -118,6 +122,45 @@ test("an Auto reply renders the OpenWork mark beside the routed name", async () 
   expect(label?.textContent).toBe("Replied with GPT-6")
   expect(label?.querySelector('svg[aria-label="OpenWork"]')).not.toBeNull()
   expect(label?.querySelector('svg[aria-label="OpenWork"]')?.closest('[aria-hidden="true"]')).not.toBeNull()
+})
+
+test("a gateway reply uses the picker's human title without requesting an opaque provider logo", async () => {
+  enabled = true
+  const message = answer("reply")
+  message.metadata = { opencode: { replyModel: { providerID: "ipr_fixture", modelID: "gwm_fixture" } } }
+  const container = await render([message], false, [{ providerID: "ipr_fixture", modelID: "gwm_fixture", title: "GPT-6 Luna", description: "OpenAI" }])
+  const label = container.querySelector('[data-testid="reply-model"]')
+  expect(label?.textContent).toBe("Replied with GPT-6 Luna")
+  expect(container.textContent).not.toContain("ipr_")
+  expect(container.textContent).not.toContain("gwm_")
+  expect(label?.querySelector("img")).toBeNull()
+  expect(label?.querySelector('[aria-hidden="true"]')?.className).toContain("size-3")
+})
+
+test("the footer follows its own session picker's catalog when it arrives", async () => {
+  enabled = true
+  const message = answer("reply")
+  message.metadata = { opencode: { replyModel: { providerID: "ipr_fixture", modelID: "gwm_fixture" } } }
+  const container = await render([message])
+  expect(container.querySelector('[data-testid="reply-model"]')).toBeNull()
+  const owner = Symbol()
+  await act(async () => useModelPickerCatalogStore.getState().publish("other_session", owner, [
+    { providerID: "ipr_fixture", modelID: "gwm_fixture", title: "Another session's model", description: "OpenAI" },
+  ]))
+  expect(container.querySelector('[data-testid="reply-model"]')).toBeNull()
+  await act(async () => useModelPickerCatalogStore.getState().publish("session_fixture", owner, [
+    { providerID: "ipr_fixture", modelID: "gwm_fixture", title: "GPT-6 Luna", description: "OpenAI" },
+  ]))
+  expect(container.querySelector('[data-testid="reply-model"]')?.textContent).toBe("Replied with GPT-6 Luna")
+})
+
+test("an unknown gateway identity stays hidden without a catalog title", async () => {
+  enabled = true
+  const message = answer("reply")
+  message.metadata = { opencode: { replyModel: { providerID: "ipr_fixture", modelID: "gwm_fixture", resolved: true } } }
+  const container = await render([message], false, [{ providerID: "ipr_other", modelID: "gwm_fixture", title: "Another model", description: "OpenAI" }])
+  expect(container.querySelector('[data-testid="reply-model"]')).toBeNull()
+  expect(container.querySelector('img[src*="ipr_"]')).toBeNull()
 })
 
 test("a streaming reply does not claim a completed model", async () => {

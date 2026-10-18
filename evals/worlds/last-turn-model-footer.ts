@@ -11,7 +11,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function lastTurnModelFooter(seed: Seed) {
   const providerId = "openai";
   const modelId = "gpt-footer";
-  const modelName = modelId;
+  const modelName = "GPT-6 Luna";
   let repliesWithoutResolvedMetadata = 0;
   const older = { prompt: "Check five report sections and summarize the result.", reply: "All five report sections are ready." };
   const latest = { prompt: "Give me the final report status.", reply: "The report is ready to share." };
@@ -83,6 +83,11 @@ export async function lastTurnModelFooter(seed: Seed) {
     const resolvedId = isRecord(resolved) ? resolved.modelID ?? resolved.id : completed.resolvedModelID;
     if (typeof resolvedId !== "string") repliesWithoutResolvedMetadata += 1;
   }
+  const listed = await request(`${mount}/opencode2/api/model`);
+  const catalog: unknown = await listed.json();
+  const entries = Array.isArray(catalog) ? catalog : isRecord(catalog) && Array.isArray(catalog.data) ? catalog.data : [];
+  const catalogModel = entries.filter(isRecord).find(model => model.providerID === providerId && model.id === modelId);
+  if (catalogModel?.name !== modelName) throw new Error(`The native catalog did not preserve the configured human model name: ${JSON.stringify(catalogModel)}`);
   return {
     app, den, session, modelName, older, latest, setRollout, repliesWithoutResolvedMetadata,
     async featureEnabled() {

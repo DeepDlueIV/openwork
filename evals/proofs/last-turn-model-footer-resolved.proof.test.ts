@@ -81,6 +81,28 @@ test("a member sees the last reply's verified model below the answer without rep
     await user.screenshot();
   });
 
+  await step("a gateway reply without resolved identity uses the same human model name as the picker", async () => {
+    await user.click({ text: "Gateway reply" });
+    await user.see({ text: world.gatewayReply.reply });
+    await user.click("Change model");
+    await user.see({ testId: "composer-model-picker" });
+    const picker = await probe.eventually(() => probe.dom(`[data-testid="composer-model-picker"] [data-model-key="${world.gatewayIdentity.providerID}:${world.gatewayIdentity.id}"]`), {
+      within: 15_000, label: "the assigned gateway model in the shared picker", until: value => value.elements.length === 1,
+    });
+    expect(picker.elements[0]?.text).toBe(world.gatewayName);
+    await user.press("Escape");
+    await user.hover("composer");
+    await user.see({ testId: "reply-model" });
+    const surface = `[data-session-surface-id="${world.gateway.sessionId}"]`;
+    const found = (await probe.dom(`${surface} [data-testid="reply-model"]`)).elements;
+    expect(found.map(value => value.text)).toEqual([`Replied with ${world.gatewayName}`]);
+    expect(found.every(value => !/ipr_|gwm_/.test(value.text))).toBe(true);
+    expect((await probe.dom(`${surface} [data-testid="reply-model"] img[src*="ipr_"]`)).elements).toHaveLength(0);
+    expect((await probe.dom(`${surface} [data-testid="completed-work-rail"] [data-testid="reply-model"]`)).elements).toHaveLength(0);
+    evidence.recordAssertionEvidence("An unresolved gateway reply uses its assigned catalog title, never routing IDs", `footer labels=${found.length}; name=${world.gatewayName}; opaque IDs=0; opaque logo requests=0`, found.length === 1 && found[0]?.text === `Replied with ${world.gatewayName}`);
+    await user.screenshot();
+  });
+
   await step("an Auto reply names its routed model once beside the OpenWork mark", async () => {
     await user.click({ text: "Auto reply" });
     await user.see({ text: world.autoReply.reply });
@@ -88,11 +110,11 @@ test("a member sees the last reply's verified model below the answer without rep
     await user.see({ testId: "reply-model" });
     const found = (await probe.dom(`${auto} [data-testid="reply-model"]`)).elements;
     const marks = (await probe.dom(`${auto} [data-testid="reply-model"] svg[aria-label="OpenWork"]`)).elements;
-    expect(found.map(value => value.text)).toEqual([`Replied with ${world.modelName}`]);
+    expect(found.map(value => value.text)).toEqual([`Replied with ${world.autoModelName}`]);
     expect(marks).toHaveLength(1);
     expect(marks[0]?.rect.width).toBe(12);
     expect((await probe.dom(`${auto} [data-testid="completed-work-rail"] [data-testid="reply-model"]`)).elements).toHaveLength(0);
-    evidence.recordAssertionEvidence("Auto retains the OpenWork mark and discloses only the routed reply name", `routed name=${world.modelName}; footer labels=${found.length}; OpenWork marks=${marks.length}`, found.length === 1 && marks.length === 1);
+    evidence.recordAssertionEvidence("Auto retains the OpenWork mark and discloses only the routed reply name", `routed name=${world.autoModelName}; footer labels=${found.length}; OpenWork marks=${marks.length}`, found.length === 1 && marks.length === 1);
     await user.screenshot();
   });
 

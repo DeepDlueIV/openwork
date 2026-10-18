@@ -11,7 +11,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * renderer messages or manufacturing its projected replyModel metadata. */
 export async function lastTurnModelFooterResolved(seed: Seed) {
   await using setup = new AsyncDisposableStack();
-  const { den, webPort } = await denForAppWeb(seed);
+  const { den, webPort } = await denForAppWeb(seed, {
+    env: { GATEWAY_ENABLED: "true", GATEWAY_PROXY_BASE_URL: "http://127.0.0.1:1", GATEWAY_PUBLIC_BASE_URL: "http://127.0.0.1:1" },
+  });
   const organizationId = await seededOrganizationId(seed, den.admin);
   if (!organizationId) throw new Error("The footer proof requires an organization.");
   async function setRollout(enabled: boolean) {
@@ -21,15 +23,30 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
     if (!result.response.ok) throw new Error(`Changing the footer rollout failed: ${result.response.status} ${result.text}`);
   }
   await setRollout(false);
+  const assigned = await seed.api(den.admin, "/v1/inference-providers", {
+    method: "POST", body: JSON.stringify({ name: "Reply model proof", providerId: "openai", modelIds: ["gpt-4o-mini"],
+      credential: { kind: "api_key", secret: "synthetic-footer-upstream-key" }, allMembers: true }),
+  });
+  const provider = isRecord(assigned.body) && isRecord(assigned.body.inferenceProvider) ? assigned.body.inferenceProvider : undefined;
+  const catalogModels = provider && Array.isArray(provider.models) ? provider.models.filter(isRecord) : [];
+  const gatewayModel = catalogModels.find(model => model.upstreamModelId === "gpt-4o-mini");
+  if (!assigned.response.ok || !provider || typeof provider.id !== "string" || !gatewayModel || typeof gatewayModel.id !== "string" || typeof gatewayModel.name !== "string") {
+    throw new Error(`Creating the footer's real gateway catalog failed: ${assigned.response.status}`);
+  }
+  const gatewayName = gatewayModel.name;
+  const gatewayIdentity = { providerID: provider.id, id: gatewayModel.id };
   const { app, workspace } = await signedInAppWeb(seed, {
     name: "last-turn-model-footer-resolved", den, webPort, headless: true, engine: "v2",
     workspacePath: seed.tmpPath("last-turn-model-footer-resolved"),
   });
   const normal = await seed.session(app, { title: "Model footer" });
   const auto = await seed.session(app, { title: "Auto reply" });
+  const gateway = await seed.session(app, { title: "Gateway reply" });
+  const gatewayReply = { prompt: "Give me the document status.", reply: "The gateway reply is ready." };
   const older = { prompt: "Check five report sections and summarize the result.", reply: "All five report sections are ready." };
   const latest = { prompt: "Give me the final report status.", reply: "The report is ready to share." };
   const autoReply = { prompt: "Give me a reply using Auto.", reply: "The Auto reply is ready." };
+  const autoModelName = "GPT-6 Luna";
   const modelName = "Claude Opus 4.5";
   const model = { providerID: "anthropic", id: "claude-opus-4-5" };
   const resolvedModel = { ...model, name: modelName };
@@ -40,7 +57,8 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   const assistant = (id: string, sessionID: string, text: string, created: number, completed: number, automatic = false) => ({
     id, sessionID, type: "assistant", time: { created, completed },
     model: automatic ? { providerID: "openwork", id: "openai/gpt-6-luna" } : model,
-    resolvedModel, finish: "stop", content: [{ type: "text", text }],
+    resolvedModel: automatic ? { providerID: "openai", id: "openai/gpt-6-luna", name: autoModelName } : resolvedModel,
+    finish: "stop", content: [{ type: "text", text }],
   });
   const olderAssistant = {
     ...assistant("msg_footer_02", normal.sessionId, older.reply, now - 100_000, now - 21_000),
@@ -63,6 +81,11 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
       olderAssistant,
       user("msg_footer_03", normal.sessionId, latest.prompt, now - 10_000),
       assistant("msg_footer_04", normal.sessionId, latest.reply, now - 10_000, now - 3_000),
+    ]],
+    [gateway.sessionId, [
+      user("msg_footer_gateway_01", gateway.sessionId, gatewayReply.prompt, now - 10_000),
+      { id: "msg_footer_gateway_02", sessionID: gateway.sessionId, type: "assistant", time: { created: now - 10_000, completed: now - 3_000 },
+        model: gatewayIdentity, finish: "stop", content: [{ type: "text", text: gatewayReply.reply }] },
     ]],
     [auto.sessionId, [
       user("msg_footer_auto_01", auto.sessionId, autoReply.prompt, now - 10_000),
@@ -156,7 +179,7 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   await command("Fetch.enable", { patterns: bases.map(base => ({ urlPattern: `${origin}${base}*/message*`, requestStage: "Request" })) });
   const resources = setup.move();
   return {
-    app, den, normal, auto, older, latest, autoReply, modelName, setRollout,
+    app, den, normal, auto, gateway, gatewayReply, gatewayName, gatewayIdentity, older, latest, autoReply, modelName, autoModelName, setRollout,
     get fixtureReads() { if (failure) throw failure; return fixtureReads; },
     async featureEnabled() {
       if (failure) throw failure;

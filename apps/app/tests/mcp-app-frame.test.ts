@@ -387,6 +387,42 @@ describe("Authored App presentation", () => {
     } finally { resolve.mockRestore(); await host.dispose(); authorizeMcpAppAccess(key, version) }
   })
 
+  test("an unknown principal masks saved text without inventing an access denial", async () => {
+    const host = await startupFixture()
+    const part = authoredPart()
+    const uri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
+    const resolve = spyOn(host.client, "resolveMcpApp").mockResolvedValue({ app: fixture({ resourceUri: uri, toolName: "open_app" }) })
+    try {
+      await host.renderElement(createElement(McpAppFrame, { part, origin: { client: host.client, workspaceId: "unknown-principal", sessionId: "unknown-chat", readOnly: true, principalScope: "" } }))
+      expect(host.container.textContent).toContain("could not be verified")
+      expect(host.container.textContent).not.toContain("was denied")
+      expect(host.container.querySelector("[data-mcp-app-fallback]")).toBeNull()
+      expect(host.container.querySelector("iframe")).toBeNull()
+    } finally { resolve.mockRestore(); await host.dispose() }
+  })
+
+  test("an error result cannot bypass a known App barrier just because its fallback is hidden", async () => {
+    const host = await startupFixture()
+    const part = authoredPart()
+    const origin = { client: host.client, workspaceId: "error-result-access", sessionId: "error-result", readOnly: true, principalScope: "cloud:member:organization" }
+    const uri = mcpAppResourceUri("cob_00000000000000000000000000", "cov_00000000000000000000000000")
+    const key = mcpAppAccessKey(origin, uri)
+    denyMcpAppAccess(key)
+    const version = mcpAppAccessVersion(key)
+    Reflect.set(Reflect.get(Object(part.callProviderMetadata?.openwork), "mcpResult"), "isError", true)
+    const pending = Promise.withResolvers<{ app: OpenworkMcpAppResource }>()
+    const resolve = spyOn(host.client, "resolveMcpApp").mockImplementation(() => pending.promise)
+    try {
+      expect(mcpAppTextFallback(part)).toBeNull()
+      await host.renderElement(createElement(McpAppFrame, { part, origin }))
+      expect(host.container.textContent).toContain("was denied")
+      expect(host.container.querySelector("iframe")).toBeNull()
+      await act(async () => pending.reject(new OpenworkServerError(401, "mcp_auth_required", "Sign-in needs refreshing")))
+      expect(mcpAppAccessVersion(key)).toBe(version)
+      expect(host.container.querySelector("iframe")).toBeNull()
+    } finally { resolve.mockRestore(); await host.dispose(); authorizeMcpAppAccess(key, version) }
+  })
+
   test("does not mistake generic tool prose or a mismatched revision for authored fallback", () => {
     const part = authoredPart()
     expect(mcpAppTextFallback(part)).toContain("Review the project checklist")

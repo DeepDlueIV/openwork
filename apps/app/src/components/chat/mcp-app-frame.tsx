@@ -167,18 +167,23 @@ export function builtMcpAppId(part: DynamicToolUIPart): string | null {
   return app && launch?.connectionId === app.appId && launch.toolName === "open_app" ? app.appId : null
 }
 
-/** Authored copy comes from a validated revision, never mixed transport prose. */
-export function mcpAppTextFallback(part: DynamicToolUIPart): string | null {
+/** Identity/copy only, never current permission. An error result still has the same access barrier. */
+function authoredMcpAppSummary(part: DynamicToolUIPart) {
   const result = preservedResult(part)
   const launch = gatewayMcpAppLaunch(result?._meta)
   const summary = mcpAppSummarySchema.safeParse(result?.structuredContent?.app)
-  if (result?.isError === true || !summary.success) return null
+  if (!summary.success) return null
   const resource = parseMcpAppResourceUri(summary.data.resourceUri)
   if (resource?.appId !== summary.data.appId || resource.revisionId !== summary.data.revisionId) return null
   if (!launch) return result?._meta?.["openwork/mcpApp"] === undefined && /(?:^|_)(?:create_app|update_app|open_app)$/.test(part.toolName)
-    ? summary.data.textFallback : null
+    ? summary.data : null
   return launch.connectionId === summary.data.appId && launch.resourceUri === summary.data.resourceUri
-    && launch.toolName === summary.data.toolName ? summary.data.textFallback : null
+    && launch.toolName === summary.data.toolName ? summary.data : null
+}
+
+/** Authored copy comes from a validated revision, never mixed transport prose. */
+export function mcpAppTextFallback(part: DynamicToolUIPart): string | null {
+  return preservedResult(part)?.isError === true ? null : authoredMcpAppSummary(part)?.textFallback ?? null
 }
 
 function McpAppTextFallback({ text }: { text: string }) {
@@ -1024,14 +1029,15 @@ export function McpAppFrame({ part, origin, onStateChange }: McpAppRendererObser
 
 function McpAppFallbackFrame({ part, origin, onStateChange }: McpAppRendererObserver & { part: DynamicToolUIPart; origin?: McpAppOrigin }) {
   const context = useOptionalMessageList()
-  const summary = mcpAppSummarySchema.safeParse(preservedResult(part)?.structuredContent?.app)
+  const summary = authoredMcpAppSummary(part)
   const fallback = mcpAppTextFallback(part)
-  // A summary for another launch must never clear or poison this App's barrier.
-  const accessKey = fallback !== null && summary.success ? mcpAppAccessKey(origin ?? context?.mcpAppOrigin ?? null, summary.data.resourceUri) : null
+  // Identity scopes the barrier even when there is no readable fallback; it
+  // cannot authorize access without an App-specific, matching resource read.
+  const accessKey = summary ? mcpAppAccessKey(origin ?? context?.mcpAppOrigin ?? null, summary.resourceUri) : null
   const accessDenied = useMcpAppAccessDenied(accessKey)
   return <>
     {fallback && !accessDenied ? <McpAppTextFallback text={fallback} /> : null}
-    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} accessKey={accessKey} accessDenied={Boolean(fallback) && accessDenied} />
+    <EmbeddedMcpAppFrame part={part} origin={origin} onStateChange={onStateChange} accessKey={accessKey} accessDenied={summary !== null && accessDenied} />
   </>
 }
 
@@ -1217,7 +1223,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin, onStateChange, acces
     <McpAppDiagnosticNotice error={error} notice={CHAT_MCP_APP_UNAVAILABLE_NOTICE} onRetry={() => setResolveToken((token) => token + 1)} engine={origin.engine} />
   </div>
   if (accessDenied) return <div className="py-3 text-sm text-muted-foreground" style={{ minHeight: heightRef.current }}>
-    <p role="status">Access to this App was denied. Retry to check access.</p>
+    <p role="status">{accessKey === null ? "Access to this App could not be verified. Retry to check access." : "Access to this App was denied. Retry to check access."}</p>
     <Button type="button" variant="link" size="xs" className="mt-1 px-0" onClick={() => setResolveToken(token => token + 1)}>{t("common.retry")}</Button>
   </div>
   if (!app || resolvedFor.current !== resolution) return launch && resolvedFor.current !== resolution

@@ -8,7 +8,7 @@ test("a member keeps a Google original and its confirmed Office copy independent
   await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
   await step("before: the member explicitly creates an Excel copy without changing the Google original", async () => {
     await user.click({ role: "button", label: "Planning" });
-    await user.see({ text: "You’re editing a Excel copy. Save creates a new file in My Drive; the Google original stays unchanged." });
+    await user.see({ text: "You’re editing an Excel copy. Save creates a new file in My Drive; the Google original stays unchanged." });
     await probe.eventually(() => probe.dom(".ow-document-actions button:not(:disabled)"), { within: 5000, label: "the editing session is ready for an explicit save", until: layout => layout.elements.length === 1 });
     await user.click({ role: "button", label: "Save Excel copy to Drive" });
     await user.see({ text: "Saved to Drive" });
@@ -33,11 +33,15 @@ test("a member keeps a Google original and its confirmed Office copy independent
     await user.click({ role: "button", label: "Planning", nth: 0 });
     await user.see({ role: "button", label: "Planning.xlsx" });
     expect((await probe.dom(".ow-document-tab")).elements).toHaveLength(2);
-    await probe.eventually(() => world.sessions().filter(session => session.fileId === "original"), { within: 5000, label: "the original owns an independent editing session", until: sessions => sessions.length === 2 });
+    // StrictMode can abort a session-creation request after the fixture accepts
+    // it. Count distinct sessions actually launched into the retained frames,
+    // not every POST attempt; keep creation receipts visible as diagnostics.
+    await probe.eventually(() => world.launchedSessions().filter(session => session.fileId === "original"), { within: 5000, label: "the original owns an independent launched editing session", until: sessions => sessions.length === 2 });
+    expect((await probe.dom(".ow-office-frame")).elements).toHaveLength(2);
     await user.click({ role: "button", label: /^Files$/ });
     await user.click({ role: "button", label: "Planning.xlsx", nth: 0 });
     expect((await probe.dom(".ow-document-tab")).elements).toHaveLength(2);
-    evidence.recordAssertionEvidence("Tab identity is not source file identity", "Two independently opened source sessions; reopening the saved copy creates no duplicate tab", world.sessions().length === 2);
+    evidence.recordAssertionEvidence("Tab identity is not source file identity", `Two tabs and two distinct launched source sessions; reopening the saved copy creates no duplicate tab. Session-creation attempts=${world.sessions().length}; launched=${world.launchedSessions().length}.`, world.launchedSessions().length === 2);
     await user.screenshot();
   });
 });

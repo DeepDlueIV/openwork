@@ -11,6 +11,7 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 export async function officeLifecycle(_seed: Seed, { place }: { place: Place }) {
   const resources = new AsyncDisposableStack();
   const sessions = new Map<string, Session>();
+  const launches: string[] = [];
   const saves: string[] = [];
   const messages: Record<string, unknown>[] = [];
   let copied = false;
@@ -29,6 +30,7 @@ export async function officeLifecycle(_seed: Seed, { place }: { place: Place }) 
           const json = (value: unknown, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(value)); };
           if (url.pathname.startsWith("/office-frame/")) {
             const id = url.pathname.split("/").pop();
+            if (id) launches.push(id);
             res.setHeader("content-type", "text/html");
             return void res.end(`<!doctype html><html><body><p>Office protocol fixture — not a document engine</p><script>
               const send = (MessageId, Values) => parent.postMessage(JSON.stringify({MessageId, Values}), location.origin);
@@ -87,6 +89,6 @@ export async function officeLifecycle(_seed: Seed, { place }: { place: Place }) 
     resources.defer(() => vite.close()); await vite.listen();
     const url = vite.resolvedUrls?.local[0]; if (!url) throw new Error("Office fixture did not start");
     const web = resources.use(await chrome({ host: place.host(), name: "office-lifecycle", startUrl: `${url}documents`, headless: true }));
-    return { web, url, saves: () => [...saves], messages: () => [...messages], sessions: () => [...sessions.values()], async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
+    return { web, url, saves: () => [...saves], messages: () => [...messages], sessions: () => [...sessions.values()], launchedSessions: () => [...new Set(launches)].flatMap(id => { const session = sessions.get(id); return session ? [session] : []; }), async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
   } catch (error) { await resources.disposeAsync(); throw error; }
 }

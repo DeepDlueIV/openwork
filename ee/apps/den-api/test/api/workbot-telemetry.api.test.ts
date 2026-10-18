@@ -54,6 +54,7 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
   const failed = { event: "failed", sessionId, messageId: "wb_hello", timestamp: timestamp + 1, attempt: timestamp, model: "test-answer-model", errorCode: "model_credentials_missing" }
   assert.equal((await call(failed)).status, 204)
   assert.equal((await call(failed)).status, 204)
+  assert.equal((await call({ ...failed, timestamp: timestamp + 4, errorCode: "model_stream_private_marker_must_not_be_recorded" })).status, 204)
   assert.equal((await call({ ...failed, errorCode: "provider text includes an email@example.test" })).status, 400)
   assert.equal((await call({ ...failed, event: "completed", timestamp: timestamp + 2, errorCode: null })).status, 204)
   assert.equal((await call({ ...failed, event: "completed", timestamp: timestamp + 2, errorCode: null })).status, 204)
@@ -64,7 +65,7 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
   stored = await events(workspace.orgId)
   assert.equal(stored.filter((row) => row.event_type === "workbot.greeting_started").length, 1)
   assert.equal(stored.filter((row) => row.event_type === "workbot.greeting_completed").length, 1)
-  assert.equal(stored.filter((row) => row.event_type === "workbot.greeting_failed").length, 1)
+  assert.equal(stored.filter((row) => row.event_type === "workbot.greeting_failed").length, 2)
   assert.equal(stored.filter((row) => row.event_type === "workbot.message_sent").length, 1)
   const dimensions = await db.select().from(TelemetrySessionDimensionTable).where(eq(TelemetrySessionDimensionTable.org_id, workspace.orgId))
   const facts = dimensions.filter((row) => row.dimension_type === "workbot")
@@ -73,7 +74,8 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
     attachment_count: 2, chat: "main", has_context: true, model: "test-answer-model",
   })
   const raw = JSON.stringify({ stored, dimensions })
-  for (const forbidden of [workspace.owner.email, teammate.email, "private-message-must-never-be-stored", token, service]) assert.equal(raw.includes(forbidden), false)
+  for (const forbidden of [workspace.owner.email, teammate.email, "private-message-must-never-be-stored", "private_marker", token, service]) assert.equal(raw.includes(forbidden), false)
+  assert.ok(facts.some((row) => row.metadata?.error_code === "model_stream_error"), "unrecognized provider error types become a server-owned bucket")
 
   // Ordinary telemetry ingest must not let a signed-in client forge server Workbot outcomes or source.
   const forged = await den.as(workspace.owner, workspace.orgId)("POST", "/v1/telemetry/ingest", { events: [
@@ -100,7 +102,7 @@ test("Workbot service facts use token identity, reject browsers and deduplicate 
   const adminToken = await den.mintMcpToken(adminWorkspace.owner, adminWorkspace.orgId)
   const today = new Date().toISOString().slice(0, 10)
   const adminReport = await den.request(adminToken, "POST", "/mcp/admin", { headers: { accept: "application/json, text/event-stream" }, body: {
-    jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "den_workbot_adoption", arguments: { startDate: today, endDate: today, organizationId: workspace.orgId } },
+    jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "den_workbot_adoption", arguments: { startDate: new Date(signedInAt).toISOString().slice(0, 10), endDate: today, organizationId: workspace.orgId } },
   } })
   assert.equal(adminReport.status, 200, summary(adminReport))
   const line = adminReport.text.split("\n").find((entry) => entry.startsWith("data:"))
@@ -157,7 +159,7 @@ test("the runner reports a completed greeting without a browser, even when sign-
     finishProbe(0)
     await signIn
     const day = new Date(signedInAt).toISOString().slice(0, 10)
-    const report = await readWorkbotAdoptionReport({ startDate: day, endDate: day, organizationId: workspace.orgId }, async (query) => normalizeRows(await db.execute(query)))
+    const report = await readWorkbotAdoptionReport({ startDate: day, endDate: new Date().toISOString().slice(0, 10), organizationId: workspace.orgId }, async (query) => normalizeRows(await db.execute(query)))
     assert.equal(report.funnel.greetingCompleted, 1, "a slow sign-in probe cannot erase the completed greeting from its cohort")
     assert.equal(report.members.rows[0]?.greetingState, "completed")
     assert.equal(report.members.rows[0]?.readyCountAtSignIn, 0)

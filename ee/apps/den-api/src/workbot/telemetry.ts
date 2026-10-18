@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto"
 import { sql } from "@openwork-ee/den-db/drizzle"
 import { TelemetryEventTable, TelemetrySessionDimensionTable } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
-import { headlessRunnerConfig } from "@openwork-ee/headless-protocol"
+import { headlessRunnerConfig, telemetryFailureCode } from "@openwork-ee/headless-protocol"
 import { z } from "zod"
 import { db } from "../db.js"
 
@@ -119,8 +119,9 @@ export async function recordWorkbotTelemetry(actor: WorkbotTelemetryActor, event
   }
   if (event.event === "completed") return recordWorkbotEvent(actor, greeting ? "workbot.greeting_completed" : "workbot.turn_completed", greeting ? "first" : `${event.sessionId}:${event.messageId}`, { model: event.model, model_source: event.modelSource }, event.timestamp)
   if (!greeting) return
-  return recordWorkbotEvent(actor, "workbot.greeting_failed", `${event.attempt}:${event.timestamp}:${event.errorCode ?? event.event}`, {
-    model: event.model, error_code: event.errorCode ?? (event.event === "aborted" ? "aborted" : "runner_error"),
+  const errorCode = telemetryFailureCode(event.errorCode ?? (event.event === "aborted" ? "aborted" : "runner_error"))
+  return recordWorkbotEvent(actor, "workbot.greeting_failed", `${event.attempt}:${event.timestamp}:${errorCode}`, {
+    model: event.model, error_code: errorCode,
   }, event.timestamp)
 }
 

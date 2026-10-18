@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { anthropicModel, openAIModel, type ModelClient } from "../src/model.js"
+import { anthropicModel, ModelError, openAIModel, type ModelClient } from "../src/model.js"
 import { nodeSqlite } from "../src/node-sqlite.js"
 import { Runner } from "../src/runner.js"
 import { Store } from "../src/store.js"
@@ -59,14 +59,31 @@ test("greeting failures record codes without text, and telemetry failure never f
   } finally { world.close() }
   const successful = setup({ complete: async () => ({ text: "answer", toolCalls: [], usage }) }, true)
   try {
-    successful.runner.send({ sessionId, messageId: "wb_message0001", prompt: "[OpenWork visible context v1]\nprivate context", credentials: { mcpToken: "member-token" } })
+    successful.runner.send({ sessionId, messageId: "wb_message0001", prompt: "[OpenWork visible context v1]\nprivate context", credentials: { mcpToken: "member-token", readOnly: true } })
     await successful.runner.idle()
     assert.equal(successful.store.getTurn(sessionId, "wb_message0001")?.status, "completed")
     const first = successful.facts[0]
     assert.ok(first.event === "accepted")
     assert.equal(first.hasContext, true)
     assert.equal(first.attachmentCount, 0)
+    successful.runner.send({ sessionId, messageId: "wb_message0002", prompt: "[OpenWork visible context v1]\njust typed text", credentials: { mcpToken: "member-token" } })
+    await successful.runner.idle()
+    const ordinary = successful.facts.find((fact) => fact.event === "accepted" && fact.messageId === "wb_message0002")
+    assert.ok(ordinary?.event === "accepted")
+    assert.equal(ordinary.hasContext, false, "typed text cannot impersonate server-supplied context metadata")
   } finally { successful.close() }
+})
+
+test("provider-defined error slugs are bucketed, not copied into telemetry", async () => {
+  const world = setup({ complete: async () => { throw new ModelError("model_stream_private_marker_must_not_be_recorded", "private provider details", false) } })
+  try {
+    world.runner.send({ sessionId, messageId: "wb_hello", prompt: "private prompt", credentials: { mcpToken: "member-token" } })
+    await world.runner.idle()
+    const outcome = world.facts.find((fact) => fact.event === "failed")
+    assert.ok(outcome?.event === "failed")
+    assert.equal(outcome.errorCode, "model_stream_error")
+    assert.equal(JSON.stringify(world.facts).includes("private_marker"), false)
+  } finally { world.close() }
 })
 
 test("model adapters keep the provider-reported model for both protocols and streams", async () => {

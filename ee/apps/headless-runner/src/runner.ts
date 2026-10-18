@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { telemetryFailureCode } from "@openwork-ee/headless-protocol"
 import type { ErrorReporter } from "./error-reporting.js"
 import { isWorkbotTurn, type WorkbotTurnFact } from "./workbot-telemetry.js"
 import type { SessionEvents } from "./events.js"
@@ -349,7 +350,7 @@ export class Runner {
     const event = turn.status === "completed" ? "completed" : turn.status === "aborted" ? "aborted" : "failed"
     this.reportWorkbot({ event, sessionId: turn.sessionId, messageId: turn.messageId, timestamp: turn.updatedAt, attempt: turn.createdAt,
       model: answeredModel ?? turn.model ?? this.options.defaultModel, modelSource: answeredModel ? "response" : "configured",
-      errorCode: turn.error && /^[a-z][a-z0-9_]{0,63}$/.test(turn.error) ? turn.error : null }, token)
+      errorCode: turn.error ? telemetryFailureCode(turn.error) : null }, token)
   }
 
   /**
@@ -417,7 +418,7 @@ export class Runner {
     if (!turn) throw new Error("turn_missing_after_admission")
     if (state === "accepted") this.reportWorkbot({ event: "accepted", sessionId: input.sessionId, messageId: input.messageId,
       timestamp: turn.createdAt, model: turn.model ?? this.options.defaultModel, attachmentCount: input.attachments?.length ?? 0,
-      hasContext: input.prompt.startsWith("[OpenWork visible context v1]\n") }, input.credentials.mcpToken)
+      hasContext: input.messageId !== "wb_hello" && input.credentials.readOnly === true }, input.credentials.mcpToken)
     if (input.interrupt && turn.kind === undefined) this.supersede(input.sessionId, input.messageId)
     // Resuming a task or a report keeps it in its lane.
     this.enqueue({ sessionId: input.sessionId, messageId: input.messageId, kind: turn.kind ?? "message" }, { credentials: input.credentials, at: Date.now() })

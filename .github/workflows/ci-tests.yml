@@ -84,6 +84,8 @@ jobs:
         uses: ./.github/actions/setup-tests
       - name: Check Den web hook order
         run: pnpm --filter @openwork-ee/den-web lint
+      - name: Build the shared headless protocol
+        run: pnpm --filter @openwork-ee/headless-protocol build
       - name: Typecheck the headless runner
         run: pnpm --filter @openwork-ee/headless-runner typecheck
       - name: Test shared headless computer and configuration

@@ -445,6 +445,22 @@ export function workbotOutputs(world: WorkbotWorld, extra: Record<string, WorldO
 }
 
 /**
+ * The desktop runner holds a Daytona key, so it only runs reviewed code: a commit already on
+ * upstream dev, or one the operator names in OPENWORK_PREVIEW_TRUSTED_SHA after reading it.
+ */
+async function requireReviewedDesktopSource(ref: string) {
+  const sha = ref.replace(/^sha:/, "");
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error("--computer-snapshot needs a pinned commit SHA.");
+  if (process.env.OPENWORK_PREVIEW_TRUSTED_SHA?.trim() === sha) return;
+  const root = fileURLToPath(new URL("../..", import.meta.url));
+  await execFileAsync("git", ["fetch", "--quiet", "origin", "dev"], { cwd: root });
+  const reviewed = await execFileAsync("git", ["merge-base", "--is-ancestor", sha, "origin/dev"], { cwd: root }).then(() => true, () => false);
+  if (!reviewed) {
+    throw new Error(`--computer-snapshot gives the runner a Daytona key, so ${sha.slice(0, 10)} must already be on dev. After reviewing that commit yourself, set OPENWORK_PREVIEW_TRUSTED_SHA=${sha}.`);
+  }
+}
+
+/**
  * The runner executes the previewed checkout, which may be anyone's pull request. It never
  * receives the operator's Daytona key: only a key limited to sandboxes and their memory
  * snapshots, which expires with the preview and is revoked when the world is torn down.
@@ -496,6 +512,7 @@ export async function bootWorkbotOnDaytona(stack: AsyncDisposableStack, place: P
   let computerEnv: Record<string, string> = {};
   let desktopClient: import("../../packages/sandbox-daytona/src/index.ts").DaytonaClient | undefined;
   if (options.computerSnapshot) {
+    await requireReviewedDesktopSource(base.ref);
     const auth = await worldDaytonaAuth();
     if (auth.mode !== "api-key") throw new Error("The desktop runner needs a scoped Daytona API key, not a browser-session token.");
     const { createDaytonaClient } = await import("../../packages/sandbox-daytona/dist/index.js");

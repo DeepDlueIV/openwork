@@ -54,13 +54,19 @@ export type OpenWorkDocumentsEditorConfig = {
   frameAncestor: string
 }
 
+/** Installed by the worker image beside the engine. */
+export const DOCUMENTS_EDITOR_PROXY_PATH = "/opt/openwork/documents-editor-proxy.mjs"
+
 /**
- * Supervises the image's Collabora engine as its own user. The signed preview
- * URL reaches it through the provider proxy, which terminates TLS. It loads
- * only Den's WOPI files, with macros and the admin console off. The instance
- * is the member's own VM, so chroot jails are not required for isolation.
+ * Supervises the image's Collabora engine as its own user, on loopback behind
+ * a small proxy on the public port. The signed preview URL reaches the proxy
+ * through the provider proxy, which terminates TLS and rewrites Host; the
+ * proxy restores the public host the engine builds its URLs from. The engine
+ * loads only Den's WOPI files, with macros and the admin console off. The
+ * instance is the member's own VM, so chroot jails are not required for isolation.
  */
 function documentsEditorScript(config: OpenWorkDocumentsEditorConfig, rebuildHint: string) {
+  const enginePort = config.port + 1
   const options = [
     "--use-env-vars",
     "--o:sys_template_path=/opt/cool/systemplate",
@@ -73,8 +79,8 @@ function documentsEditorScript(config: OpenWorkDocumentsEditorConfig, rebuildHin
     "--o:ssl.enable=false",
     "--o:ssl.termination=true",
     "--o:net.proto=IPv4",
-    "--o:net.listen=any",
-    `--o:port=${config.port}`,
+    "--o:net.listen=loopback",
+    `--port=${enginePort}`,
     `--o:net.frame_ancestors=${config.frameAncestor}`,
     "--o:admin_console.enable=false",
     "--o:security.capabilities=false",
@@ -98,10 +104,23 @@ function documentsEditorScript(config: OpenWorkDocumentsEditorConfig, rebuildHin
   echo "document editor stopped after repeated failures; ${rebuildHint} if this persists" >&2
 }
 
+documents_editor_proxy_loop() {
+  proxy_attempt=0
+  while [ "$proxy_attempt" -lt 5 ]; do
+    proxy_attempt=$((proxy_attempt + 1))
+    node ${shellQuote(DOCUMENTS_EDITOR_PROXY_PATH)} ${config.port} ${enginePort}
+    echo "document editor proxy exited (attempt $proxy_attempt); retrying in 5s" >&2
+    sleep 5
+  done
+}
+
 editor_pid=""
-if command -v coolwsd >/dev/null 2>&1; then
+editor_proxy_pid=""
+if command -v coolwsd >/dev/null 2>&1 && [ -f ${shellQuote(DOCUMENTS_EDITOR_PROXY_PATH)} ]; then
   documents_editor_loop &
   editor_pid=$!
+  documents_editor_proxy_loop &
+  editor_proxy_pid=$!
 else
   echo "document editor is not installed in this image; ${rebuildHint} to edit Office files here"
 fi`
@@ -354,9 +373,9 @@ on_term() {
     kill "$checkpoint_pid" 2>/dev/null || true
     wait "$checkpoint_pid" 2>/dev/null || true
   fi
-  if [ -n "\${editor_pid:-}" ]; then
-    kill "$editor_pid" 2>/dev/null || true
-  fi
+  for documents_pid in "\${editor_pid:-}" "\${editor_proxy_pid:-}"; do
+    [ -n "$documents_pid" ] && kill "$documents_pid" 2>/dev/null || true
+  done
   exit 143
 }
 trap on_term TERM INT

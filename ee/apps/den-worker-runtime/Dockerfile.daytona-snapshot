@@ -56,6 +56,7 @@ ARG COLLABORA_REPO=https://collaboraoffice.com/repos/CollaboraOnline/25.04-CODE/
 COPY --from=openwork-builder /src/packages/documents/collabora/dist/branding.js /tmp/openwork-branding.js
 COPY --from=openwork-builder /src/packages/documents/collabora/branding.css /tmp/openwork-branding.css
 COPY packages/documents/collabora/install-openwork-theme.sh /tmp/install-openwork-theme.sh
+COPY ee/apps/den-worker-runtime/documents-editor-proxy.mjs /opt/openwork/documents-editor-proxy.mjs
 RUN set -eux; \
   if [ "$DOCUMENTS_EDITOR" = "1" ]; then \
     apt-get update; \

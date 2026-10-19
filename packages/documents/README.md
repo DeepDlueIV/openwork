@@ -166,8 +166,11 @@ Web, and otherwise offers Open in Drive. The worker snapshot
 (`ee/apps/den-worker-runtime/Dockerfile.daytona-snapshot`) installs the unbranded
 CODE packages with this integration; its bootstrap starts the engine as the `cool`
 user with Den as the only WOPI host, Workbot as the only embedder, and macros and
-the admin console off. Each session uses its own signed preview URL for the editor
-port, valid for the session. While the engine starts, Den answers `office_starting`
+the admin console off. The engine listens on loopback behind a small proxy
+(`ee/apps/den-worker-runtime/documents-editor-proxy.mjs`) that restores the
+signed public host from `X-Forwarded-Host`; the provider's preview proxy rewrites
+`Host`, and the engine builds its editor and websocket URLs from it. Each session
+uses its own signed preview URL for the editor port, valid for the session. While the engine starts, Den answers `office_starting`
 and the tab retries for about two minutes. An open session marks the worker busy,
 so idle stop and image updates wait until the file closes or its editor traffic
 stops for 20 minutes. `DEN_DOCUMENTS_COLLABORA_URL` is not used in this mode.

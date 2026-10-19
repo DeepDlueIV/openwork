@@ -163,10 +163,13 @@ test("bootstrap starts the document editor only when Den places it in the worker
   // Den is the only WOPI host; Workbot is the only embedder; no admin console, macros or remote UNO.
   assert.match(script, /runuser -u cool -- env aliasgroup1='https:\/\/api\.example\.com:443' coolwsd/)
   assert.match(script, /'--o:net\.frame_ancestors=https:\/\/workbot\.example\.com'/)
-  for (const option of ["admin_console.enable=false", "security.enable_macros_execution=false", "security.enable_websocket_urp=false", "port=9980"]) {
+  for (const option of ["admin_console.enable=false", "security.enable_macros_execution=false", "security.enable_websocket_urp=false", "net.listen=loopback"]) {
     assert.ok(script.includes(`'--o:${option}'`), option)
   }
+  // The engine stays on loopback; the public port restores the signed host the provider proxy rewrote.
+  assert.ok(script.includes("'--port=9981'"))
+  assert.match(script, /node '\/opt\/openwork\/documents-editor-proxy\.mjs' 9980 9981/)
   // An older image without the engine still serves OpenWork.
-  assert.match(script, /if command -v coolwsd >\/dev\/null 2>&1; then/)
+  assert.match(script, /if command -v coolwsd >\/dev\/null 2>&1 && \[ -f '\/opt\/openwork\/documents-editor-proxy\.mjs' \]; then/)
   assert.ok(script.indexOf("documents_editor_loop &") < script.indexOf("\nattempt=0"))
 })

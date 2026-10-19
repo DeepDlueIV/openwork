@@ -13,6 +13,8 @@ export type WorkspacePage = "home" | "calendar" | "documents" | "computer";
 export const WorkspaceNavigationContext = createContext<((fileId: string) => void) | null>(null);
 /** The document on screen right now, so a reply never offers to open what is already open. */
 export const OpenDocumentContext = createContext<string | null>(null);
+/** Opens Workbot's computer from a conversation; null while it is already on screen or unavailable. */
+export const ComputerNavigationContext = createContext<(() => void) | null>(null);
 const control = "grid size-8 shrink-0 place-items-center rounded-lg text-[var(--wb-muted)] hover:bg-[var(--wb-chip)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]";
 
 /** A result offers navigation; only the person's ordinary click opens a file in Workbot. */
@@ -36,6 +38,18 @@ export function DocumentOffers({ links }: { links: Array<{ fileId: string; label
     <button type="button" onClick={() => open(first.fileId)} title="Open in Documents"
       className="flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium leading-4 text-[var(--wb-text)] transition-colors duration-150 hover:bg-[var(--wb-chip)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]">
       <FileText size={14} strokeWidth={1.75} aria-hidden className="shrink-0 text-[var(--wb-muted)]" /><span className="truncate">Open {first.label}</span>
+    </button>
+  </div>;
+}
+
+/** Guided navigation: the latest reply that used Workbot's computer offers to open it, like a mentioned document. */
+export function ComputerOffer() {
+  const open = useContext(ComputerNavigationContext);
+  if (!open || !workbotHost().guidedNavigation) return null;
+  return <div className="workbot-row-enter flex min-h-7 items-center pt-1" data-workbot-computer-offer>
+    <button type="button" onClick={open} title="Open Workbot's computer"
+      className="flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium leading-4 text-[var(--wb-text)] transition-colors duration-150 hover:bg-[var(--wb-chip)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]">
+      <Monitor size={14} strokeWidth={1.75} aria-hidden className="shrink-0 text-[var(--wb-muted)]" /><span className="truncate">Open Computer</span>
     </button>
   </div>;
 }
@@ -86,7 +100,7 @@ export function SentContext({ context }: { context?: WorkbotViewContext }) {
 }
 
 /** The composer stays in the workspace; the conversation is disclosed through an anchored Base UI popover. */
-export function WorkspaceAssistant({ name, context, includeContext, onIncludeContext, composer, conversation, onDocument, unavailable, active, reveal = 0, stayOpen = false }: { active: boolean; name: string; context: WorkbotViewContext | null; includeContext: boolean; onIncludeContext(value: boolean): void; composer: ReactNode; conversation: ReactNode; onDocument(fileId: string): void; unavailable: boolean; /** Increments when chat navigation should leave the conversation open beside the document. */ reveal?: number; /** Guided navigation keeps the conversation open while a document opens behind it. */ stayOpen?: boolean }) {
+export function WorkspaceAssistant({ name, context, includeContext, onIncludeContext, composer, conversation, onDocument, onComputer = null, unavailable, active, reveal = 0, stayOpen = false }: { active: boolean; /** Opens the computer from the conversation; null while it is on screen. */ onComputer?: (() => void) | null; name: string; context: WorkbotViewContext | null; includeContext: boolean; onIncludeContext(value: boolean): void; composer: ReactNode; conversation: ReactNode; onDocument(fileId: string): void; unavailable: boolean; /** Increments when chat navigation should leave the conversation open beside the document. */ reveal?: number; /** Guided navigation keeps the conversation open while a document opens behind it. */ stayOpen?: boolean }) {
   const [open, setOpen] = useState(false);
   const surface = useRetainedSurface(open);
   const anchor = useRef<HTMLDivElement>(null);
@@ -115,7 +129,9 @@ export function WorkspaceAssistant({ name, context, includeContext, onIncludeCon
           <Popover.Popup initialFocus={false} className="workbot flex h-[min(34rem,var(--available-height))] w-[min(30rem,var(--available-width))] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[var(--dls-radius,16px)] bg-[var(--wb-surface)] shadow-[var(--wb-panel-shadow)] outline-none" data-workbot-workspace-chat>
             <div className="flex h-10 shrink-0 items-center justify-between px-3"><Popover.Title className="text-[13px] font-medium text-[var(--wb-text)]">{name}</Popover.Title><Popover.Close className={control} aria-label="Hide workspace chat"><X size={15} strokeWidth={1.5} aria-hidden /></Popover.Close></div>
             <WorkspaceNavigationContext.Provider value={fileId => { if (!stayOpen) setOpen(false); onDocument(fileId); }}>
-              {unavailable ? <p className="p-4 text-[13px] text-[var(--wb-muted)]" role="status">Chat is unavailable. Open Home to try again.</p> : conversation}
+              <ComputerNavigationContext.Provider value={onComputer ? () => { if (!stayOpen) setOpen(false); onComputer(); } : null}>
+                {unavailable ? <p className="p-4 text-[13px] text-[var(--wb-muted)]" role="status">Chat is unavailable. Open Home to try again.</p> : conversation}
+              </ComputerNavigationContext.Provider>
             </WorkspaceNavigationContext.Provider>
           </Popover.Popup>
         </Popover.Positioner>

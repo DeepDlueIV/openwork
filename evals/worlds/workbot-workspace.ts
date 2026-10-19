@@ -85,7 +85,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
             identityReads.push(identityStatus);
             identityScopes.push({ principalId, organizationId, status: identityStatus });
             if (identityStatus !== 200) return json({ error: identityStatus === 401 ? "unauthorized" : "identity_unavailable" }, identityStatus);
-            return json({ name: "Alex", email: "alex@example.test", userId: principalId, organizationId, organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, guidedNavigation: referring.searchParams.get("guided") === "on", canSchedule: false, sideChats: referring.searchParams.get("sideChats") === "on", denUrl: "https://workspace.example.test" });
+            return json({ name: "Alex", email: "alex@example.test", userId: principalId, organizationId, organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, guidedNavigation: referring.searchParams.get("guided") === "on", computer: referring.searchParams.get("computer") === "on", canSchedule: false, sideChats: referring.searchParams.get("sideChats") === "on", denUrl: "https://workspace.example.test" });
           }
           const expectedUser = req.headers["x-openwork-client-user"];
           const expectedOrganization = req.headers["x-openwork-client-organization"];
@@ -105,7 +105,11 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
             if (!isRecord(input)) return json({ error: "invalid_request" }, 400);
             messages.push(input);
             const now = Date.now();
-            thread(actor).push({ ...input, sentAt: now, finishedAt: now, status: "done", attachments: [], outputs: [], parts: [{ kind: "text", text: "I can read the saved version. [Budget notes](https://drive.google.com/file/d/file_budget/view) · [Restricted document](https://docs.google.com/document/d/file_private/edit)" }], modelSteps: 1, error: null });
+            // A question about the computer gets a reply that used it; everything else links documents.
+            const parts = typeof input.text === "string" && /computer/i.test(input.text)
+              ? [{ kind: "steps", steps: [{ label: "Checked the budget site", icon: "computer", status: "done", app: null, startedAt: now, finishedAt: now, updates: [] }] }, { kind: "text", text: "I checked the budget site on my computer." }]
+              : [{ kind: "text", text: "I can read the saved version. [Budget notes](https://drive.google.com/file/d/file_budget/view) · [Restricted document](https://docs.google.com/document/d/file_private/edit)" }];
+            thread(actor).push({ ...input, sentAt: now, finishedAt: now, status: "done", attachments: [], outputs: [], parts, modelSteps: 1, error: null });
             return json({ ok: true }, 202);
           }
           if (url.pathname.startsWith("/v1/workbot/documents")) {

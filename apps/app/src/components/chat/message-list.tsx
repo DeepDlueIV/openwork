@@ -940,9 +940,8 @@ function renderUserText(text: string, highlightQuery: string | undefined, refere
 
 const UserMessage = React.memo(
   ({ message, isStreaming }: UserMessageProps) => {
-    const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, onEditUserMessage, highlightQuery, readOnly } = useMessageList()
+    const { onRevertToUserMessage, onEditUserMessage, highlightQuery, readOnly } = useMessageList()
     const references = useSessionReferencesMaybe()
-    const branching = forkingMessageId === message.id
     const wall = messageAutoAccessWall(message.metadata)
     const { sessionId, workspaceId } = useMessageList()
     const { onOpenTarget } = useOpenTargets()
@@ -960,13 +959,13 @@ const UserMessage = React.memo(
       [message.parts],
     )
     const hasContent = inlineParts.length > 0
+    // Same actions, in the same order, as the buttons below the bubble.
     const menuActions: MenuAction[] = []
     if (messageText) menuActions.push(
-      { type: "item", id: "edit", label: "Edit message", icon: <Pencil className="size-4" />, disabled: readOnly || Boolean(wall), onSelect: () => onEditUserMessage(message.id, messageText) },
       { type: "item", id: "copy", label: "Copy", icon: <Copy className="size-4" />, onSelect: () => navigator.clipboard.writeText(messageText) },
+      { type: "item", id: "edit", label: "Edit message", icon: <Pencil className="size-4" />, disabled: readOnly || Boolean(wall), onSelect: () => onEditUserMessage(message.id, messageText) },
     )
     if (!wall) menuActions.push(
-      { type: "item", id: "branch", label: branching ? "Branching..." : "Branch in new chat", icon: <Split className="size-4 rotate-90" />, disabled: Boolean(forkingMessageId), onSelect: () => onForkAtMessage(message.id) },
       { type: "item", id: "revert", label: "Revert", icon: <Undo2 className="size-4" />, disabled: readOnly, onSelect: () => onRevertToUserMessage(message.id) },
     )
 
@@ -1030,10 +1029,7 @@ const UserMessage = React.memo(
                 ) : null}
                 {!isStreaming && !wall && (
                   <MessageActions
-                    className={cn(
-                      "flex items-center gap-0 transition-opacity duration-150 group-hover:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100",
-                      branching ? "opacity-100" : "opacity-0"
-                    )}
+                    className="flex items-center gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100"
                   >
                     <MessageTimestamp message={message} className="mr-1.5" />
                     <CopyMessageButton messages={[message]} />
@@ -1050,19 +1046,6 @@ const UserMessage = React.memo(
                         </Button>
                       </MessageAction>
                     ) : null}
-                    <MessageAction tooltip={branching ? "Branching..." : "Branch in new chat"}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={branching ? "Branching..." : "Branch in new chat"}
-                        aria-busy={branching || undefined}
-                        disabled={Boolean(forkingMessageId)}
-                        onClick={() => onForkAtMessage(message.id)}
-                      >
-                        {branching ? <LoaderCircle className="motion-safe:animate-spin" /> : <Split className="rotate-90" />}
-                      </Button>
-                    </MessageAction>
-                    {branching ? <span role="status" className="sr-only">Branching...</span> : null}
                     <MessageAction tooltip="Revert">
                       <Button
                         variant="ghost"
@@ -1503,7 +1486,7 @@ function MessageGroup({
   isStreaming,
   newestAppCallIds,
 }: AssistantMessageGroupProps) {
-  const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision, resolveReplyModelTitle } = useMessageList()
+  const { onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision, resolveReplyModelTitle } = useMessageList()
   const connectionCardParts = React.useMemo(() => connectionCardPartIds(items, getConnectionDecision), [items, getConnectionDecision])
   const newestAppCalls = React.useMemo(() => new Set(newestAppCallIds.split("\n")), [newestAppCallIds])
   const modelFooterEnabled = useLastTurnModelFooterEnabled()
@@ -1531,6 +1514,18 @@ function MessageGroup({
 
   const renderableItems = getRenderableMessages(items)
   const lastTextMessage = items.findLast(item => getLastTextPart(item.message))
+  // Same actions, in the same order, as the buttons below the reply, and only
+  // once those buttons show (a finished reply with text).
+  const replyText = getMessagesText(renderableItems.map((item) => item.message))
+  const replyMenuActions: MenuAction[] = []
+  if (lastTextMessage && !isStreaming) {
+    if (replyText) replyMenuActions.push(
+      { type: "item", id: "copy", label: "Copy", icon: <Copy className="size-4" />, onSelect: () => navigator.clipboard.writeText(replyText) },
+    )
+    if (lastRealItem) replyMenuActions.push(
+      { type: "item", id: "branch", label: forkingMessageId === lastRealItem.message.id ? "Branching..." : "Branch in new chat", icon: <Split className="size-4 rotate-90" />, disabled: Boolean(forkingMessageId), onSelect: () => onForkAtMessage(lastRealItem.message.id) },
+    )
+  }
   // Native turns can end with a metadata-free completion marker. Keep the
   // latest known model within this turn rather than losing the answer's name.
   const replyModelMessage = items.findLast(item => item.message.role === "assistant" && replyModelLabel(item.message, resolveReplyModelTitle))?.message
@@ -1689,7 +1684,13 @@ function MessageGroup({
       <AppPanelFoldContext.Provider value={panelLive}>
       <PinnedRemoteThreadsContext.Provider value={pinnedRemoteIds}>
       <ConnectionCardPartsContext.Provider value={connectionCardParts}>
-      <div className="flex flex-col gap-2 group/message-group">
+      <ActionContextMenu
+        actions={replyMenuActions}
+        contentClassName="w-56"
+        // Override Trigger's select-none so replies stay selectable and copyable.
+        className="!select-text"
+        render={<div className="flex flex-col gap-2 group/message-group !select-text" style={{ userSelect: "text" }} />}
+      >
       {/* The scroll area keeps the same 8px rhythm the parts inside a single
           message use, so a step row is spaced identically whether or not a
           message boundary happens to fall between it and the previous row. */}
@@ -1740,17 +1741,6 @@ function MessageGroup({
                   </Button>
                 </MessageAction>
                 {forkingMessageId === lastRealItem.message.id ? <span role="status" className="sr-only">Branching...</span> : null}
-                <MessageAction tooltip="Revert">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Revert"
-                    disabled={readOnly}
-                    onClick={() => onRevertToUserMessage(lastRealItem.message.id)}
-                  >
-                    <Undo2 />
-                  </Button>
-                </MessageAction>
               </>
             ) : null}
           </MessageActions>
@@ -1771,7 +1761,7 @@ function MessageGroup({
           {/* <MessageSources messages={items.map((item) => item.message)} /> */}
         </div>
       )}
-      </div>
+      </ActionContextMenu>
       </ConnectionCardPartsContext.Provider>
       </PinnedRemoteThreadsContext.Provider>
       </AppPanelFoldContext.Provider>

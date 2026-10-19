@@ -88,11 +88,11 @@ function QuickFind() {
   const field = "w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400";
   return <div className="grid gap-3 pt-5 sm:grid-cols-2" data-testid="admin-quick-find">
     <form role="search" onSubmit={(event) => go(event, "/admin/organizations", organization)} className="relative">
-      <Building2 size={16} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      <Building2 size={16} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
       <input aria-label="Find an organization" maxLength={160} value={organization} onChange={(event) => setOrganization(event.target.value)} placeholder="Find an organization by name, slug, or id" className={field} />
     </form>
     <form role="search" onSubmit={(event) => go(event, "/admin/users", user)} className="relative">
-      <Users size={16} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      <Users size={16} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
       <input aria-label="Find a user" maxLength={160} value={user} onChange={(event) => setUser(event.target.value)} placeholder="Find a user by email, name, or id" className={field} />
     </form>
   </div>;
@@ -191,7 +191,7 @@ export function AdminDashboard({ totalOrganizations, totalUsers, refreshKey, onA
     { key: "organization", header: "Organization", render: (org) => <Link href={`/admin/organizations/${encodeURIComponent(org.id)}/insights`} prefetch={false} className="font-medium text-slate-950 hover:underline">{org.name}</Link> },
     { key: "requests", header: "Requests", align: "right", render: (org) => count(org.requests) },
     { key: "tokens", header: "Reported tokens", align: "right", render: (org) => compact(org.tokens) },
-    { key: "share", header: "Share of cost", align: "right", render: (org) => data && data.totals.costMicroUsd > 0 ? <span className="tabular-nums text-slate-600">{Math.round((org.costMicroUsd / data.totals.costMicroUsd) * 100)}%</span> : <span className="text-slate-400">—</span> },
+    { key: "share", header: "Share of cost", align: "right", render: (org) => data && data.totals.costMicroUsd > 0 ? <span className="tabular-nums text-slate-600">{Math.round((org.costMicroUsd / data.totals.costMicroUsd) * 100)}%</span> : <span className="text-slate-500">—</span> },
     { key: "cost", header: "Recorded cost", align: "right", render: (org) => <span>{recordedCost(org)}{org.unpricedRequests !== 0 ? <span className="ml-1 text-xs text-amber-800" title="Some prices are missing or coverage is unknown">(partial)</span> : null}</span> },
   ];
   return <div data-testid="admin-dashboard">

@@ -86,7 +86,7 @@ export function AdminRecentOrganizationsPanel() {
             <span className="block truncate text-xs text-slate-500">{entry.slug && entry.slug !== entry.id ? `/${entry.slug} · ` : ""}{when}</span>
           </Link>
           <button type="button" aria-label={`Remove ${entry.name} from recently viewed`} onClick={() => remove(entry.id)}
-            className="shrink-0 rounded p-1 text-slate-400 opacity-0 transition hover:bg-slate-200 hover:text-slate-700 focus-visible:opacity-100 group-hover:opacity-100">
+            className="shrink-0 rounded p-1 text-slate-500 opacity-0 transition hover:bg-slate-200 hover:text-slate-700 focus-visible:opacity-100 group-hover:opacity-100">
             <X size={14} aria-hidden="true" />
           </button>
         </li>;

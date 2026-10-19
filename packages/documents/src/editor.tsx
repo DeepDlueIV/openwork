@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ArrowRight, ExternalLink, Save, X } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { OfficeEditorTab } from "./office-editor"
+import { UnsavedChangesDialog } from "./unsaved-dialog"
 import { googleAppNames, officeMimeTypes } from "./office-engine"
 import { columnLetters } from "@openwork/workbook"
 import { DocumentsError, type DocumentItem } from "./index"
@@ -81,7 +82,7 @@ function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, active, sc
     <EditorActions active={active} host={toolbarHost}><span role="status">{saving ? "Saving to Drive…" : dirty ? "Unsaved changes" : saved ? "Saved to Drive" : data?.canEdit ? "Saved in Drive" : "Read-only"}</span>{item.openUrl && (googleApp
       ? <a className="ow-editor-open-google" href={item.openUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} aria-hidden />Open in {googleApp}</a>
       : <a href={item.openUrl} target="_blank" rel="noopener noreferrer" aria-label="Open original in Drive"><ExternalLink size={16} /></a>)}<button type="button" disabled={!dirty || readonly} onClick={() => void save()}><Save size={15} aria-hidden />Save to Drive</button>{!onControlsChange && <button type="button" aria-label={`Close ${item.name}`} disabled={saving} onClick={() => closeAction.current()}><X size={16} /></button>}</EditorActions>
-    {closing && <div className="ow-editor-message" role="status">Keep changes to {item.name}?<button type="button" onClick={() => void save()} disabled={readonly}>Save and close</button><button type="button" onClick={() => setClosing(false)}>Keep editing</button><button type="button" onClick={onClose} disabled={saving}>Discard changes</button></div>}
+    {closing && <UnsavedChangesDialog name={item.name} saveLabel="Save to Drive" saving={saving} canSave={!readonly} error={error} onSave={() => void save()} onDiscard={onClose} onCancel={() => setClosing(false)} />}
     {!enabled ? <div className="ow-editor-message">Documents is off for this workspace. Your draft remains in this tab.</div>
       : query.isError ? <div className="ow-editor-message" role="status">{query.error instanceof Error ? query.error.message : "Couldn't open this document."}{query.error instanceof DocumentsError && query.error.code === "needs_connection" && (renderConnect ? renderConnect(connectionId, true) : connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>)}<button type="button" onClick={() => void query.refetch()}>Try again</button></div>
       : !data ? <div className="ow-documents-skeleton" aria-busy="true" aria-label="Opening document"><div/><div/><div/></div>

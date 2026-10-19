@@ -10,6 +10,7 @@ import { EditorActions } from "./editor-actions"
 import type { DocumentTabControlsChange } from "./document-tabs"
 import { collaboraWorkspaceUrl, useCollaboraController } from "./collabora-controller"
 import { DocumentToolbar } from "./document-toolbar"
+import { UnsavedChangesDialog } from "./unsaved-dialog"
 
 /** Den reports `office_starting` while the person's own editor is waking. */
 function editorStarting(error: unknown): error is Error & { code: string } {
@@ -134,7 +135,7 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
   const status = saving ? "Saving to Drive…" : dirty ? "Unsaved to Drive" : saved ? "Saved to Drive" : !session?.canEdit && session ? "Read-only" : ""
   return <section className="ow-document-editor ow-office-editor" hidden={!active} aria-label={item.name}>
     <EditorActions active={active} host={toolbarHost}><span role="status">{status}</span>{item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer" aria-label="Open original in Drive"><ExternalLink size={16}/></a>}<button type="button" disabled={!enabled || !session?.canEdit || !ready || saving || expired || (!dirty && (!session.saveAsCopy || !!saved))} onClick={() => void save()}><Save size={15}/>{session?.saveAsCopy && !saved ? `Save ${formatLabel} copy to Drive` : "Save to Drive"}</button>{!onControlsChange && <button type="button" aria-label={`Close ${item.name}`} disabled={saving} onClick={() => closeAction.current()}><X size={16}/></button>}</EditorActions>
-    {closing && <div className="ow-editor-message" role="status">This file has changes that haven't been saved to Drive.<button type="button" disabled={saving || !enabled || !ready || expired || !session?.canEdit} onClick={() => void save(true)}>Save and close</button><button type="button" disabled={saving} onClick={() => setClosing(false)}>Keep editing</button><button type="button" disabled={saving} onClick={onClose}>Close without saving</button></div>}
+    {closing && <UnsavedChangesDialog name={item.name} saveLabel={session?.saveAsCopy && !saved ? `Save ${formatLabel} copy to Drive` : "Save to Drive"} saving={saving} canSave={enabled && ready && !expired && !!session?.canEdit} error={error} onSave={() => void save(true)} onDiscard={onClose} onCancel={() => setClosing(false)} />}
     {session?.saveAsCopy && <div className="ow-editor-message">{saved ? "Your copy is saved in My Drive. Further saves update that copy." : `You’re editing a ${formatLabel} copy. Save creates a new file in My Drive; the Google original stays unchanged.`}{saved && <a href={`https://drive.google.com/file/d/${encodeURIComponent(saved)}/view`} target="_blank" rel="noopener noreferrer">Open saved copy</a>}</div>}
     {!enabled && <div className="ow-editor-message">Documents is off for this workspace.</div>}
     {(error || query.isError || expired) && <div className="ow-editor-message" role="alert">{expired ? "This editing session expired. Download your changes from the editor before closing it." : error ?? (query.error instanceof Error ? query.error.message : "Couldn't open the full editor.")}{!session && item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer">Open in Drive</a>}</div>}

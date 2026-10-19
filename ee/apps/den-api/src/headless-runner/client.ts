@@ -19,3 +19,18 @@ export function defaultHeadlessRunnerDeps(env: Record<string, string | undefined
     (await import("../workbot/model.js")).cloudAgentGatewayEnabled(actor.organizationId)
   return config ? { config, fetch, mintToken, modelAccessRequired, maxTokenTtlMs: DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS } : null
 }
+
+/**
+ * Feature `headlessStepTurns`: whether Den sends the organization's headless turns with `execution: "steps"`, so the
+ * runner runs them one step at a time and a runner deploy switches between steps. A failed read sends the turn exactly
+ * as without the feature.
+ */
+export async function headlessStepTurnsEnabled(organizationId: string): Promise<boolean> {
+  try {
+    // Loaded lazily: the feature reader pulls in the database modules.
+    const { organizationFeatureEnabled } = await import("../features.js")
+    return await organizationFeatureEnabled(organizationId, "headlessStepTurns")
+  } catch {
+    return false
+  }
+}

@@ -14,7 +14,7 @@ import { scopedCatalogResponse } from "./model-catalog.js"
 import type { HeadlessModelAccess } from "@openwork-ee/headless-protocol"
 import { modelProbeResponse, type ModelProbe } from "./model-probe.js"
 import { CONVERSATION_TABLES, sqlRow, type StoredMessage, type Store } from "./store.js"
-import { ACTIVE, repeatLimitsSchema, turnCredentialsSchema, turnStatusSchema, type SessionComputer } from "./types.js"
+import { ACTIVE, executionSchema, repeatLimitsSchema, turnCredentialsSchema, turnStatusSchema, type SessionComputer } from "./types.js"
 
 const createSessionBody = z
   .object({
@@ -68,6 +68,8 @@ const sendBody = z
      * running otherwise), keeping what it wrote, and this message is answered next with all of that in view.
      */
     interrupt: z.boolean().optional(),
+    /** `steps`: the turn (and the tasks and reports it starts) runs one step at a time, surviving runner deploys. */
+    execution: executionSchema.optional(),
   })
   .strict()
   .refine((body) => body.prompt.trim().length > 0 || (body.attachments?.length ?? 0) > 0, "prompt or attachments is required")
@@ -278,10 +280,17 @@ export function createApp(input: {
 
   // Live events for one session as server-sent events: `changed` (re-read the session) and `text` (model text
   // as it is written). A comment every 15 seconds keeps idle proxies from closing the stream.
+  // With `Upgrade: websocket`, a host that holds sockets (celld) answers with one instead: `{"type":"ready"}`, then
+  // each event as one JSON message, the same JSON as the `data:` lines. The Node host answers with the stream, which
+  // a WebSocket client takes as no upgrade and falls back to SSE.
   app.get("/v1/sessions/:id/events", (c) => {
     const events = input.events
     if (!events) return c.json({ error: "not_supported" }, 404)
     const sessionId = c.req.param("id")
+    if (c.req.header("upgrade")?.toLowerCase() === "websocket" && sessionIdSchema.safeParse(sessionId).success) {
+      const socket = events.acceptSocket(sessionId)
+      if (socket) return socket
+    }
     return streamSSE(c, async (stream) => {
       const queue: string[] = []
       let wake: (() => void) | null = null

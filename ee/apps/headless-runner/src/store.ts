@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { SqlDriver } from "./sql.js"
 import { z } from "zod"
 import type { Usage } from "./model.js"
+import { stepStateSchema, type StepState } from "./steps.js"
 import { withoutAttachments } from "./tool-files.js"
 import {
   ACTIVE,
@@ -10,6 +11,7 @@ import {
   repeatLimitsSchema,
   turnStatusSchema,
   type Attachment,
+  type Execution,
   type Message,
   type RepeatLimits,
   type TurnStatus,
@@ -55,6 +57,7 @@ const turnRow = z.object({
   parent: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
   error_detail: z.string().nullable().optional(),
+  execution: z.string().nullable().optional(),
 })
 const messageRow = z.object({ seq: z.number(), message_id: z.string(), body: z.string(), created_at: z.number().optional() })
 const fileRow = z.object({ path: z.string(), size: z.number(), updated_at: z.number() })
@@ -179,6 +182,8 @@ export type Turn = {
   kind?: "task" | "report"
   parent?: string
   title?: string
+  /** `steps` for a turn that runs one step at a time (see steps.ts); its tasks and reports inherit it. */
+  execution?: Execution
 }
 export type StoredMessage = { seq: number; messageId: string; message: Message; createdAt?: number }
 export type FileEntry = { path: string; size: number; updatedAt: number }
@@ -251,6 +256,8 @@ function toTurn(row: unknown): Turn {
     ...(value.kind ? { kind: value.kind } : {}),
     ...(value.parent ? { parent: value.parent } : {}),
     ...(value.title ? { title: value.title } : {}),
+    // An unknown value (a newer runner's) runs as it always did.
+    ...(value.execution === "steps" ? { execution: "steps" as const } : {}),
   }
 }
 
@@ -259,7 +266,7 @@ function toTurn(row: unknown): Turn {
  * their state. The prompt is read where it is needed (startTranscript, waitingPrompts).
  */
 const TURN_COLUMNS =
-  "session_id, message_id, status, model, model_access_required, error, input_tokens, cached_input_tokens, output_tokens, created_at, updated_at, kind, parent, title, error_detail"
+  "session_id, message_id, status, model, model_access_required, error, input_tokens, cached_input_tokens, output_tokens, created_at, updated_at, kind, parent, title, error_detail, execution"
 
 /** Leaves out background tasks' own transcripts: the conversation hears from a task through its report. */
 const CONVERSATION_ROWS = "message_id NOT IN (SELECT message_id FROM turns WHERE session_id = ? AND kind = 'task')"
@@ -355,6 +362,27 @@ export class Store {
     // Nonsecret downgrade guard: scoped inference must be reacquired, never replaced by a deployment key.
     if (!turnColumns.includes("model_access_required")) this.db.exec("ALTER TABLE turns ADD COLUMN model_access_required INTEGER NOT NULL DEFAULT 0")
     this.db.exec("CREATE INDEX IF NOT EXISTS turns_by_status ON turns (status)")
+    // Step mode (see steps.ts): how a turn runs, its next step and the text a step's model call has written so far.
+    if (!turnColumns.includes("execution")) this.db.exec("ALTER TABLE turns ADD COLUMN execution TEXT")
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS step_schedule (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        message_id TEXT NOT NULL,
+        due_at INTEGER NOT NULL,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        state TEXT NOT NULL,
+        PRIMARY KEY (session_id, message_id)
+      );
+      CREATE INDEX IF NOT EXISTS step_schedule_by_due ON step_schedule (due_at);
+      CREATE TABLE IF NOT EXISTS step_checkpoints (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        message_id TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, message_id)
+      );
+    `)
   }
 
   close() {
@@ -591,11 +619,12 @@ export class Store {
     parent?: string
     title?: string
     modelAccessRequired?: boolean
+    execution?: Execution
   }): Turn {
     const at = this.now()
     this.db
       .prepare(
-        "INSERT INTO turns (session_id, message_id, status, prompt, model, error, attachments, kind, parent, title, model_access_required, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO turns (session_id, message_id, status, prompt, model, error, attachments, kind, parent, title, model_access_required, execution, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         input.sessionId,
@@ -607,6 +636,7 @@ export class Store {
         input.parent ?? null,
         input.title ?? null,
         input.modelAccessRequired ? 1 : 0,
+        input.execution ?? null,
         at,
         at,
       )
@@ -631,12 +661,16 @@ export class Store {
   }
 
   setTurnStatus(sessionId: string, messageId: string, status: TurnStatus, error: string | null = null, errorDetail: string | null = null) {
+    this.updateStatus(sessionId, messageId, status, error, errorDetail)
+    this.onChange?.(sessionId, messageId, status)
+  }
+
+  private updateStatus(sessionId: string, messageId: string, status: TurnStatus, error: string | null, errorDetail: string | null) {
     const at = this.now()
     this.db
       .prepare("UPDATE turns SET status = ?, error = ?, error_detail = ?, updated_at = ? WHERE session_id = ? AND message_id = ?")
       .run(status, error, errorDetail, at, sessionId, messageId)
     this.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(at, sessionId)
-    this.onChange?.(sessionId, messageId, status)
   }
 
   addUsage(sessionId: string, messageId: string, usage: Usage) {
@@ -694,24 +728,205 @@ export class Store {
     return this.db.prepare(`SELECT 1 AS n FROM turns WHERE status IN (${[...ACTIVE].map(() => "?").join(", ")}) LIMIT 1`).get(...ACTIVE) !== undefined
   }
 
-  /** Marks every turn a previous process left queued or running as interrupted. */
+  /**
+   * Marks every turn a previous process left queued or running as interrupted, except step-mode turns that can go
+   * on from what is stored (queued, or running with a next step): the runner continues those (Runner.recoverSteps).
+   */
   recoverInterruptedTurns() {
     const result = this.db
       .prepare(
-        "UPDATE turns SET status = 'interrupted', error = 'runner_restarted', updated_at = ? WHERE status IN ('queued', 'running')",
+        `UPDATE turns SET status = 'interrupted', error = 'runner_restarted', updated_at = ? WHERE status IN ('queued', 'running')
+         AND NOT (execution IS 'steps' AND (status = 'queued' OR EXISTS (
+           SELECT 1 FROM step_schedule WHERE step_schedule.session_id = turns.session_id AND step_schedule.message_id = turns.message_id
+         )))`,
       )
       .run(this.now())
     return Number(result.changes)
   }
 
   appendMessage(sessionId: string, messageId: string, message: Message) {
+    this.insertMessage(sessionId, messageId, message)
+    this.onChange?.(sessionId, messageId)
+  }
+
+  private insertMessage(sessionId: string, messageId: string, message: Message) {
     const row = countRow.parse(
       this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM messages WHERE session_id = ?").get(sessionId),
     )
     this.db
       .prepare("INSERT INTO messages (session_id, seq, message_id, body, created_at) VALUES (?, ?, ?, ?, ?)")
       .run(sessionId, row.n + 1, messageId, JSON.stringify(messageSchema.parse(message)), this.now())
-    this.onChange?.(sessionId, messageId)
+  }
+
+  // ------------------------------------------------------------------ step mode (see steps.ts)
+
+  /** A step-mode turn's run starts: it is running, and its first step is due at `dueAt`. */
+  beginStepRun(sessionId: string, messageId: string, dueAt: number, state: StepState) {
+    this.transaction(() => {
+      this.db
+        .prepare("INSERT OR REPLACE INTO step_schedule (session_id, message_id, due_at, attempt, state) VALUES (?, ?, ?, 0, ?)")
+        .run(sessionId, messageId, dueAt, JSON.stringify(stepStateSchema.parse(state)))
+      this.db.prepare("DELETE FROM step_checkpoints WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+      this.updateStatus(sessionId, messageId, "running", null, null)
+    })
+    this.onChange?.(sessionId, messageId, "running")
+  }
+
+  /**
+   * A step-mode turn's next step: null without one; `invalid` when its stored row can't be read (that turn fails,
+   * nothing else does).
+   */
+  stepRow(sessionId: string, messageId: string): { dueAt: number; attempt: number; state: StepState } | "invalid" | null {
+    const row = this.db.prepare("SELECT due_at, attempt, state FROM step_schedule WHERE session_id = ? AND message_id = ?").get(sessionId, messageId)
+    if (!row) return null
+    const value = stepRowSchema.safeParse(row)
+    if (!value.success) return "invalid"
+    let state: unknown
+    try {
+      state = JSON.parse(value.data.state)
+    } catch {
+      return "invalid"
+    }
+    const parsed = stepStateSchema.safeParse(state)
+    return parsed.success ? { dueAt: value.data.due_at, attempt: value.data.attempt, state: parsed.data } : "invalid"
+  }
+
+  /** A step starts: its attempt is counted, and the step is due again at `retryAt` if it never commits. */
+  startStepAttempt(sessionId: string, messageId: string, attempt: number, retryAt: number) {
+    this.db.prepare("UPDATE step_schedule SET attempt = ?, due_at = ? WHERE session_id = ? AND message_id = ?").run(attempt, retryAt, sessionId, messageId)
+  }
+
+  /** Keeps a step's bookkeeping now, before the step commits (the model's answer before its tool calls run). */
+  setStepState(sessionId: string, messageId: string, state: StepState) {
+    this.db.prepare("UPDATE step_schedule SET state = ? WHERE session_id = ? AND message_id = ?").run(JSON.stringify(stepStateSchema.parse(state)), sessionId, messageId)
+  }
+
+  /** The step's model answer is kept (`pending`), so its streamed text so far is no longer needed. */
+  keepStepAnswer(sessionId: string, messageId: string, state: StepState) {
+    this.transaction(() => {
+      this.setStepState(sessionId, messageId, state)
+      this.db.prepare("DELETE FROM step_checkpoints WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+    })
+  }
+
+  /** The text model call `step` of a turn has written so far. */
+  saveCheckpoint(sessionId: string, messageId: string, step: number, text: string) {
+    this.db
+      .prepare(
+        `INSERT INTO step_checkpoints (session_id, message_id, step, text, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (session_id, message_id) DO UPDATE SET step = excluded.step, text = excluded.text, updated_at = excluded.updated_at`,
+      )
+      .run(sessionId, messageId, step, text, this.now())
+  }
+
+  stepCheckpoint(sessionId: string, messageId: string): { step: number; text: string } | null {
+    const row = this.db.prepare("SELECT step, text FROM step_checkpoints WHERE session_id = ? AND message_id = ?").get(sessionId, messageId)
+    const value = z.object({ step: z.number(), text: z.string() }).safeParse(row)
+    return value.success ? value.data : null
+  }
+
+  deleteCheckpoint(sessionId: string, messageId: string) {
+    this.db.prepare("DELETE FROM step_checkpoints WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+  }
+
+  /**
+   * One step, all of it or none: its messages and tool results, its usage, and either the turn's next step (with the
+   * attempt reset) or how the turn ended. The step's checkpoint goes with it. Live readers hear of it after it commits.
+   */
+  commitStep(input: {
+    sessionId: string
+    messageId: string
+    messages?: Message[]
+    usage?: Usage
+    outcome: { next: { dueAt: number; state: StepState } } | { end: { status: TurnStatus; error?: string | null; errorDetail?: string | null } }
+  }) {
+    const { sessionId, messageId } = input
+    this.transaction(() => {
+      for (const message of input.messages ?? []) this.insertMessage(sessionId, messageId, message)
+      if (input.usage) this.addUsage(sessionId, messageId, input.usage)
+      if ("next" in input.outcome) {
+        this.db
+          .prepare("UPDATE step_schedule SET due_at = ?, attempt = 0, state = ? WHERE session_id = ? AND message_id = ?")
+          .run(input.outcome.next.dueAt, JSON.stringify(stepStateSchema.parse(input.outcome.next.state)), sessionId, messageId)
+      } else {
+        const { status, error, errorDetail } = input.outcome.end
+        this.db.prepare("DELETE FROM step_schedule WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+        this.updateStatus(sessionId, messageId, status, error ?? null, errorDetail ?? null)
+      }
+      this.db.prepare("DELETE FROM step_checkpoints WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+    })
+    if (input.messages?.length || "next" in input.outcome) this.onChange?.(sessionId, messageId)
+    if ("end" in input.outcome) this.onChange?.(sessionId, messageId, input.outcome.end.status)
+  }
+
+  /** Forgets a turn's next step and checkpoint (its run is over). */
+  endStepRun(sessionId: string, messageId: string) {
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM step_schedule WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+      this.db.prepare("DELETE FROM step_checkpoints WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+    })
+  }
+
+  /** Step-mode turns whose next step is due, oldest first. */
+  dueSteps(now: number): Array<{ sessionId: string; messageId: string }> {
+    return this.db
+      .prepare("SELECT session_id, message_id FROM step_schedule WHERE due_at <= ? ORDER BY due_at, rowid")
+      .all(now)
+      .flatMap((row) => {
+        const value = z.object({ session_id: z.string(), message_id: z.string() }).safeParse(row)
+        return value.success ? [{ sessionId: value.data.session_id, messageId: value.data.message_id }] : []
+      })
+  }
+
+  /** When the earliest next step is due, or null without step-mode turns. */
+  nextStepAt(): number | null {
+    const row = this.db.prepare("SELECT MIN(due_at) AS n FROM step_schedule").get()
+    const value = z.object({ n: z.number().nullable() }).safeParse(row)
+    return value.success ? value.data.n : null
+  }
+
+  /**
+   * The step-mode turns a previous process left going, in the order they were sent: `running` ones go on from their
+   * next step, `queued` ones wait for their lane again. Never throws on what it reads: a turn whose row can't be read
+   * fails on its own (`step_state_invalid`), and a running turn without a next step is interrupted as on any restart.
+   */
+  stepTurnsToContinue(): { running: StepTurnRef[]; queued: StepTurnRef[]; failed: number } {
+    const running: StepTurnRef[] = []
+    const queued: StepTurnRef[] = []
+    let failed = 0
+    const rows = this.db
+      .prepare(
+        `SELECT turns.session_id, turns.message_id, turns.status, turns.kind, step_schedule.state IS NOT NULL AS scheduled
+         FROM turns LEFT JOIN step_schedule ON step_schedule.session_id = turns.session_id AND step_schedule.message_id = turns.message_id
+         WHERE turns.execution = 'steps' AND turns.status IN ('queued', 'running') ORDER BY turns.rowid`,
+      )
+      .all()
+    for (const row of rows) {
+      const value = stepTurnRow.safeParse(row)
+      const ids = z.object({ session_id: z.string(), message_id: z.string() }).safeParse(row)
+      if (!ids.success) continue
+      const { session_id: sessionId, message_id: messageId } = ids.data
+      if (!value.success || (value.data.status === "running" && value.data.scheduled && this.stepRow(sessionId, messageId) === "invalid")) {
+        this.failUnreadable(sessionId, messageId)
+        failed += 1
+        continue
+      }
+      const ref = { sessionId, messageId, kind: value.data.kind ?? undefined }
+      if (value.data.status === "queued") queued.push(ref)
+      else if (value.data.scheduled) running.push(ref)
+      else this.setTurnStatus(sessionId, messageId, "interrupted", "runner_restarted")
+    }
+    return { running, queued, failed }
+  }
+
+  /** A step-mode turn whose stored state can't be read fails, without reading anything else of it. */
+  failUnreadable(sessionId: string, messageId: string) {
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM step_schedule WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+      this.db.prepare("DELETE FROM step_checkpoints WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+      this.updateStatus(sessionId, messageId, "failed", "step_state_invalid", null)
+    })
+    this.onChange?.(sessionId, messageId, "failed")
   }
 
   /** Replaces the image and PDF bytes in one turn's tool results with the note later turns see instead. */
@@ -941,6 +1156,10 @@ export class Store {
     })
   }
 }
+
+export type StepTurnRef = { sessionId: string; messageId: string; kind: "task" | "report" | undefined }
+const stepRowSchema = z.object({ due_at: z.number(), attempt: z.number(), state: z.string() })
+const stepTurnRow = z.object({ status: z.enum(["queued", "running"]), kind: z.enum(["task", "report"]).nullable(), scheduled: z.number() })
 
 const RESUME_GRANT_COLUMN = "resume_grant"
 const grantRow = z.object({ resume_grant: z.string().nullable().optional(), kind: z.string().nullable().optional(), parent: z.string().nullable().optional() })

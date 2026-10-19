@@ -385,6 +385,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `remoteComputers` | `DEN_FEATURE_REMOTE_COMPUTERS` | default off | Use a Linux cloud computer with its browser and desktop in OpenWork Web, or connect a VM from Desktop. Access starts directly when the rollout is enabled; Take over and Stop stay available. |
 | `remoteSessionSubagents` | `DEN_FEATURE_REMOTE_SESSION_SUBAGENTS` | default off | A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop. |
 | `headlessDurableTurns` | `DEN_FEATURE_HEADLESS_DURABLE_TURNS` | default off | Workbot, Slack and Automations answers keep going after a restart, deploy or server failure, without waiting for someone to reopen the chat. |
+| `headlessStepTurns` | `DEN_FEATURE_HEADLESS_STEP_TURNS` | default off | Workbot, Slack and Automations answers keep going through OpenWork updates instead of restarting their current step. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`

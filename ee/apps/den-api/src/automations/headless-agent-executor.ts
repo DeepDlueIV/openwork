@@ -8,6 +8,7 @@ import {
   ACTIVE_TURN_STATUSES,
   createHeadlessRunnerClient,
   defaultHeadlessRunnerDeps,
+  headlessStepTurnsEnabled,
   type HeadlessRunnerClient,
   type RunnerMessage,
   type RunnerRepeatLimits,
@@ -64,6 +65,8 @@ export type HeadlessAgentExecutorDeps = {
   gatewayEnabled: typeof cloudAgentGatewayEnabled
   cloudModel: typeof organizationCloudModel
   gatewayCatalog: typeof cloudAgentGatewayCatalog
+  /** Feature `headlessStepTurns`: the run's turn goes to the runner with `execution: "steps"`. */
+  stepTurns: (organizationId: string) => Promise<boolean>
   sleep: (ms: number, signal: AbortSignal) => Promise<void>
   pollIntervalMs: number
 }
@@ -117,6 +120,7 @@ function defaultDeps(): HeadlessAgentExecutorDeps {
     gatewayEnabled: cloudAgentGatewayEnabled,
     cloudModel: organizationCloudModel,
     gatewayCatalog: cloudAgentGatewayCatalog,
+    stepTurns: headlessStepTurnsEnabled,
     sleep: abortableSleep,
     pollIntervalMs: POLL_INTERVAL_MS,
   }
@@ -301,7 +305,17 @@ export async function executeHeadlessAgent(
     const { warning } = selection
     const ttlMs = Math.min(input.maximumRuntimeMs + TOKEN_GRACE_MS, DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS)
     const runSessionId = sessionId
-    const sendTurn = () => client.sendTurn(actor, { sessionId: runSessionId, messageId, prompt: input.action.instructions, model, ttlMs, ...(modelAccessRequired ? { modelAccessRequired: true } : {}) }).catch(() => null)
+    // Read once per attempt; a resend keeps the mode the runner stored for the turn. A failed read runs it as before.
+    const execution: "steps" | undefined = (await deps.stepTurns(input.organizationId).catch(() => false)) ? "steps" : undefined
+    const sendTurn = () => client.sendTurn(actor, {
+      sessionId: runSessionId,
+      messageId,
+      prompt: input.action.instructions,
+      model,
+      ttlMs,
+      ...(modelAccessRequired ? { modelAccessRequired: true } : {}),
+      ...(execution ? { execution } : {}),
+    }).catch(() => null)
     const accessFailure = () => failure({ code: "provider_unavailable", message: "The cloud model is not available to the Automation owner. Check their model access and try again.", needsAttention: true })
 
     const sent = await sendTurn()

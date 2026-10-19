@@ -77,6 +77,23 @@ export class SelfResume {
     while (this.writes.size) await Promise.all([...this.writes])
   }
 
+  /**
+   * The grant kept for a turn (its own, or the one of the turn that started it), for a step-mode turn whose held
+   * credentials were lost with the process: it gets a fresh token with `refresh`. Null without a readable one.
+   */
+  async keptGrant(sessionId: string, messageId: string): Promise<string | null> {
+    if (this.configError) return null
+    await this.settled()
+    const kept = this.options.store.resumeGrantOf(sessionId, messageId)
+    if (!kept) return null
+    const grant = await this.options.vault.open(kept.sealed)
+    if (grant) return grant
+    // Sealed with another key, or damaged: no grant, so the turn waits for its caller.
+    this.options.store.setResumeGrant(sessionId, kept.holder, null)
+    void this.options.errors?.report({ code: "resume_grant_unreadable", level: "warning", tags: { sessionId, messageId } })
+    return null
+  }
+
   /** A fresh token for a running turn (in place of pausing it), or null when Den won't give one now. */
   async refresh(sessionId: string, messageId: string, grant: string): Promise<FreshCredentials | null> {
     if (this.configError) return null

@@ -2,6 +2,7 @@ import {
   createHeadlessRunnerClient,
   defaultHeadlessRunnerDeps,
   headlessRunnerConfig,
+  headlessStepTurnsEnabled,
   stepLabel,
   TERMINAL_TURN_STATUSES,
   type HeadlessRunnerActor,
@@ -180,9 +181,23 @@ function stepOf(tool: { id: string; name: string; input: Record<string, unknown>
 const retryable = (error: string): RunnerFailure => ({ ok: false, error, retryable: true, retryAfterMs: 5_000 })
 const unknownSession: RunnerFailure = { ok: false, error: "unknown_session", retryable: false }
 
+export type SlackRunnerOptions = {
+  /**
+   * Feature `headlessStepTurns` for the actor's organization, read before each send: on, turns go to the runner with
+   * `execution: "steps"`. Unset (or failing): turns are sent exactly as without the feature.
+   */
+  stepTurns?: () => Promise<boolean>
+}
+
+/** The Slack worker's runner: step-by-step turns follow `headlessStepTurns` for the actor's organization. */
+export function slackRunnerForActor(actor: HeadlessRunnerActor, suppliedDeps: HeadlessDeps | null = slackHeadlessDeps()): SlackRunner {
+  return createSlackRunner(actor, suppliedDeps, { stepTurns: () => headlessStepTurnsEnabled(actor.organizationId) })
+}
+
 export function createSlackRunner(
   actor: HeadlessRunnerActor,
   suppliedDeps: HeadlessDeps | null = slackHeadlessDeps(),
+  options: SlackRunnerOptions = {},
 ): SlackRunner {
   if (!suppliedDeps) {
     const missing: RunnerFailure = { ok: false, error: "headless_runner_not_configured", retryable: false }
@@ -206,6 +221,8 @@ export function createSlackRunner(
       if (!saved.ok && (saved.status === 404 || saved.error === "invalid_session_id")) return unknownSession
       if (!saved.ok) return retryable(`headless_put_${saved.status}`)
     }
+    // Re-sending a turn keeps the mode the runner stored for it, so a resume may carry the field either way.
+    const execution: "steps" | undefined = options.stepTurns && (await options.stepTurns().catch(() => false)) ? "steps" : undefined
     // One fresh, member-scoped MCP token per admitted run; the runner holds it in memory only.
     let sent
     try {
@@ -230,6 +247,7 @@ export function createSlackRunner(
         prompt: input.prompt,
         ...(model ? { model } : {}),
         ...(modelAccessRequired ? { modelAccessRequired: true } : {}),
+        ...(execution ? { execution } : {}),
       })
     } catch {
       // Credential/model access refusals are not a reason to retry on another model.

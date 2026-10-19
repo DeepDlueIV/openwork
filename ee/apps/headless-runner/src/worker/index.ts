@@ -5,8 +5,9 @@ import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { loadConfig, type Config } from "../config.js"
 import { createErrorReporter, type ErrorReporter } from "../error-reporting.js"
+import { READY_MESSAGE } from "../events.js"
 import { scopedCatalogResponse } from "../model-catalog.js"
-import { createRuntime, gatewayModelCatalog } from "../runtime.js"
+import { createRuntime, gatewayModelCatalog, type StepHost } from "../runtime.js"
 import { createModelProbe, modelProbeResponse, type ModelProbe } from "../model-probe.js"
 import { Store } from "../store.js"
 import { durableObjectSql } from "./sql.js"
@@ -61,6 +62,18 @@ const CELL_NAME_KEY = "cell"
 const RESUME_ALARM_MS = 30_000
 
 type Runtime = Awaited<ReturnType<typeof createRuntime>>
+/** A live-event socket's keep-alive and its answer (headless-protocol's `openEventsSocket` sends it). */
+const SOCKET_PING = "ping"
+const SOCKET_PONG = "pong"
+
+/** Completes a live-event socket's close; a code an application may not send back is answered as a normal close. */
+function closeSocket(socket: WebSocket, code: number) {
+  try {
+    socket.close(code >= 3000 && code <= 4999 ? code : 1000)
+  } catch {
+    // Already closed.
+  }
+}
 
 export class HeadlessCell {
   private readonly ready: Promise<Runtime>
@@ -69,7 +82,49 @@ export class HeadlessCell {
 
   constructor(private readonly ctx: DurableObjectState, private readonly env: CellEnv) {
     const store = new Store(durableObjectSql(ctx.storage))
-    this.ready = ctx.blockConcurrencyWhile(() => createRuntime(configFor(env), store))
+    this.ready = ctx.blockConcurrencyWhile(async () => this.withEventSockets(await createRuntime(configFor(env), store, this.stepHost())))
+  }
+
+  /**
+   * Live events over hibernatable WebSockets (GET /v1/sessions/:id/events with `Upgrade: websocket`): each socket is
+   * tagged with its session id and found again through the cell's state, never an in-memory listener, so it keeps
+   * receiving events after the cell sleeps or switches to new code, and it never holds up that switch. Runs at every
+   * start of the cell, so events from whatever runs after a wake (a request, the alarm) reach the sockets.
+   */
+  private withEventSockets(runtime: Runtime) {
+    // A client's keep-alive is answered without waking the cell.
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(SOCKET_PING, SOCKET_PONG))
+    runtime.events.useSockets({
+      accept: (sessionId) => {
+        const pair = new WebSocketPair()
+        this.ctx.acceptWebSocket(pair[1], [sessionId])
+        pair[1].send(READY_MESSAGE)
+        return new Response(null, { status: 101, webSocket: pair[0] })
+      },
+      send: (sessionId, data) => {
+        for (const socket of this.ctx.getWebSockets(sessionId)) {
+          try {
+            socket.send(data)
+          } catch {
+            // A socket closing as this runs; the others still get the event.
+          }
+        }
+      },
+    })
+    return runtime
+  }
+
+  /** Live-event sockets carry nothing from the client but keep-alives (answered by the auto-response first). */
+  webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
+    if (message === SOCKET_PING) socket.send(SOCKET_PONG)
+  }
+
+  webSocketClose(socket: WebSocket, code: number) {
+    closeSocket(socket, code)
+  }
+
+  webSocketError(socket: WebSocket) {
+    closeSocket(socket, 1000)
   }
 
   /** The cell's name if it is this cell's: the same check a request gets, for one that names the cell. */
@@ -118,8 +173,14 @@ export class HeadlessCell {
   }
 
   /**
-   * Resumes this cell's interrupted turns that have a resume grant, with no request: after a crash or a deploy the
-   * alarm wakes the cell (startup recovery marks its turns interrupted), and this resumes them and keeps them running.
+   * The cell's one alarm, for two jobs, with no request:
+   *
+   * - Step-mode turns' due steps (see steps.ts): each runs to completion, lanes in parallel. Between alarms nothing
+   *   runs in the cell, so a celld deploy switches it to the new code there instead of cancelling a step.
+   * - Self-resume: after a crash or a deploy the alarm wakes the cell (startup recovery marks its turns interrupted),
+   *   and this resumes those with a resume grant and keeps them running.
+   *
+   * Then it is set again for the earliest of both.
    */
   async alarm() {
     const name = await this.ctx.storage.get(CELL_NAME_KEY)
@@ -127,17 +188,33 @@ export class HeadlessCell {
     if (typeof name !== "string" || !this.isOwnName(name)) return
     this.name = name
     const runtime = await this.ready
-    if (!runtime.selfResume) return
-    await runtime.selfResume.sweep()
+    // Never throws: a step's failure is its turn's alone.
+    await runtime.runner.runDueSteps()
+    if (runtime.selfResume) await runtime.selfResume.sweep()
+    // Turns run in one go that started here (resumed, or next in a lane a step-mode turn just gave back) keep running.
     this.ctx.waitUntil(runtime.runner.idle())
     await this.armResume(runtime, true)
   }
 
-  /** Sets the alarm while any turn is queued, running or waiting to resume; `replace` even if one is set. */
+  /** What the runner needs from this cell to run step-mode turns from the alarm. */
+  private stepHost(): StepHost {
+    return {
+      stepAlarm: true,
+      // After the runtime exists: the runner can call this while it is being built (startup recovery).
+      wake: () => this.ctx.waitUntil(Promise.resolve().then(() => this.ready).then((runtime) => this.armResume(runtime, false))),
+    }
+  }
+
+  /**
+   * Sets the alarm for the earliest step due, and while any turn is queued, running or waiting to resume; `replace`
+   * even if one is set.
+   */
   private async armResume(runtime: Runtime, replace: boolean) {
-    const due = runtime.selfResume?.nextSweepAt()
-    if (due === null || due === undefined) return
-    const at = Math.max(due, Date.now() + RESUME_ALARM_MS)
+    const sweep = runtime.selfResume?.nextSweepAt()
+    const step = runtime.runner.nextStepAt()
+    const due = [...(sweep === null || sweep === undefined ? [] : [Math.max(sweep, Date.now() + RESUME_ALARM_MS)]), ...(step === null ? [] : [step])]
+    if (due.length === 0) return
+    const at = Math.min(...due)
     const current = replace ? null : await this.ctx.storage.getAlarm()
     if (current === null || current > at) await this.ctx.storage.setAlarm(at)
   }

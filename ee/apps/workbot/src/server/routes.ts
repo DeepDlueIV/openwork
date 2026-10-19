@@ -1,9 +1,10 @@
-import { createHeadlessRunnerClient } from "@openwork-ee/headless-protocol"
+import { createHeadlessRunnerClient, type RunnerLiveEvent } from "@openwork-ee/headless-protocol"
 import {
   createWorkbot,
   toWorkbotPageEvent,
   workbotOwner,
   workbotSessionId,
+  workbotSideChatSessionId,
   WORKBOT_CHAT_ID,
   WorkbotFilesUnavailableError,
   WorkbotUnavailableError,
@@ -55,6 +56,15 @@ const threadQuerySchema = z.object({ turns: z.coerce.number().int().min(1).max(2
 const INLINE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
 /** The stream ends after this and the page reopens it, so a held-open stream notices a revoked membership. */
 const EVENTS_MAX_MS = 170_000
+/** A comment this often keeps idle proxies from closing the page's stream (as the runner's SSE does). */
+const KEEP_ALIVE_MS = 15_000
+/**
+ * A live socket from the runner (`headlessStepTurns`) that couldn't open, or ended within `SOCKET_MIN_MS`, rests the
+ * person's sockets for `SOCKET_REST_MS`: their streams use SSE meanwhile. Remembered for at most this many people.
+ */
+const SOCKET_MIN_MS = 10_000
+const SOCKET_REST_MS = 60_000
+const SOCKET_REST_MAX = 10_000
 /** Matches the runner's per-file limit; a bigger upload is refused before it is read. */
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 /** Plenty for a person typing; stops a runaway script from spending the organization's model budget. */
@@ -86,22 +96,31 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
    */
   const runnerFor = (member: Member) => ({ ...config.runner, owner: workbotOwner(member.den.organization.id, member.den.memberId) })
 
-  const clientFor = (member: Member) => createHeadlessRunnerClient({
-    config: runnerFor(member), fetch: runnerFetch,
-    modelAccessRequired: () => member.den.gatewayModels,
-    mintToken: ({ readOnly, sessionId, messageId, model, modelAccessRequired }) => den.runToken(member.accessToken, { readOnly, sessionId, messageId, model, modelAccessRequired, gatewayModels: member.den.gatewayModels }),
-    maxTokenTtlMs: RUN_TOKEN_TTL_MS,
-  })
+  /**
+   * The runner client for this person: their cell, and turn tokens Den mints for them (with Gateway model access where
+   * `gatewayModels` is on). Turns and live updates (`openEventsSocket`) share it.
+   */
+  const runnerClientFor = (member: Member) =>
+    createHeadlessRunnerClient({
+      config: runnerFor(member),
+      fetch: runnerFetch,
+      modelAccessRequired: () => member.den.gatewayModels,
+      mintToken: ({ readOnly, sessionId, messageId, model, modelAccessRequired }) => den.runToken(member.accessToken, { readOnly, sessionId, messageId, model, modelAccessRequired, gatewayModels: member.den.gatewayModels }),
+      maxTokenTtlMs: RUN_TOKEN_TTL_MS,
+    })
+
   /** Workbot bound to this person: their runner conversation, and turn tokens Den mints for them. */
   const workbotFor = (member: Member) =>
     createWorkbot({
-      client: clientFor(member),
+      client: runnerClientFor(member),
       desktop: member.den.computer,
       canSchedule: async () => member.den.canSchedule,
       model: async () => member.den.model,
       // Gateway access is validated for this actor and model by Den when minting each turn, not by the runner catalog.
       verifyModel: !member.den.gatewayModels && member.den.verifyModel,
       workspaceAssistant: async () => member.den.workspaceAssistant,
+      // `headlessStepTurns`: turns run one step at a time; off (or an older Den) sends them as before.
+      stepTurns: member.den.stepTurns,
     })
 
   const enabled = (c: Context<AppEnv>) => c.get("member").den.enabled
@@ -165,7 +184,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const action = z.object({ action: z.enum(["continue", "pause", "resume"]) }).strict().safeParse(raw)
     if (operation === "viewer" ? !viewer.success : !action.success) return c.json({ error: "invalid_request" }, 400)
     const workbot = workbotFor(member)
-    const client = clientFor(member)
+    const client = runnerClientFor(member)
     const sessionId = workbotSessionId(member.den.organization.id, member.den.memberId)
     try {
       const existing = await client.readSession(sessionId, { turns: 1, limit: 1, outputs: "none" })
@@ -430,12 +449,71 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     }
   })
 
+  /** When each person's live sockets may be tried again (see SOCKET_REST_MS). */
+  const socketRest = new Map<string, number>()
+  const rest = (owner: string) => {
+    const now = Date.now()
+    if (socketRest.size >= SOCKET_REST_MAX) for (const [key, until] of socketRest) if (until <= now) socketRest.delete(key)
+    if (socketRest.size < SOCKET_REST_MAX) socketRest.set(owner, now + SOCKET_REST_MS)
+  }
+
+  /**
+   * `headlessStepTurns`: the runner's live events over a WebSocket, which on celld keeps going while the runner's
+   * code is switched under it. Null (use SSE) when the runner doesn't upgrade, or while this person's socket is resting
+   * after one that couldn't open or ended early, so a runner that can't keep one isn't tried on every stream.
+   */
+  const openLiveSocket = async (member: Member, chat: WorkbotChat, signal: AbortSignal) => {
+    const owner = workbotOwner(member.den.organization.id, member.den.memberId)
+    const now = Date.now()
+    const resting = socketRest.get(owner)
+    if (resting !== undefined && resting > now) return null
+    socketRest.delete(owner)
+    const { organization, memberId } = member.den
+    const sessionId = chat ? workbotSideChatSessionId(organization.id, memberId, chat) : workbotSessionId(organization.id, memberId)
+    const socket = await runnerClientFor(member).openEventsSocket(sessionId, signal).catch(() => null)
+    if (!socket) rest(owner)
+    return socket ? { owner, events: socket, openedAt: now } : null
+  }
+
+  /**
+   * The page still gets SSE, in the same format and the same window. A socket that ends on its own (the runner moved
+   * the person's cell or restarted) ends the page's stream: the page reconnects and re-reads, so nothing is missed.
+   */
+  const relayLiveSocket = (c: Context<AppEnv>, socket: { owner: string; events: AsyncIterableIterator<RunnerLiveEvent>; openedAt: number }, upstream: AbortController) => {
+    c.header("Cache-Control", "no-cache, no-transform")
+    c.header("X-Accel-Buffering", "no")
+    return streamSSE(c, async (stream) => {
+      stream.onAbort(() => upstream.abort())
+      const deadline = setTimeout(() => upstream.abort(), EVENTS_MAX_MS)
+      // The socket's own keep-alives stay between Workbot and the runner; the page's stream gets the runner SSE's comment.
+      const keepAlive = setInterval(() => void stream.write(": keep-alive\n\n").catch(() => undefined), KEEP_ALIVE_MS)
+      try {
+        await stream.writeSSE({ event: "ready", data: "{}" })
+        for await (const raw of socket.events) {
+          if (stream.aborted) break
+          // Only this person's Workbot turns, under the page's own ids (the socket's `ready` is not one).
+          const event = toWorkbotPageEvent(raw)
+          if (event) await stream.writeSSE({ data: JSON.stringify(event) })
+        }
+        if (!upstream.signal.aborted && Date.now() - socket.openedAt < SOCKET_MIN_MS) rest(socket.owner)
+      } catch (error) {
+        if (!upstream.signal.aborted && !stream.aborted) reportError("events_relay_failed", error)
+      } finally {
+        clearTimeout(deadline)
+        clearInterval(keepAlive)
+        upstream.abort()
+      }
+    })
+  }
+
   app.get("/v1/workbot/events", async (c) => {
     if (!enabled(c)) return c.json({ error: "workbot_not_enabled" }, 409)
     const scope = chatOf(c)
     if (scope.refused) return scope.refused
     const member = c.get("member")
     const upstream = new AbortController()
+    const socket = member.den.stepTurns ? await openLiveSocket(member, scope.chat, upstream.signal) : null
+    if (socket) return relayLiveSocket(c, socket, upstream)
     const opened = await workbotFor(member).openEvents(actorOf(member), upstream.signal, scope.chat).catch(() => null)
     if (!opened?.body) return c.json({ error: "workbot_runner_unavailable" }, 409)
     const body = opened.body

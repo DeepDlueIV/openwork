@@ -80,6 +80,22 @@ Names and defaults are from [celld's docs](https://celld.dev/docs) (v0.6.2):
   dated snapshots in a second bucket ([Backups and restore](#backups-and-restore)).
 - `HEADLESS_COMPUTER=off` until the computer is verified on celld (see [Check it](#check-it)).
 
+## Step mode: turns that outlast a deploy
+
+A turn sent with `execution: "steps"` ([README](./README.md#step-mode); Den and Workbot send it when
+`headlessStepTurns` is on) doesn't hold its cell busy. Admitting it writes its first step to the cell's
+`step_schedule` table and sets the cell's alarm; it is not run under `waitUntil`. The cell keeps one alarm, at the
+earliest of its due steps and the self-resume sweep. `alarm()` runs every due step to completion (one per lane, lanes
+in parallel; a failure stays with its turn), then sets the alarm again. Between two alarms the cell is idle, which is
+the safe point where celld moves it to a new deployment: nothing is cancelled. The new code's constructor finds the
+turn in `step_schedule` (startup recovery leaves it running) and its next alarm runs the next step, with a fresh MCP
+token from the turn's resume grant (memory doesn't survive the switch).
+
+A step that is cut off anyway (a node dies, or a step outlasts `CELLD_DEPLOY_MAX_AGE_S`) runs again from the alarm,
+continuing its streamed text where the provider allows and never re-running a tool call; one that keeps dying fails
+its turn with `step_crash_loop` after 5 starts. Turns sent without `execution` keep running under `waitUntil` as
+before.
+
 ## Backups and restore
 
 `.github/workflows/celld-backup.yml` copies the whole bucket (celld cells under `fleet/`, kept files under
@@ -130,7 +146,8 @@ only a recognized terminal error code and whether the answer matched, never prov
 Repair the environment configuration; never bypass the real turn or compatibility check to deploy it.
 
 **Batch runner deploys.** Every switch cancels the turns of busy cells after `CELLD_DEPLOY_MAX_AGE_S` (60 s), so
-fewer deploys means fewer interrupted people. Keep the `dev` push trigger (the runner must not fall behind Workbot
+fewer deploys means fewer interrupted people. Turns in [step mode](#step-mode-turns-that-outlast-a-deploy) are not
+cancelled: their cell switches between two steps. Keep the `dev` push trigger (the runner must not fall behind Workbot
 and den-api), and batch through the approval instead:
 
 - Don't approve each run as it arrives. A run bundles the whole runner at its commit, so approving the newest one
@@ -186,6 +203,15 @@ isolation between people; side chats sharing memory and listing; owner-less conv
 (`headlessRemoteCall`: create, send, read to the answer, stop, unknown session); idempotent re-sends; and killing
 the runtime mid-turn, then interrupted-turn recovery and resume with nothing lost, and a turn sent with a resume grant
 completing after the kill with no caller re-send (its alarm, a fake Den exchange, and the runner's own resume).
+
+It also sends a step-mode turn of six slow model calls and switches the runtime to new code during it. On celld,
+`POST /reload` on the internal listener (printed with `celld dev --logs`) rebuilds the deployment and adopts it as a
+new generation in place, the same switch a `celld deploy` makes; the check reads `GET /state` until every resident
+cell runs the new generation. It must switch well inside the 60 s a forced switch waits, before the turn's last step,
+and every step's model call must have been made exactly once (a forced switch would cancel a step, which then calls
+the model again). On wrangler, rewriting the bundle makes `wrangler dev` reload, which cancels what runs, as a Cloudflare
+deploy does; the turn still completes, with at most the cut-off step run again. Both check every step's file and the
+answer.
 
 Not covered locally: celld's multi-node failover and bucket durability (celld's own guarantees; check them on the
 real fleet before pointing production at it), and the Freestyle/Daytona computer inside celld, which bundles but

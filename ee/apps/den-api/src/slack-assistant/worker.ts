@@ -21,8 +21,8 @@ import {
   type SlackCall,
 } from "./protocol.js"
 import {
-  createSlackRunner,
   openSlackRunnerEvents,
+  slackRunnerForActor,
   slackRunnerAvailable,
   slackTurnModel,
   type SlackRunner,
@@ -62,7 +62,8 @@ type WorkerDeps = {
 
 const defaultWorkerDeps: WorkerDeps = {
   slack: slackClient,
-  runner: (actor) => createSlackRunner(actor),
+  // Turns run step by step where `headlessStepTurns` is on for the actor's organization.
+  runner: (actor) => slackRunnerForActor(actor),
   live: createLiveFeeds({ open: (sessionId, signal) => openSlackRunnerEvents(sessionId, signal) }),
 }
 

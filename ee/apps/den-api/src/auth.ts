@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { recordFreeAutoSignIn } from "@openwork-ee/den-db";
 import { readOrganizationMetadata } from "@openwork/types/den/managed-models-policy";
 import { invalidateTeamInferenceOAuth, revokeMemberGatewayCredentials } from "./llm/inference-provider-lifecycle.js";
 import { ensureMemberGatewayKey } from "./gateway-keys.js";
@@ -6,7 +7,6 @@ import { getInitialActiveOrganizationIdForUser } from "./active-organization.js"
 import { db } from "./db.js";
 import { resolveOrganizationMemberAuthority } from "./organization-team-roles.js";
 import { env } from "./env.js";
-import { organizationFeatureEnabled } from "./features.js";
 import { appLogger } from "./observability/logger.js";
 import {
   deleteMcpOAuthGrantFamilyForSession,
@@ -452,7 +452,7 @@ function readSignUpInvite(ctx: { request?: Request; query?: unknown; body?: unkn
 
 /**
  * Whether signing up from an invitation link counts as verifying the email
- * (inviteLinkVerifiesEmail). Only the join token proves it, never the
+ * for every organization. Only the join token proves it, never the
  * invitation id, which every member can see; the invitation must be pending,
  * unexpired and addressed to this email.
  */
@@ -472,7 +472,7 @@ async function invitationLinkVerifiesEmail(input: { inviteToken: string | null; 
     ))
     .limit(1);
 
-  return invitation ? organizationFeatureEnabled(invitation.organizationId, "inviteLinkVerifiesEmail") : false;
+  return Boolean(invitation);
 }
 
 async function isEmailAlreadyVerified(email: string) {
@@ -922,6 +922,8 @@ export const auth = betterAuth({
         // Every sign-in path that creates a session row: session.created in
         // the session's organization (src/audit/domain/sessions.ts).
         after: async (session, context) => {
+          await recordFreeAutoSignIn(db, { userId: normalizeDenTypeId("user", session.userId), now: session.createdAt })
+            .catch(() => logger.warn("Free Auto sign-in behavior could not be recorded."));
           await runAuditHook("session.create", () => recordSessionCreated(session, auditSessionMethod(context)));
         },
       },

@@ -1,8 +1,13 @@
 import { timingSafeEqual } from "node:crypto"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
+import { routePath } from "hono/route"
+import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { loadConfig, type Config } from "../config.js"
+import { createErrorReporter, type ErrorReporter } from "../error-reporting.js"
+import { scopedCatalogResponse } from "../model-catalog.js"
 import { createRuntime, gatewayModelCatalog } from "../runtime.js"
+import { createModelProbe, modelProbeResponse, type ModelProbe } from "../model-probe.js"
 import { Store } from "../store.js"
 import { durableObjectSql } from "./sql.js"
 
@@ -47,19 +52,39 @@ function parseCell(name: string): Cell | null {
 }
 
 const json = (body: unknown, status: number) => Response.json(body, { status })
+/** Where a cell keeps its own name: an alarm has no request to read it from. */
+const CELL_NAME_KEY = "cell"
+/**
+ * How far ahead a cell's alarm is set while it has turns running or waiting to resume: after a crash, the node that
+ * takes the cell over wakes it within this, recovery marks its turns interrupted, and the alarm resumes them.
+ */
+const RESUME_ALARM_MS = 30_000
+
+type Runtime = Awaited<ReturnType<typeof createRuntime>>
 
 export class HeadlessCell {
-  private readonly ready: ReturnType<typeof createRuntime>
+  private readonly ready: Promise<Runtime>
+  /** This cell's name, once a request addressed it by name (and it was stored for alarms). */
+  private name: string | null = null
 
   constructor(private readonly ctx: DurableObjectState, private readonly env: CellEnv) {
     const store = new Store(durableObjectSql(ctx.storage))
     this.ready = ctx.blockConcurrencyWhile(() => createRuntime(configFor(env), store))
   }
 
+  /** The cell's name if it is this cell's: the same check a request gets, for one that names the cell. */
+  private isOwnName(name: string) {
+    return parseCell(name) !== null && this.ctx.id.equals(this.env.HEADLESS_CELL.idFromName(name))
+  }
+
   async fetch(request: Request) {
     const name = request.headers.get(CELL_HEADER) ?? ""
     const cell = parseCell(name)
-    if (!cell || !this.ctx.id.equals(this.env.HEADLESS_CELL.idFromName(name))) return json({ error: "invalid_cell" }, 400)
+    if (!cell || !this.isOwnName(name)) return json({ error: "invalid_cell" }, 400)
+    if (this.name !== name) {
+      await this.ctx.storage.put(CELL_NAME_KEY, name)
+      this.name = name
+    }
     const url = new URL(request.url)
     const sessionId = SESSION_PATH.exec(url.pathname)?.[1]
 
@@ -86,8 +111,35 @@ export class HeadlessCell {
       // The caller may stop listening after admission; keep the turn running on either host.
       this.ctx.waitUntil(runtime.runner.idle())
     }
+    // A turn admitted or resumed, or turns found interrupted when this cell woke up: keep an alarm set for them.
+    await this.armResume(runtime, false)
     // Deleting a chat removes only its rows; the owner's other chats and memory stay.
     return response
+  }
+
+  /**
+   * Resumes this cell's interrupted turns that have a resume grant, with no request: after a crash or a deploy the
+   * alarm wakes the cell (startup recovery marks its turns interrupted), and this resumes them and keeps them running.
+   */
+  async alarm() {
+    const name = await this.ctx.storage.get(CELL_NAME_KEY)
+    // A cell only arms alarms after a request named it; anything else is not this cell's to act on.
+    if (typeof name !== "string" || !this.isOwnName(name)) return
+    this.name = name
+    const runtime = await this.ready
+    if (!runtime.selfResume) return
+    await runtime.selfResume.sweep()
+    this.ctx.waitUntil(runtime.runner.idle())
+    await this.armResume(runtime, true)
+  }
+
+  /** Sets the alarm while any turn is queued, running or waiting to resume; `replace` even if one is set. */
+  private async armResume(runtime: Runtime, replace: boolean) {
+    const due = runtime.selfResume?.nextSweepAt()
+    if (due === null || due === undefined) return
+    const at = Math.max(due, Date.now() + RESUME_ALARM_MS)
+    const current = replace ? null : await this.ctx.storage.getAlarm()
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at)
   }
 }
 
@@ -107,8 +159,32 @@ router.use("/v1/*", async (c, next) => {
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return c.json({ error: "unauthorized" }, 401)
   await next()
 })
+const reporters = new WeakMap<Config, ErrorReporter>()
+/** Reports a router failure (the route and error type, never the request); a no-op without HEADLESS_SENTRY_DSN. */
+function reportRouterError(c: Context<{ Bindings: CellEnv }>, error: Error) {
+  let config: Config
+  try {
+    config = configFor(c.env)
+  } catch {
+    // The configuration itself is what failed: there is nowhere configured to report to.
+    return
+  }
+  let reporter = reporters.get(config)
+  if (!reporter) {
+    reporter = createErrorReporter(config.errorReporting)
+    reporters.set(config, reporter)
+  }
+  if (!reporter.enabled) return
+  const sent = reporter.report({ code: "request_failed", tags: { route: routePath(c), method: c.req.method }, error })
+  try {
+    c.executionCtx.waitUntil(sent)
+  } catch {
+    // No execution context (tests): the report still runs on its own.
+  }
+}
 router.onError((error, c) => {
   console.error("[headless-cells] request failed", { path: c.req.path, error: error.message })
+  reportRouterError(c, error)
   return c.json({ error: "internal_error" }, 500)
 })
 const catalogs = new WeakMap<Config, ReturnType<typeof gatewayModelCatalog>>()
@@ -121,6 +197,27 @@ router.get("/v1/models", async (c) => {
   }
   return c.json(await catalog())
 })
+router.post("/v1/models", bodyLimit({ maxSize: 8192 }), (c) => {
+  const config = configFor(c.env)
+  let catalog = catalogs.get(config)
+  if (!catalog) {
+    catalog = gatewayModelCatalog(config)
+    catalogs.set(config, catalog)
+  }
+  return scopedCatalogResponse(c.req.raw, catalog)
+})
+const modelProbes = new WeakMap<Config, ModelProbe>()
+router.post("/v1/model-probe", bodyLimit({ maxSize: 8192 }), (c) => {
+  const config = configFor(c.env)
+  let probe = modelProbes.get(config)
+  if (!probe) {
+    probe = createModelProbe(config, (input, init) => fetch(input, init))
+    modelProbes.set(config, probe)
+  }
+  return modelProbeResponse(c.req.raw, probe)
+})
+// Conversations only leave cells: they are imported into a Node runner (README: Move conversations to Node).
+router.post("/v1/sessions/:id/import", (c) => c.json({ error: "import_not_supported" }, 405))
 router.all("/v1/*", (c) => {
   const rawOwner = c.req.header(OWNER_HEADER)
   if (rawOwner !== undefined) {

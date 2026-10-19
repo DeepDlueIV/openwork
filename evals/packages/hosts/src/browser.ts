@@ -23,6 +23,8 @@ export interface BrowserOptions {
   headless?: boolean;
   /** Report a hover-capable mouse even where headless Chrome finds no pointer device. See `ChromeSurfaceOptions.mouse`. */
   mouse?: boolean;
+  /** Map real-looking hostnames to local services. See `ChromeSurfaceOptions.hostRules`. */
+  hostRules?: string;
   timeoutMs?: number;
 }
 
@@ -42,6 +44,7 @@ export async function chrome(opts: BrowserOptions = {}): Promise<AttachedSurface
     startUrl: opts.startUrl,
     headless: opts.headless,
     mouse: opts.mouse,
+    hostRules: opts.hostRules,
   });
 
   let surface: AttachedSurface;

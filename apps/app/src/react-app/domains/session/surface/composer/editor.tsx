@@ -13,6 +13,7 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getNearestNodeFromDOMNode,
+  $getNodeByKey,
   $getRoot,
   $getSelection,
   $nodesOfType,
@@ -1388,6 +1389,82 @@ function LineBoundaryKeysPlugin() {
   return null;
 }
 
+/** The point's node still exists, is in the document, and the offset is still inside it. */
+function $isLivePoint(point: { key: NodeKey; offset: number; type: "text" | "element" }): boolean {
+  const node = $getNodeByKey(point.key);
+  if (!node || !node.isAttached()) return false;
+  if (point.type === "text") return $isTextNode(node) && point.offset <= node.getTextContentSize();
+  return $isElementNode(node) && point.offset <= node.getChildrenSize();
+}
+
+function $isCaretAtPromptStart(selection = $getSelection()): boolean {
+  if (!$isRangeSelection(selection) || !selection.isCollapsed() || selection.anchor.offset !== 0) return false;
+  if (!$isLivePoint(selection.anchor)) return false;
+  const node = selection.anchor.getNode();
+  const first = $getRoot().getFirstDescendant();
+  return node.is($getRoot()) || node.is($getRoot().getFirstChild()) || Boolean(first && node.is(first));
+}
+
+// Coming back to the prompt from the command palette, a model picker or any
+// other dialog focuses the editor programmatically, and the browser then puts
+// the caret at the very start. Put it back where the person left it instead.
+// A click or tap still places the caret where it lands.
+function KeepCaretOnRefocusPlugin() {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    // The caret together with the text it was in: a caret is only put back
+    // into the same text, never after a send, clear or any other edit.
+    let saved: { selection: ReturnType<typeof $createRangeSelection>; text: string } | null = null;
+    let pointerFocus = false;
+    const unregisterUpdate = editor.registerUpdateListener(({ editorState }) => {
+      editorState.read(() => {
+        const selection = $getSelection();
+        const text = $getRoot().getTextContent();
+        if ($isRangeSelection(selection)) saved = { selection: selection.clone(), text };
+        else if (saved && saved.text !== text) saved = null;
+      });
+    });
+    const onPointerDown = () => { pointerFocus = true; };
+    const onBlur = () => { pointerFocus = false; };
+    const onFocus = () => {
+      const fromPointer = pointerFocus;
+      pointerFocus = false;
+      const restore = saved;
+      if (fromPointer || !restore) return;
+      // After the browser has applied its own caret, so ours wins.
+      requestAnimationFrame(() => {
+        if (document.activeElement !== editor.getRootElement()) return;
+        editor.update(() => {
+          // Only undo the browser's jump to the start, in unchanged text; a caret code placed on purpose stays.
+          if ($getRoot().getTextContent() !== restore.text) return;
+          if (!$isLivePoint(restore.selection.anchor) || !$isLivePoint(restore.selection.focus)) return;
+          if (!$isCaretAtPromptStart() || $isCaretAtPromptStart(restore.selection)) return;
+          $setSelection(restore.selection.clone());
+        });
+      });
+    };
+    const unregisterRoot = editor.registerRootListener((root, previous) => {
+      previous?.removeEventListener("pointerdown", onPointerDown, true);
+      previous?.removeEventListener("focus", onFocus);
+      previous?.removeEventListener("blur", onBlur);
+      root?.addEventListener("pointerdown", onPointerDown, true);
+      root?.addEventListener("focus", onFocus);
+      root?.addEventListener("blur", onBlur);
+    });
+    return () => {
+      unregisterUpdate();
+      unregisterRoot();
+      const root = editor.getRootElement();
+      root?.removeEventListener("pointerdown", onPointerDown, true);
+      root?.removeEventListener("focus", onFocus);
+      root?.removeEventListener("blur", onBlur);
+    };
+  }, [editor]);
+
+  return null;
+}
+
 function ImperativeHandlePlugin(props: { editorRef: ForwardedRef<LexicalPromptEditorHandle> }) {
   const [editor] = useLexicalComposerContext();
 
@@ -1524,6 +1601,7 @@ export const LexicalPromptEditor = forwardRef<LexicalPromptEditorHandle, EditorP
         <PlainTextPlugin
           contentEditable={
             <ContentEditable
+              data-composer-editor=""
               className="min-h-6 max-h-[min(160px,30dvh)] lg:min-h-[60px] lg:max-h-[280px] w-full resize-none overflow-y-auto bg-transparent text-base leading-6 text-dls-text outline-none placeholder:text-dls-secondary lg:text-[13px] lg:leading-[1.55] [&_p]:min-h-[1.5rem] [&_p]:m-0"
               aria-placeholder={props.placeholder}
               placeholder={<span />}
@@ -1554,6 +1632,7 @@ export const LexicalPromptEditor = forwardRef<LexicalPromptEditorHandle, EditorP
         <AttachmentChipPlugin onRemoveAttachment={props.onRemoveAttachment} onExpandAttachment={props.onExpandAttachment} />
         <MentionChipNavigationPlugin />
         <LineBoundaryKeysPlugin />
+        <KeepCaretOnRefocusPlugin />
         <ImperativeHandlePlugin editorRef={ref} />
       </div>
     </LexicalComposer>

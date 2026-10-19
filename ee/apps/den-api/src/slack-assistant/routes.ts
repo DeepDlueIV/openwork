@@ -36,7 +36,7 @@ import { getExternalMcpConnection } from "../capability-sources/external-mcp-con
 import { getOrgOAuthClient } from "../capability-sources/oauth-credentials.js"
 import { listHeadlessModels, slackRunnerAvailable } from "./headless.js"
 import { getOrganizationFeatures } from "../features.js"
-import { defaultModelFeatureOn, organizationDefaultModel } from "../workbot/model.js"
+import { organizationDefaultModel } from "../workbot/model.js"
 import { publicRequestUrl } from "../request-url.js"
 import { openworkYourConnectionsUrl } from "../mcp/connection-navigation.js"
 import {
@@ -192,9 +192,8 @@ export function registerSlackAssistantRoutes<T extends { Variables: OrgRouteVari
         channelIds: installation?.channelIds ?? [],
         shadowMode: installation?.shadowMode ?? false,
         dailyLimit: installation?.dailyLimit ?? 100,
-        ...(defaultModelFeatureOn(features)
-          ? { model: await organizationDefaultModel(org.organization.id, { features: async () => features }), modelManagedByOrganization: true }
-          : { model: installation?.model ?? null, modelManagedByOrganization: false }),
+        model: await organizationDefaultModel(org.organization.id),
+        modelManagedByOrganization: true,
         defaultModel: catalog?.defaultModel ?? null,
         progressUpdates: installation?.progressUpdates ?? false,
         models: catalog?.models ?? [],
@@ -235,7 +234,7 @@ export function registerSlackAssistantRoutes<T extends { Variables: OrgRouteVari
       const features = await getOrganizationFeatures(org.organization.id)
       // While the organization's default model applies, the installation's own model is kept as it was.
       const { model: _keptModel, ...settings } = c.req.valid("json")
-      const body = defaultModelFeatureOn(features) ? settings : c.req.valid("json")
+      const body = settings
       if (body.enabled && !features.slackAssistant) {
         return c.json(
           {

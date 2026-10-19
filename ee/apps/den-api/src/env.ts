@@ -78,6 +78,8 @@ const EnvSchema = z.object({
   DEN_DIAGNOSTICS_ORIGIN: z.string().optional(),
   DEN_DIAGNOSTICS_BEARER_TOKEN: z.string().optional(),
   DEN_MAINTENANCE_TOKEN: z.string().optional(),
+  DEN_HEADLESS_RUNNER_TOKEN: z.string().optional(),
+  DEN_HEADLESS_RUNNER_CALLBACK_TOKEN: z.string().optional(),
   DEN_GATEWAY_KEY: z.string().optional(),
   DEN_GATEWAY_ORIGIN: z.string().optional(),
   DEN_GOOGLE_OAUTH_AUTHORIZE_URL: z.string().optional(),
@@ -91,6 +93,11 @@ const EnvSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
   DEN_CORS_HANDLED_BY_EDGE: z.string().optional(),
   DEN_API_PUBLIC_URL: z.string().optional(),
+  DEN_DOCUMENTS_COLLABORA_URL: z.string().url().optional(),
+  DEN_DOCUMENTS_HOST_ORIGIN: z.string().url().optional(),
+  DEN_DOCUMENTS_CALLBACK_BASE_URL: z.string().url().optional(),
+  DEN_DOCUMENTS_EDITOR: z.enum(["fixed", "cloud-worker"]).optional(),
+  DEN_DOCUMENTS_WORKER_EDITOR_PORT: z.string().optional(),
   DEN_API_VERSION: z.string().optional(),
   RENDER_GIT_COMMIT: z.string().optional(),
   OPENWORK_INSTALLER_ARTIFACTS_DIR: z.string().optional(),
@@ -565,6 +572,15 @@ const maintenanceToken = optionalString(parsed.DEN_MAINTENANCE_TOKEN)
 if (maintenanceToken && maintenanceToken.length < 24) {
   throw new Error("DEN_MAINTENANCE_TOKEN must contain at least 24 characters.")
 }
+// Bearer token the headless runner presents to exchange a resume grant (POST /v1/headless/resume-token). Unset hides
+// that route (404). Must differ from DEN_HEADLESS_RUNNER_TOKEN, which Den presents to the runner.
+const headlessRunnerCallbackToken = optionalString(parsed.DEN_HEADLESS_RUNNER_CALLBACK_TOKEN)
+if (headlessRunnerCallbackToken && headlessRunnerCallbackToken.length < 32) {
+  throw new Error("DEN_HEADLESS_RUNNER_CALLBACK_TOKEN must contain at least 32 characters.")
+}
+if (headlessRunnerCallbackToken && headlessRunnerCallbackToken === optionalString(parsed.DEN_HEADLESS_RUNNER_TOKEN)) {
+  throw new Error("DEN_HEADLESS_RUNNER_CALLBACK_TOKEN must differ from DEN_HEADLESS_RUNNER_TOKEN.")
+}
 const derivedDenApiPublicUrl = configuredDenUrls && devMode && denBaseUrlIsLoopback(configuredDenUrls.web)
   ? `http://127.0.0.1:${port}`
   : configuredDenUrls?.api ?? deriveApiPublicUrlFromWebOrigin({ devMode, port, webOrigin: betterAuthPublicWebOrigin })
@@ -692,6 +708,7 @@ export const env = {
     bearerToken: diagnosticsBearerToken,
   },
   maintenanceToken,
+  headlessRunnerCallbackToken,
   gatewayKey: optionalString(parsed.DEN_GATEWAY_KEY),
   gatewayOrigin: normalizeOptionalHttpsOrigin("DEN_GATEWAY_ORIGIN", parsed.DEN_GATEWAY_ORIGIN),
   planGatingEnabled,
@@ -762,6 +779,15 @@ export const env = {
   },
   port,
   corsOrigins,
+  documentsOffice: {
+    // `fixed` uses one operator-run editor; `cloud-worker` runs it in each
+    // member's Cloud worker. Unset keeps the fixed editor when one is configured.
+    mode: parsed.DEN_DOCUMENTS_EDITOR ?? (optionalString(parsed.DEN_DOCUMENTS_COLLABORA_URL) ? "fixed" : null),
+    workerPort: Number(parsed.DEN_DOCUMENTS_WORKER_EDITOR_PORT ?? "9980"),
+    serverUrl: optionalString(parsed.DEN_DOCUMENTS_COLLABORA_URL),
+    hostOrigin: optionalString(parsed.DEN_DOCUMENTS_HOST_ORIGIN),
+    callbackBaseUrl: optionalString(parsed.DEN_DOCUMENTS_CALLBACK_BASE_URL) ?? apiPublicUrl,
+  },
   apiPublicUrl,
   serviceVersion: resolveDenServiceVersion({
     configuredVersion: parsed.DEN_API_VERSION,

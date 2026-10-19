@@ -15,6 +15,7 @@ import {
   runtimeDisabledProviderList, writeGlobalRuntimeOpencodeConfig,
 } from "../runtime-opencode-config-store.js";
 import { TaskActivation, taskRoute } from "./activation.js";
+import { readFreeAutoJourney } from "./journey.js";
 import { RemoteFailure, isRecord, jsonError, readBoundedBody, readJson, responseHeaders } from "./http.js";
 import { isOwnedProvider, ownedProvider } from "./provider-config.js";
 import { memberCredentialFailure, parseMemberCredential, parseStatus, statusFromRejection } from "./responses.js";
@@ -43,6 +44,7 @@ export class AnonymousInferenceService {
   private readonly enabled: boolean;
   private readonly host: DesktopFreeHost | null;
   private localAccessToken = freshLocalToken();
+  private journey: Promise<string> | null = null;
   // The member credential the engine's relay token is bound to. Held only in memory, like the credential itself,
   // and compared directly: it is an identity, not something to derive a digest from.
   private relayPrincipal: string | null = null;
@@ -343,9 +345,12 @@ export class AnonymousInferenceService {
     // Signed out, like OpenCode Zen: no device identity, just the shared "public" key; the gateway limits it by IP.
     const authorization = member ?? `Bearer ${DESKTOP_FREE_OPEN_API_KEY}`;
     const actualPath = member ? memberPath(path) : path;
+    this.journey ??= readFreeAutoJourney(this.config);
+    // Scope the anonymous identifier to this Gateway origin; account changes keep the same journey.
+    const journey = createHash("sha256").update(`${this.settings.origin}:${await this.journey}`).digest("hex");
     const response = await externalFetch(`${this.settings.origin}${actualPath}`, {
       method, body: method === "GET" ? undefined : body,
-      headers: { authorization, ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+      headers: { authorization, "x-openwork-free-journey": journey, ...(method === "POST" ? { "content-type": "application/json" } : {}) },
       signal, redirect: "error", credentials: "omit", cache: "no-store",
     });
     signal.throwIfAborted();

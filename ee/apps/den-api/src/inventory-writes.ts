@@ -42,6 +42,7 @@ export const INVENTORY_IRRELEVANT_TABLES: ReadonlySet<string> = new Set([
   "inference_usage_ledger_entries", "inference_free_usage", "inference_free_usage_buckets",
   "anonymous_inference_identities", "anonymous_inference_rate_buckets", "anonymous_inference_usage",
   "anonymous_inference_usage_buckets",
+  "free_auto_limit_events", "free_auto_purchases",
   // Runs, runner presence and remote sessions.
   "automation_runner", "automation_runner_notification", "automation_run", "automation_run_event", "workflow_run",
   "remote_session_command", "remote_session_request", "daytona_sandbox", "cloud_runtime_instance",

@@ -9,6 +9,7 @@ import {
   EVIDENCE_CONTROLLER_FILES, EVIDENCE_DEPENDENCIES_RECIPE, EVIDENCE_TOOLS_RECIPE,
 } from "@openwork/freestyle/evidence-builder";
 import { DaytonaApi, DaytonaApiError, type Sandbox } from "./api.ts";
+import { LOCALHOST_RECIPE } from "./localhost.ts";
 import { boundedDiagnostic, inspectGuest, requireLocalEvidenceReady } from "./health.ts";
 
 /**
@@ -46,6 +47,7 @@ npm install --global bun@1.3.14
 bun --version`;
 /** Named by its recipe, so a recipe change builds a new base (and everything above it). */
 export const DAYTONA_BASE_SNAPSHOT = `${DAYTONA_BASE_PREFIX}${digest(BASE_RECIPE).slice(0, 16)}`;
+
 
 /** Free filesystem cache before saving, and keep apt archives out of the image. */
 const SLIM_RECIPE = `apt-get clean
@@ -198,10 +200,10 @@ export async function ensureImage(api: DaytonaApi, devSha: string, options: Dayt
   if (!/^[a-f0-9]{40}$/.test(devSha)) throw new Error("A full dev commit SHA is required");
   const entries = devEntries ?? await sourceTree(devSha, options.sourceFetch);
   return ensureLayer(api, {
-    name: `${DAYTONA_IMAGE_PREFIX}${digest(BASE_RECIPE + EVIDENCE_TOOLS_RECIPE + EVIDENCE_DEPENDENCIES_RECIPE + dependencyFingerprint(entries))}`,
+    name: `${DAYTONA_IMAGE_PREFIX}${digest(BASE_RECIPE + EVIDENCE_TOOLS_RECIPE + EVIDENCE_DEPENDENCIES_RECIPE + LOCALHOST_RECIPE + dependencyFingerprint(entries))}`,
     stage: "daytona-image", observe: options.observe ?? (() => {}), withMemory: false, labels: { devSha },
     parent: () => ensureBase(api, options),
-    prepare: (sandbox) => runScript(api, sandbox, "daytona-image", `${EVIDENCE_TOOLS_RECIPE}\n${checkoutRecipe(devSha)}\n${EVIDENCE_DEPENDENCIES_RECIPE}\n${SLIM_RECIPE}\ndf -h /`, options),
+    prepare: (sandbox) => runScript(api, sandbox, "daytona-image", `${EVIDENCE_TOOLS_RECIPE}\n${checkoutRecipe(devSha)}\n${EVIDENCE_DEPENDENCIES_RECIPE}\n${SLIM_RECIPE}\n${LOCALHOST_RECIPE}\ndf -h /`, options),
   });
 }
 
@@ -242,7 +244,7 @@ async function buildEvidenceWorld<Result>(sha: string, api: DaytonaApi, options:
   const entries = await sourceTree(sha, options.sourceFetch);
   const observe = options.observe ?? (() => {});
   const controller = await Promise.all(EVIDENCE_CONTROLLER_FILES.map(readAsset));
-  const templateName = (fingerprint: string) => `${DAYTONA_TEMPLATE_PREFIX}${digest(BASE_RECIPE + EVIDENCE_TOOLS_RECIPE + EVIDENCE_DEPENDENCIES_RECIPE + GATEWAY_UNITS + controller.join("\n") + fingerprint)}`;
+  const templateName = (fingerprint: string) => `${DAYTONA_TEMPLATE_PREFIX}${digest(BASE_RECIPE + EVIDENCE_TOOLS_RECIPE + EVIDENCE_DEPENDENCIES_RECIPE + LOCALHOST_RECIPE + GATEWAY_UNITS + controller.join("\n") + fingerprint)}`;
   const runtimeFingerprint = evidenceRuntimeFingerprint(entries);
   const state: { mode: "fast" | "full"; restart: string[] } = { mode: "full", restart: [] };
   let allowFast = true;
@@ -263,7 +265,8 @@ async function buildEvidenceWorld<Result>(sha: string, api: DaytonaApi, options:
     },
     prepare: async (sandbox) => {
       if (state.mode === "fast") {
-        await runScript(api, sandbox, "evidence-world-fast", `cd /workspace
+        await runScript(api, sandbox, "evidence-world-fast", `${LOCALHOST_RECIPE}
+cd /workspace
 git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
 git fetch --depth=1 --filter=blob:none origin ${sha}
@@ -279,7 +282,8 @@ printf %s ${sha} > ${ROOT}/built-from-sha
       }
       for (const [index, name] of EVIDENCE_CONTROLLER_FILES.entries()) await api.writeFile(sandbox, `${ROOT}/${name}`, controller[index]);
       await api.writeFile(sandbox, "/etc/systemd/system/openwork-evidence.service", `[Unit]\nDescription=OpenWork isolated evidence web world\n[Service]\nWorkingDirectory=/workspace\nEnvironment=PATH=${ROOT}/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nExecStart=/usr/bin/env node ${ROOT}/evidence-runtime.mjs\n`);
-      await runScript(api, sandbox, "evidence-world", `${checkoutRecipe(sha)}
+      await runScript(api, sandbox, "evidence-world", `${LOCALHOST_RECIPE}
+${checkoutRecipe(sha)}
 ${EVIDENCE_DEPENDENCIES_RECIPE}
 pnpm --filter @openwork-ee/den-api run build:workspace-dependencies
 pnpm --filter openwork-server build

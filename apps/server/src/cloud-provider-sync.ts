@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { GatewayAuthorizationRequest, GatewayDesktopOauthStartResponse, GatewayUsableModel } from "@openwork/types/den/gateway";
-import { catalogModelVariants, CLOUD_MODEL_CONFIG_VERSION } from "@openwork/types/cloud-model-fast";
+import { CLOUD_MODEL_CONFIG_VERSION } from "@openwork/types/cloud-model-fast";
 
 import { enginePoolForConfig, rolloverOutcomeApplied, type RolloverOutcome } from "./engine-pool.js";
 import type { EnvService } from "./env-file.js";
 import { ApiError } from "./errors.js";
-import { selectPrimaryCredentialEnvName, syncManagedProviderAuth } from "./managed-provider-auth.js";
+import { syncManagedProviderAuth } from "./managed-provider-auth.js";
+import { buildManagedProviderConfig, readProviderEnvNames, selectPrimaryCredentialEnvName } from "@openwork/types/managed-provider-config";
 import { writeOpenworkRuntimeConfigFile } from "./openwork-runtime-config.js";
 import {
   hasOpenworkWorkspaceConfig,
@@ -239,27 +240,12 @@ export type CloudProviderSyncOptions = {
   fetchImpl?: typeof globalThis.fetch;
   logger?: CloudProviderSyncLogger;
   intervalMs?: number;
+  /** Resolve Den rollout, then return the selected engine's frozen Gateway owner. */
+  liveProviderSync?: () => Promise<boolean>;
 };
 
 const requestTimeoutMs = 8_000;
 const defaultIntervalMs = 5 * 60 * 1_000;
-const modelConfigPassthroughKeys = [
-  "family",
-  "release_date",
-  "attachment",
-  "reasoning",
-  "temperature",
-  "tool_call",
-  "interleaved",
-  "cost",
-  "limit",
-  "modalities",
-  "status",
-  "options",
-  "headers",
-  "provider",
-  "variants",
-];
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -583,13 +569,14 @@ async function fetchProviders(
   fetchImpl: typeof globalThis.fetch,
   session: CloudProviderDenSession,
   signal: AbortSignal,
+  liveProviderSync = false,
 ): Promise<{
   llmProviders: DenProviderConnection[];
   inferenceProviders: DenProviderConnection[] | undefined;
 }> {
   const [llmProviders, inferenceProviders] = await Promise.all([
     fetchLlmProviders(fetchImpl, session, signal),
-    fetchInferenceProviders(fetchImpl, session, signal),
+    liveProviderSync ? Promise.resolve([]) : fetchInferenceProviders(fetchImpl, session, signal),
   ]);
   return { llmProviders, inferenceProviders };
 }
@@ -614,10 +601,6 @@ function hashString(value: string): string {
 
 function runtimeProviderId(provider: DenProvider): string {
   return provider.source === "openwork" ? "openwork" : provider.id;
-}
-
-function readProviderEnvNames(providerConfig: JsonRecord): string[] {
-  return readStringList(providerConfig.env);
 }
 
 function upsertEnvEntry(entries: EnvEntry[], key: string, value: string): void {
@@ -663,45 +646,15 @@ function providerEnvEntries(provider: DenProviderConnection): EnvEntry[] {
   return entries;
 }
 
-function buildModelConfig(model: DenProviderModel, providerNpm: unknown): JsonRecord {
-  // Older Den responses included routing labels in the display name. Keep the
-  // wire ID and selection metadata, but don't expose those labels in the picker.
-  const selection = model.modelGroupName && model.credentialSetName ? ` (${model.modelGroupName} / ${model.credentialSetName})` : "";
-  const next: JsonRecord = {
-    id: model.id,
-    name: selection && model.name.endsWith(selection) ? model.name.slice(0, -selection.length) : model.name,
-  };
-  for (const key of modelConfigPassthroughKeys) {
-    const value = model.config[key];
-    if (value !== undefined) next[key] = value;
-  }
-  const variants = catalogModelVariants(model.config, providerNpm);
-  if (variants) next.variants = variants;
-  return next;
-}
-
 function buildProviderConfig(provider: DenProviderConnection): JsonRecord {
-  const models: JsonRecord = {};
-  for (const model of [...provider.models].sort((left, right) => left.id.localeCompare(right.id))) {
-    models[model.id] = buildModelConfig(model, provider.providerConfig.npm);
-  }
-  const config: JsonRecord = {
-    id: provider.providerId,
-    name: provider.name,
-    env: readProviderEnvNames(provider.providerConfig),
-  };
-  if (Object.keys(models).length > 0 || provider.source !== "openwork") config.models = models;
-
-  const npm = readRequiredString(provider.providerConfig.npm);
-  if (npm) config.npm = npm;
-  const api = readRequiredString(provider.providerConfig.api);
-  if (api) config.api = api;
-  if (isRecord(provider.providerConfig.options)) config.options = provider.providerConfig.options;
-  const whitelist = readStringList(provider.providerConfig.whitelist);
-  if (Array.isArray(provider.providerConfig.whitelist)) config.whitelist = whitelist;
-  const blacklist = readStringList(provider.providerConfig.blacklist);
-  if (blacklist.length > 0) config.blacklist = blacklist;
-  return config;
+  return buildManagedProviderConfig({
+    ...provider,
+    models: provider.models.map((model) => {
+      // Older Den responses included routing labels in the display name.
+      const selection = model.modelGroupName && model.credentialSetName ? ` (${model.modelGroupName} / ${model.credentialSetName})` : "";
+      return { ...model, name: selection && model.name.endsWith(selection) ? model.name.slice(0, -selection.length) : model.name };
+    }),
+  });
 }
 
 function prepareMaterialization(
@@ -858,6 +811,7 @@ export class CloudProviderSync {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly logger?: CloudProviderSyncLogger;
   private readonly intervalMs: number;
+  private readonly liveProviderSync?: () => Promise<boolean>;
   private session: CloudProviderDenSession | null = null;
   private lastRun: CloudProviderSyncStatus["lastRun"] = null;
   private providers: CloudProviderSyncStatusProvider[] = [];
@@ -888,7 +842,19 @@ export class CloudProviderSync {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.logger = options.logger;
     this.intervalMs = options.intervalMs ?? configuredIntervalMs();
+    this.liveProviderSync = options.liveProviderSync;
     this.reloadRetryMs = configuredReloadRetryMs();
+  }
+
+  /** Process-local credential handoff. Never expose this through ordinary server status/config. */
+  currentSession(): CloudProviderDenSession | null {
+    return this.session ? { ...this.session } : null;
+  }
+
+  /** Invalidate the credential bridge before asynchronous policy hydration. */
+  suspendForSession(session: CloudProviderDenSession): Promise<void> {
+    return this.session && this.sessionContextKey(this.session) === this.sessionContextKey(session)
+      ? Promise.resolve() : this.suspend();
   }
 
   setSession(session: CloudProviderDenSession): Promise<void> {
@@ -1000,6 +966,18 @@ export class CloudProviderSync {
       session,
       reason,
     };
+    // A routing transition changes the provider owner even when the Den
+    // identity is unchanged. Joining an already-running live pass can lose
+    // v1's only restoration request; always reconcile the latest owner after
+    // that pass finishes. Ordinary same-context refreshes still coalesce.
+    if (reason === "engine_routing_changed" && this.activeRun) {
+      if (this.trailingRun) {
+        this.trailingRun.contextKey = request.contextKey;
+        this.trailingRun.request = request;
+        return this.trailingRun.promise;
+      }
+      return this.createTrailingRun(request);
+    }
     if (this.activeRun?.contextKey === request.contextKey) {
       const trailing = this.trailingRun;
       if (trailing && trailing.contextKey !== request.contextKey) {
@@ -1229,8 +1207,10 @@ export class CloudProviderSync {
         this.resetMaterializationState();
       }
       if (request.generation !== this.contextGeneration) return { status: "no_session" };
+      const liveProviderSync = await this.liveProviderSync?.() ?? false;
+      if (request.generation !== this.contextGeneration) return { status: "no_session" };
       const [{ llmProviders, inferenceProviders }, storedEnv] = await Promise.all([
-        fetchProviders(this.fetchImpl, session, this.providerFetchController.signal),
+        fetchProviders(this.fetchImpl, session, this.providerFetchController.signal, liveProviderSync),
         this.env.list(),
       ]);
       if (request.generation !== this.contextGeneration) return { status: "no_session" };
@@ -1246,7 +1226,7 @@ export class CloudProviderSync {
       // Ownership follows the apply that can write, not a pending session.
       // Retain it through suspension, including a partially completed apply.
       this.materializationContextKey = request.contextKey;
-      const { changed, detail, reloadError } = await this.apply(prepared);
+      const { changed, detail, reloadError } = await this.apply(prepared, liveProviderSync);
       if (request.generation !== this.contextGeneration) return { status: "no_session" };
       // The materialization itself succeeded (config + env writes landed), so
       // record it even when the engine reload failed: hiding the providers
@@ -1274,6 +1254,7 @@ export class CloudProviderSync {
 
   private async apply(
     prepared: PreparedMaterialization,
+    liveProviderSync = false,
   ): Promise<{ changed: boolean; detail: CloudProviderSyncRunDetail; reloadError?: unknown }> {
     const contextHash = this.materializationContextKey === null ? null : hashString(this.materializationContextKey);
     const desiredProviders = desiredProviderMap(prepared);
@@ -1305,7 +1286,19 @@ export class CloudProviderSync {
     if (providerStateChanged) {
       const patch: JsonRecord = {};
       for (const providerId of Object.keys(currentManagedProviders)) {
-        if (!(providerId in desiredProviders)) patch[providerId] = null;
+        if (providerId in desiredProviders) continue;
+        const previous = currentManagedProviders[providerId];
+        // Retain only catalog preferences when handing Gateway ownership to
+        // the native plugin. No adapter/model/credential config survives. The
+        // v2 renderer strips these rows entirely and feeds the rules only to
+        // its model filter plugin, including after a server restart.
+        const filters: JsonRecord = {};
+        if (liveProviderSync && /^ipr_/i.test(providerId) && isRecord(previous)) {
+          for (const key of ["whitelist", "blacklist"]) {
+            if (Array.isArray(previous[key])) filters[key] = previous[key].filter((id): id is string => typeof id === "string");
+          }
+        }
+        patch[providerId] = Object.keys(filters).length ? filters : null;
       }
       for (const [providerId, providerConfig] of Object.entries(desiredProviders)) patch[providerId] = providerConfig;
       await writeGlobalRuntimeOpencodeConfig(this.config, (current) => ({

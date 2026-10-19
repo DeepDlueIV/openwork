@@ -111,16 +111,19 @@ export type ExternalMcpConnection = {
   setupRequired?: boolean;
   access: ExternalMcpAccessSummary | null;
   oauthClientId?: string | null;
+  oauthClientHasSecret?: boolean;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
   oauthCallbackMode?: "shared-v1" | "isolated-v1" | "legacy-v1" | null;
   oauthRegistrationSource?: "pre-registered" | "client-metadata" | "dynamic" | null;
+  manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: string[];
 };
 
 export type McpRequirementsDiscovery = {
+  publishedSignInAddresses?: Array<{ authorizationEndpoint: string; tokenEndpoint: string; advertisedIssuer: string; metadataIssuer: string }>;
   status: "ready" | "manual_action_required" | "unsupported" | "unreachable";
   server: {
     url: string;
@@ -303,6 +306,8 @@ export const mcpConnectionQueryKeys = {
     [...mcpConnectionQueryKeys.all, "tools", orgId ?? "none", connectionId ?? "none"] as const,
   nativeProviderClient: (orgId?: string | null, providerId?: string | null) =>
     [...mcpConnectionQueryKeys.all, "native-provider-client", orgId ?? "none", providerId ?? "none"],
+  googleApiCheck: (orgId?: string | null, providerId?: string | null) =>
+    [...mcpConnectionQueryKeys.all, "google-api-check", orgId ?? "none", providerId ?? "none"],
 };
 
 function isExternalMcpTool(value: unknown): value is ExternalMcpTool {
@@ -702,6 +707,7 @@ export type CreateMcpConnectionInput = {
     clientId: string;
     clientSecret?: string;
   };
+  manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: string[];
   access: McpConnectionAccessInput;
@@ -731,6 +737,7 @@ export type UpdateMcpConnectionInput = {
     clientId: string;
     clientSecret?: string;
   };
+  manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: string[];
   access: McpConnectionAccessInput;
@@ -1198,6 +1205,66 @@ export function useNativeProviderClient(providerId: string, enabled: boolean) {
         throw new Error("Native provider client response was incomplete.");
       }
       return client;
+    },
+  });
+}
+
+export type GoogleApiCheckItem = {
+  id: string;
+  name: string;
+  features: string[];
+  status: "enabled" | "disabled" | "unknown";
+  enableUrl: string | null;
+  detail: string | null;
+};
+export type GoogleApiCheck = { checked: boolean; apis: GoogleApiCheckItem[] };
+
+function parseGoogleApiCheck(payload: unknown): GoogleApiCheck {
+  if (!isRecord(payload) || typeof payload.checked !== "boolean" || !Array.isArray(payload.apis)) {
+    throw new Error("Google API check response was incomplete.");
+  }
+  const apis = payload.apis.map((api): GoogleApiCheckItem => {
+    if (
+      !isRecord(api)
+      || typeof api.id !== "string"
+      || typeof api.name !== "string"
+      || !isStringArray(api.features)
+      || (api.status !== "enabled" && api.status !== "disabled" && api.status !== "unknown")
+      || (typeof api.enableUrl !== "string" && api.enableUrl !== null)
+      || (typeof api.detail !== "string" && api.detail !== null)
+    ) {
+      throw new Error("Google API check response was incomplete.");
+    }
+    return { id: api.id, name: api.name, features: api.features, status: api.status, enableUrl: api.enableUrl, detail: api.detail };
+  });
+  return { checked: payload.checked, apis };
+}
+
+/** Whether each Google API the connector's saved permissions call is turned on; checked on request. */
+export function useGoogleApiCheck(providerId: string) {
+  const { orgId, runReauthableAction } = useOrgDashboard();
+
+  return useQuery({
+    enabled: false,
+    queryKey: mcpConnectionQueryKeys.googleApiCheck(orgId, providerId),
+    retry: false,
+    queryFn: async (): Promise<GoogleApiCheck> => {
+      let result: GoogleApiCheck | null = null;
+      await runReauthableAction("check-google-apis", async () => {
+        const { response, payload } = await requestJson(
+          `/v1/oauth-providers/${encodeURIComponent(providerId)}/api-check`,
+          { headers: getOrgScopeHeaders(requireOrgId(orgId)) },
+          30000,
+        );
+        if (!response.ok) {
+          throw getRequestError(payload, response, `Failed to check Google APIs (${response.status}).`);
+        }
+        result = parseGoogleApiCheck(payload);
+      });
+      if (!result) {
+        throw new Error("Google API check response was incomplete.");
+      }
+      return result;
     },
   });
 }

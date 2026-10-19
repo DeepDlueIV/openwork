@@ -8,7 +8,7 @@ import { isRecord } from "./workspace-kv-store.js";
 import { createV2BrowserBridge } from "./opencode-v2-browser-bridge.js";
 import { OPENWORK_CLOUD_UPLOADS_EXTENSION_ID } from "./extensions/cloud-uploads.js";
 
-const requestSchema = z.object({ name: z.enum(["openwork_context", "openwork_query", "openwork_skills", "openwork_drive_upload"]), input: z.unknown() });
+const requestSchema = z.object({ name: z.enum(["openwork_context", "openwork_query", "openwork_skills", "openwork_skill_read", "openwork_drive_upload"]), input: z.unknown() });
 const driveUploadSchema = z.object({ path: z.string().min(1), folderId: z.string().optional(), connectionId: z.string().optional() }).strict();
 // Advertise only reads this bridge executes. Native MCP discovery owns remote
 // tool names; v1 executor spellings and unregistered commands do not belong here.
@@ -47,6 +47,11 @@ export async function createV2ContextBridge(hostRequest: (path: string, init?: R
       // runs in the background and never participates in prompt admission.
       if (call.name === "openwork_skills") {
         return Response.json(await read("/experimental/connect/skills"));
+      }
+      // Internal plugin read: one listed skill's SKILL.md for native delivery.
+      if (call.name === "openwork_skill_read") {
+        const input = z.object({ url: z.string().startsWith("skill://").max(2_048) }).parse(call.input);
+        return Response.json(await read("/experimental/connect/skills/read", { method: "POST", body: JSON.stringify(input) }));
       }
       // The one host write v2 receives: the same authorized-root file transport
       // v1 reaches through extension.call, never arbitrary extension actions.

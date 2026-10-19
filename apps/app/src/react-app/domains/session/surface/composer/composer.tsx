@@ -48,6 +48,8 @@ import { ComposerSuggestionMenu, composerSuggestionRowClass } from "./composer-s
 import type { PlusMenuAgent, PlusMenuConnector, PlusMenuSection } from "./composer-plus-menu-model";
 import { connectionDiagnosticHistory, type ConnectionDiagnosticSource, type SendDiagnosticReason } from "@/app/lib/connection-diagnostic-history";
 import { composerDiagnosticBlockers } from "./composer-diagnostics";
+import { ModelRecoveryNote } from "./model-recovery-note";
+import { modelRecoveryChatKey, useModelRecoveryStore } from "../model-recovery-store";
 
 type MentionItem = {
   id: string;
@@ -78,6 +80,7 @@ type ComposerProps = {
   preparingReasons?: readonly SendDiagnosticReason[];
   modelUnavailable?: boolean;
   modelUnavailableMessage?: string | null;
+  modelRecoveryScope?: string;
   organizationModelsEmpty?: boolean;
   statusLabel: string;
   modelPickerOpen: boolean;
@@ -137,6 +140,12 @@ type ComposerProps = {
 
 const FLUSH_PROMPT_EVENT = "openwork:flushPromptDraft";
 const FOCUS_PROMPT_EVENT = "openwork:focusPrompt";
+/**
+ * The composer the person last typed in. With a side window open, "focus the
+ * prompt" (after a palette pick, a dialog, a model change) returns to that one
+ * instead of whichever composer registered last.
+ */
+let lastFocusedComposerRoot: HTMLElement | null = null;
 const DEFAULT_AGENT_NAME = "openwork";
 
 function isNonDefaultAgent(agent: Agent) {
@@ -994,6 +1003,7 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
     const handleFocus = () => {
       const root = rootRef.current;
       if (!root) return;
+      if (lastFocusedComposerRoot?.isConnected && lastFocusedComposerRoot !== root) return;
       const editable = root.querySelector<HTMLElement>("[contenteditable='true']");
       editable?.focus({ preventScroll: window.matchMedia("(max-width: 1023px)").matches });
     };
@@ -1252,6 +1262,7 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
     <DevProfiler id="SessionComposer">
     <div
       ref={rootRef}
+      onFocusCapture={() => { lastFocusedComposerRoot = rootRef.current; }}
       className={props.flush ? `relative ${toolMenuOpen ? "z-50" : "z-20"}` : `sticky bottom-0 shrink-0 ${toolMenuOpen ? "z-50" : "z-20"} bg-gradient-to-t from-dls-surface via-dls-surface/95 to-transparent px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] max-lg:px-3 lg:px-8 ${props.compactTopSpacing ? "pt-0" : "pt-1"}`}
       style={{ contain: "layout style" }}
       onKeyDownCapture={handleKeyDownCapture}
@@ -1360,6 +1371,13 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
               }}
             />
 
+            <ModelRecoveryNote
+              scope={props.modelRecoveryScope}
+              sessionId={props.sessionId}
+              selectedModel={props.selectedModel}
+              onChange={() => props.onModelPickerOpenChange(true)}
+              onSwitchBack={(model) => props.onModelChange(model, null)}
+            />
             {/* Respond to the pane width, including desktop split views. */}
             {props.busy && !props.stopping && escapeArmed ? (
               <div data-composer-stop-confirmation role="status" className="mt-2 text-[12px] font-medium text-gray-10">
@@ -1448,7 +1466,10 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
                   hideValue={props.organizationModelsEmpty}
                   onOpenChange={props.onModelPickerOpenChange}
                   onChange={(model, variant) => {
-                    if (!props.steering) props.onModelChange(model, variant);
+                    if (!props.steering) {
+                      props.onModelChange(model, variant);
+                      if (props.modelRecoveryScope) useModelRecoveryStore.getState().clear(modelRecoveryChatKey(props.modelRecoveryScope, props.sessionId));
+                    }
                   }}
                   disabled={props.steering}
                   sessionId={props.sessionId}

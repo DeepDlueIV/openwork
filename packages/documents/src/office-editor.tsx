@@ -57,6 +57,14 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
     return () => { closeTimer.current = setTimeout(() => { void editor.close(item.id, session.id).catch(() => {}) }, 0) }
   }, [editor, item.id, session])
   useEffect(() => { onDirtyChange?.(item.id, dirty); return () => onDirtyChange?.(item.id, false) }, [dirty, item.id, onDirtyChange])
+  // Leaving the page never unmounts the editor, so release an unedited session here. A
+  // session with unsaved edits stays open, and reopening the file returns to those edits.
+  useEffect(() => {
+    if (!session || dirty) return
+    const leave = (event: PageTransitionEvent) => { if (!event.persisted) void editor.close(item.id, session.id, { keepalive: true }).catch(() => {}) }
+    window.addEventListener("pagehide", leave)
+    return () => window.removeEventListener("pagehide", leave)
+  }, [dirty, editor, item.id, session])
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }

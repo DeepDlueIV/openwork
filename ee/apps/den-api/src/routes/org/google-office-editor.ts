@@ -5,7 +5,7 @@ import { describeRoute, type DescribeRouteOptions } from "hono-openapi"
 import { z } from "zod"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { nativeOfficeFormats, officeFileTypeSchema, officeFormats, officeSessionSchema, officeStatusSchema } from "@openwork/documents/office-engine"
-import { createCollaboraService, officeTicketMatches, validateOfficePackage, officeBytes, OFFICE_TTL_SECONDS, type OfficeDraft } from "@openwork/documents/office-server"
+import { createCollaboraService, officeDraftHasUnsavedEdits, officeTicketMatches, validateOfficePackage, officeBytes, OFFICE_TTL_SECONDS, type OfficeDraft } from "@openwork/documents/office-server"
 import { documentIdSchema } from "@openwork/documents/model"
 import { OFFICE_EDITOR_STARTING, placeOfficeEditor } from "../../documents-office-editor.js"
 import { configuredOfficeStore, holdOfficeWorker, releaseOfficeWorker } from "../../documents-office-store.js"
@@ -102,13 +102,43 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
       const native = Object.hasOwn(nativeOfficeFormats, meta.file.mimeType) ? nativeOfficeFormats[meta.file.mimeType] : null
       const fileType = native ?? officeFileTypeSchema.options.find(type => officeFormats[type].mimeType === meta.file.mimeType)
       if (!fileType) return failure(c, "Open a Word, Excel, PowerPoint or OpenDocument file, or a Google Doc, Sheet or Slides presentation.")
+      const canWrite = canWriteDriveDocument(auth.token.account.scopes, auth.token.enabledScopes)
+      // Reopening a file (after a reload, or from another tab) returns to its open session
+      // instead of starting another. Unsaved edits always come back; an unedited session is
+      // only reused while the Drive file is unchanged.
+      const open = await store.findOpen({ organizationId: member.organization.id, memberId: member.currentMember.id, connectionId: auth.connectionId, fileId })
+      if (open) {
+        const reopened = await store.lock(open.id, async () => {
+          const current = await store.get(open.id)
+          if (!current) return null
+          if (!officeDraftHasUnsavedEdits(current) && current.revision !== meta.file.version) {
+            await store.remove(current)
+            if (current.workerId) await releaseOfficeWorker(current.workerId, current.id)
+            return null
+          }
+          if (current.workerId && current.workerId !== placement.workerId) await releaseOfficeWorker(current.workerId, current.id)
+          current.expiresAt = Date.now() + OFFICE_TTL_SECONDS * 1000
+          current.canEdit = current.canEdit && canWrite
+          // The draft lives in Den, so it can open in whichever editor serves the member now.
+          if (placement.workerId) { current.editorUrl = placement.serverUrl; current.workerId = placement.workerId }
+          else { delete current.editorUrl; delete current.workerId }
+          await store.put(current)
+          return current
+        })
+        if (reopened) {
+          let session: Awaited<ReturnType<ReturnType<typeof serviceFor>["session"]>>
+          try { session = await serviceFor(placement.serverUrl).session(reopened) }
+          catch (error) { if (placement.workerId) return starting(c, OFFICE_EDITOR_STARTING); throw error }
+          if (reopened.workerId) await holdOfficeWorker(reopened.workerId, reopened.id)
+          return c.json(session)
+        }
+      }
       const url = fileUrl(fileId, native ? "/export" : ""); url.searchParams.set(native ? "mimeType" : "alt", native ? officeFormats[fileType].mimeType : "media")
       const media = await requestGoogleAction(c, auth.deps, READ, url); if (!media.ok) return media.reply
       const bytes = await officeBytes(media.response); await validateOfficePackage(bytes, fileType)
       const latest = await metadata(c, auth.deps, fileId); if (!latest.ok) return latest.reply
       if (meta.file.version !== latest.file.version) return failure(c, "This file changed while opening. Open the latest version again.")
       const context = c.get("organizationContext")!
-      const canWrite = canWriteDriveDocument(auth.token.account.scopes, auth.token.enabledScopes)
       const draft: OfficeDraft = {
         id: randomUUID(), organizationId: context.organization.id, memberId: context.currentMember.id, userId: context.currentMember.userId, connectionId: auth.connectionId,
         fileId, revision: meta.file.version, name: native ? `${meta.file.name}.${fileType}` : meta.file.name, mimeType: officeFormats[fileType].mimeType, fileType,
@@ -163,7 +193,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
         if (!result.ok) return result.reply
         const saved = z.object({ id: documentIdSchema, version: z.string() }).parse(await readGoogleActionJson(result.response))
         if (!copy && saved.id !== target) throw new Error("The save response could not be verified. Check the file in Drive before reopening it.")
-        draft.savedFileId = saved.id; draft.revision = saved.version; draft.uncertain = false
+        draft.savedFileId = saved.id; draft.revision = saved.version; draft.uncertain = false; draft.savedDraftVersion = draft.draftVersion
         await store.put(draft)
         return c.json({ fileId: saved.id })
       }))

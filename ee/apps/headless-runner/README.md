@@ -222,7 +222,7 @@ Nothing on celld changes, so pointing the URLs back is the rollback.
 | `HEADLESS_SENTRY_DSN` | unset | Optional Sentry error reports (both hosts, posted over `fetch`): failed turns by error code, startup recovery errors and 500s. Codes, ids and counts only, never content or credentials. Unset sends nothing |
 | `HEADLESS_SENTRY_ENVIRONMENT`, `HEADLESS_SENTRY_RELEASE` | unset, `headless-runner@<HEADLESS_RUNNER_VERSION>` | Tags on those reports |
 | `HEADLESS_RUNNER_VERSION` | set by the image | Tagged `runnerVersion` on reports |
-| `HEADLESS_DEN_API_URL` | unset | Den's API for [self-resume](#self-resume), e.g. `https://api.openworklabs.com`. https, or http on loopback or a dotless internal host (`http://den-api:8787`). Set all three self-resume settings or none |
+| `HEADLESS_DEN_API_URL` | unset | Den's API for [self-resume](#self-resume), e.g. `https://api.openworklabs.com`. https (plain http only on loopback, since the runner sends its callback token and grants there and gets MCP tokens back). Set all three self-resume settings or none |
 | `HEADLESS_DEN_CALLBACK_TOKEN` | unset | ≥32 chars, the same value as den-api's `DEN_HEADLESS_RUNNER_CALLBACK_TOKEN` (not `HEADLESS_API_TOKEN`) |
 | `HEADLESS_GRANT_KEY` | unset | ≥32 chars, encrypts resume grants at rest. Changing it makes kept grants unreadable: those turns wait for their callers |
 

@@ -93,13 +93,15 @@ const rawGrants = (store: Store) =>
 
 const answers: ModelClient = { complete: async () => ({ text: "Done.", toolCalls: [], usage }) }
 
-test("self-resume needs all three settings, and Den's URL may be a private service", () => {
+test("self-resume needs all three settings, and Den's URL must be https or loopback", () => {
   const base = { HEADLESS_API_TOKEN: apiToken, HEADLESS_MODEL_PROTOCOL: "openai", HEADLESS_MODEL_BASE_URL: "http://127.0.0.1:1", HEADLESS_MODEL: "test-model" }
   const all = { HEADLESS_DEN_API_URL: "https://api.example.test/", HEADLESS_DEN_CALLBACK_TOKEN: callbackToken, HEADLESS_GRANT_KEY: grantKey }
   assert.equal(loadConfig(base).selfResume, undefined)
   assert.equal(loadConfig({ ...base, HEADLESS_DEN_API_URL: "", HEADLESS_DEN_CALLBACK_TOKEN: "", HEADLESS_GRANT_KEY: "" }).selfResume, undefined)
   assert.deepEqual(loadConfig({ ...base, ...all }).selfResume, { denApiUrl: "https://api.example.test", callbackToken, grantKey })
-  assert.equal(loadConfig({ ...base, ...all, HEADLESS_DEN_API_URL: "http://den-api:8787" }).selfResume?.denApiUrl, "http://den-api:8787")
+  assert.equal(loadConfig({ ...base, ...all, HEADLESS_DEN_API_URL: "http://127.0.0.1:8788" }).selfResume?.denApiUrl, "http://127.0.0.1:8788")
+  // Credentials travel on this connection: no plain http to a private host either.
+  assert.throws(() => loadConfig({ ...base, ...all, HEADLESS_DEN_API_URL: "http://den-api:8787" }), /HEADLESS_DEN_API_URL/)
   assert.throws(() => loadConfig({ ...base, ...all, HEADLESS_DEN_API_URL: "http://den.example.test" }), /HEADLESS_DEN_API_URL/)
   assert.throws(() => loadConfig({ ...base, HEADLESS_DEN_API_URL: all.HEADLESS_DEN_API_URL }), /missing HEADLESS_DEN_CALLBACK_TOKEN, HEADLESS_GRANT_KEY/)
   assert.throws(() => loadConfig({ ...base, ...all, HEADLESS_GRANT_KEY: "short" }), /HEADLESS_GRANT_KEY/)

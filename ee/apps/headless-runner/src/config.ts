@@ -13,14 +13,11 @@ const safeUrl = z
   .url()
   .refine(isSafeUrl, "must be https (http is allowed only for loopback hosts)")
   .transform((value) => value.replace(/\/+$/, ""))
-/** Den's API may also be a private service on the same network: plain http to a dotless host (`http://den-api:8787`). */
-const denUrl = z
-  .url()
-  .refine((value) => {
-    const url = new URL(value)
-    return isSafeUrl(value) || (url.protocol === "http:" && !url.hostname.includes("."))
-  }, "must be https (http is allowed only for loopback hosts and dotless internal hosts)")
-  .transform((value) => value.replace(/\/+$/, ""))
+/**
+ * Den's API for self-resume. The runner sends its callback token and resume grants there and gets member-scoped MCP
+ * tokens back, so it must be https; plain http is allowed only for loopback development hosts, like the other URLs.
+ */
+const denUrl = safeUrl
 
 const csv = z
   .string()

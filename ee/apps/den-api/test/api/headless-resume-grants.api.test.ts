@@ -366,3 +366,22 @@ test("a grant minted concurrently with a role change cannot be exchanged afterwa
   const fresh = await exchange({ grant: later.grant, ...laterIds })
   assert.equal(fresh.status, 200, summary(fresh))
 })
+
+test("removing a member still works when den-api is deployed before the resume grant migration ran", async () => {
+  const { isMissingResumeTableError } = await import("../../src/headless-runner/resume-grant-revocation.js")
+  // Only a missing resume table is tolerated, through either driver's wrapper.
+  assert.equal(isMissingResumeTableError({ message: "Failed query", cause: { errno: 1146, message: "Table 'den.headless_resume_revocation' doesn't exist" } }), true)
+  assert.equal(isMissingResumeTableError({ body: { message: "Table 'den.headless_resume_grant' doesn't exist" } }), true)
+  assert.equal(isMissingResumeTableError({ cause: { errno: 1146, message: "Table 'den.member' doesn't exist" } }), false)
+  assert.equal(isMissingResumeTableError({ cause: { errno: 1062, message: "Duplicate entry in headless_resume_grant" } }), false)
+
+  const leaving = await den.newMember(owner, orgId, "Pre Migration")
+  // ARRANGE: the tables as they are before migrations 0148/0149 run.
+  await sql("RENAME TABLE headless_resume_grant TO headless_resume_grant_hidden, headless_resume_revocation TO headless_resume_revocation_hidden")
+  try {
+    const removed = await den.as(owner, orgId)("DELETE", `/v1/members/${leaving.memberId}`)
+    assert.ok(removed.status < 300, summary(removed))
+  } finally {
+    await sql("RENAME TABLE headless_resume_grant_hidden TO headless_resume_grant, headless_resume_revocation_hidden TO headless_resume_revocation")
+  }
+})

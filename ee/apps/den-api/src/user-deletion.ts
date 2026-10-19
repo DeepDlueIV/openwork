@@ -21,7 +21,7 @@ import {
 } from "@openwork-ee/den-db/schema"
 import { cache } from "./cache.js"
 import { db } from "./db.js"
-import { unlessResumeTablesMissing } from "./headless-runner/resume-grant-revocation.js"
+import { unlessResumeTableMissing } from "./headless-runner/resume-grant-revocation.js"
 import { revokeUpstreamCredentials, revokeInferenceCredentialsForMembers } from "./llm/inference-provider-lifecycle.js"
 
 type UserId = typeof AuthUserTable.$inferSelect.id
@@ -56,10 +56,9 @@ export async function deleteGlobalAuthUser(userId: UserId) {
     await tx.delete(AuthSessionTable).where(eq(AuthSessionTable.userId, userId))
     await tx.delete(AuthAccountTable).where(eq(AuthAccountTable.userId, userId))
     await tx.delete(DesktopHandoffGrantTable).where(eq(DesktopHandoffGrantTable.user_id, userId))
-    await unlessResumeTablesMissing(async () => {
-      await tx.delete(HeadlessResumeGrantTable).where(eq(HeadlessResumeGrantTable.userId, userId))
-      await tx.delete(HeadlessResumeRevocationTable).where(eq(HeadlessResumeRevocationTable.userId, userId))
-    }, undefined)
+    // Each table on its own: one not migrated yet holds no rows; the other's rows must still go.
+    await unlessResumeTableMissing("headless_resume_grant", () => tx.delete(HeadlessResumeGrantTable).where(eq(HeadlessResumeGrantTable.userId, userId)))
+    await unlessResumeTableMissing("headless_resume_revocation", () => tx.delete(HeadlessResumeRevocationTable).where(eq(HeadlessResumeRevocationTable.userId, userId)))
     await tx.delete(ExternalIdentityTable).where(eq(ExternalIdentityTable.userId, userId))
     await tx.delete(ScimSyncEventTable).where(eq(ScimSyncEventTable.userId, userId))
     await tx.update(MemberTable).set({ userId: null }).where(eq(MemberTable.userId, userId))

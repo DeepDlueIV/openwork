@@ -39,6 +39,11 @@ export async function revokeMembershipSessionCredentials(input: {
   // again: MCP requests check membership through this cache.
   await cache.org.revokeMembership({ organizationId: input.organizationId, userId: input.userId })
 
+  // Headless runner resume grants could otherwise mint fresh MCP tokens for the member's turns. Revoked first, before
+  // any token is deleted: an exchange that minted a token before this point has it deleted below, and one minting
+  // after it sees the revocation when it re-checks and deletes its own token (exchangeHeadlessResumeGrant).
+  const headlessResumeGrants = await revokeHeadlessResumeGrantsForMember({ organizationId: input.organizationId, userId: input.userId })
+
   const sessions = await db
     .select({ id: AuthSessionTable.id, token: AuthSessionTable.token, userId: AuthSessionTable.userId, expiresAt: AuthSessionTable.expiresAt, activeOrganizationId: AuthSessionTable.activeOrganizationId })
     .from(AuthSessionTable)
@@ -104,9 +109,6 @@ export async function revokeMembershipSessionCredentials(input: {
       .set({ revoked: new Date() })
       .where(inArray(OAuthRefreshTokenTable.id, oauthRefreshTokens.map((token) => token.id)))
   }
-
-  // Headless runner resume grants could otherwise mint fresh MCP tokens for the member's turns.
-  const headlessResumeGrants = await revokeHeadlessResumeGrantsForMember({ organizationId: input.organizationId, userId: input.userId })
 
   return {
     sessions: sessions.length,

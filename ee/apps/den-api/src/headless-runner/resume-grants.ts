@@ -4,7 +4,7 @@ import { HeadlessResumeGrantTable, HeadlessResumeRevocationTable, MemberTable, R
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { db } from "../db.js"
 import { organizationFeatureEnabled } from "../features.js"
-import { mintHeadlessRunMcpToken } from "../mcp/headless-run-token-mint.js"
+import { mintHeadlessRunMcpToken, revokeHeadlessRunMcpToken } from "../mcp/headless-run-token-mint.js"
 import { appLogger } from "../observability/logger.js"
 import { checkRateLimit } from "../utils/rate-limit.js"
 
@@ -195,6 +195,17 @@ export async function headlessResumeGrantAuthorizedBeforeRevocation(row: Pick<Gr
   return row.createdAt.getTime() <= revocation.revokedAt.getTime() + HEADLESS_RESUME_REVOCATION_MARGIN_MS
 }
 
+/** The grant read again: marked revoked, or authorized before the member's latest credential revocation. */
+async function headlessResumeGrantRevokedNow(row: GrantRow) {
+  const [current] = await db
+    .select({ revokedAt: HeadlessResumeGrantTable.revokedAt })
+    .from(HeadlessResumeGrantTable)
+    .where(eq(HeadlessResumeGrantTable.id, row.id))
+    .limit(1)
+  if (!current || current.revokedAt) return true
+  return headlessResumeGrantAuthorizedBeforeRevocation(row)
+}
+
 export type HeadlessResumeExchange =
   | { ok: true; mcpToken: string; expiresAt: Date; readOnly: boolean }
   | { ok: false; status: 403; error: HeadlessResumeGrantError }
@@ -207,7 +218,14 @@ export type HeadlessResumeExchange =
  */
 export async function exchangeHeadlessResumeGrant(
   row: GrantRow,
-  input: { sessionId: string; messageId: string; memberId: string | null; now?: Date },
+  input: {
+    sessionId: string
+    messageId: string
+    memberId: string | null
+    now?: Date
+    /** Tests only: runs after the token is minted and before the grant is checked again. */
+    afterMint?: () => Promise<void>
+  },
 ): Promise<HeadlessResumeExchange> {
   const now = input.now ?? new Date()
   if (row.revokedAt || (await headlessResumeGrantAuthorizedBeforeRevocation(row))) return { ok: false, status: 403, error: "grant_revoked" }
@@ -225,6 +243,14 @@ export async function exchangeHeadlessResumeGrant(
   )
   if (retryAfterSeconds !== null) return { ok: false, status: 429, error: "rate_limited", retryAfterMs: retryAfterSeconds * 1000 }
   const minted = await mintHeadlessRunMcpToken({ userId: row.userId, organizationId: row.organizationId, readOnly: row.readOnly })
+  await input.afterMint?.()
+  // A credential revocation may have run between the checks above and the mint. Revocation records its moment before
+  // deleting the member's tokens (credential-revocation.ts), so either it deleted this token already, or it is visible
+  // here and this token is deleted before anyone gets it.
+  if (await headlessResumeGrantRevokedNow(row)) {
+    await revokeHeadlessRunMcpToken(minted.tokenId)
+    return { ok: false, status: 403, error: "grant_revoked" }
+  }
   await db
     .update(HeadlessResumeGrantTable)
     .set({ lastUsedAt: now, useCount: sql`${HeadlessResumeGrantTable.useCount} + 1` })

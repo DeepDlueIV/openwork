@@ -385,3 +385,44 @@ test("removing a member still works when den-api is deployed before the resume g
     await sql("RENAME TABLE headless_resume_grant_hidden TO headless_resume_grant, headless_resume_revocation_hidden TO headless_resume_revocation")
   }
 })
+
+test("an exchange overlapping a role change cannot return a usable token", async () => {
+  await setDurable(true)
+  const { findHeadlessResumeGrant, exchangeHeadlessResumeGrant, activeHeadlessResumeGrantMember } = await import("../../src/headless-runner/resume-grants.js")
+  const changing = await den.newMember(owner, orgId, "Overlap Olive", "admin")
+  const ids = nextTurn()
+  const minted = await mintHeadlessResumeGrant({ userId: changing.userId, organizationId: orgId, ...ids, now: new Date(Date.now() - 60_000) })
+  const row = await findHeadlessResumeGrant(minted.grant)
+  assert.ok(row)
+  const memberId = await activeHeadlessResumeGrantMember(row)
+  // The exchange passes its checks and mints; the role changes before it returns.
+  const result = await exchangeHeadlessResumeGrant(row, {
+    ...ids,
+    memberId,
+    afterMint: async () => {
+      const demoted = await den.as(owner, orgId)("POST", `/v1/members/${changing.memberId}/role`, { role: "member" })
+      assert.ok(demoted.status < 300, summary(demoted))
+    },
+  })
+  assert.equal(result.ok, false)
+  assert.equal(result.ok ? "" : result.error, "grant_revoked")
+  const live = await sql("SELECT id FROM oauthAccessToken WHERE user_id = ? AND reference_id = ? AND client_id = 'openwork-headless-run' AND expires_at > ?", [changing.userId, orgId, new Date()])
+  assert.equal(live.length, 0, "no headless-run token for the member outlives the role change")
+})
+
+test("a missing revocation table is never swallowed while grants can exist", async () => {
+  await setDurable(true)
+  const { revokeHeadlessResumeGrantsForMember } = await import("../../src/headless-runner/resume-grant-revocation.js")
+  const holder = await den.newMember(owner, orgId, "Half Migrated")
+  const ids = nextTurn()
+  const minted = await mintHeadlessResumeGrant({ userId: holder.userId, organizationId: orgId, ...ids })
+  // ARRANGE: migration 0148 applied, 0149 not yet.
+  await sql("RENAME TABLE headless_resume_revocation TO headless_resume_revocation_hidden")
+  try {
+    await assert.rejects(() => revokeHeadlessResumeGrantsForMember({ organizationId: orgId, userId: holder.userId }), /headless_resume_revocation/)
+  } finally {
+    await sql("RENAME TABLE headless_resume_revocation_hidden TO headless_resume_revocation")
+  }
+  const [row] = await sql("SELECT revoked_at FROM headless_resume_grant WHERE token_hash = ?", [sha256(minted.grant)])
+  assert.ok(row?.revoked_at, "the live grants are still revoked before the error is reported")
+})

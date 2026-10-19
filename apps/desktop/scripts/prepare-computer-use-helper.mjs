@@ -134,6 +134,10 @@ hashSources(join(packagePath, "Sources"));
 for (const source of [join(packagePath, "Package.swift"), join(packagePath, "Package.resolved"), fileURLToPath(import.meta.url), iconPath]) {
   if (existsSync(source)) fingerprint.update(readFileSync(source));
 }
+// An ad-hoc helper cannot authenticate its parent; only this local build lets it
+// serve embedded mode. Team-signed helpers always require a same-team parent.
+const adHocDevelopmentHost = process.platform === "darwin" && signingIdentity() === "-";
+fingerprint.update(adHocDevelopmentHost ? "adhoc-development-host" : "signed-host");
 const sourceHash = fingerprint.digest("hex");
 const fingerprintPath = join(appPath, "Contents", "Resources", "source.sha256");
 const cachedHash = existsSync(fingerprintPath) ? readFileSync(fingerprintPath, "utf8").trim() : "";
@@ -142,7 +146,7 @@ if (!force && cachedHash === sourceHash && existsSync(join(appPath, "Contents", 
   process.exit(0);
 }
 
-const baseBuildArgs = ["build", "--package-path", packagePath, "-c", "release"];
+const baseBuildArgs = ["build", "--package-path", packagePath, "-c", "release", ...(adHocDevelopmentHost ? ["-Xswiftc", "-DOPENWORK_ADHOC_DEVELOPMENT_HOST"] : [])];
 let buildArgs = baseBuildArgs;
 const defaultBuild = spawnSync("swift", [...buildArgs, "--product", productName], { encoding: "utf8", stdio: ["inherit", "inherit", "pipe"] });
 if (defaultBuild.error) throw defaultBuild.error;

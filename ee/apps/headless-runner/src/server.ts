@@ -8,10 +8,11 @@ const SELF_RESUME_INTERVAL_MS = 60_000
 
 const config = loadConfig()
 const store = new Store(nodeSqlite(config.dbPath))
-const { app, runner, recovered, blobKind, computer, selfResume } = await createRuntime(config, store)
+// Step-mode turns run here too, each step as soon as it is due: there is no deploy switch to wait for on Node.
+const { app, runner, recovered, steps, blobKind, computer, selfResume } = await createRuntime(config, store)
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(
-    `[headless-runner] listening on :${info.port} (${recovered} interrupted turn(s) recovered, files: ${blobKind}, computer: ${computer ? `${config.computer?.kind} ${computer.image}` : "off"}, self-resume: ${selfResume ? "on" : "off"})`,
+    `[headless-runner] listening on :${info.port} (${recovered} interrupted turn(s) recovered, ${steps.continued} step-mode turn(s) continued, files: ${blobKind}, computer: ${computer ? `${config.computer?.kind} ${computer.image}` : "off"}, self-resume: ${selfResume ? "on" : "off"})`,
   )
 })
 

@@ -75,6 +75,11 @@ const sessionSchema = z.object({
   verifyModel: z.boolean().optional(),
   /** Den authorizes the member's AI Gateway model for every turn; no deployment catalog precheck. */
   gatewayModels: z.boolean().optional(),
+  /**
+   * Feature `headlessStepTurns`: Workbot sends turns to run one step at a time (`execution: "steps"`) and follows them
+   * over the runner's WebSocket, so a runner deploy doesn't cut a step off. Workbot reads it as off from older Dens.
+   */
+  stepTurns: z.boolean(),
 }).meta({ ref: "WorkbotSession" })
 
 const runTokenSchema = z.object({
@@ -333,6 +338,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         model,
         ...(verifyModel ? { verifyModel: true } : {}),
         ...(gatewayModels ? { gatewayModels: true } : {}),
+        stepTurns: features.headlessStepTurns,
       })
     },
   )

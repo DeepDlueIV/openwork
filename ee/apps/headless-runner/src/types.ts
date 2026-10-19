@@ -74,6 +74,13 @@ export type TurnStatus = z.infer<typeof turnStatusSchema>
 export const RESUMABLE: ReadonlySet<TurnStatus> = new Set(["failed", "interrupted"])
 export const ACTIVE: ReadonlySet<TurnStatus> = new Set(["queued", "running"])
 
+/**
+ * How a turn runs. `steps`: one step at a time from stored state (see steps.ts), so a runner deploy can switch a
+ * cell between steps instead of cutting a step off. Absent: the whole turn runs in one go, as it always has.
+ */
+export const executionSchema = z.enum(["steps"])
+export type Execution = z.infer<typeof executionSchema>
+
 /** Den's resume grant for one turn: `hrg_` and 32 random bytes as base64url. */
 export const RESUME_GRANT = /^hrg_[A-Za-z0-9_-]{43}$/
 

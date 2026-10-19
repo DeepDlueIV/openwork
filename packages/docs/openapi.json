@@ -2454,7 +2454,8 @@
               "engineV2Upgrade",
               "remoteSessionEvents",
               "remoteSessionSubagents",
-              "headlessDurableTurns"
+              "headlessDurableTurns",
+              "headlessStepTurns"
             ]
           },
           "label": {
@@ -2689,6 +2690,9 @@
                     "headlessDurableTurns": {
                       "type": "boolean"
                     },
+                    "headlessStepTurns": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -2717,6 +2721,7 @@
                     "remoteSessionEvents",
                     "remoteSessionSubagents",
                     "headlessDurableTurns",
+                    "headlessStepTurns",
                     "gatewayDashboard"
                   ]
                 },
@@ -3842,6 +3847,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "headlessStepTurns": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -3864,7 +3925,8 @@
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "remoteSessionSubagents",
-                    "headlessDurableTurns"
+                    "headlessDurableTurns",
+                    "headlessStepTurns"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -4294,6 +4356,9 @@
                     "headlessDurableTurns": {
                       "type": "boolean"
                     },
+                    "headlessStepTurns": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -4322,6 +4387,7 @@
                     "remoteSessionEvents",
                     "remoteSessionSubagents",
                     "headlessDurableTurns",
+                    "headlessStepTurns",
                     "gatewayDashboard"
                   ]
                 },
@@ -5447,6 +5513,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "headlessStepTurns": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -5469,7 +5591,8 @@
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "remoteSessionSubagents",
-                    "headlessDurableTurns"
+                    "headlessDurableTurns",
+                    "headlessStepTurns"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -27178,6 +27301,9 @@
           },
           "gatewayModels": {
             "type": "boolean"
+          },
+          "stepTurns": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -27186,7 +27312,8 @@
           "memberId",
           "enabled",
           "canSchedule",
-          "sideChats"
+          "sideChats",
+          "stepTurns"
         ]
       },
       "WorkbotRunToken": {
@@ -29750,6 +29877,9 @@
                         "headlessDurableTurns": {
                           "type": "boolean"
                         },
+                        "headlessStepTurns": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -29778,6 +29908,7 @@
                         "remoteSessionEvents",
                         "remoteSessionSubagents",
                         "headlessDurableTurns",
+                        "headlessStepTurns",
                         "gatewayDashboard"
                       ]
                     },
@@ -30903,6 +31034,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "headlessStepTurns": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -30925,7 +31112,8 @@
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "remoteSessionSubagents",
-                        "headlessDurableTurns"
+                        "headlessDurableTurns",
+                        "headlessStepTurns"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -31104,6 +31292,9 @@
                         "headlessDurableTurns": {
                           "type": "boolean"
                         },
+                        "headlessStepTurns": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -31132,6 +31323,7 @@
                         "remoteSessionEvents",
                         "remoteSessionSubagents",
                         "headlessDurableTurns",
+                        "headlessStepTurns",
                         "gatewayDashboard"
                       ]
                     },
@@ -32257,6 +32449,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "headlessStepTurns": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -32279,7 +32527,8 @@
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "remoteSessionSubagents",
-                        "headlessDurableTurns"
+                        "headlessDurableTurns",
+                        "headlessStepTurns"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }

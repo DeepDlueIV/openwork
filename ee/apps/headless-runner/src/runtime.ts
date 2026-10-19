@@ -21,8 +21,15 @@ import { SelfResume } from "./self-resume.js"
 import { readToolFile } from "./tool-files.js"
 import type { SessionComputer } from "./types.js"
 
+/**
+ * How the host runs step-mode turns' steps (see steps.ts). Without it (Node), each step runs as soon as it is due, in
+ * this process. A cell passes `stepAlarm`: steps run from its durable alarm (`runner.runDueSteps`), and `wake` tells
+ * it a step is due so it keeps that alarm set at `runner.nextStepAt()`.
+ */
+export type StepHost = { stepAlarm: true; wake: () => void }
+
 /** Both hosts build the same runner, tools, file store and live events; only SQLite ownership differs. */
-export async function createRuntime(config: Config, store: Store) {
+export async function createRuntime(config: Config, store: Store, stepHost?: StepHost) {
   const errors = createErrorReporter(config.errorReporting)
   let recovered: number
   try {
@@ -81,14 +88,21 @@ export async function createRuntime(config: Config, store: Store) {
     errors,
     workbotTelemetry: workbotTelemetryReporter(config),
     resume,
+    ...(stepHost ? { stepAlarm: stepHost.stepAlarm, wake: stepHost.wake } : {}),
   })
+  // Step-mode turns that startup recovery left going continue from their next step (never throws).
+  const steps = runner.recoverSteps()
   const app = createApp({ store, runner, apiToken: config.apiToken, models: gatewayModelCatalog(config), modelProbe: createModelProbe(config, modelFetch), events, files, computer, errors })
   return {
     app,
     runner,
     recovered,
+    /** Step-mode turns continued after startup instead of interrupted, and those failed for unreadable state. */
+    steps,
     blobKind: blobs?.kind ?? "off",
     computer,
+    /** Live session events, for a host that also publishes them to its WebSockets (a celld cell). */
+    events,
     /** Self-resume, for the host to run on its own schedule (a timer on Node, a durable alarm in a cell). */
     selfResume: resume
       ? {

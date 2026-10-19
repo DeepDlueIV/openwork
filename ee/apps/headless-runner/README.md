@@ -39,10 +39,10 @@ All `/v1` routes require `Authorization: Bearer $HEADLESS_API_TOKEN`.
 | `POST` | `/v1/sessions` | `{ title?, instructions?, repeats?: { maxWaitingMs?, maxIdenticalFailures? }, files?, computer?, reactions?, tasks?, owner?, ref?, timeZone?, autoTitle?, memoryOf? }` | session (`hs_…`). `files`, `computer`, `reactions` and `tasks` are off unless set to `true` (see [Isolation](#isolation)). See [Several conversations per person](#several-conversations-per-person) for the rest |
 | `PUT` | `/v1/sessions/:id` | same body as `POST` | `201` session when created, `200` when updated; settings left out keep their value. The caller picks the id (`hs_` + 8–96 of `A-Za-z0-9_-`), so it can keep one durable conversation per person without storing the runner's id. Workbot derives one per member, and one per side chat |
 | `GET` | `/v1/sessions` | `?owner=&limit=` | `{ sessions: [{ id, ref, title, createdAt, updatedAt }] }`: one owner's conversations that have a message, most recently used first |
-| `POST` | `/v1/sessions/:id/turns` | `{ messageId, prompt, model?, attachments?, interrupt?, credentials: { modelApiKey?, mcpToken?, readOnly?, resumeGrant? } }` | `202 { state: accepted \| resumed \| already_present, turn }`. A message sent while another turn runs is accepted and answered next (`turn.status: queued`); only a runaway queue of 20+ returns `429 too_many_queued`. `attachments` are saved-file ids (`fl_…`); `prompt` may be empty when there are attachments, and an unknown id returns `400 unknown_file`. `interrupt: true` makes the answer in progress wrap up at its next safe point, keeping what it wrote (it ends `aborted` with error `superseded`), and answers this message next. `credentials.readOnly: true` leaves out the tools that change anything (writing, editing or deleting files, `save_file`, the computer, reactions, tasks) and runs the turn's tool calls at the same time. `credentials.resumeGrant` (`hrg_…`) lets the runner keep the turn going on its own (see [Self-resume](#self-resume)); ignored without it. `404 unknown_session` |
+| `POST` | `/v1/sessions/:id/turns` | `{ messageId, prompt, model?, attachments?, interrupt?, execution?: "steps", credentials: { modelApiKey?, mcpToken?, readOnly?, resumeGrant? } }` | `202 { state: accepted \| resumed \| already_present, turn }`. `execution: "steps"` runs the turn one step at a time ([Step mode](#step-mode)); the turn shows `execution: "steps"`. A message sent while another turn runs is accepted and answered next (`turn.status: queued`); only a runaway queue of 20+ returns `429 too_many_queued`. `attachments` are saved-file ids (`fl_…`); `prompt` may be empty when there are attachments, and an unknown id returns `400 unknown_file`. `interrupt: true` makes the answer in progress wrap up at its next safe point, keeping what it wrote (it ends `aborted` with error `superseded`), and answers this message next. `credentials.readOnly: true` leaves out the tools that change anything (writing, editing or deleting files, `save_file`, the computer, reactions, tasks) and runs the turn's tool calls at the same time. `credentials.resumeGrant` (`hrg_…`) lets the runner keep the turn going on its own (see [Self-resume](#self-resume)); ignored without it. `404 unknown_session` |
 | `DELETE` | `/v1/sessions/:id/turns/:messageId` | `?after=1` | `{ removed: [messageId] }`: removes the message and what it led to (its answer, tasks and reports); `after=1` also removes every later message, for editing a message. `409 turn_busy` while any of them is queued or running |
 | `GET` | `/v1/sessions/:id` | `?messageId=&limit=&outputs=&turns=&before=` | `{ session, status: idle \| busy, turns, messages, finalAssistantText }`. `outputs=none` returns each tool result's `outputLength` instead of its output, for callers that poll a long turn. Every read is bounded: without `messageId` it returns the newest `turns` turns (default 30, at most 200) before the `before` messageId, their messages and `hasEarlier`, so a long conversation reads as cheaply as a short one; with `messageId`, that turn's transcript and, in `turns`, the turn with the tasks it started and their reports. `limit` (default 100) caps the messages. `busy` means the conversation is answering; background tasks don't count. A task's turn has `kind: task`, `parent` (the turn that started it) and `title`; its report has `kind: report` and `parent` (the task) |
-| `GET` | `/v1/sessions/:id/events` | | Server-sent events: `ready` first, then messages whose JSON `type` is `changed { messageId, status? }` (re-read the session), `text { messageId, step, delta, reset? }` (model text as it is written) or `tool { messageId, step, tool }` (a tool call started). Nothing is stored or replayed; a reader that misses one re-reads the session. A comment every 15 s keeps proxies from closing it |
+| `GET` | `/v1/sessions/:id/events` | | Server-sent events: `ready` first, then messages whose JSON `type` is `changed { messageId, status? }` (re-read the session), `text { messageId, step, delta, reset? }` (model text as it is written) or `tool { messageId, step, tool }` (a tool call started). Nothing is stored or replayed; a reader that misses one re-reads the session. A comment every 15 s keeps proxies from closing it. With `Upgrade: websocket`, celld answers with a hibernatable WebSocket instead (same checks): `{"type":"ready"}`, then each event as one JSON message, exactly the SSE `data:` JSON; it survives a deploy switch and doesn't hold one up, and it answers a `ping` text message with `pong`. The Node host answers without upgrading, so clients fall back to SSE (headless-protocol's `openEventsSocket` returns null) |
 | `POST` | `/v1/sessions/:id/abort` | `{ messageId? }` | `{ accepted }`. With a `messageId`, stops only that turn (running or queued); without one, stops the running turn and every follow-up queued behind it (background tasks keep going) |
 | `GET` | `/v1/sessions/:id/files` | | `{ files: [{ path, size, updatedAt }] }` |
 | `GET` | `/v1/sessions/:id/files/content` | `?path=` | file text |
@@ -67,6 +67,8 @@ Turn status is one of `queued`, `running`, `completed`, `failed`, `interrupted` 
 - `stuck_repeating`
 - `runner_restarted`
 - `credentials_refresh` (an `interrupted` turn waiting to be resumed with a fresh MCP token)
+- `step_crash_loop` (step mode: one step kept dying, see [Step mode](#step-mode))
+- `step_state_invalid` (step mode: the turn's stored next step couldn't be read)
 
 `runner_restarted`, `runner_shutdown` and `credentials_refresh` turns that have a resume grant are resumed by the runner itself ([Self-resume](#self-resume)); re-sending still works and is harmless.
 
@@ -133,6 +135,47 @@ the organization) keep going on their own:
 
 Callers keep their re-send logic as a fallback; sends are idempotent. Deploy a runner that accepts `resumeGrant`
 before turning `headlessDurableTurns` on: older runners refuse the unknown field.
+
+## Step mode
+
+A turn sent with `execution: "steps"` runs one step at a time from what is stored, instead of in one go. Callers send
+it only when `headlessStepTurns` is on for the organization (Den's Slack runner and Automations, and Workbot); a turn
+sent without it runs exactly as before, and a resent turn keeps the mode it was admitted with. Its background tasks
+and their reports run in step mode too. Lanes, the queue, `HEADLESS_MAX_CONCURRENT_TURNS`, Stop, follow-ups that
+interrupt, the repeat check and `credentials_refresh` work the same way.
+
+- **A step** is: build the context, one streaming model call, that call's tool calls, then one SQLite transaction
+  that writes the step's messages and tool results, the turn's next step (`step_schedule`) and the attempt reset. A
+  crash leaves the whole step or none of it.
+- **Between steps nothing runs.** On celld, steps run from the cell's durable alarm (the same alarm as self-resume,
+  set for whichever is due first), each to completion, lanes in parallel. Between two alarms the cell is idle, so a
+  runner deploy switches it to the new code there instead of cancelling a step after `CELLD_DEPLOY_MAX_AGE_S`. On
+  Node, each step runs as soon as it is due, in the process; a restart or `SIGTERM` leaves step-mode turns as they
+  are stored, and the next process continues them.
+- **No repeated writes.** Once the model has answered with tool calls, the answer is kept before any call runs, and
+  each result as it returns. A step that dies there finishes from them: a call without a recorded result is never run
+  again, it gets an error result so the model can check its effect.
+- **Stream checkpoints.** A streaming model call keeps its text so far (at most every 2 s; never a tool call). A step
+  cut off mid-call (a forced switch, a crash) continues that text as a partial assistant message where the provider
+  accepts one (`anthropic`; the runner never turns on extended thinking), and otherwise (`openai`,
+  `openai-responses`) makes the call again. Live `text` events then reset and replay the text so far. Checkpoints are
+  deleted when the step commits and never exported.
+- **Crash loops.** A step's starts are counted before its model call. A step that keeps dying runs again at once
+  twice, then after 30 s and 2 minutes; after 5 starts the turn fails with `step_crash_loop` (reported by code).
+- **Contained failures.** An error in one step fails that turn only; other lanes, the alarm and the cell go on. A
+  turn whose stored next step can't be read fails with `step_state_invalid`; startup never throws on it.
+- **Credentials** are held in memory only, including a member's scoped model access (`credentials.modelAccess`): never
+  in `step_schedule`, checkpoints or the transcript. Every step of a turn sent with scoped access uses it, with the
+  turn's stored model. A turn that lost its credentials (its cell restarted or switched) gets a fresh MCP token from
+  its resume grant, as [self-resume](#self-resume) does, and, when it requires scoped access, fresh access for its
+  stored model; other turns use `HEADLESS_MODEL_API_KEY`. Without them (no grant, Den gives no access, or no runner
+  model key) it becomes `interrupted` (`runner_restarted`), as every turn did on a restart, and never falls back to the
+  deployment key.
+- **Moving conversations.** Exports carry each turn's `execution`. A session with a running turn can't be exported,
+  so the next-step schedule and checkpoints are never needed after an import, and never included.
+
+Turn `headlessStepTurns` on only after the runner deploy that accepts `execution` is live: older runners refuse the
+unknown field.
 
 ## Isolation
 

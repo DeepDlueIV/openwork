@@ -42,6 +42,8 @@ export const denSessionSchema = z.object({
   verifyModel: z.boolean().default(false),
   /** Den validates the exact gateway alias and mints model access for each turn. Older Dens stay on runner credentials. */
   gatewayModels: z.boolean().default(false),
+  /** Turns run one step at a time on the runner (`headlessStepTurns`). A Den from before it doesn't say: off. */
+  stepTurns: z.boolean().default(false),
 })
 
 const runTokenSchema = z.object({

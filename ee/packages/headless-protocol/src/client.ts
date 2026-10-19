@@ -268,6 +268,29 @@ const capabilityFields = (input: RunnerCapabilities & RunnerSessionSettings) => 
 /** A runner older than a setting refuses it as an invalid request; any other refusal is real. */
 const unknownSetting = (status: number, payload: unknown) => status === 400 && errorCode(payload, "invalid_request") === "invalid_request"
 
+/**
+ * One live event, exactly as the SSE stream's `data:` lines carry it: `ready` first on a socket, then `changed`,
+ * `text` and `tool`. Kept open (like turn statuses) so a new event type never breaks a reader; callers validate.
+ */
+const runnerLiveEventSchema = z.looseObject({ type: z.string() })
+export type RunnerLiveEvent = z.infer<typeof runnerLiveEventSchema>
+
+/** What `openEventsSocket` needs of a WebSocket: Node's built-in one (undici) takes request headers, so the token and owner never go in the URL. */
+type HeaderWebSocket = {
+  send(data: string): void
+  close(code?: number, reason?: string): void
+  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown }) => void): void
+}
+type HeaderWebSocketConstructor = new (url: string, init: { headers: Record<string, string> }) => HeaderWebSocket
+function isHeaderWebSocket(value: unknown): value is HeaderWebSocketConstructor {
+  return typeof value === "function"
+}
+/** The keep-alive a live-event socket sends; the runner's cell answers it without waking. */
+const SOCKET_PING = "ping"
+const SOCKET_PING_MS = 30_000
+/** A reader this far behind is dropped (the socket closes; the caller reconnects and re-reads). */
+const SOCKET_MAX_QUEUED = 10_000
+
 export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
   return {
     async createSession(
@@ -344,10 +367,23 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
      * messageId never starts a second turn; it resumes an interrupted one.
      * `interrupt`: the conversation's answer in progress wraps up at its next safe point instead of this waiting behind
      * it (runners from before it refuse the field, so callers send it only where it is turned on).
+     * `execution: "steps"` (feature `headlessStepTurns`): the runner runs the turn one step at a time, so a runner deploy
+     * switches between steps instead of cutting one off. Sent only when given; older runners refuse the field.
      */
     async sendTurn(
       actor: HeadlessRunnerActor,
-      input: { sessionId: string; messageId: string; prompt: string; model?: string; modelAccessRequired?: boolean; ttlMs?: number; attachments?: string[]; readOnly?: boolean; interrupt?: boolean },
+      input: {
+        sessionId: string
+        messageId: string
+        prompt: string
+        model?: string
+        modelAccessRequired?: boolean
+        ttlMs?: number
+        attachments?: string[]
+        readOnly?: boolean
+        interrupt?: boolean
+        execution?: "steps"
+      },
     ): Promise<RunnerResult<{ state: string }>> {
       const ttlMs = Math.min(input.ttlMs ?? deps.maxTokenTtlMs, deps.maxTokenTtlMs)
       let modelAccessRequired = input.modelAccessRequired === true
@@ -412,6 +448,7 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
         ...(model ? { model } : {}),
         ...(input.attachments?.length ? { attachments: input.attachments } : {}),
         ...(input.interrupt ? { interrupt: true } : {}),
+        ...(input.execution === "steps" ? { execution: "steps" } : {}),
         // A grant is only minted where `headlessDurableTurns` is on; without one the body is exactly as before.
         credentials: { mcpToken: token, ...(input.readOnly ? { readOnly: true } : {}), ...(resumeGrant ? { resumeGrant } : {}), ...(modelAccess ? { modelAccess } : {}) },
       })
@@ -544,6 +581,105 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
         return null
       }
       return response
+    },
+
+    /**
+     * The session's live events over a WebSocket (feature `headlessStepTurns`): on celld the socket is hibernatable,
+     * so it keeps going while the runner's code is switched under it, and doesn't hold up that switch. Yields
+     * `{ type: "ready" }`, then each event as `openEvents` carries it, until the socket closes or `signal` aborts.
+     * Null when the runner doesn't upgrade (the Node runner, an older runner) or the socket can't open: use
+     * `openEvents` then. The token and owner go in request headers, never in the URL.
+     */
+    async openEventsSocket(sessionId: string, signal: AbortSignal): Promise<AsyncIterableIterator<RunnerLiveEvent> | null> {
+      const Socket: unknown = Reflect.get(globalThis, "WebSocket")
+      if (!isHeaderWebSocket(Socket) || signal.aborted) return null
+      const url = new URL(`${deps.config.url}${sessionPath(sessionId)}/events`)
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+      let socket: HeaderWebSocket
+      try {
+        socket = new Socket(url.toString(), { headers: runnerHeaders(deps.config) })
+      } catch {
+        return null
+      }
+      const queue: RunnerLiveEvent[] = []
+      let ended = false
+      let wake: (() => void) | null = null
+      let ping: ReturnType<typeof setInterval> | undefined
+      let settle: (opened: boolean) => void = () => undefined
+      const end = () => {
+        settle(false)
+        if (!ended) {
+          ended = true
+          clearInterval(ping)
+          signal.removeEventListener("abort", end)
+          try {
+            socket.close(1000)
+          } catch {
+            // Already closed.
+          }
+        }
+        const resume = wake
+        wake = null
+        resume?.()
+      }
+      signal.addEventListener("abort", end, { once: true })
+      socket.addEventListener("message", (message) => {
+        if (ended || typeof message.data !== "string") return
+        let raw: unknown
+        try {
+          raw = JSON.parse(message.data)
+        } catch {
+          // A keep-alive answer, or anything else that isn't an event.
+          return
+        }
+        const event = runnerLiveEventSchema.safeParse(raw)
+        if (!event.success) return
+        queue.push(event.data)
+        if (queue.length > SOCKET_MAX_QUEUED) return end()
+        const resume = wake
+        wake = null
+        resume?.()
+      })
+      socket.addEventListener("error", end)
+      socket.addEventListener("close", end)
+      const opened = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(end, REQUEST_TIMEOUT_MS)
+        settle = (value) => {
+          clearTimeout(timer)
+          settle = () => undefined
+          resolve(value)
+        }
+        socket.addEventListener("open", () => settle(!ended))
+      })
+      if (!opened) {
+        end()
+        return null
+      }
+      ping = setInterval(() => {
+        try {
+          socket.send(SOCKET_PING)
+        } catch {
+          end()
+        }
+      }, SOCKET_PING_MS)
+      async function* events(): AsyncGenerator<RunnerLiveEvent> {
+        try {
+          for (;;) {
+            const next = queue.shift()
+            if (next) {
+              yield next
+              continue
+            }
+            if (ended) return
+            await new Promise<void>((resolve) => {
+              wake = resolve
+            })
+          }
+        } finally {
+          end()
+        }
+      }
+      return events()
     },
 
     /**

@@ -193,6 +193,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  headlessStepTurns: {
+    label: "Workbot: answers aren't cut off by updates",
+    description: "Workbot, Slack and Automations answers keep going through OpenWork updates instead of restarting their current step.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
 })
 
 export type FeatureKey = keyof typeof FEATURES

@@ -382,6 +382,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `remoteSessionEvents` | `DEN_FEATURE_REMOTE_SESSION_EVENTS` | default off | MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting. |
 | `remoteSessionSubagents` | `DEN_FEATURE_REMOTE_SESSION_SUBAGENTS` | default off | A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop. |
 | `headlessDurableTurns` | `DEN_FEATURE_HEADLESS_DURABLE_TURNS` | default off | Workbot, Slack and Automations answers keep going after a restart, deploy or server failure, without waiting for someone to reopen the chat. |
+| `headlessStepTurns` | `DEN_FEATURE_HEADLESS_STEP_TURNS` | default off | Workbot, Slack and Automations answers keep going through OpenWork updates instead of restarting their current step. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`

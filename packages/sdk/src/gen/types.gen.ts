@@ -751,7 +751,8 @@ export type AdminFeature = {
     | "engineV2Upgrade"
     | "remoteSessionEvents"
     | "remoteSessionSubagents"
-    | "headlessDurableTurns";
+    | "headlessDurableTurns"
+    | "headlessStepTurns";
   label: string;
   description: string;
   since: string;
@@ -810,6 +811,7 @@ export type AdminOrganizationsPageResponse = {
       remoteSessionEvents: boolean;
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
+      headlessStepTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -1001,6 +1003,15 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      headlessStepTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
     };
     [key: string]: unknown;
   }>;
@@ -1084,6 +1095,7 @@ export type AdminOverviewResponse = {
       remoteSessionEvents: boolean;
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
+      headlessStepTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -1267,6 +1279,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       headlessDurableTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessStepTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6503,6 +6524,7 @@ export type WorkbotSession = {
   model?: string | null;
   verifyModel?: boolean;
   gatewayModels?: boolean;
+  stepTurns: boolean;
 };
 
 export type WorkbotRunToken = {
@@ -7485,6 +7507,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       remoteSessionEvents: boolean;
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
+      headlessStepTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -7668,6 +7691,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       headlessDurableTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessStepTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7747,6 +7779,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       remoteSessionEvents: boolean;
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
+      headlessStepTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -7930,6 +7963,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       headlessDurableTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessStepTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

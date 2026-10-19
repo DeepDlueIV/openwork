@@ -734,35 +734,26 @@ export type AdminActiveUsers = {
 
 export type AdminFeature = {
   key:
+    | "cloudAgentGateway"
+    | "liveProviderSync"
     | "offlineRecovery"
-    | "rememberLastOrganization"
     | "secureSecretFields"
-    | "memberListToolbars"
-    | "appBuildProgress"
     | "modelsAnalyticsUi"
     | "taskAnalyticsUi"
-    | "desktopPolicyScreenRemoval"
-    | "teamMembershipCache"
-    | "managedDeploymentsGcp"
-    | "managedDeploymentsMcp"
     | "managedDeployments"
     | "slackAssistant"
-    | "slackWorkbotReplies"
-    | "workbot"
+    | "workbotTeamLinks"
+    | "workbotFirstRun"
+    | "workbotInlineConnect"
+    | "workbotDocuments"
+    | "workbotWorkspaceAssistant"
+    | "workbotGuidedNavigation"
     | "automationCalendar"
-    | "permissions"
-    | "teamRoles"
-    | "sharedRoles"
-    | "agentPermissions"
+    | "engineV2ForceUpgrade"
     | "engineV2Upgrade"
     | "remoteSessionEvents"
-    | "backgroundShellTasks"
-    | "orgDefaultModel"
-    | "gatewayProviderUsageLimits"
-    | "teamAccessRows"
-    | "teamPageTabs"
-    | "inviteLinkVerifiesEmail"
-    | "remoteSessionSubagents";
+    | "remoteSessionSubagents"
+    | "headlessDurableTurns";
   label: string;
   description: string;
   since: string;
@@ -801,35 +792,26 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities?: {
+      cloudAgentGateway: boolean;
+      liveProviderSync: boolean;
       offlineRecovery: boolean;
-      rememberLastOrganization: boolean;
       secureSecretFields: boolean;
-      memberListToolbars: boolean;
-      appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
       taskAnalyticsUi: boolean;
-      desktopPolicyScreenRemoval: boolean;
-      teamMembershipCache: boolean;
-      managedDeploymentsGcp: boolean;
-      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
-      slackWorkbotReplies: boolean;
-      workbot: boolean;
+      workbotTeamLinks: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
+      workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
+      workbotGuidedNavigation: boolean;
       automationCalendar: boolean;
-      permissions: boolean;
-      teamRoles: boolean;
-      sharedRoles: boolean;
-      agentPermissions: boolean;
+      engineV2ForceUpgrade: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
-      backgroundShellTasks: boolean;
-      orgDefaultModel: boolean;
-      gatewayProviderUsageLimits: boolean;
-      teamAccessRows: boolean;
-      teamPageTabs: boolean;
-      inviteLinkVerifiesEmail: boolean;
       remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -841,6 +823,24 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates?: {
+      cloudAgentGateway: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      liveProviderSync: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       offlineRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -850,34 +850,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      rememberLastOrganization: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       secureSecretFields: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      memberListToolbars: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      appBuildProgress: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -904,42 +877,6 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      desktopPolicyScreenRemoval: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamMembershipCache: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      managedDeploymentsGcp: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      managedDeploymentsMcp: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -958,7 +895,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      slackWorkbotReplies: {
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -967,7 +904,43 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbot: {
+      workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotGuidedNavigation: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -985,34 +958,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      permissions: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamRoles: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      sharedRoles: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      agentPermissions: {
+      engineV2ForceUpgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1039,61 +985,16 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      backgroundShellTasks: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgDefaultModel: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      gatewayProviderUsageLimits: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamAccessRows: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamPageTabs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      inviteLinkVerifiesEmail: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1165,35 +1066,26 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      cloudAgentGateway: boolean;
+      liveProviderSync: boolean;
       offlineRecovery: boolean;
-      rememberLastOrganization: boolean;
       secureSecretFields: boolean;
-      memberListToolbars: boolean;
-      appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
       taskAnalyticsUi: boolean;
-      desktopPolicyScreenRemoval: boolean;
-      teamMembershipCache: boolean;
-      managedDeploymentsGcp: boolean;
-      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
-      slackWorkbotReplies: boolean;
-      workbot: boolean;
+      workbotTeamLinks: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
+      workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
+      workbotGuidedNavigation: boolean;
       automationCalendar: boolean;
-      permissions: boolean;
-      teamRoles: boolean;
-      sharedRoles: boolean;
-      agentPermissions: boolean;
+      engineV2ForceUpgrade: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
-      backgroundShellTasks: boolean;
-      orgDefaultModel: boolean;
-      gatewayProviderUsageLimits: boolean;
-      teamAccessRows: boolean;
-      teamPageTabs: boolean;
-      inviteLinkVerifiesEmail: boolean;
       remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -1205,6 +1097,24 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      cloudAgentGateway: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      liveProviderSync: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       offlineRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1214,34 +1124,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      rememberLastOrganization: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       secureSecretFields: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      memberListToolbars: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      appBuildProgress: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1268,42 +1151,6 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      desktopPolicyScreenRemoval: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamMembershipCache: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      managedDeploymentsGcp: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      managedDeploymentsMcp: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1322,7 +1169,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      slackWorkbotReplies: {
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1331,7 +1178,43 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbot: {
+      workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotGuidedNavigation: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1349,34 +1232,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      permissions: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamRoles: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      sharedRoles: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      agentPermissions: {
+      engineV2ForceUpgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1403,61 +1259,16 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      backgroundShellTasks: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgDefaultModel: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      gatewayProviderUsageLimits: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamAccessRows: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamPageTabs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      inviteLinkVerifiesEmail: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1675,6 +1486,7 @@ export type CurrentUserDesktopConfigResponse = {
   automationsEnabled?: boolean;
   dashboardEnabled?: boolean;
   connectEnabled?: boolean;
+  liveProviderSync?: boolean;
   onboardingPrompts?: Array<string>;
   onboardingPromptDescriptions?: Array<string>;
   agentPermissions?: DenDesktopAgentPermissions;
@@ -3047,6 +2859,10 @@ export type GatewayProviderDetails = {
     credentialSetId: string;
     credentialSetName: string;
   }>;
+  /**
+   * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+   */
+  modelAssignmentsComplete: boolean;
   authorizationRequests: Array<{
     /**
      * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -3236,6 +3052,10 @@ export type GatewayProviderSummary = {
     credentialSetId: string;
     credentialSetName: string;
   }>;
+  /**
+   * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+   */
+  modelAssignmentsComplete: boolean;
   authorizationRequests: Array<{
     /**
      * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -3632,6 +3452,20 @@ export type OAuthClientConfigDetailResponse = {
   scopes: Array<string>;
   redirectUri: string;
   tenantId: string | null;
+};
+
+export type OAuthProviderApiCheck = {
+  providerId: string;
+  checked: boolean;
+  apis: Array<{
+    id: string;
+    name: string;
+    service: string;
+    features: Array<string>;
+    status: "enabled" | "disabled" | "unknown";
+    enableUrl: string | null;
+    detail: string | null;
+  }>;
 };
 
 export type OAuthConnectStartResponse = {
@@ -6544,15 +6378,41 @@ export type WebOriginNotFoundError = {
 
 export type RemoveWebOriginNotFound = WebOriginNotFoundError | WebOriginOrganizationNotFoundError;
 
+export type WorkbotModelTest =
+  | {
+      status: "answered";
+      errorCode: null;
+      requestedModel: string;
+      reportedModel: string | null;
+    }
+  | {
+      status: "failed";
+      errorCode:
+        | "model_unavailable"
+        | "runner_unavailable"
+        | "credentials_unavailable"
+        | "authentication_failed"
+        | "payment_required"
+        | "provider_unavailable"
+        | "timed_out"
+        | "invalid_response"
+        | "busy";
+      requestedModel: string;
+      reportedModel: null;
+    };
+
 export type WorkbotSettings = {
   model: string | null;
   defaultModel: string | null;
   models: Array<{
     id: string;
     name: string;
+    provider?: string;
   }>;
   modelAvailable: boolean;
   runnerReachable: boolean;
+  gatewayModels?: boolean;
+  defaultReadiness?: "available" | "unavailable" | "unverified";
 };
 
 export type WorkbotUnknownModelError = {
@@ -6629,15 +6489,33 @@ export type WorkbotSession = {
   };
   memberId: string;
   enabled: boolean;
+  firstRun?: boolean;
+  canEnableWorkbot?: boolean;
   canSchedule: boolean;
   calendar?: boolean;
+  documents?: boolean;
+  workspaceAssistant?: boolean;
+  guidedNavigation?: boolean;
+  teamLinks?: {
+    enabled: boolean;
+    settings: boolean;
+    apps: boolean;
+  };
   sideChats: boolean;
   model?: string | null;
+  verifyModel?: boolean;
+  gatewayModels?: boolean;
 };
 
 export type WorkbotRunToken = {
   token: string;
   expiresAt: string;
+  resumeGrant?: string;
+  modelAccess?: {
+    baseUrl: string;
+    apiKey: string;
+    protocol: "anthropic" | "openai" | "openai-responses";
+  };
 };
 
 export type DenAppVersionResponse = {
@@ -6681,6 +6559,9 @@ export type WorkerHeartbeatResponse = {
   openSessionCount: number | null;
   lastHeartbeatAt: string;
   lastActiveAt: string | null;
+  enginePolicy: {
+    upgrade: boolean;
+  };
 };
 
 export type WorkerInstance = {
@@ -7617,35 +7498,26 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      cloudAgentGateway: boolean;
+      liveProviderSync: boolean;
       offlineRecovery: boolean;
-      rememberLastOrganization: boolean;
       secureSecretFields: boolean;
-      memberListToolbars: boolean;
-      appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
       taskAnalyticsUi: boolean;
-      desktopPolicyScreenRemoval: boolean;
-      teamMembershipCache: boolean;
-      managedDeploymentsGcp: boolean;
-      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
-      slackWorkbotReplies: boolean;
-      workbot: boolean;
+      workbotTeamLinks: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
+      workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
+      workbotGuidedNavigation: boolean;
       automationCalendar: boolean;
-      permissions: boolean;
-      teamRoles: boolean;
-      sharedRoles: boolean;
-      agentPermissions: boolean;
+      engineV2ForceUpgrade: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
-      backgroundShellTasks: boolean;
-      orgDefaultModel: boolean;
-      gatewayProviderUsageLimits: boolean;
-      teamAccessRows: boolean;
-      teamPageTabs: boolean;
-      inviteLinkVerifiesEmail: boolean;
       remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -7657,6 +7529,24 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      cloudAgentGateway: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      liveProviderSync: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       offlineRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7666,34 +7556,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      rememberLastOrganization: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       secureSecretFields: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      memberListToolbars: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      appBuildProgress: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7720,42 +7583,6 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      desktopPolicyScreenRemoval: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamMembershipCache: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      managedDeploymentsGcp: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      managedDeploymentsMcp: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7774,7 +7601,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      slackWorkbotReplies: {
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7783,7 +7610,43 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbot: {
+      workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotGuidedNavigation: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7801,34 +7664,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      permissions: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamRoles: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      sharedRoles: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      agentPermissions: {
+      engineV2ForceUpgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7855,61 +7691,16 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      backgroundShellTasks: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgDefaultModel: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      gatewayProviderUsageLimits: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamAccessRows: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamPageTabs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      inviteLinkVerifiesEmail: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7969,35 +7760,26 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      cloudAgentGateway: boolean;
+      liveProviderSync: boolean;
       offlineRecovery: boolean;
-      rememberLastOrganization: boolean;
       secureSecretFields: boolean;
-      memberListToolbars: boolean;
-      appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
       taskAnalyticsUi: boolean;
-      desktopPolicyScreenRemoval: boolean;
-      teamMembershipCache: boolean;
-      managedDeploymentsGcp: boolean;
-      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
-      slackWorkbotReplies: boolean;
-      workbot: boolean;
+      workbotTeamLinks: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
+      workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
+      workbotGuidedNavigation: boolean;
       automationCalendar: boolean;
-      permissions: boolean;
-      teamRoles: boolean;
-      sharedRoles: boolean;
-      agentPermissions: boolean;
+      engineV2ForceUpgrade: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
-      backgroundShellTasks: boolean;
-      orgDefaultModel: boolean;
-      gatewayProviderUsageLimits: boolean;
-      teamAccessRows: boolean;
-      teamPageTabs: boolean;
-      inviteLinkVerifiesEmail: boolean;
       remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -8009,6 +7791,24 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      cloudAgentGateway: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      liveProviderSync: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       offlineRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -8018,34 +7818,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      rememberLastOrganization: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       secureSecretFields: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      memberListToolbars: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      appBuildProgress: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8072,42 +7845,6 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      desktopPolicyScreenRemoval: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamMembershipCache: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      managedDeploymentsGcp: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      managedDeploymentsMcp: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -8126,7 +7863,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      slackWorkbotReplies: {
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8135,7 +7872,43 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbot: {
+      workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotGuidedNavigation: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8153,34 +7926,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      permissions: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamRoles: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      sharedRoles: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      agentPermissions: {
+      engineV2ForceUpgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8207,61 +7953,16 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      backgroundShellTasks: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgDefaultModel: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      gatewayProviderUsageLimits: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamAccessRows: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      teamPageTabs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      inviteLinkVerifiesEmail: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -17906,6 +17607,88 @@ export type DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses = {
 export type DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponse =
   DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses[keyof DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses];
 
+export type GetV1InferenceProvidersInventoryRevisionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference-providers/inventory/revision";
+};
+
+export type GetV1InferenceProvidersInventoryRevisionErrors = {
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization not found or liveProviderSync disabled.
+   */
+  404: NotFoundError;
+  /**
+   * Inventory unavailable; reconnect with backoff.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryRevisionError =
+  GetV1InferenceProvidersInventoryRevisionErrors[keyof GetV1InferenceProvidersInventoryRevisionErrors];
+
+export type GetV1InferenceProvidersInventoryRevisionResponses = {
+  /**
+   * Current inventory revision.
+   */
+  200: {
+    revision: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryRevisionResponse =
+  GetV1InferenceProvidersInventoryRevisionResponses[keyof GetV1InferenceProvidersInventoryRevisionResponses];
+
+export type GetV1InferenceProvidersInventoryEventsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference-providers/inventory/events";
+};
+
+export type GetV1InferenceProvidersInventoryEventsErrors = {
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization not found or liveProviderSync disabled.
+   */
+  404: NotFoundError;
+  /**
+   * At most four inventory streams per member per replica.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * Inventory unavailable; reconnect with backoff.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryEventsError =
+  GetV1InferenceProvidersInventoryEventsErrors[keyof GetV1InferenceProvidersInventoryEventsErrors];
+
+export type GetV1InferenceProvidersInventoryEventsResponses = {
+  /**
+   * Inventory revision event stream.
+   */
+  200: string;
+};
+
+export type GetV1InferenceProvidersInventoryEventsResponse =
+  GetV1InferenceProvidersInventoryEventsResponses[keyof GetV1InferenceProvidersInventoryEventsResponses];
+
 export type GetV1InferenceProvidersUsageData = {
   body?: never;
   path?: never;
@@ -20375,6 +20158,10 @@ export type GetV1InferenceProvidersByInferenceProviderIdConnectResponses = {
         credentialSetId: string;
         credentialSetName: string;
       }>;
+      /**
+       * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+       */
+      modelAssignmentsComplete: boolean;
       authorizationRequests: Array<{
         /**
          * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -23325,6 +23112,43 @@ export type PostV1OauthProvidersByProviderIdClientResponses = {
 export type PostV1OauthProvidersByProviderIdClientResponse =
   PostV1OauthProvidersByProviderIdClientResponses[keyof PostV1OauthProvidersByProviderIdClientResponses];
 
+export type GetV1OauthProvidersByProviderIdApiCheckData = {
+  body?: never;
+  path: {
+    providerId: string;
+  };
+  query?: never;
+  url: "/v1/oauth-providers/{providerId}/api-check";
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OAuth apps permission.
+   */
+  403: ForbiddenError;
+  /**
+   * Unknown providerId, or not a Google Workspace connector.
+   */
+  404: UnknownOAuthProviderError;
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckError =
+  GetV1OauthProvidersByProviderIdApiCheckErrors[keyof GetV1OauthProvidersByProviderIdApiCheckErrors];
+
+export type GetV1OauthProvidersByProviderIdApiCheckResponses = {
+  /**
+   * Each needed Google API and whether it is turned on.
+   */
+  200: OAuthProviderApiCheck;
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckResponse =
+  GetV1OauthProvidersByProviderIdApiCheckResponses[keyof GetV1OauthProvidersByProviderIdApiCheckResponses];
+
 export type GetV1OauthProvidersByProviderIdConnectStartData = {
   body?: never;
   path: {
@@ -23988,6 +23812,599 @@ export type DownloadGoogleDriveFileByLinkResponses = {
 
 export type DownloadGoogleDriveFileByLinkResponse =
   DownloadGoogleDriveFileByLinkResponses[keyof DownloadGoogleDriveFileByLinkResponses];
+
+export type GetGoogleDriveDocumentMetadataData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/metadata";
+};
+
+export type GetGoogleDriveDocumentMetadataErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetGoogleDriveDocumentMetadataError =
+  GetGoogleDriveDocumentMetadataErrors[keyof GetGoogleDriveDocumentMetadataErrors];
+
+export type GetGoogleDriveDocumentMetadataResponses = {
+  /**
+   * Document result.
+   */
+  200: {
+    id: string;
+    name: string;
+    mimeType: string;
+    modifiedTime: string | null;
+    size: number | null;
+    openUrl: string | null;
+  };
+};
+
+export type GetGoogleDriveDocumentMetadataResponse =
+  GetGoogleDriveDocumentMetadataResponses[keyof GetGoogleDriveDocumentMetadataResponses];
+
+export type OpenGoogleDriveDocumentEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    sheetId?: string;
+    startRow?: number;
+    connectionId?: string;
+  };
+  url: "/v1/documents/google-drive/files/{fileId}/editor";
+};
+
+export type OpenGoogleDriveDocumentEditorErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type OpenGoogleDriveDocumentEditorError =
+  OpenGoogleDriveDocumentEditorErrors[keyof OpenGoogleDriveDocumentEditorErrors];
+
+export type OpenGoogleDriveDocumentEditorResponses = {
+  /**
+   * Document result.
+   */
+  200:
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "spreadsheet";
+        source: "google" | "xlsx";
+        sheets: Array<{
+          id: string;
+          name: string;
+          rows: number;
+          columns: number;
+        }>;
+        activeSheetId: string;
+        startRow: number;
+        endRow: number;
+        cells: Array<{
+          row: number;
+          column: number;
+          text: string;
+          formula?: string;
+        }>;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "document";
+        source: "google" | "docx";
+        sections: Array<{
+          id: string;
+          name: string;
+          paragraphs: Array<{
+            id: string;
+            heading?: boolean;
+            runs: Array<{
+              id: string;
+              text: string;
+              bold?: boolean;
+              italic?: boolean;
+              underline?: boolean;
+            }>;
+          }>;
+        }>;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "text";
+        text: string;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "preview";
+        mimeType: string;
+      };
+};
+
+export type OpenGoogleDriveDocumentEditorResponse =
+  OpenGoogleDriveDocumentEditorResponses[keyof OpenGoogleDriveDocumentEditorResponses];
+
+export type SaveGoogleDriveDocumentEditsData = {
+  body:
+    | {
+        kind: "spreadsheet";
+        connectionId: string;
+        revision: string;
+        sheetId: string;
+        changes: Array<{
+          row: number;
+          column: number;
+          value: string;
+          formula?: boolean;
+        }>;
+      }
+    | {
+        kind: "document";
+        connectionId: string;
+        revision: string;
+        changes: Array<{
+          sectionId: string;
+          runId: string;
+          value: string;
+        }>;
+      }
+    | {
+        kind: "text";
+        connectionId: string;
+        revision: string;
+        text: string;
+      };
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/editor";
+};
+
+export type SaveGoogleDriveDocumentEditsErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type SaveGoogleDriveDocumentEditsError =
+  SaveGoogleDriveDocumentEditsErrors[keyof SaveGoogleDriveDocumentEditsErrors];
+
+export type SaveGoogleDriveDocumentEditsResponses = {
+  /**
+   * Document result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type SaveGoogleDriveDocumentEditsResponse =
+  SaveGoogleDriveDocumentEditsResponses[keyof SaveGoogleDriveDocumentEditsResponses];
+
+export type ReadGoogleDriveDocumentContentData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query: {
+    connectionId: string;
+  };
+  url: "/v1/documents/google-drive/files/{fileId}/content";
+};
+
+export type ReadGoogleDriveDocumentContentErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type ReadGoogleDriveDocumentContentError =
+  ReadGoogleDriveDocumentContentErrors[keyof ReadGoogleDriveDocumentContentErrors];
+
+export type ReadGoogleDriveDocumentContentResponses = {
+  /**
+   * Document result.
+   */
+  200: unknown;
+};
+
+export type OpenGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office";
+};
+
+export type OpenGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type OpenGoogleDriveOfficeEditorError =
+  OpenGoogleDriveOfficeEditorErrors[keyof OpenGoogleDriveOfficeEditorErrors];
+
+export type OpenGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    id: string;
+    serverUrl: string;
+    editorUrl: string;
+    accessToken: string;
+    expiresAt: string;
+    saveAsCopy: boolean;
+    canEdit: boolean;
+    fileType: "docx" | "xlsx" | "pptx" | "odt" | "ods" | "odp";
+  };
+};
+
+export type OpenGoogleDriveOfficeEditorResponse =
+  OpenGoogleDriveOfficeEditorResponses[keyof OpenGoogleDriveOfficeEditorResponses];
+
+export type GetGoogleDriveOfficeEditorStatusData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}";
+};
+
+export type GetGoogleDriveOfficeEditorStatusErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetGoogleDriveOfficeEditorStatusError =
+  GetGoogleDriveOfficeEditorStatusErrors[keyof GetGoogleDriveOfficeEditorStatusErrors];
+
+export type GetGoogleDriveOfficeEditorStatusResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    expiresAt: string;
+    draftVersion: number;
+    saveRequestId?: string;
+    savedFileId?: string;
+  };
+};
+
+export type GetGoogleDriveOfficeEditorStatusResponse =
+  GetGoogleDriveOfficeEditorStatusResponses[keyof GetGoogleDriveOfficeEditorStatusResponses];
+
+export type SaveGoogleDriveOfficeEditorData = {
+  body: {
+    draftVersion: number;
+  };
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/save";
+};
+
+export type SaveGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type SaveGoogleDriveOfficeEditorError =
+  SaveGoogleDriveOfficeEditorErrors[keyof SaveGoogleDriveOfficeEditorErrors];
+
+export type SaveGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    fileId: string;
+  };
+};
+
+export type SaveGoogleDriveOfficeEditorResponse =
+  SaveGoogleDriveOfficeEditorResponses[keyof SaveGoogleDriveOfficeEditorResponses];
+
+export type CloseGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/close";
+};
+
+export type CloseGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type CloseGoogleDriveOfficeEditorError =
+  CloseGoogleDriveOfficeEditorErrors[keyof CloseGoogleDriveOfficeEditorErrors];
+
+export type CloseGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type CloseGoogleDriveOfficeEditorResponse =
+  CloseGoogleDriveOfficeEditorResponses[keyof CloseGoogleDriveOfficeEditorResponses];
+
+export type GetOfficeFileInfoData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}";
+};
+
+export type GetOfficeFileInfoErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetOfficeFileInfoError = GetOfficeFileInfoErrors[keyof GetOfficeFileInfoErrors];
+
+export type GetOfficeFileInfoResponses = {
+  /**
+   * Office editor result.
+   */
+  200: unknown;
+};
+
+export type LockOfficeFileData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}";
+};
+
+export type LockOfficeFileErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type LockOfficeFileError = LockOfficeFileErrors[keyof LockOfficeFileErrors];
+
+export type LockOfficeFileResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    ok: boolean;
+  };
+};
+
+export type LockOfficeFileResponse = LockOfficeFileResponses[keyof LockOfficeFileResponses];
+
+export type GetOfficeFileContentsData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}/contents";
+};
+
+export type GetOfficeFileContentsErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetOfficeFileContentsError = GetOfficeFileContentsErrors[keyof GetOfficeFileContentsErrors];
+
+export type GetOfficeFileContentsResponses = {
+  /**
+   * Office editor result.
+   */
+  200: unknown;
+};
+
+export type PutOfficeFileContentsData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}/contents";
+};
+
+export type PutOfficeFileContentsErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type PutOfficeFileContentsError = PutOfficeFileContentsErrors[keyof PutOfficeFileContentsErrors];
+
+export type PutOfficeFileContentsResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    LastModifiedTime: string;
+  };
+};
+
+export type PutOfficeFileContentsResponse = PutOfficeFileContentsResponses[keyof PutOfficeFileContentsResponses];
 
 export type SendGmailDraftData = {
   body: {
@@ -25699,6 +26116,263 @@ export type UpdateGoogleDriveFileMetadataResponses = {
 export type UpdateGoogleDriveFileMetadataResponse =
   UpdateGoogleDriveFileMetadataResponses[keyof UpdateGoogleDriveFileMetadataResponses];
 
+export type GetGoogleDocumentOutlineData = {
+  body?: never;
+  path: {
+    documentId: string;
+  };
+  query?: never;
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/outline";
+};
+
+export type GetGoogleDocumentOutlineErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type GetGoogleDocumentOutlineError = GetGoogleDocumentOutlineErrors[keyof GetGoogleDocumentOutlineErrors];
+
+export type GetGoogleDocumentOutlineResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    title: string;
+    revisionId: string | null;
+    bodyTextOnly: true;
+    suggestionsOmitted: boolean;
+    tabs: Array<{
+      tabId: string;
+      title: string;
+      parentTabId: string | null;
+      headings: Array<{
+        startIndex: number;
+        text: string;
+        style: string;
+      }>;
+    }>;
+    headingsTruncated: boolean;
+  };
+};
+
+export type GetGoogleDocumentOutlineResponse =
+  GetGoogleDocumentOutlineResponses[keyof GetGoogleDocumentOutlineResponses];
+
+export type ReadGoogleDocumentTextData = {
+  body?: never;
+  path: {
+    documentId: string;
+  };
+  query: {
+    /**
+     * A tab ID returned by getGoogleDocumentOutline, including child tabs.
+     */
+    tabId: string;
+    /**
+     * Google UTF-16 offset. For another page, use nextStartIndex with the same revisionId and query.
+     */
+    startIndex?: number;
+    /**
+     * Maximum total UTF-16 text characters returned to the assistant.
+     */
+    maxCharacters?: number;
+    /**
+     * Optional literal, case-insensitive search within body paragraphs and tables in this tab. Returns matching excerpts, not the whole document.
+     */
+    query?: string;
+    /**
+     * Pass the revision from the previous page to stop if the saved document changed. Null on read-only accounts; those reads cannot guarantee stable pagination.
+     */
+    revisionId?: string;
+  };
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/text";
+};
+
+export type ReadGoogleDocumentTextErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ReadGoogleDocumentTextError = ReadGoogleDocumentTextErrors[keyof ReadGoogleDocumentTextErrors];
+
+export type ReadGoogleDocumentTextResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    title: string;
+    revisionId: string | null;
+    bodyTextOnly: true;
+    suggestionsOmitted: boolean;
+    tabId: string;
+    passages: Array<{
+      startIndex: number;
+      endIndex: number;
+      text: string;
+    }>;
+    nextStartIndex: number | null;
+  };
+};
+
+export type ReadGoogleDocumentTextResponse = ReadGoogleDocumentTextResponses[keyof ReadGoogleDocumentTextResponses];
+
+export type ReplaceGoogleDocumentTextData = {
+  body: {
+    tabId: string;
+    /**
+     * Required revisionId from a fresh outline or text read by this same connected account. A stale revision is never merged automatically.
+     */
+    revisionId: string;
+    /**
+     * UTF-16 offset of the exact passage being changed; add its offset within the returned excerpt.
+     */
+    startIndex: number;
+    /**
+     * Exact, case-sensitive saved text at startIndex, inside one paragraph. Cannot cross table cells, embedded objects, or paragraph boundaries.
+     */
+    expectedText: string;
+    /**
+     * User-requested replacement. Empty string deletes the matched passage. This edits the native Google Doc, not an unsaved local draft; require the user's explicit request before calling.
+     */
+    replacement: string;
+  };
+  path: {
+    documentId: string;
+  };
+  query?: never;
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/replace-text";
+};
+
+export type ReplaceGoogleDocumentTextErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ReplaceGoogleDocumentTextError = ReplaceGoogleDocumentTextErrors[keyof ReplaceGoogleDocumentTextErrors];
+
+export type ReplaceGoogleDocumentTextResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    tabId: string;
+    revisionId: string;
+    replacedCharacters: number;
+    insertedCharacters: number;
+  };
+};
+
+export type ReplaceGoogleDocumentTextResponse =
+  ReplaceGoogleDocumentTextResponses[keyof ReplaceGoogleDocumentTextResponses];
+
 export type PostV1DirectUploadsGoogleWorkspaceDriveFilesData = {
   body?: never;
   path?: never;
@@ -26045,6 +26719,8 @@ export type GetV1CapabilitiesGoogleWorkspaceDriveFilesData = {
      */
     maxResults?: number;
     pageToken?: string;
+    orderBy?: "folder,name_natural" | "recency desc" | "modifiedTime desc";
+    filesOnly?: "true" | "false";
     /**
      * Only files modified after this RFC3339 timestamp; follow nextPageToken to enumerate all matching files.
      */
@@ -32679,6 +33355,57 @@ export type DeleteV1OrgWebOriginsByWebOriginIdResponses = {
 export type DeleteV1OrgWebOriginsByWebOriginIdResponse =
   DeleteV1OrgWebOriginsByWebOriginIdResponses[keyof DeleteV1OrgWebOriginsByWebOriginIdResponses];
 
+export type PostV1OrgWorkbotSettingsTestDefaultModelData = {
+  body: {
+    [key: string]: never;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/org/workbot-settings/test-default-model";
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelErrors = {
+  /**
+   * Only an empty request body is accepted.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * A genuine recent user sign-in and Manage OpenWork Models are required.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization was not found, or Workbot is off.
+   */
+  404: {
+    error: "feature_disabled";
+    feature: string;
+  };
+  /**
+   * The durable diagnostic request limit was reached.
+   */
+  429: {
+    error: "rate_limited";
+    retryAfterSeconds: number;
+  };
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelError =
+  PostV1OrgWorkbotSettingsTestDefaultModelErrors[keyof PostV1OrgWorkbotSettingsTestDefaultModelErrors];
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelResponses = {
+  /**
+   * Synthetic completion result; catalog availability alone never means answered.
+   */
+  200: WorkbotModelTest;
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelResponse =
+  PostV1OrgWorkbotSettingsTestDefaultModelResponses[keyof PostV1OrgWorkbotSettingsTestDefaultModelResponses];
+
 export type GetV1OrgWorkbotSettingsData = {
   body?: never;
   path?: never;
@@ -32692,7 +33419,7 @@ export type GetV1OrgWorkbotSettingsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * The caller lacks the View OpenWork Models settings permission.
+   * The caller lacks both View OpenWork Models settings and Manage OpenWork Models.
    */
   403: ForbiddenError;
   /**
@@ -33383,6 +34110,55 @@ export type PostV1IntegrationsSlackByConnectionIdInteractionsResponses = {
 export type PostV1IntegrationsSlackByConnectionIdInteractionsResponse =
   PostV1IntegrationsSlackByConnectionIdInteractionsResponses[keyof PostV1IntegrationsSlackByConnectionIdInteractionsResponses];
 
+export type RecordWorkbotTelemetryData = {
+  body:
+    | {
+        event: "signed_in";
+        id: string;
+        timestamp?: number;
+      }
+    | {
+        event: "accepted";
+        sessionId: string;
+        messageId: string;
+        timestamp: number;
+        model: string;
+        attachmentCount: number;
+        hasContext: boolean;
+      }
+    | {
+        event: "completed" | "failed" | "aborted";
+        sessionId: string;
+        messageId: string;
+        timestamp: number;
+        attempt: number;
+        model: string;
+        modelSource?: "response" | "configured";
+        errorCode: string | null;
+      };
+  path?: never;
+  query?: never;
+  url: "/v1/workbot/telemetry";
+};
+
+export type RecordWorkbotTelemetryErrors = {
+  /**
+   * Service or member credentials are invalid.
+   */
+  401: UnauthorizedError;
+};
+
+export type RecordWorkbotTelemetryError = RecordWorkbotTelemetryErrors[keyof RecordWorkbotTelemetryErrors];
+
+export type RecordWorkbotTelemetryResponses = {
+  /**
+   * Accepted, including best-effort storage failures.
+   */
+  204: void;
+};
+
+export type RecordWorkbotTelemetryResponse = RecordWorkbotTelemetryResponses[keyof RecordWorkbotTelemetryResponses];
+
 export type GetWorkbotSessionData = {
   body?: never;
   path?: never;
@@ -33442,16 +34218,77 @@ export type ListWorkbotConnectionsResponses = {
       app: "gmail" | "googleCalendar" | "slack" | "microsoft";
       ready: boolean;
       connectUrl: string | null;
+      nativeProviderKey?: string | null;
+      connectMode?: "inline" | "external" | "admin";
     }>;
   };
 };
 
 export type ListWorkbotConnectionsResponse = ListWorkbotConnectionsResponses[keyof ListWorkbotConnectionsResponses];
 
+export type StartWorkbotConnectionData = {
+  body: {
+    returnPath: string;
+    requestId: string;
+  };
+  path: {
+    connectionId: string;
+  };
+  query?: never;
+  url: "/v1/workbot/connections/{connectionId}/connect/start";
+};
+
+export type StartWorkbotConnectionErrors = {
+  /**
+   * Invalid connection or return path.
+   */
+  400: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * The token or membership is no longer valid.
+   */
+  401: UnauthorizedError;
+  /**
+   * The grant or connection permission is missing.
+   */
+  403: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * The feature or connection is unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type StartWorkbotConnectionError = StartWorkbotConnectionErrors[keyof StartWorkbotConnectionErrors];
+
+export type StartWorkbotConnectionResponses = {
+  /**
+   * Provider consent URL and its callback origin.
+   */
+  200: {
+    authorizeUrl: string | null;
+    status?: string;
+    callbackOrigin: string;
+  };
+};
+
+export type StartWorkbotConnectionResponse = StartWorkbotConnectionResponses[keyof StartWorkbotConnectionResponses];
+
 export type CreateWorkbotRunTokenData = {
   body: {
     ttlMs?: number;
     readOnly?: boolean;
+    sessionId?: string;
+    messageId?: string;
+    model?: string;
+    modelAccessRequired?: boolean;
   };
   path?: never;
   query?: never;

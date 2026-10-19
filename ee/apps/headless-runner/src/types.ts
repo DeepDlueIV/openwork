@@ -1,4 +1,6 @@
 import { z } from "zod"
+import { headlessModelAccessSchema } from "@openwork-ee/headless-protocol"
+export { headlessModelAccessSchema, type HeadlessModelAccess } from "@openwork-ee/headless-protocol"
 
 /** A saved file as messages refer to it. */
 export const attachmentSchema = z.object({ id: z.string(), name: z.string(), mediaType: z.string(), size: z.number() })
@@ -72,16 +74,26 @@ export type TurnStatus = z.infer<typeof turnStatusSchema>
 export const RESUMABLE: ReadonlySet<TurnStatus> = new Set(["failed", "interrupted"])
 export const ACTIVE: ReadonlySet<TurnStatus> = new Set(["queued", "running"])
 
+/** Den's resume grant for one turn: `hrg_` and 32 random bytes as base64url. */
+export const RESUME_GRANT = /^hrg_[A-Za-z0-9_-]{43}$/
+
 /**
  * Credentials a trusted caller supplies with each turn. They are held in
- * memory for the life of that turn only and are never written to disk.
+ * memory for the life of that turn only and are never written to disk, except
+ * `resumeGrant`, which is stored encrypted when self-resume is configured.
  */
 export const turnCredentialsSchema = z
   .object({
     modelApiKey: z.string().min(1).max(4096).optional(),
+    modelAccess: headlessModelAccessSchema.optional(),
     mcpToken: z.string().min(1).max(16_384).optional(),
     /** Trusted caller policy, also enforced for the runner's local tools. */
     readOnly: z.boolean().optional(),
+    /**
+     * Exchanged with Den for a fresh MCP token for this turn (and its tasks and reports), so the runner refreshes the
+     * token in place and resumes the turn itself after a restart. Accepted always; ignored without self-resume.
+     */
+    resumeGrant: z.string().regex(RESUME_GRANT).optional(),
   })
   .strict()
 export type TurnCredentials = z.infer<typeof turnCredentialsSchema>

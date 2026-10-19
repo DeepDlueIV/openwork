@@ -40,7 +40,8 @@ import {
   type CapabilityMatch,
 } from "./search.js"
 import { resolveMcpMember, resolveMcpMemberIdentity } from "./external-capabilities.js"
-import { executeMarketplaceCapability, listAccessibleMarketplaceSkillDescriptors, parseMarketplaceCapabilityName, type RemoteSkillDescriptor } from "./marketplace-capabilities.js"
+import { executeMarketplaceCapability, listAccessibleMarketplaceSkillDescriptors, listAccessibleMarketplaceSkillSources, parseMarketplaceCapabilityName, type RemoteSkillDescriptor } from "./marketplace-capabilities.js"
+import { registerSkillsExtension, resolveSkills, skillIndexInstructions, type ResolvedSkill } from "./skills-extension.js"
 import { resolvePublicOrigin } from "../capability-sources/generic-oauth.js"
 import { automationService } from "../automations/service.js"
 import { AGENT_AUTOMATION_INDEX_LIMIT, registerAgentAutomationResources } from "./automation-index.js"
@@ -207,21 +208,50 @@ async function mcpRequestInfo(request: Request): Promise<{ method: string | null
 export const AGENT_SKILL_INDEX_URI = "skill://index.json"
 export const AGENT_SKILL_INDEX_SCHEMA = "https://schemas.agentskills.io/discovery/0.2.0/schema.json"
 
-export function buildAgentSkillIndex(skills: RemoteSkillDescriptor[]) {
+/**
+ * The skill index. With `resolved`, the index
+ * says `delivery: "native"` and each entry carries its SKILL.md digest and size,
+ * or why it is withheld, so OpenWork can load skills as native ones and re-read
+ * a skill only when its digest changes.
+ */
+export function buildAgentSkillIndex(skills: RemoteSkillDescriptor[], resolved?: ResolvedSkill[]) {
+  const byCapability = new Map(resolved?.map((entry) => [entry.skill.capability, entry]))
+  const listed = resolved ? skills.filter((skill) => byCapability.has(skill.capability)) : skills
   return {
     $schema: AGENT_SKILL_INDEX_SCHEMA,
-    skills: skills.map((skill) => ({
-      name: skill.name,
-      type: "skill-md" as const,
-      title: skill.title,
-      description: skill.description,
-      modelDiscovery: true,
-      url: skill.location,
-      capability: skill.capability,
-      ...(skill.marketplaceName ? { marketplaceName: skill.marketplaceName } : {}),
-      ...(skill.pluginName ? { pluginName: skill.pluginName } : {}),
-    })),
+    ...(resolved ? { delivery: "native" as const } : {}),
+    skills: listed.map((skill) => {
+      const entry = byCapability.get(skill.capability)
+      return {
+        name: skill.name,
+        type: "skill-md" as const,
+        title: skill.title,
+        description: skill.description,
+        modelDiscovery: true,
+        url: skill.location,
+        capability: skill.capability,
+        ...(skill.marketplaceName ? { marketplaceName: skill.marketplaceName } : {}),
+        ...(skill.pluginName ? { pluginName: skill.pluginName } : {}),
+        ...(entry?.content ? { digest: entry.content.digest, size: entry.content.size } : {}),
+        ...(entry?.blocked ? { setup: entry.blocked } : {}),
+      }
+    }),
   }
+}
+
+/** Every listed skill's authorized source in one pass: built-ins in memory, marketplace skills batched, no Library use recorded. */
+export async function resolveAgentSkills(input: {
+  skills: RemoteSkillDescriptor[]
+  organizationId: string
+  member: Awaited<ReturnType<typeof resolveMcpMemberIdentity>>
+}): Promise<ResolvedSkill[]> {
+  const marketplace = await listAccessibleMarketplaceSkillSources({ organizationId: input.organizationId, member: input.member })
+  const sources = new Map<string, RemoteSkillSource>(marketplace)
+  for (const skill of input.skills) {
+    const builtin = executeBuiltinSkillCapability(skill.capability)
+    if (builtin) sources.set(skill.capability, { content: builtin.content, provenance: builtin.provenance })
+  }
+  return resolveSkills(input.skills, sources)
 }
 
 /** The authorized SKILL.md source behind one listed descriptor, shared by the skill:// resources and get_skill. */
@@ -332,6 +362,8 @@ export function registerAgentSkillResources(input: {
   skills: RemoteSkillDescriptor[]
   organizationId: string
   member: Awaited<ReturnType<typeof resolveMcpMemberIdentity>>
+  /** Resolved skills carry digests for native delivery. */
+  resolveSkills?: () => Promise<ResolvedSkill[]>
 }) {
   input.server.registerResource("agent-skills-index", AGENT_SKILL_INDEX_URI, {
     title: "Available Agent Skills",
@@ -341,7 +373,7 @@ export function registerAgentSkillResources(input: {
     contents: [{
       uri: AGENT_SKILL_INDEX_URI,
       mimeType: "application/json",
-      text: JSON.stringify(buildAgentSkillIndex(input.skills)),
+      text: JSON.stringify(buildAgentSkillIndex(input.skills, input.resolveSkills ? await input.resolveSkills() : undefined)),
     }],
   }))
   for (const skill of input.skills) {
@@ -433,7 +465,6 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     const member = await resolveMcpMember({
       userId: principal.userId,
       organizationId: principal.organizationId,
-      teamMembershipCache: organizationFeatures.teamMembershipCache,
     })
     const memberIdentity = member?.identity ?? null
     const notificationScope = `${principal.organizationId}\0${principal.userId}`
@@ -520,11 +551,26 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     const receiptScope = { organizationId, createdByUserId: normalizeDenTypeId("user", principal.userId) }
     const receiptStores = { commandStore: databaseRemoteSessionCommandStore, requestStore: databaseRemoteSessionRequestStore }
     const remoteSessionEventsEnabled = Boolean(memberIdentity && organizationFeatures.remoteSessionEvents)
+    // Member skill indexes carry digests for OpenWork's native delivery.
+    // The MCP Skills Extension is served and session
+    // instructions list the member's skills, for every MCP client.
+    const nativeSkills = Boolean(memberIdentity)
+    const skillsExtension = Boolean(memberIdentity)
+    let resolvedSkillsPromise: Promise<ResolvedSkill[]> | null = null
+    const loadResolvedSkills = (): Promise<ResolvedSkill[]> => resolvedSkillsPromise ??= (async () => resolveAgentSkills({
+      skills: await loadRemoteSkills(),
+      organizationId: principal.organizationId,
+      member: memberIdentity,
+    }))()
+    const advertisesInstructions = method === "initialize" || method === "server/discover"
     const server = createAgentMcpServer({
       appServers: appServersEnabled,
       remoteSessionEvents: remoteSessionEventsEnabled,
       remoteSessionStatus: Boolean(memberIdentity && organizationFeatures.remoteSessionSubagents),
+      skillsExtension,
+      skillIndex: skillsExtension && advertisesInstructions ? skillIndexInstructions(await loadRemoteSkills()) : undefined,
     })
+    if (skillsExtension) registerSkillsExtension(server, loadResolvedSkills)
     if (remoteSessionEventsEnabled) registerRemoteSessionReceiptResources({ server, ...receiptStores, ...receiptScope })
     registerAgentConnectionActionApp(server, { organizationId: principal.organizationId, member: memberIdentity })
     if (appServersEnabled) {
@@ -607,6 +653,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
         skills: await loadRemoteSkills(),
         organizationId: principal.organizationId,
         member: memberIdentity,
+        ...(nativeSkills ? { resolveSkills: loadResolvedSkills } : {}),
       })
       if (appServersEnabled) registerAppStarterResources(server)
       if (env.automations.runtimeEnabled) {

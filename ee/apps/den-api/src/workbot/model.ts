@@ -3,28 +3,24 @@ import { OrganizationTable } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
 import { db } from "../db.js"
-import { getOrganizationFeatures, type FeatureMap } from "../features.js"
+import { organizationFeatureEnabled } from "../features.js"
+import { cloudAgentGatewayCatalog } from "./gateway-model.js"
 import { createHeadlessRunnerClient, defaultHeadlessRunnerDeps, type HeadlessModelCatalog } from "../headless-runner/client.js"
+import { explicitWorkbotModel, workbotDefaultReadiness } from "./readiness.js"
 
 /**
  * The organization's default model for its cloud agents on the headless runner: Workbot, the Slack assistant, and
  * cloud Automations set to the cloud default. Admins choose it in Den › Manage › Workbot.
  *
  * It is a default, not a lock: an Automation with its own model keeps it. Null means the runner's default. A saved
- * model the runner no longer serves also gives null, so a removed model never breaks every chat. With Workbot
- * off the saved value is ignored and every caller keeps its earlier behaviour, which is what makes the kill switch
- * safe. One organization-wide value; per-team overrides could later be resolved on top of it here.
+ * model the runner no longer serves also gives null, so a removed model never breaks every chat.
+ * One organization-wide value; per-team overrides could later be resolved on top of it here.
  */
 export type OrganizationModelPolicy = {
-  /** Workbot is on: callers use `model` instead of their own earlier choice. */
+  /** Callers use `model`; false is reserved for an unavailable policy read. */
   enabled: boolean
   /** The model to send to the runner; null means the runner's default. Always null when not enabled. */
   model: string | null
-}
-
-/** The admin page exists, and the saved model applies, only while Workbot is on. */
-export function defaultModelFeatureOn(features: Pick<FeatureMap, "workbot">): boolean {
-  return features.workbot
 }
 
 const CATALOG_CACHE_MS = 60_000
@@ -58,6 +54,41 @@ export async function readOrganizationDefaultModel(organizationId: string): Prom
   return readWorkbotModel(organization?.metadata)
 }
 
+export type CloudModelActor = { organizationId: string; userId: string }
+
+export function cloudAgentGatewayEnabled(organizationId: string): Promise<boolean> {
+  return organizationFeatureEnabled(organizationId, "cloudAgentGateway")
+}
+
+/** One catalog boundary for settings and execution. Gateway reads are never shared across actors. */
+export async function cloudAgentModelCatalog(actor: CloudModelActor, refresh = false): Promise<HeadlessModelCatalog | null> {
+  if (await cloudAgentGatewayEnabled(actor.organizationId)) return cloudAgentGatewayCatalog(actor)
+  if (refresh) forgetHeadlessModelCatalog()
+  return headlessModelCatalog()
+}
+
+/** Selection only. Authorization belongs after the shared client's persisted-turn pin, at credential minting. */
+export async function organizationCloudModelSelection(actor: CloudModelActor, fallback: string | null = null): Promise<string | null> {
+  const chosen = await readOrganizationDefaultModel(actor.organizationId)
+  return chosen ?? fallback ?? (await cloudAgentGatewayCatalog(actor)).defaultModel
+}
+
+/**
+ * An organization default selects a model; it never grants inference access. In Gateway mode every
+ * caller must have its own usable assignment, and unavailable choices never fall back to a shared key.
+ */
+export async function organizationCloudModel(actor: CloudModelActor, fallback: string | null = null): Promise<string | null> {
+  if (!(await cloudAgentGatewayEnabled(actor.organizationId))) {
+    const policy = await organizationModelPolicy(actor.organizationId)
+    return policy.enabled ? policy.model : fallback
+  }
+  const catalog = await cloudAgentGatewayCatalog(actor)
+  const chosen = await readOrganizationDefaultModel(actor.organizationId)
+  const model = chosen ?? fallback ?? catalog.defaultModel
+  if (!model || !catalog.models.some((entry) => entry.id === model)) throw new Error("cloud_model_unavailable")
+  return model
+}
+
 /** The chosen model when the runner serves it (or can't say right now), otherwise null: the runner's default. */
 export function servableModel(chosen: string | null, catalog: HeadlessModelCatalog | null): string | null {
   if (!chosen) return null
@@ -66,10 +97,15 @@ export function servableModel(chosen: string | null, catalog: HeadlessModelCatal
 }
 
 /** What the admin page shows: the saved model, whether the runner still serves it, and what can be chosen. */
-export function workbotSettingsView(chosen: string | null, catalog: HeadlessModelCatalog | null) {
+export function workbotSettingsView(chosen: string | null, catalog: HeadlessModelCatalog | null, gatewayModels = false) {
+  const defaultReadiness = gatewayModels
+    ? catalog === null ? "unverified" : catalog.models.some((entry) => entry.id === catalog.defaultModel) ? "available" : "unavailable"
+    : workbotDefaultReadiness(catalog)
   return {
     model: chosen,
-    defaultModel: catalog?.defaultModel || null,
+    ...(gatewayModels ? { gatewayModels: true } : {}),
+    defaultModel: gatewayModels ? catalog?.defaultModel || null : explicitWorkbotModel(null, catalog),
+    defaultReadiness,
     models: catalog?.models ?? [],
     modelAvailable: chosen === null || catalog === null || catalog.models.some((entry) => entry.id === chosen),
     runnerReachable: catalog !== null,
@@ -79,18 +115,16 @@ export function workbotSettingsView(chosen: string | null, catalog: HeadlessMode
 /** A model may be saved only when the runner serves it right now; null (the runner's default) always may. */
 export function checkWorkbotModelChoice(model: string | null, catalog: HeadlessModelCatalog | null): "ok" | "unknown_model" | "runner_unavailable" {
   if (model === null) return "ok"
-  if (!catalog) return "runner_unavailable"
+  if (!catalog || catalog.verified !== true) return "runner_unavailable"
   return catalog.models.some((entry) => entry.id === model) ? "ok" : "unknown_model"
 }
 
 export type OrganizationModelPolicyDeps = {
-  features: (organizationId: string) => Promise<Pick<FeatureMap, "workbot">>
   chosenModel: (organizationId: string) => Promise<string | null>
   catalog: () => Promise<HeadlessModelCatalog | null>
 }
 
 const defaultDeps: OrganizationModelPolicyDeps = {
-  features: (organizationId) => getOrganizationFeatures(organizationId),
   chosenModel: readOrganizationDefaultModel,
   catalog: () => headlessModelCatalog(),
 }
@@ -99,13 +133,12 @@ export async function organizationModelPolicy(
   organizationId: string,
   deps: Partial<OrganizationModelPolicyDeps> = {},
 ): Promise<OrganizationModelPolicy> {
-  const { features, chosenModel, catalog } = { ...defaultDeps, ...deps }
-  if (!defaultModelFeatureOn(await features(organizationId))) return { enabled: false, model: null }
+  const { chosenModel, catalog } = { ...defaultDeps, ...deps }
   const chosen = await chosenModel(organizationId)
   return { enabled: true, model: chosen ? servableModel(chosen, await catalog()) : null }
 }
 
-/** The model the organization's cloud agents answer with, or null for the runner's default (also when off). */
+/** The model the organization's cloud agents answer with, or null for the runner's default. */
 export async function organizationDefaultModel(
   organizationId: string,
   deps: Partial<OrganizationModelPolicyDeps> = {},
@@ -114,8 +147,8 @@ export async function organizationDefaultModel(
 }
 
 /**
- * The model a headless Slack run sends: the organization default while the feature is on, otherwise the model saved
- * on the Slack installation, as before. Undefined means the runner's default. A failed read keeps Slack answering.
+ * The model a headless Slack run sends: the organization default for every organization; the model saved
+ * on the Slack installation is only an outage fallback. Undefined means the runner's default. A failed read keeps Slack answering.
  */
 export async function slackAssistantModel(
   installation: { organizationId: string; model: string | null },

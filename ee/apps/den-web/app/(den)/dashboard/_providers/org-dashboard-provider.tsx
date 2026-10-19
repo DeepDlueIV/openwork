@@ -11,6 +11,7 @@ import {
 import { flushSync } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { permissionsQueryKeys } from "../_components/permissions-query-keys";
+import { linkedWorkbotOrganization } from "../_lib/workbot-team-link";
 import { usePathname, useRouter } from "next/navigation";
 import { useDenFlow } from "../../_providers/den-flow-provider";
 import { getErrorMessage, getOrgLimitError, getOrgPaymentRequiredError, getRequestError, isReauthRequiredError, requestJson, WORKSPACE_REAUTH_SECURITY_MESSAGE } from "../../_lib/den-flow";
@@ -171,9 +172,10 @@ export function OrgDashboardProvider({
     return parseOrgListPayload(payload);
   }
 
-  async function setActiveOrganization(input: { organizationId?: string | null; organizationSlug?: string | null }) {
+  async function setActiveOrganization(input: { organizationId?: string | null; organizationSlug?: string | null }, workbotLink = false) {
     const { response, payload } = await requestJson(
-      "/api/auth/organization/set-active",
+      // The supported database-session route works for both bearer and cookie-backed Den visits.
+      workbotLink ? "/v1/me/active-organization" : "/api/auth/organization/set-active",
       {
         method: "POST",
         body: JSON.stringify(input),
@@ -253,11 +255,16 @@ export function OrgDashboardProvider({
     setMutationBusy((current) => current === "switch-organization" ? null : current);
     setOrgSelectionOpen(false);
     setOrgError(null);
-    const displayedOrgId = setupOrganizationId ?? orgLoadRef.current.organizationId;
+    const hasWorkbotLink = new URL(window.location.href).searchParams.has("workbotOrganizationId");
 
     try {
       let directoryPayload = await loadOrgDirectory();
       if (!isCurrent()) return;
+      const linkedOrgId = linkedWorkbotOrganization(window.location.href, directoryPayload.orgs);
+      if (linkedOrgId && setupOrganizationId && linkedOrgId !== setupOrganizationId) {
+        throw new Error("Finish your workspace setup before opening another team's settings.");
+      }
+      const displayedOrgId = linkedOrgId ?? setupOrganizationId ?? orgLoadRef.current.organizationId;
       // Always consume the handshake, including required-picker and setup loads.
       const selectionRequested = consumeOrgSelectionRequest();
       // A direct dashboard visit may restore only when no explicit/session org
@@ -290,7 +297,7 @@ export function OrgDashboardProvider({
       }
 
       if (displayedOrg && !displayedOrg.isActive) {
-        await setActiveOrganization({ organizationId: displayedOrg.id });
+        await setActiveOrganization({ organizationId: displayedOrg.id }, linkedOrgId !== null);
         if (!isCurrent()) return;
         directoryPayload = await loadOrgDirectory();
         if (!isCurrent()) return;
@@ -335,7 +342,7 @@ export function OrgDashboardProvider({
       // Single-org deployments never surface the picker; otherwise the
       // org-selection module decides from the directory plus any pending
       // sign-in request.
-      if (!setupOrganizationId && !isSingleOrgMode && shouldOpenOrgSelection(directoryPayload.orgs, selectionRequested)) {
+      if (!linkedOrgId && !setupOrganizationId && !isSingleOrgMode && shouldOpenOrgSelection(directoryPayload.orgs, selectionRequested)) {
         orgLoadRef.current.organizationId = null;
         setRequestOrgScope(null);
         setOrgDirectory(directoryPayload.orgs);
@@ -353,6 +360,13 @@ export function OrgDashboardProvider({
 
       const context = await loadOrgContext(targetOrg.id);
       if (!isCurrent()) return;
+      if (linkedOrgId) {
+        if (!orgFeatureEnabled(context, "workbotTeamLinks")) throw new Error("Team links are off for this workspace. A platform admin can turn them on.");
+        // Consume only after the exact workspace loaded. Later explicit switches stay authoritative.
+        const url = new URL(window.location.href);
+        url.searchParams.delete("workbotOrganizationId");
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      }
 
       setOrgDirectory(directoryPayload.orgs.map((entry) => ({ ...entry, isActive: entry.id === context.organization.id })));
       setOrgContext(context);
@@ -360,8 +374,8 @@ export function OrgDashboardProvider({
       if (!isCurrent()) return;
       setRequestOrgScope(null);
       setOrgContext(null);
-      if (setupOrganizationId) {
-        setOrgError(error instanceof Error ? error.message : "Could not restore your setup workspace.");
+      if (setupOrganizationId || hasWorkbotLink) {
+        setOrgError(error instanceof Error ? error.message : "Could not restore the linked workspace.");
         return;
       }
       if (error instanceof OrganizationNotFoundError) {

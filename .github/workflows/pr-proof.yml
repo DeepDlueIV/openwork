@@ -146,6 +146,13 @@ jobs:
       - uses: ./.github/actions/setup-browser
         with:
           oauth-handoff: "true"
+      # Electron 43 installs its executable lazily rather than in postinstall.
+      # Keep that download outside the native world's CDP startup deadline.
+      - name: Install and verify the locked Electron runtime
+        timeout-minutes: 5
+        run: |
+          pnpm --filter @openwork/desktop exec install-electron
+          pnpm --filter @openwork/desktop exec node -e 'const fs = require("node:fs"); const binary = require("electron"); fs.accessSync(binary, fs.constants.X_OK); console.log("Electron executable is ready")'
       - name: Build local Den dependencies
         uses: ./.github/actions/den-deps
       - name: Run the selected changed spec on the PR head

@@ -765,7 +765,7 @@ function buildFixtureOrganization(index: number, includeFeatures = false): Admin
     seatsFreeAdditional: target ? 20 : 0,
     billableSeatCount: target ? 103 : 0,
     features: includeFeatures ? mapFeatures((key) => {
-      const enabled = target && (key === "permissions" || key === "workbot");
+      const enabled = target && (key === "secureSecretFields" || key === "workbotTeamLinks");
       return { enabled, source: "everyone", everyone: enabled, killed: false, override: null, overrideApplies: true };
     }) : null,
     openworkWebAccess: {
@@ -1149,7 +1149,6 @@ function formatHours(hours: number | null): string {
 function formatOptionalCount(value: number | null): string {
   return value === null ? "Deferred" : String(value);
 }
-
 
 function formatUsageAmount(value: number): string {
   return new Intl.NumberFormat(undefined, {

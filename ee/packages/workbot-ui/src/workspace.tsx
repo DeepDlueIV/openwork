@@ -11,6 +11,8 @@ import { workbotHost, useRetainedSurface } from "./host";
 
 export type WorkspacePage = "home" | "calendar" | "documents";
 export const WorkspaceNavigationContext = createContext<((fileId: string) => void) | null>(null);
+/** The document on screen right now, so a reply never offers to open what is already open. */
+export const OpenDocumentContext = createContext<string | null>(null);
 const control = "grid size-8 shrink-0 place-items-center rounded-lg text-[var(--wb-muted)] hover:bg-[var(--wb-chip)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]";
 
 /** A result offers navigation; only the person's ordinary click opens a file in Workbot. */
@@ -24,19 +26,18 @@ export function WorkspaceLink({ href, children }: { href: string; children: Reac
   }}>{children}</a>;
 }
 
-/** Guided navigation: the first documents a reply links to, as explicit Open actions under it. */
+/** Guided navigation: one quiet action for the first document a reply links to; any others stay inline links. */
 export function DocumentOffers({ links }: { links: Array<{ fileId: string; label: string }> }) {
   const open = useContext(WorkspaceNavigationContext);
-  if (!open || !workbotHost().guidedNavigation || links.length === 0) return null;
-  return <ul className="flex flex-wrap gap-2 pl-1 pt-2" data-workbot-document-offers>
-    {links.slice(0, 2).map(link => <li key={link.fileId} className="min-w-0">
-      <button type="button" onClick={() => open(link.fileId)} title={`Open ${link.label} in Documents`}
-        className="flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-[var(--wb-surface)] px-3 text-[13px] text-[var(--wb-text)] shadow-[0_0_0_1px_var(--wb-ring)] transition-shadow duration-150 hover:shadow-[0_0_0_1px_var(--wb-disabled)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
-        data-testid="workbot-document-offer">
-        <FileText size={14} strokeWidth={1.5} aria-hidden className="shrink-0" /><span className="truncate">Open {link.label}</span>
-      </button>
-    </li>)}
-  </ul>;
+  const current = useContext(OpenDocumentContext);
+  const first = links[0];
+  if (!open || !workbotHost().guidedNavigation || !first || first.fileId === current) return null;
+  return <div className="workbot-row-enter flex min-h-7 items-center pt-1" data-workbot-document-offer>
+    <button type="button" onClick={() => open(first.fileId)} title="Open in Documents"
+      className="flex h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium leading-4 text-[var(--wb-text)] transition-colors duration-150 hover:bg-[var(--wb-chip)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]">
+      <FileText size={14} strokeWidth={1.75} aria-hidden className="shrink-0 text-[var(--wb-muted)]" /><span className="truncate">Open {first.label}</span>
+    </button>
+  </div>;
 }
 
 /** One navigation drawer, backed by the signed-in member's Drive metadata. */

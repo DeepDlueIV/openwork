@@ -1,3 +1,4 @@
+import type { HeadlessModelAccess } from "@openwork-ee/headless-protocol"
 import type { ResumeExchange, ResumeExchangeResult } from "./den-resume.js"
 import type { ErrorReporter } from "./error-reporting.js"
 import type { GrantVault } from "./resume-grants.js"
@@ -19,7 +20,7 @@ import type { Store } from "./store.js"
 /** Why a turn stopped, for the turns the runner resumes itself. */
 export const SELF_RESUMED_ERRORS = ["runner_restarted", "runner_shutdown", "credentials_refresh"] as const
 
-export type FreshCredentials = { mcpToken: string; readOnly: boolean }
+export type FreshCredentials = { mcpToken: string; readOnly: boolean; modelAccess?: HeadlessModelAccess }
 /** What the sweep needs from the runner: the caller's own re-send. */
 export type ResumeSend = (input: { sessionId: string; messageId: string; credentials: FreshCredentials & { resumeGrant: string } }) => { ok: boolean; state?: string }
 export type SweepResult = { resumed: number; waiting: number; failed: number }
@@ -79,13 +80,17 @@ export class SelfResume {
   /** A fresh token for a running turn (in place of pausing it), or null when Den won't give one now. */
   async refresh(sessionId: string, messageId: string, grant: string): Promise<FreshCredentials | null> {
     if (this.configError) return null
-    const result = await this.options.exchange({ grant, sessionId, messageId })
+    const { store } = this.options
+    const modelAccessRequired = store.modelAccessRequired(sessionId, messageId)
+    const model = store.getTurn(sessionId, messageId)?.model
+    const result = await this.options.exchange({ grant, sessionId, messageId, ...(modelAccessRequired ? { modelAccessRequired: true, ...(model ? { model } : {}) } : {}) })
     if (!result.ok) {
       await this.failed(sessionId, messageId, grant, result, "refresh")
       return null
     }
+    if (modelAccessRequired && !result.modelAccess) return null
     this.retries.delete(keyOf(sessionId, messageId))
-    return { mcpToken: result.mcpToken, readOnly: result.readOnly }
+    return { mcpToken: result.mcpToken, readOnly: result.readOnly, ...(result.modelAccess ? { modelAccess: result.modelAccess } : {}) }
   }
 
   /**
@@ -120,7 +125,8 @@ export class SelfResume {
         void this.options.errors?.report({ code: "resume_grant_unreadable", level: "warning", tags: { sessionId, messageId } })
         continue
       }
-      const exchanged = await this.options.exchange({ grant, sessionId, messageId })
+      const modelAccessRequired = store.modelAccessRequired(sessionId, messageId)
+      const exchanged = await this.options.exchange({ grant, sessionId, messageId, ...(modelAccessRequired ? { modelAccessRequired: true, ...(turn.model ? { model: turn.model } : {}) } : {}) })
       if (!exchanged.ok) {
         result.failed += 1
         await this.failed(sessionId, messageId, grant, exchanged, "sweep")
@@ -128,11 +134,16 @@ export class SelfResume {
         if (exchanged.kind === "retryable" && exchanged.code !== "rate_limited") break
         continue
       }
+      if (modelAccessRequired && !exchanged.modelAccess) {
+        this.backOff(sessionId, messageId)
+        result.waiting += 1
+        continue
+      }
       this.retries.delete(keyOf(sessionId, messageId))
       // A caller may have resumed or stopped it while Den answered; only a turn still waiting is resumed.
       const current = store.getTurn(sessionId, messageId)
       if (current?.status !== "interrupted" || !isSelfResumed(current.error)) continue
-      const sent = send({ sessionId, messageId, credentials: { mcpToken: exchanged.mcpToken, readOnly: exchanged.readOnly, resumeGrant: grant } })
+      const sent = send({ sessionId, messageId, credentials: { mcpToken: exchanged.mcpToken, readOnly: exchanged.readOnly, resumeGrant: grant, ...(exchanged.modelAccess ? { modelAccess: exchanged.modelAccess } : {}) } })
       if (sent.ok && sent.state === "resumed") {
         result.resumed += 1
         console.log(`[headless-runner] turn resumed by the runner ${JSON.stringify({ sessionId, messageId, reason: turn.error })}`)

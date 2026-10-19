@@ -22,7 +22,8 @@
     "worker:e2e:celld": "pnpm --filter @openwork-ee/headless-protocol build && tsx scripts/owner-cells-e2e.ts --celld",
     "test:conversation": "tsx --test scripts/conversation.test.ts scripts/workbot-telemetry.test.ts",
     "test:transfer": "tsx --test scripts/transfer.test.ts",
-    "test:self-resume": "tsx --test scripts/self-resume.test.ts"
+    "test:self-resume": "tsx --test scripts/self-resume.test.ts",
+    "test:scoped-model-access": "tsx --test scripts/scoped-model-access.test.ts scripts/scoped-model-pin.test.ts scripts/owner-fenced-read.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.0.12",

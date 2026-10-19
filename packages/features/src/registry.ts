@@ -53,6 +53,13 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  cloudAgentGateway: {
+    label: "Cloud agents use the organization AI Gateway",
+    description: "Choose and run cloud-agent models through the organization's AI Gateway access instead of the runner's shared model credentials.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   modelRemovalRecovery: {
     label: "Model removal recovery",
     description: "Keep a chat on its chosen model until removal is verified, then offer a nearby model with a quiet, reversible note.",

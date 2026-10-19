@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "cloudAgentGateway": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Cloud agents use the organization AI Gateway: Choose and run cloud-agent models through the organization's AI Gateway access instead of the runner's shared model credentials. Renders DEN_FEATURE_CLOUD_AGENT_GATEWAY."
+            },
             "modelRemovalRecovery": {
               "enum": [
                 "",

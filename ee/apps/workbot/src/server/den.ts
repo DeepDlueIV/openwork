@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { z } from "zod"
+import { headlessModelAccessSchema } from "@openwork-ee/headless-protocol"
 import type { Tokens } from "./sealed.js"
 
 /**
@@ -39,6 +40,14 @@ export const denSessionSchema = z.object({
   /** The organization's default model for Workbot's turns. Null, or a Den from before it, means the runner's default. */
   model: z.string().nullable().default(null),
   verifyModel: z.boolean().default(false),
+  /** Den validates the exact gateway alias and mints model access for each turn. Older Dens stay on runner credentials. */
+  gatewayModels: z.boolean().default(false),
+})
+
+const runTokenSchema = z.object({
+  token: z.string(),
+  resumeGrant: z.string().optional(),
+  modelAccess: headlessModelAccessSchema.optional(),
 })
 export type DenSession = z.infer<typeof denSessionSchema>
 
@@ -188,17 +197,20 @@ export function createDen(options: { apiUrl: string; publicUrl: string; serviceT
      */
     async runToken(
       accessToken: string,
-      input: { readOnly?: boolean; sessionId?: string; messageId?: string } = {},
-    ): Promise<{ token: string; resumeGrant?: string }> {
+      input: { readOnly?: boolean; sessionId?: string; messageId?: string; model?: string; gatewayModels?: boolean; modelAccessRequired?: boolean } = {},
+    ): Promise<z.infer<typeof runTokenSchema>> {
       const body = {
         ...(input.readOnly !== undefined ? { readOnly: input.readOnly } : {}),
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.messageId ? { messageId: input.messageId } : {}),
+        ...((input.gatewayModels || input.modelAccessRequired) && input.model ? { model: input.model } : {}),
+        ...(input.modelAccessRequired ? { modelAccessRequired: true } : {}),
       }
       const { status, payload } = await authorized("POST", "/v1/workbot/run-token", accessToken, body)
-      const parsed = z.object({ token: z.string(), resumeGrant: z.string().optional() }).safeParse(payload)
+      const parsed = runTokenSchema.safeParse(payload)
+      // Never include the response body or validation issues: they may contain model credentials.
       if (status !== 200 || !parsed.success) throw new Error(`den_run_token_${status}`)
-      return parsed.data.resumeGrant ? { token: parsed.data.token, resumeGrant: parsed.data.resumeGrant } : { token: parsed.data.token }
+      return parsed.data
     },
     /** The Gmail, Slack and Microsoft 365 connections the person's admins set up, and whether each is ready for them. */
     async connections(accessToken: string) {

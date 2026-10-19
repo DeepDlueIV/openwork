@@ -43,6 +43,7 @@ const turnRow = z.object({
   message_id: z.string(),
   status: turnStatusSchema,
   model: z.string().nullable(),
+  model_access_required: z.number().optional(),
   error: z.string().nullable(),
   input_tokens: z.number(),
   cached_input_tokens: z.number(),
@@ -153,6 +154,8 @@ export type Turn = {
   messageId: string
   status: TurnStatus
   model: string | null
+  /** Nonsecret durable policy: callers must reacquire scoped access even after a rollout is disabled. */
+  modelAccessRequired?: boolean
   error: string | null
   /**
    * What the model provider said when the turn failed (its error message and request id), for logs and support.
@@ -233,6 +236,7 @@ function toTurn(row: unknown): Turn {
     messageId: value.message_id,
     status: value.status,
     model: value.model,
+    ...(value.model_access_required === 1 ? { modelAccessRequired: true } : {}),
     error: value.error,
     ...(value.error_detail ? { errorDetail: value.error_detail } : {}),
     usage: { inputTokens: value.input_tokens, cachedInputTokens: value.cached_input_tokens, outputTokens: value.output_tokens },
@@ -249,7 +253,7 @@ function toTurn(row: unknown): Turn {
  * their state. The prompt is read where it is needed (startTranscript, waitingPrompts).
  */
 const TURN_COLUMNS =
-  "session_id, message_id, status, model, error, input_tokens, cached_input_tokens, output_tokens, created_at, updated_at, kind, parent, title, error_detail"
+  "session_id, message_id, status, model, model_access_required, error, input_tokens, cached_input_tokens, output_tokens, created_at, updated_at, kind, parent, title, error_detail"
 
 /** Leaves out background tasks' own transcripts: the conversation hears from a task through its report. */
 const CONVERSATION_ROWS = "message_id NOT IN (SELECT message_id FROM turns WHERE session_id = ? AND kind = 'task')"
@@ -342,6 +346,8 @@ export class Store {
     this.db.exec("CREATE INDEX IF NOT EXISTS sessions_by_owner ON sessions (owner, updated_at)")
     // A turn's resume grant, encrypted (see resume-grants.ts), and finding interrupted turns without reading them all.
     if (!turnColumns.includes(RESUME_GRANT_COLUMN)) this.db.exec(`ALTER TABLE turns ADD COLUMN ${RESUME_GRANT_COLUMN} TEXT`)
+    // Nonsecret downgrade guard: scoped inference must be reacquired, never replaced by a deployment key.
+    if (!turnColumns.includes("model_access_required")) this.db.exec("ALTER TABLE turns ADD COLUMN model_access_required INTEGER NOT NULL DEFAULT 0")
     this.db.exec("CREATE INDEX IF NOT EXISTS turns_by_status ON turns (status)")
   }
 
@@ -577,11 +583,12 @@ export class Store {
     kind?: "task" | "report"
     parent?: string
     title?: string
+    modelAccessRequired?: boolean
   }): Turn {
     const at = this.now()
     this.db
       .prepare(
-        "INSERT INTO turns (session_id, message_id, status, prompt, model, error, attachments, kind, parent, title, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO turns (session_id, message_id, status, prompt, model, error, attachments, kind, parent, title, model_access_required, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         input.sessionId,
@@ -592,6 +599,7 @@ export class Store {
         input.kind ?? null,
         input.parent ?? null,
         input.title ?? null,
+        input.modelAccessRequired ? 1 : 0,
         at,
         at,
       )
@@ -631,6 +639,16 @@ export class Store {
          output_tokens = output_tokens + ? WHERE session_id = ? AND message_id = ?`,
       )
       .run(usage.inputTokens, usage.cachedInputTokens, usage.outputTokens, sessionId, messageId)
+  }
+
+  /** Only a nonsecret boolean is durable; endpoint credentials stay in the runner's memory. */
+  modelAccessRequired(sessionId: string, messageId: string): boolean {
+    const row = this.db.prepare("SELECT model_access_required FROM turns WHERE session_id = ? AND message_id = ?").get(sessionId, messageId)
+    return z.object({ model_access_required: z.number() }).parse(row).model_access_required === 1
+  }
+
+  requireModelAccess(sessionId: string, messageId: string) {
+    this.db.prepare("UPDATE turns SET model_access_required = 1 WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
   }
 
   /** Keeps (or, with null, forgets) a turn's encrypted resume grant. Never part of a turn as callers read it. */

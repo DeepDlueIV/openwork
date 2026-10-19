@@ -9,7 +9,7 @@ import { mediaTypeFor, SavedFiles, SAVED_FILE_TOOL_NAMES } from "./saved-files.j
 import type { Config } from "./config.js"
 import { FILE_TOOL_NAMES } from "./files.js"
 import { remoteMcpConnector } from "./mcp.js"
-import { anthropicModel, openAIModel, openAIResponsesModel } from "./model.js"
+import { anthropicModel, createModelAdapter, openAIModel, openAIResponsesModel } from "./model.js"
 import { gatewayModelCatalog } from "./model-catalog.js"
 import { createModelProbe } from "./model-probe.js"
 export { gatewayModelCatalog } from "./model-catalog.js"
@@ -65,6 +65,7 @@ export async function createRuntime(config: Config, store: Store) {
           : openAIModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch }),
     defaultModel: config.model.model,
     defaultModelApiKey: config.model.defaultApiKey,
+    modelForAccess: (access) => createModelAdapter(access, { maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch }),
     mcp: config.mcp
       ? remoteMcpConnector({
           url: config.mcp.url,

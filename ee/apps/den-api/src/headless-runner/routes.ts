@@ -2,6 +2,7 @@ import * as crypto from "node:crypto"
 import type { Env, Hono } from "hono"
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi"
 import { z } from "zod"
+import { headlessModelAccessSchema } from "@openwork-ee/headless-protocol"
 import { attributeAuditRequest, auditServiceAttribution } from "../audit/request-capture.js"
 import { env } from "../env.js"
 import { tokenRoute } from "../middleware/index.js"
@@ -25,9 +26,11 @@ const exchangeBodySchema = z.object({
   grant: z.string().min(1).max(256),
   sessionId: z.string().min(1).max(256),
   messageId: z.string().min(1).max(256),
+  model: z.string().min(1).max(512).optional(),
+  modelAccessRequired: z.boolean().optional(),
 }).strict()
 
-const exchangeResponseSchema = z.object({ mcpToken: z.string(), expiresAt: z.iso.datetime(), readOnly: z.boolean() })
+const exchangeResponseSchema = z.object({ mcpToken: z.string(), expiresAt: z.iso.datetime(), readOnly: z.boolean(), modelAccess: headlessModelAccessSchema.optional() })
 const exchangeErrorSchema = z.object({
   error: z.enum([
     "not_found",
@@ -38,6 +41,7 @@ const exchangeErrorSchema = z.object({
     "grant_revoked",
     "grant_mismatch",
     "membership_inactive",
+    "model_unavailable",
     "feature_disabled",
     "exchange_failed",
   ]),
@@ -85,7 +89,7 @@ export function registerHeadlessRunnerRoutes<T extends Env>(app: Hono<T>) {
 
       const body = exchangeBodySchema.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json({ error: "invalid_request" as const }, 400)
-      const { grant, sessionId, messageId } = body.data
+      const { grant, sessionId, messageId, model, modelAccessRequired } = body.data
 
       try {
         const row = await findHeadlessResumeGrant(grant)
@@ -98,9 +102,9 @@ export function registerHeadlessRunnerRoutes<T extends Env>(app: Hono<T>) {
         })
         if (!audited.ok) return audited.response
 
-        const result = await exchangeHeadlessResumeGrant(row, { sessionId, messageId, memberId })
+        const result = await exchangeHeadlessResumeGrant(row, { sessionId, messageId, memberId, model, modelAccessRequired })
         if (result.ok) {
-          return c.json({ mcpToken: result.mcpToken, expiresAt: result.expiresAt.toISOString(), readOnly: result.readOnly }, 200)
+          return c.json({ mcpToken: result.mcpToken, expiresAt: result.expiresAt.toISOString(), readOnly: result.readOnly, ...(result.modelAccess ? { modelAccess: result.modelAccess } : {}) }, 200)
         }
         if (result.status === 429) {
           c.header("retry-after", String(Math.ceil(result.retryAfterMs / 1000)))

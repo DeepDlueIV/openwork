@@ -128,7 +128,9 @@ test("a member handles a document request needing sign-in without replacing its 
   await step("a different signed-in person cannot reveal the retained draft even with file access", async () => {
     world.restoreSession();
     world.useOtherIdentity();
-    await user.click({ role: "button", label: "Check access and restore tabs" });
+    // The document's 401 may already have started the parent's identity check.
+    // Use its visible recovery action if it has masked the retained workspace.
+    await user.click({ role: "button", label: /^(?:Check access and restore tabs|Check sign-in)$/ });
     await user.see({ text: "The signed-in account or workspace changed. Retained documents are locked." });
     await user.notSee({ role: "textbox", label: "Document text" });
     await user.notSee({ text: "Project brief.txt" });

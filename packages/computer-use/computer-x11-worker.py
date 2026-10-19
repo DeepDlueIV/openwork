@@ -40,6 +40,27 @@ def focused_windows():
     return found
 
 
+def window_chain(window):
+    # The window and its ancestors below the root, so a WM frame or a child
+    # widget of the approved window still counts as that window.
+    chain = []
+    while window and len(chain) < 32:
+        chain.append(window)
+        tree = subprocess.run(["xwininfo", "-children", "-id", str(window)], check=True, capture_output=True, text=True, timeout=3).stdout
+        root = re.search(r"Root window id: (0x[0-9a-fA-F]+)", tree)
+        parent = re.search(r"Parent window id: (0x[0-9a-fA-F]+)", tree)
+        if not parent or (root and int(parent.group(1), 16) == int(root.group(1), 16)):
+            break
+        window = int(parent.group(1), 16)
+    return chain
+
+
+def pointer_on(window_id):
+    location = dict(line.split("=", 1) for line in command("getmouselocation", "--shell").splitlines() if "=" in line)
+    under = int(location.get("WINDOW", "0"))
+    return under != 0 and (window_id in window_chain(under) or under in window_chain(window_id))
+
+
 def check(event, deadline):
     if event.is_set() or time.monotonic() >= deadline:
         raise RuntimeError("Input stopped before the remaining steps")
@@ -64,6 +85,14 @@ def run_actions(request, event):
             check(event, deadline)
             if int(request["windowId"]) not in focused_windows():
                 raise RuntimeError("Another window took focus; no further keys were sent")
+        return send(*args)
+    def send_pointer(*args):
+        # Buttons and wheel clicks go to whichever window is under the pointer.
+        # Stop instead of clicking an unapproved window that covers the target.
+        if request.get("windowId") is not None:
+            check(event, deadline)
+            if not pointer_on(int(request["windowId"])):
+                raise RuntimeError("Another window covers the target; nothing was clicked")
         return send(*args)
     def move(point):
         position = ["mousemove"]
@@ -99,7 +128,7 @@ def run_actions(request, event):
                     held_keys.append(key)
                 move(action)
                 for _ in range({"click": 1, "double_click": 2, "triple_click": 3}[kind]):
-                    send("mousedown", 1)
+                    send_pointer("mousedown", 1)
                     button_down = True
                     # Release must happen even if cancellation races the down event.
                     command("mouseup", 1)
@@ -111,7 +140,7 @@ def run_actions(request, event):
             elif kind == "drag":
                 points = action["path"]
                 move(points[0])
-                send("mousedown", 1)
+                send_pointer("mousedown", 1)
                 button_down = True
                 for point in points[1:]:
                     move(point)
@@ -123,7 +152,7 @@ def run_actions(request, event):
                 for name, positive, negative in [("delta_y", 4, 5), ("delta_x", 6, 7)]:
                     distance = action.get(name, 0)
                     for _ in range(min(24, round(abs(distance) / 100))):
-                        send("click", positive if distance > 0 else negative)
+                        send_pointer("click", positive if distance > 0 else negative)
                         event.wait(0.01)
             elif kind in ["press", "set_value"]:
                 attempted = True

@@ -1,14 +1,26 @@
 import type { Seed } from "@openwork/env";
 import { desktop } from "@openwork/hosts";
 import { browserScript } from "@openwork/cdp";
-import { control, evalIn, quitDesktop } from "@openwork/behaviors";
+import { control, engineSessionProbe, evalIn, quitDesktop } from "@openwork/behaviors";
 import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 export async function engineUpgradeStartup(seed: Seed) {
   const den = await seed.den({ web: true });
   const profileDir = seed.tmpPath("engine-upgrade-startup-profile");
-  const app = await seed.desktop({ den, as: "admin", profileDir, workspacePath: seed.tmpPath("retained-project"), env: { OPENWORK_ENGINE_V2_PREVIEW: "0" } });
-  const session = await seed.session(app, { title: "Retained project note" });
+  const workspacePath = seed.tmpPath("retained-project");
+  const app = await seed.desktop({ den, as: "admin", profileDir, workspacePath, env: { OPENWORK_ENGINE_V2_PREVIEW: "0" } });
+  // Arrange real persisted history, not a model-dependent first-send UI turn.
+  // A cold engine can still be starting after the renderer becomes interactive.
+  const history = engineSessionProbe({ engine: "v1", surface: app, workspaceId: app.workspaceId });
+  const deadline = Date.now() + 60000;
+  while (true) {
+    try { if ((await history.list(1)).ok) break; } catch (error) { if (Date.now() >= deadline) throw error; }
+    if (Date.now() >= deadline) throw new Error("The initial v1 engine did not become ready");
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  const created = await history.create(workspacePath, "Retained project note");
+  if (!created.ok || !created.data) throw new Error(`Creating retained history: HTTP ${created.status}`);
+  const session = created.data;
   const note = "Keep this note readable while deciding whether to upgrade chats.";
   await evalIn(app, browserScript(async (workspace, sessionId, text) => {
     const info = await window.__OPENWORK_ELECTRON__.invokeDesktop("openworkServerInfo");
@@ -18,7 +30,7 @@ export async function engineUpgradeStartup(seed: Seed) {
       body: JSON.stringify({ noReply: true, parts: [{ type: "text", text }] }),
     });
     if (!response.ok) throw new Error(`Creating retained history: HTTP ${response.status}`);
-  }, [app.workspaceId, session.sessionId, note]), { awaitPromise: true });
+  }, [app.workspaceId, session.id, note]), { awaitPromise: true });
   await enableOrganizationCapabilities(seed, den.admin, { engineV2Upgrade: true });
   const origin = String(await evalIn(app, () => location.origin));
   const port = app.handle.meta?.vitePort;

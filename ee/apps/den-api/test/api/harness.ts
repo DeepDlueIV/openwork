@@ -176,7 +176,7 @@ export async function startFakeHttpServer(handler: FakeHandler): Promise<{ url: 
 }
 
 export type FakeMcpTool = { name: string; description: string; text: string }
-export type WireEntry = { path: string; rpcMethod: string; authorization: string; status: number }
+export type WireEntry = { path: string; rpcMethod: string; authorization: string; status: number; sessionId?: string }
 /**
  * What the fake MCP server answers for one request. `reply` = speak MCP;
  * otherwise a bare status (with optional headers/body), as a real service might.
@@ -205,19 +205,23 @@ export async function startFakeMcpServer(options: {
     }
     const path = request.url ?? "/"
     const authorization = request.headers.authorization ?? ""
+    const sessionHeader = request.headers["mcp-session-id"]
+    const sessionId = rpcMethod === "initialize"
+      ? randomBytes(16).toString("hex")
+      : typeof sessionHeader === "string" ? sessionHeader : undefined
     const decision = options.decide?.({ path, rpcMethod, authorization, rpcId }) ?? { reply: true }
     if (!decision.reply) {
-      wire.push({ path, rpcMethod, authorization, status: decision.status })
+      wire.push({ path, rpcMethod, authorization, status: decision.status, sessionId })
       response.writeHead(decision.status, decision.headers ?? {}).end(decision.body ?? "")
       return
     }
     if (request.method !== "POST") {
-      wire.push({ path, rpcMethod, authorization, status: 405 })
+      wire.push({ path, rpcMethod, authorization, status: 405, sessionId })
       response.writeHead(405).end()
       return
     }
     if (rpcId === null) {
-      wire.push({ path, rpcMethod, authorization, status: 202 })
+      wire.push({ path, rpcMethod, authorization, status: 202, sessionId })
       response.writeHead(202).end()
       return
     }
@@ -235,8 +239,11 @@ export async function startFakeMcpServer(options: {
     } else {
       result = {}
     }
-    wire.push({ path, rpcMethod, authorization, status: 200 })
-    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: rpcId, result }))
+    wire.push({ path, rpcMethod, authorization, status: 200, sessionId })
+    response.writeHead(200, {
+      "content-type": "application/json",
+      ...(rpcMethod === "initialize" && sessionId ? { "mcp-session-id": sessionId } : {}),
+    }).end(JSON.stringify({ jsonrpc: "2.0", id: rpcId, result }))
   })
   return { ...server, wire }
 }

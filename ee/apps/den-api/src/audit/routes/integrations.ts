@@ -98,6 +98,9 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   external("POST", `${GW}/drive-folders`, "capability.google_drive.folder.create", GWK, res("google_drive_file"), GOOGLE, CAP),
   external("POST", `${GW}/drive-file-share/:fileId`, "capability.google_drive.file.share", GWK, res("google_drive_file", "fileId"), GOOGLE, `${CAP} Grants Drive permissions to other principals.`),
   read(`${GW}/spreadsheets/:spreadsheetId`, "capability.google_sheets.spreadsheet.read", GWK, res("google_spreadsheet", "spreadsheetId"), `${CAP} Metadata only.`),
+  access("GET", `${GW}/documents/:documentId/outline`, "capability.google_docs.outline.read", GWK, res("google_document", "documentId"), `${CAP} Bounded tab and heading labels; document content is not audit evidence.`),
+  access("GET", `${GW}/documents/:documentId/text`, "capability.google_docs.text.read", GWK, res("google_document", "documentId"), `${CAP} Bounded body passages; document text and search query are not audit evidence.`),
+  external("POST", `${GW}/documents/:documentId/replace-text`, "capability.google_docs.text.replace", GWK, res("google_document", "documentId"), GOOGLE, `${CAP} Exact passage and required revision; old and new text are never audit evidence.`),
   access("GET", `${GW}/spreadsheets/:spreadsheetId/values`, "capability.google_sheets.values.read", GWK, res("google_spreadsheet", "spreadsheetId"), CAP_CONTENT),
   external("POST", `${GW}/spreadsheets`, "capability.google_sheets.spreadsheet.create", GWK, res("google_spreadsheet"), GOOGLE, CAP),
   external("PUT", `${GW}/spreadsheets/:spreadsheetId/values`, "capability.google_sheets.values.update", GWK, res("google_spreadsheet", "spreadsheetId"), GOOGLE, CAP),
@@ -107,6 +110,8 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   external("POST", "/v1/direct-uploads/google-workspace/drive-files", "capability.google_drive.file.upload", GWK, res("google_drive_file"), GOOGLE, "cloudTransportRoute (MCP OAuth token, org from token); host file transport, bytes not echoed. Conditional token refresh write."),
   read("/v1/direct-downloads/google-workspace/drive-files/:fileId", "capability.google_drive.host_download.prepare", GWK, res("google_drive_file", "fileId"), "cloudTransportReadRoute (MCP OAuth token, org from token); file metadata and pull plan only, no content."),
   access("GET", "/v1/direct-downloads/google-workspace/drive-files/:fileId/content", "capability.google_drive.host_download.content", GWK, res("google_drive_file", "fileId"), "cloudTransportReadRoute; streams the member's file bytes to their host, never stored or used as audit evidence. Conditional token refresh write."),
+  access("POST", `${GW}/drive-download-links`, "capability.google_drive.download_link.create", GWK, res("google_drive_file"), `${CAP} Returns a five-minute signed link to one file; the link is not audit evidence.`),
+  handlerRoute("tenant_access", "GET", "/v1/direct-downloads/google-workspace/drive-link", "capability.google_drive.download_link.use", GWK, res("google_drive_file"), { notes: "Signed five-minute link bound to one member, connection, file and format; attributed to that member after verification, with organization access rechecked. Bytes are not audit evidence." }),
   external("POST", "/v1/direct-uploads/google-workspace/gmail-drafts", "capability.gmail.draft.attachments.create", GWK, res("gmail_draft"), GOOGLE, "cloudTransportRoute (MCP OAuth token, org from token); creates a draft with attachments, never sends. Conditional token refresh write."),
 
   // Microsoft 365 capabilities
@@ -208,6 +213,8 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
 
   // Inference providers (reads, member OAuth, uncovered mutations)
   read("/v1/inference-providers", "inference_provider.list", IP, res("provider")),
+  read("/v1/inference-providers/inventory/revision", "inference_provider.inventory.revision", IP, res("provider"), "Read-only opaque member-scoped inventory revision; liveProviderSync gated."),
+  read("/v1/inference-providers/inventory/events", "inference_provider.inventory.watch", IP, res("provider"), "SSE opaque revisions only. Session, membership and rollout revalidated from the database every two seconds; fail closed on revocation or unavailable checks."),
   read("/v1/inference-providers/model-management", "inference_provider.model_management.list", IP, res("provider")),
   read("/v1/inference-providers/member-connections", "inference_provider.member_connection.list", IPO, res("provider_credential")),
   read("/v1/inference-providers/:inferenceProviderId", "inference_provider.read", IP, res("provider", "inferenceProviderId"), "Credential metadata incl. member emails; no secrets."),
@@ -306,6 +313,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
 
   // Native OAuth providers (Google Workspace, Microsoft 365)
   read("/v1/oauth-providers/:providerId/client", "oauth_provider.client.read", "oauth_provider.configuration", res("oauth_client", "providerId"), "Client id only."),
+  external("GET", "/v1/oauth-providers/:providerId/api-check", "oauth_provider.api_check.read", "oauth_provider.configuration", res("oauth_client", "providerId"), "Google Drive, Docs, Sheets, Gmail, Calendar and Chat APIs", "Google Workspace only. One read per needed API with the caller's own connector sign-in; returns only whether each API is turned on, never Google content."),
   change("POST", "/v1/oauth-providers/:providerId/client", "oauth_provider.client.update", "oauth_provider.configuration", res("oauth_client", "providerId"), "Client secret write-only."),
   read("/v1/oauth-providers/:providerId/status", "oauth_provider.connection.status", OAP, res("oauth_provider_connection", "providerId")),
   change("GET", "/v1/oauth-providers/:providerId/connect/start", "oauth_provider.connect.start", OAP, res("oauth_provider_connection", "providerId"), "Writes OAuth state; returns authorize URL."),

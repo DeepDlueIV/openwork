@@ -1,3 +1,4 @@
+@import "@openwork/documents/styles.css";
 /* Workbot (Paper: "WorkBot — one chat, set up once", pages v4 and v5). */
 .workbot {
   --wb-bg: #fbfcfd;

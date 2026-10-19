@@ -17,6 +17,7 @@ export function fingerprintReadinessIdentity(connection: ReadinessIdentity, acco
     connection.url, connection.authType, connection.credentialMode, connection.apiKeyAuthScheme,
     connection.oauthConfiguration?.authorizationServerIssuer, connection.oauthConfiguration?.requestedScopes,
     connection.oauthConfiguration?.callbackMode, connection.oauthIssuerReviewRequiredAt,
+    connection.oauthConfiguration?.manualOAuthEndpoints,
     credentialIdentity,
   ])
 }

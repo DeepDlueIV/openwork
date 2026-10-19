@@ -84,6 +84,8 @@ jobs:
         uses: ./.github/actions/setup-tests
       - name: Check Den web hook order
         run: pnpm --filter @openwork-ee/den-web lint
+      - name: Build the shared headless protocol
+        run: pnpm --filter @openwork-ee/headless-protocol build
       - name: Typecheck the headless runner
         run: pnpm --filter @openwork-ee/headless-runner typecheck
       - name: Test shared headless computer and configuration
@@ -91,8 +93,16 @@ jobs:
           pnpm --filter @openwork-ee/headless-computer build
           pnpm --filter @openwork-ee/headless-computer test
           pnpm --filter @openwork-ee/headless-runner test:computer-config
-      - name: Test headless conversations (follow-ups, read-only lookups, waiting messages)
-        run: pnpm --filter @openwork-ee/headless-runner test:conversation
+      - name: Test headless conversations (follow-ups, read-only lookups, waiting messages, bounded reads, moving to Node)
+        run: |
+          pnpm --filter @openwork-ee/headless-runner test:conversation
+          pnpm --filter @openwork-ee/headless-runner test:transfer
+      - name: Test Workbot sign-in and adoption boundary
+        run: pnpm --filter @openwork-ee/workbot test:auth
+      - name: Test opt-in error reporting (runner and Workbot)
+        run: |
+          pnpm --filter @openwork-ee/headless-runner test:error-reporting
+          pnpm --filter @openwork-ee/workbot test:error-reporting
       - name: Boot the app provider tree
         run: pnpm test:boot
       - name: Check desktop links open real Den pages
@@ -103,6 +113,8 @@ jobs:
         run: node --test .github/scripts/contributor-pr.test.mjs .github/scripts/contributor-screen.test.mjs .github/scripts/warden-check.test.mjs .github/scripts/warden-report.test.mjs
       - name: Test on-demand PR proof review builds
         run: node --test .github/scripts/pr-proof-review-build.test.mjs
+      - name: Test default-setup CodeQL coverage accounting
+        run: node --test scripts/ci/check-codeql-results.test.mjs
       - name: Test packaged smoke engine diagnosis and kept logs
         run: |
           node --test apps/desktop/test/engine-diagnosis.test.mjs
@@ -123,6 +135,7 @@ jobs:
           pnpm --filter @openwork-ee/utils test
           pnpm --filter @openwork/automations test
           pnpm --filter @openwork-ee/den-api test
+          pnpm --filter @openwork-ee/den-api exec node --conditions=development --import tsx --test "../den-web/app/(den)/dashboard/_components/manual-oauth-draft.test.ts"
           pnpm --filter @openwork-ee/workbot test:model
       # Security rules (roles, tenants, keys, OAuth, audit) against the real
       # den-api app and a throwaway database on MySQL (root:password).

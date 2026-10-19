@@ -76,6 +76,7 @@ import {
 import { cache, type CachedOrgMember } from "../../../cache.js"
 import { db } from "../../../db.js"
 import { requestReadFor } from "../../../request-reads.js"
+import { latestConfigObjectVersions } from "../../../config-object-versions.js"
 import { keysetAfter, keysetPage, type KeysetCursor } from "../../../list-pagination.js"
 import { resolveOrganizationMemberAuthority } from "../../../organization-team-roles.js"
 import { resolveMemberPermissions, resolvePermissionsForMember } from "../../../permissions/resolve.js"
@@ -775,24 +776,7 @@ function pageItems<TItem extends { id: string }>(items: TItem[], cursor: string 
 }
 
 async function getLatestVersions(configObjectIds: ConfigObjectId[]) {
-  if (configObjectIds.length === 0) {
-    return new Map<string, ConfigObjectVersionRow>()
-  }
-
-  const rows = await db
-    .select()
-    .from(ConfigObjectVersionTable)
-    .where(inArray(ConfigObjectVersionTable.configObjectId, configObjectIds))
-    .orderBy(desc(ConfigObjectVersionTable.createdAt), desc(ConfigObjectVersionTable.id))
-
-  const latestByObjectId = new Map<string, ConfigObjectVersionRow>()
-  for (const row of rows) {
-    if (!latestByObjectId.has(row.configObjectId)) {
-      latestByObjectId.set(row.configObjectId, row)
-    }
-  }
-
-  return latestByObjectId
+  return latestConfigObjectVersions(configObjectIds)
 }
 
 function serializeVersion(row: ConfigObjectVersionRow) {
@@ -6751,7 +6735,6 @@ async function buildConnectorAutomationContext(input: { connectorInstance: Conne
   const memberPermissions = await resolvePermissionsForMember({
     organizationId: organization.id,
     memberId: member.id,
-    featureEnabled: features.permissions,
   })
 
   return {

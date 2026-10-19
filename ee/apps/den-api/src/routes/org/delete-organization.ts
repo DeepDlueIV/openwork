@@ -3,6 +3,8 @@ import { deleteGatewayUsageForOrganization } from "@openwork-ee/den-db/gateway-u
 import {
   AuthApiKeyTable,
   AuthSessionTable,
+  FreeAutoLimitEventTable,
+  FreeAutoPurchaseTable,
   AuditEventTable,
   AuditEventResourceTable,
   AuditOperationTable,
@@ -553,6 +555,8 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
         await tx.delete(TeamTable).where(eq(TeamTable.organizationId, organizationId))
 
         await tx.delete(OrgSubscriptionTable).where(eq(OrgSubscriptionTable.organization_id, organizationId))
+        await tx.delete(FreeAutoLimitEventTable).where(eq(FreeAutoLimitEventTable.organization_id, organizationId))
+        await tx.delete(FreeAutoPurchaseTable).where(eq(FreeAutoPurchaseTable.organization_id, organizationId))
         await tx.delete(ScimUserTombstoneTable).where(eq(ScimUserTombstoneTable.organizationId, organizationId))
         await tx.delete(ScimGroupTable).where(eq(ScimGroupTable.organizationId, organizationId))
 

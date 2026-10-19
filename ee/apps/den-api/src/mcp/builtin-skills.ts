@@ -49,6 +49,18 @@ Produce one complete \`SKILL.md\` with:
 - non-empty Markdown instruction body
 - no secrets
 
+## Make it replayable
+
+When the skill captures work you just finished in this conversation, write it so the next run can go straight to the result instead of rediscovering it:
+
+- **Inputs:** the few values that change per use (for example customer, use case, recipient) and how to read them from a short request.
+- **Sources:** the exact pages, files or records you used (titles plus IDs or links). Tell the next run to read them directly instead of searching.
+- **Steps:** the shortest sequence of calls that worked, in order.
+- **Assets:** if you wrote a script or template that produced the output, save it in the workspace (for example \`tools/<skill-name>.py\`) and include a verbatim copy in a fenced code block, with how to run it on new inputs. The next run reuses the workspace file when it exists.
+- **Output:** file name pattern, location and format, any reply or draft template, and the one check to run before reporting.
+
+Keep it general: don't present one customer's results as facts for another.
+
 ## Workflow
 
 1. Draft the complete \`SKILL.md\`.
@@ -235,6 +247,12 @@ Work on a local copy with shell tools; never paste file bytes or base64 into a t
 3. \`drive_file_status\` shows what changed locally and in Drive.
 4. Only when the user asked to save to Drive: \`drive_push_file\`, which the person approves. A stored file is replaced in place: same link and sharing, with the previous version in Drive's version history for 30 days. A Google Docs, Sheets or Slides file is saved as a new Google file next to the original unless the user asked for something else.
 5. On \`drive_conflict\`, someone changed the file in Drive. Pull it again (\`overwrite: true\` replaces only your local copy) and reapply your edits, or save as a copy. Newer Drive changes are never overwritten.
+
+## With a shell but no OpenWork tools (Workbot computer, coding agents)
+
+1. Execute \`createGoogleDriveDownloadLink\` with the file ID. It returns a \`downloadUrl\` (also as an MCP resource link) that works for five minutes: save it with \`curl -fsSL -o <file> '<downloadUrl>'\` and check the size and md5. Never print or share the URL.
+2. Edit with bash as below.
+3. Only when asked to save: execute \`createGoogleDriveUploadSession\` with \`fileId\`, \`baseRevision\` (the link result's revision), \`name\`, \`size\` and \`mimeType\`, then upload with \`curl -fsS -X PUT -H 'Content-Type: <mimeType>' --data-binary @<file> '<uploadUrl>'\`. For a new file or a copy, omit \`fileId\`; \`convertTo\` keeps a copy as a Google file.
 
 ## Bash recipes
 

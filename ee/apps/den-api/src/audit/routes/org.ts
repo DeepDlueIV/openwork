@@ -119,6 +119,7 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/org/web-origins", "tenant_change", "web_origin.approve", "web_origin.management", "web_origin", null, { changeEvidence: DOMAIN("web-origins"), notes: "Legacy organization.web_origin.approved." }),
   member("DELETE", "/v1/org/web-origins/:webOriginId", "tenant_change", "web_origin.remove", "web_origin.management", "web_origin", "webOriginId", { changeEvidence: DOMAIN("web-origins"), notes: "Legacy organization.web_origin.removed." }),
   member("GET", "/v1/org/activity", "tenant_read", "organization.activity.read", "organization.activity", "organization", null, { notes: "Admin dashboard Activity (dashboardActivity feature): the five newest stored additions and skill versions across connections, providers, marketplaces and plugins; titles and ids only, no member identities." }),
+  member("POST", "/v1/org/workbot-settings/test-default-model", "tenant_external", "workbot.model_test", "organization.settings", "organization", null, { external: "headless_runner", notes: "Bounded paid synthetic completion only; no member content, tools, files, MCP token or stored conversation. Genuine recent user session and inference.manage required; durable diagnostic request throttle. Response excludes answer text and provider error details." }),
   member("GET", "/v1/org/workbot-settings", "tenant_read", "workbot.settings.read", "organization.settings", "organization", null),
   member("PUT", "/v1/org/workbot-settings", "tenant_change", "workbot.settings.update", "organization.settings", "organization", null, { notes: "Sets organization metadata workbot.model (the default model for Workbot, the Slack assistant and cloud-default Automations); the headless runner model catalog read is incidental." }),
   member("GET", "/v1/org/default-model", "tenant_read", "default_model.read", "organization.settings", "organization", null),
@@ -184,6 +185,9 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/orgs/:organizationId/install-links", "tenant_change", "install_link.create", "install.distribution", "install_link", null, { notes: "Path organizationId only seeds context; attribute to organizationContext. Returns the normal install page address; creates nothing." }),
 
   // Platform admin acting on one org (actor = admin user, origin platform_admin)
+  admin("GET", "/v1/admin/organizations/:organizationId", "tenant_read", "organization.admin_detail.read"),
+  admin("GET", "/v1/admin/organizations/:organizationId/insights", "tenant_read", "organization.admin_insights.read"),
+  admin("GET", "/v1/admin/organizations/:organizationId/usage", "tenant_read", "organization.admin_usage.read"),
   admin("GET", "/v1/admin/organizations/:organizationId/capabilities", "tenant_read", "organization.capabilities.read"),
   admin("PUT", "/v1/admin/organizations/:organizationId/capabilities", "tenant_change", "organization.capabilities.update", { notes: "Sets or clears this organization's feature overrides (organization_feature, features registry). The admin MCP tool den_set_org_capability makes the same change (service action organization.capability.set)." }),
   admin("PATCH", "/v1/admin/organizations/:organizationId/plan", "tenant_change", "organization.plan.update"),

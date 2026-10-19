@@ -35,7 +35,6 @@ import {
   SHELL_EXITED_EVENT,
   backgroundShellIdFromToolMetadata,
   backgroundShellNoticeLabel,
-  backgroundShellTasksEnabled,
   readBackgroundShellCompletion,
   readEngineShell,
   type BackgroundShellNotice,
@@ -908,9 +907,9 @@ function mapV2Message(
   // visible conversation. Filter by role so identical user text is preserved.
   const nativeNotice = sessionNotice(value.metadata, readString(value, "id") ?? readString(value, "messageID") ?? "", readNumber(value.time, "created") ?? 0);
   // The one exception is a background command's completion notice, which the
-  // chat shows as a short row while `backgroundShellTasks` is on.
+  // chat shows as a short row.
   if (messageRole(value) === "system" && !nativeNotice) {
-    const notice = backgroundShellTasksEnabled() ? readBackgroundShellCompletion(value) : null;
+    const notice = readBackgroundShellCompletion(value);
     const id = readString(value, "id") ?? readString(value, "messageID");
     if (!notice || !id) return null;
     const created = readNumber(readRecord(value, "time"), "created") ?? readNumber(value, "timestamp") ?? 0;
@@ -1225,6 +1224,57 @@ function toolEventTimestamp(value: Record<string, unknown>, properties: Record<s
   return readNumber(properties, "timestamp") ?? readNumber(value, "created") ?? Date.now();
 }
 
+/** A live-only subscription can join after a part's declaration was emitted. */
+function refreshMissingV2Message(
+  value: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  state: V2EventTranslationState,
+  kind: "text" | "reasoning" | "tool",
+): OpencodeEvent[] | null {
+  const sessionID = readSessionID(properties);
+  const messageID = readMessageID(properties);
+  if (!sessionID || !messageID || isRetiredV2Event(state, value, properties)) return null;
+  // Known completed parts are tombstones, not missed declarations. Duplicate
+  // or mismatched late fragments must not trigger history reads.
+  if (kind === "tool"
+    ? state.tools.has(toolStreamKey(sessionID, readToolCallID(properties)))
+    : state.streams.has(streamKey(properties, sessionID, messageID, kind))) return null;
+  return [{ type: "openwork.message.refresh", properties: { sessionID, messageID } }];
+}
+
+function recoverV2TextEvent(
+  value: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  state: V2EventTranslationState,
+  kind: "text" | "reasoning",
+  delta?: string,
+): OpencodeEvent[] | null {
+  const refresh = refreshMissingV2Message(value, properties, state, kind);
+  if (!refresh) return null;
+  const ordinal = readNumber(properties, "ordinal");
+  if (ordinal === undefined || !Number.isInteger(ordinal) || ordinal < 0) return refresh;
+  const sessionID = readSessionID(properties);
+  const messageID = readMessageID(properties);
+  const partID = textPartID(messageID, kind, ordinal);
+  // The canonical transcript retained its declaration across reconnects.
+  // Route native, explicitly addressed deltas there: persisted history can
+  // lag an in-progress answer, so reads alone cannot keep its text growing.
+  if (delta !== undefined) return [
+    { type: "openwork.message.refresh", properties: { sessionID, messageID, partID } },
+    { type: "message.part.delta", properties: { sessionID, messageID, partID, field: "text", delta } },
+  ];
+  const time = toolEventTimestamp(value, properties);
+  state.streams.set(streamKey(properties, sessionID, messageID, kind), {
+    sessionID, messageID, partID, ordinal, start: time,
+  });
+  const text = readString(properties, "text");
+  if (text === undefined) return refresh;
+  return [...refresh, { type: "message.part.updated", properties: { part: {
+    id: partID, sessionID, messageID, type: kind, text,
+    ...(kind === "reasoning" ? { time: { start: time, end: time } } : {}),
+  } } }];
+}
+
 function pendingToolPart(stream: ToolStream): ToolPart {
   return {
     id: stream.partID,
@@ -1478,7 +1528,7 @@ function translateV2EventInternal(
     const finished = readString(item, "type") === "synthetic" ? readBackgroundShellCompletion(payload) : null;
     if (sessionID && finished) {
       const created = readNumber(value, "created") ?? readNumber(properties, "timestamp") ?? Date.now();
-      const notice = messageID && backgroundShellTasksEnabled()
+      const notice = messageID
         ? backgroundShellNoticeMessage(messageID, sessionID, created, finished)
         : null;
       return [
@@ -1630,7 +1680,9 @@ function translateV2EventInternal(
   if (type === `session.${kind}.delta` || type === `session.next.${kind}.delta`) {
     const stream = resolveTextStream(properties, state, kind);
     const delta = readString(properties, "delta");
-    if (!stream || stream.text === undefined || delta === undefined) return null;
+    if (delta === undefined) return null;
+    if (!stream) return recoverV2TextEvent(value, properties, state, kind, delta);
+    if (stream.text === undefined) return null;
     stream.text += delta;
     return [{
       type: "message.part.delta",
@@ -1646,7 +1698,8 @@ function translateV2EventInternal(
 
   if (type === `session.${kind}.ended` || type === `session.next.${kind}.ended`) {
     const stream = resolveTextStream(properties, state, kind);
-    if (!stream || stream.text === undefined) return null;
+    if (!stream) return recoverV2TextEvent(value, properties, state, kind);
+    if (stream.text === undefined) return null;
     const fullText = readString(properties, "text");
     if (fullText !== undefined) stream.text = fullText;
     const part: TextPart | ReasoningPart = {
@@ -1715,7 +1768,9 @@ function translateV2EventInternal(
   if (type === "session.tool.input.delta" || type === "session.next.tool.input.delta") {
     const stream = resolveToolStream(properties, state);
     const delta = readString(properties, "delta");
-    if (!stream || stream.inputEnded || stream.start !== undefined || delta === undefined) return null;
+    if (delta === undefined) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
+    if (stream.inputEnded || stream.start !== undefined) return null;
     stream.raw += delta;
     stream.input = parseToolInput(stream.raw, stream.tool);
     return [{ type: "message.part.updated", properties: { part: pendingToolPart(stream) } }];
@@ -1724,7 +1779,9 @@ function translateV2EventInternal(
   if (type === "session.tool.input.ended" || type === "session.next.tool.input.ended") {
     const stream = resolveToolStream(properties, state);
     const text = readString(properties, "text");
-    if (!stream || stream.inputEnded || stream.start !== undefined || text === undefined) return null;
+    if (text === undefined) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
+    if (stream.inputEnded || stream.start !== undefined) return null;
     stream.raw = text;
     stream.input = parseToolInput(text, stream.tool);
     const part = pendingToolPart(stream);
@@ -1735,7 +1792,7 @@ function translateV2EventInternal(
 
   if (type === "session.tool.called" || type === "session.next.tool.called") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
     stream.input = parseToolInput(properties.input, stream.tool);
     stream.raw = "";
     stream.start ??= toolEventTimestamp(value, properties);
@@ -1748,7 +1805,7 @@ function translateV2EventInternal(
 
   if (type === "session.tool.progress" || type === "session.next.tool.progress") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
     updateToolStreamMetadata(stream, properties);
     const start = stream.start ?? toolEventTimestamp(value, properties);
     stream.start = start;
@@ -1770,7 +1827,10 @@ function translateV2EventInternal(
         startedAt: stream?.start ?? toolEventTimestamp(value, properties),
       } }]
       : [];
-    if (!stream) return background.length ? background : null;
+    if (!stream) {
+      const refresh = refreshMissingV2Message(value, properties, state, "tool") ?? [];
+      return background.length || refresh.length ? [...refresh, ...background] : null;
+    }
     updateToolStreamMetadata(stream, properties);
     const part = completedToolPart(stream, properties, toolEventTimestamp(value, properties), state.taskSessions);
     state.tools.set(toolStreamKey(stream.sessionID, stream.callID), null);
@@ -1783,7 +1843,7 @@ function translateV2EventInternal(
 
   if (type === "session.tool.failed" || type === "session.next.tool.failed") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
     updateToolStreamMetadata(stream, properties);
     const part = failedToolPart(stream, properties, toolEventTimestamp(value, properties), state.taskSessions);
     state.tools.set(toolStreamKey(stream.sessionID, stream.callID), null);
@@ -1888,7 +1948,7 @@ function translateV2Events(
   fetchSession: (sessionID: string, signal: AbortSignal) => Promise<Session | null>,
   taskSessions: TaskSessionAssociations,
   directory?: string,
-  onCatalogChanged?: (directory: string | undefined) => void,
+  onCatalogChanged?: (directory: string | undefined, reason?: "native") => void,
 ): AsyncGenerator<OpencodeEvent> {
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
@@ -1972,6 +2032,9 @@ function translateV2Events(
         if ("error" in read) throw read.error;
         const { chunk } = read;
         if (chunk.done) { ended = true; continue; }
+        // Transport activity includes SSE comments and events filtered for
+        // another workspace. Let the watchdog see those bytes as liveness.
+        if (chunk.value.length > 0) yield { type: "server.heartbeat", properties: {} };
         buffer += decoder.decode(chunk.value, { stream: true });
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? "";
@@ -1988,7 +2051,15 @@ function translateV2Events(
             continue;
           }
           const eventDirectory = isRecord(event) ? readString(readRecord(event, "location") ?? {}, "directory") : undefined;
+          // Native catalog changes may be global. Consumers only act on
+          // these new notifications when the server confirms live ownership.
+          if (isRecord(event) && (event.type === "provider.updated" || event.type === "model.updated")) {
+            if (directory && eventDirectory && normalizeDirectoryPath(directory) !== normalizeDirectoryPath(eventDirectory)) continue;
+            onCatalogChanged?.(eventDirectory ?? directory, "native");
+            continue;
+          }
           if (directory && (!eventDirectory || normalizeDirectoryPath(directory) !== normalizeDirectoryPath(eventDirectory))) continue;
+          // Preserve the legacy catalog.updated filtering and refresh path.
           if (isRecord(event) && event.type === "catalog.updated") {
             onCatalogChanged?.(eventDirectory);
             continue;
@@ -2672,11 +2743,15 @@ export function createClientV2(
       parameters: SessionParameters & { messageID?: string },
       options?: RequestOptions,
     ): Promise<FieldsResult<Session>> => {
-      // Both adapters exclude the supplied boundary. Omitting it copies the
-      // complete conversation; native v2 calls this a "through" boundary.
-      const result = await request("POST", `/api/session/${encodeURIComponent(parameters.sessionID)}/fork`, {
-        boundary: parameters.messageID ? { type: "before", messageID: parameters.messageID } : { type: "through" },
-      }, options?.signal);
+      // Both engines copy history strictly before the supplied message. Native
+      // v2 drops unknown payload keys, so the field must be exactly `before`;
+      // omitting it copies the complete conversation.
+      const result = await request(
+        "POST",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}/fork`,
+        parameters.messageID ? { before: parameters.messageID } : {},
+        options?.signal,
+      );
       if (!result.response.ok) return failedResult(result);
       const mapped = mapV2Session(result.payload, directory);
       return mapped ? successfulResult(result, mapped) : failedResult({ ...result, payload: { name: "InvalidV2SessionResponse" } });
@@ -2841,11 +2916,14 @@ export function createClientV2(
           Object.assign(error, { status: response.status, response });
           throw error;
         }
+        // V2 SSE is volatile and has no replay cursor. A reconnect can miss
+        // any number of catalog mutations, so reconcile after every open.
+        dispatchProviderCatalogChanged({ baseUrl, directory, reason: "reconnect" });
         return {
           stream: translateV2Events(response, options?.signal, async (sessionID, signal) => {
             const result = await request("GET", `/api/session/${encodeURIComponent(sessionID)}`, undefined, signal);
             return result.response.ok ? mapV2Session(result.payload, undefined) : null;
-          }, taskSessions, directory, (eventDirectory) => dispatchProviderCatalogChanged({ baseUrl, directory: eventDirectory ?? directory })),
+          }, taskSessions, directory, (eventDirectory, reason) => dispatchProviderCatalogChanged({ baseUrl, directory: eventDirectory ?? directory, ...(reason ? { reason } : {}) })),
         };
       },
     },

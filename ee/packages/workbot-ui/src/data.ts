@@ -3,6 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { workbotViewContextSchema, WORKBOT_MAX_MESSAGE_CHARS, type WorkbotViewContext } from "@openwork/types/workbot-context";
 import { errorMessage as getErrorMessage, hostFetch, workbotHost } from "./host";
 
 const requestJson = (path: string, init?: RequestInit, timeoutMs?: number) => workbotHost().requestJson(path, init, timeoutMs);
@@ -59,6 +60,7 @@ export type WorkbotTask = z.infer<typeof taskSchema>;
 const turnSchema = z.object({
   id: z.string(),
   text: z.string(),
+  context: workbotViewContextSchema.optional(),
   sentAt: z.number().nullable(),
   finishedAt: z.number().nullable(),
   status: z.enum(["queued", "working", "done", "failed", "stopped"]),
@@ -82,7 +84,7 @@ const turnSchema = z.object({
 export type WorkbotTurn = z.infer<typeof turnSchema>;
 
 const threadSchema = z.discriminatedUnion("available", [
-  z.object({ available: z.literal(false), reason: z.enum(["workbot_not_enabled", "workbot_runner_unavailable"]) }),
+  z.object({ available: z.literal(false), reason: z.enum(["workbot_not_enabled", "workbot_runner_unavailable", "workbot_model_unavailable"]) }),
   z.object({
     available: z.literal(true),
     name: z.string(),
@@ -255,7 +257,7 @@ export class WorkbotSendError extends Error {
 }
 
 /** The most one message can carry (the runner's limit); longer text goes as a file. */
-export const MAX_MESSAGE_CHARS = 100_000;
+export const MAX_MESSAGE_CHARS = WORKBOT_MAX_MESSAGE_CHARS;
 
 /** Why sending was refused, in the person's words. */
 function sendRefused(status: number, payload: unknown) {
@@ -270,7 +272,7 @@ export function useSendWorkbotMessage() {
   const queryClient = useQueryClient();
   const chat = useWorkbotChat();
   return useMutation({
-    mutationFn: async (input: { id: string; text: string; attachments?: string[] }) => {
+    mutationFn: async (input: { id: string; text: string; attachments?: string[]; context?: WorkbotViewContext }) => {
       if (input.text.length > MAX_MESSAGE_CHARS) throw new WorkbotSendError("That's too long for one message. Send it as a file instead.", 400);
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const { response, payload } = await requestJson(inChat("/v1/workbot/messages", chat), {
@@ -362,6 +364,8 @@ const connectionsSchema = z.object({
     app: z.enum(["gmail", "googleCalendar", "slack", "microsoft"]),
     ready: z.boolean(),
     connectUrl: z.string().nullable(),
+    nativeProviderKey: z.string().nullable().optional(),
+    connectMode: z.enum(["inline", "external", "admin"]).optional(),
   })),
 });
 export type WorkbotConnection = z.infer<typeof connectionsSchema>["connections"][number];
@@ -372,14 +376,13 @@ export type WorkbotConnection = z.infer<typeof connectionsSchema>["connections"]
  */
 export function useWorkbotConnections(input: { enabled: boolean; waiting: boolean }) {
   return useQuery({
-    queryKey: ["workbot", "connections"],
+    queryKey: ["workbot", "connections", workbotHost().identity?.organizationId, workbotHost().identity?.principalId],
     enabled: input.enabled,
     queryFn: async () => {
       const { response, payload } = await requestJson("/v1/workbot/connections", { method: "GET" }, 15_000);
       // Hosts without this route just have nothing to connect here.
-      if (!response.ok) return [];
-      const parsed = connectionsSchema.safeParse(payload);
-      return parsed.success ? parsed.data.connections : [];
+      if (!response.ok) throw new Error("Couldn't verify your connections. Try again.");
+      return connectionsSchema.parse(payload).connections;
     },
     refetchInterval: input.waiting ? 2_000 : false,
     refetchOnWindowFocus: true,
@@ -424,12 +427,12 @@ export function useDeleteWorkbotMessage() {
   });
 }
 
-/** Edits one of the person's messages; Workbot answers the edited message fresh, from that point on. */
+/** Sends a correction as a new message; earlier messages and replies remain in the conversation. */
 export function useEditWorkbotMessage() {
   const queryClient = useQueryClient();
   const chat = useWorkbotChat();
   return useMutation({
-    mutationFn: async (input: { id: string; newId: string; text: string; attachments?: string[] }) => {
+    mutationFn: async (input: { id: string; newId: string; text: string; attachments?: string[]; context?: WorkbotViewContext }) => {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const { id, ...body } = input;
       const { response, payload } = await requestJson(
@@ -501,6 +504,7 @@ export async function uploadWorkbotFile(file: File, onProgress: (loaded: number)
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const path = inChat(`/v1/workbot/files?${new URLSearchParams({ name: file.name || "file", timeZone }).toString()}`, chat);
   const target = await workbotHost().prepare(path);
+  if (signal.aborted) throw new Error("Canceled.");
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", target.url);

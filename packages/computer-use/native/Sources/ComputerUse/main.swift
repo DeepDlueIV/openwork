@@ -43,6 +43,10 @@ case "mcp", "mcp-embedded":
     // mcp-embedded: the OpenWork desktop owns approval and Continue over the
     // private openwork/ui channel. mcp: standalone, with native consent and controls.
     SessionControls.embedded = command == "mcp-embedded"
+    if SessionControls.embedded && !HostTrust.embeddedHostIsTrusted() {
+        fputs("mcp-embedded requires the signed OpenWork desktop as its host.\n", stderr)
+        exit(1)
+    }
     if SessionControls.embedded { MCPOutput.shared.enableNonblocking() }
     NSApplication.shared.setActivationPolicy(.accessory)
     let server = MCPServer()

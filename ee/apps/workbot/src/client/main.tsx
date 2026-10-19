@@ -35,10 +35,12 @@ function App() {
   const me = useQuery({ queryKey: ["workbot", "me"], queryFn: fetchMe, staleTime: 60_000, refetchOnReconnect: "always" })
   const [owner, setOwner] = useState<Me | null>(null)
   const [until, setUntil] = useState<number | null>(null)
+  const [identityWaiters, setIdentityWaiters] = useState<Array<(value: Me | null) => void>>([])
   const changedIdentity = owner !== null && me.data != null && !sameIdentity(owner, me.data)
   const identityUnavailable = me.isError || me.failureCount > 0
   const workspaceDisabled = owner?.enabled === true && me.isSuccess && me.data != null && !changedIdentity && !me.data.enabled
-  const verified = me.isSuccess && !identityUnavailable && me.data != null && !changedIdentity && !workspaceDisabled
+  // Cached success is not fresh authorization while a different browser session may be resolving.
+  const verified = me.isSuccess && !me.isFetching && !identityUnavailable && me.data != null && !changedIdentity && !workspaceDisabled
   const blocked = owner !== null && !verified
   useEffect(() => {
     // A successful response for another person must not replace a draft's owner.
@@ -60,17 +62,24 @@ function App() {
     if (owner === null && me.isSuccess && me.data === null) signIn()
   }, [owner, me.isSuccess, me.data])
   const refreshIdentity = useCallback(async () => {
-    const result = await me.refetch()
-    return result.isSuccess ? result.data ?? null : null
+    await me.refetch()
+    // Fresh file checks must resume after React has committed the settled authorization,
+    // not while the retained owner's policy still reflects this request's pending mask.
+    return new Promise<Me | null>(resolve => setIdentityWaiters(current => [...current, resolve]))
   }, [me.refetch])
+  useEffect(() => {
+    if (me.isFetching || identityWaiters.length === 0) return
+    for (const resolve of identityWaiters) resolve(verified ? me.data ?? null : null)
+    setIdentityWaiters(current => current.filter(resolve => !identityWaiters.includes(resolve)))
+  }, [me.isFetching, me.data, verified, identityWaiters])
   if (owner !== null) {
-    const authorization = blocked ? workspaceDisabled ? "disabled" : identityUnavailable ? "blocked" : "signin" : undefined
+    const authorization = blocked ? workspaceDisabled ? "disabled" : identityUnavailable || me.isFetching ? "blocked" : "signin" : undefined
     if (!blocked && !owner.enabled && owner.firstRun) return <WorkspaceAccess me={owner} />
     // Hidden, not conditionally removed: auth revalidation cannot run editor teardown.
     return <>
       <div className="h-full" hidden={blocked} data-workbot-retained-owner><Signed key={JSON.stringify([owner.organizationId, owner.userId])} me={owner} authorization={authorization} refreshIdentity={refreshIdentity} /></div>
       {blocked && <main className="workbot grid h-full place-items-center px-6 text-center" role="status" aria-label="Workspace sign-in recovery" aria-busy={me.isFetching}><div className="flex max-w-sm flex-col items-center gap-3">
-        <p className="text-[14px] text-[var(--wb-text)]">{workspaceDisabled ? "Workbot is off for this workspace. An admin can turn it on." : changedIdentity ? "The signed-in account or workspace changed. Retained documents are locked." : identityUnavailable ? "Couldn't verify this workspace. Retained documents are locked." : "Sign in again to restore this workspace."}</p>
+        <p className="text-[14px] text-[var(--wb-text)]">{me.isFetching ? "Checking sign-in. Retained documents are locked." : workspaceDisabled ? "Workbot is off for this workspace. An admin can turn it on." : changedIdentity ? "The signed-in account or workspace changed. Retained documents are locked." : identityUnavailable ? "Couldn't verify this workspace. Retained documents are locked." : "Sign in again to restore this workspace."}</p>
         <span className="text-[13px] text-[var(--wb-muted)]">Recovery is held here for at most 15 minutes.</span>
         {!workspaceDisabled && <a className={action} href={`/auth/login?return=${encodeURIComponent(window.location.pathname + window.location.search)}`} target="_blank" rel="noopener noreferrer">Sign in again</a>}
         <button type="button" className={action} disabled={me.isFetching} onClick={() => void me.refetch()}>{workspaceDisabled ? "Check workspace access" : "Check sign-in"}</button>

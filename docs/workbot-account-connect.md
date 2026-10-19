@@ -44,8 +44,11 @@ and restore tabs** or an individual file's **Check access** must verify matching
 identity and that file's authorization before revealing its retained work.
 Authorized files can return independently; denied files stay masked, retryable
 and individually discardable. Denied consent does not discard drafts, and
-restoration never replays a save. The parent identity owner remains mounted but
-masked during revalidation; the separate sign-in recovery link is unchanged.
+restoration never replays a save. The parent identity owner and its portals remain
+mounted but masked from the start of revalidation, including while a response is
+pending. Cached identity success is not current authorization. Explicit file checks
+resume only after the matching fresh identity has committed to the UI's authorization
+policy; the separate sign-in recovery link is unchanged.
 
 A blocked popup offers an explicit same-tab action. A callback without an opener
 offers a return link to the signed Workbot path. When inline connect is off,

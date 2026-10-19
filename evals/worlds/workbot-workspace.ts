@@ -31,6 +31,9 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
   let principalId = "user_example";
   let organizationId = "org_example";
   let identityStatus = 200;
+  let holdIdentity = false;
+  let pendingIdentities = 0;
+  const releaseIdentities: (() => void)[] = [];
   let listingFailure = false;
   let recentStatus = 200;
   let folderStatus = 200;
@@ -76,6 +79,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
           const denied = driveDenied || referring.searchParams.get("access") === "denied";
           const json = (body: unknown, status = 200) => { if (res.destroyed) return; res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
           if (url.pathname === "/v1/workbot/me") {
+            if (holdIdentity) { pendingIdentities++; await new Promise<void>(resolve => releaseIdentities.push(resolve)); pendingIdentities--; }
             identityReads.push(identityStatus);
             identityScopes.push({ principalId, organizationId, status: identityStatus });
             if (identityStatus !== 200) return json({ error: identityStatus === 401 ? "unauthorized" : "identity_unavailable" }, identityStatus);
@@ -163,9 +167,12 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
     resources.defer(release);
     const releaseOther = () => { holdOtherThread = false; for (const resolve of releaseOtherThreads.splice(0)) resolve(); };
     resources.defer(releaseOther);
+    const releaseIdentity = () => { holdIdentity = false; for (const resolve of releaseIdentities.splice(0)) resolve(); };
+    resources.defer(releaseIdentity);
     return {
       web, url, messages: () => [...messages], opened: () => [...opened], editorReads: () => [...editorReads], documentWrites: () => [...documentWrites],
       identityReads: () => [...identityReads], identityScopes: () => [...identityScopes], listingReads: () => [...listingReads], pendingFolders: () => pendingFolders,
+      holdIdentity: () => { holdIdentity = true; }, pendingIdentities: () => pendingIdentities, releaseIdentity,
       threadRequests: () => [...threadRequests], pendingOtherThreads: () => pendingOtherThreads,
       holdOtherThread: () => { holdOtherThread = true; }, releaseOtherThread: releaseOther,
       seedOwnerConversation: (text: string) => { thread("user_example").push({ id: "owner_account_turn", text, sentAt: Date.now(), finishedAt: Date.now(), status: "done", attachments: [], outputs: [], parts: [{ kind: "text", text: "Original account answer" }], modelSteps: 1, error: null }); },

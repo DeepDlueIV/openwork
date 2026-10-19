@@ -63,7 +63,7 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
     socket.addEventListener("message", (event) => {
       let message;
       try { message = JSON.parse(String(event.data)); } catch { return; }
-      if (!message.id) { if (message.method === "Page.frameNavigated") tabChanged(); return; }
+      if (!message.id) { if (message.method === "Page.frameNavigated") tabChanged(); else pageEvent(message.method, message.params ?? {}); return; }
       const item = pending.get(message.id);
       if (!item) return;
       pending.delete(message.id); clearTimeout(item.timer);
@@ -71,12 +71,14 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
       else item.resolve(message.result);
     });
     let tabChanged = () => {};
+    let pageEvent = (_method, _params) => {};
     socket.addEventListener("close", () => {
       for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error("Browser disconnected; inspect before retrying input.")); }
       pending.clear();
     });
     return {
       changed(callback) { tabChanged = callback; },
+      events(callback) { pageEvent = callback; },
       async send(method, params = {}, check = true) {
         await ready;
         if (check) assertActive();
@@ -97,7 +99,9 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
     let title = target.title;
     let destroyed = false;
     let context = null;
-    const tab = { tabId: target.id, webMcpRevision: 0, view: { webContents: {
+    // Request id -> start time: browser tasks wait for requests an action started.
+    const inFlight = new Map();
+    const tab = { tabId: target.id, webMcpRevision: 0, inFlight, view: { webContents: {
       isDestroyed: () => destroyed,
       getURL: () => currentUrl,
       getTitle: () => title,
@@ -132,7 +136,13 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
       async sendInputEvent(event) {
         await beforeInput();
         await wire.send("Page.bringToFront");
-        return wire.send("Input.dispatchKeyEvent", { type: event.type === "keyDown" ? "keyDown" : "keyUp", key: { Up: "ArrowUp", Down: "ArrowDown", Left: "ArrowLeft", Right: "ArrowRight", Space: " " }[event.keyCode] ?? event.keyCode, windowsVirtualKeyCode: { Enter: 13, Tab: 9, Escape: 27, Backspace: 8, Space: 32, Up: 38, Down: 40, Left: 37, Right: 39 }[event.keyCode] });
+        const held = new Set(event.modifiers ?? []);
+        const character = /^[A-Z0-9]$/.test(event.keyCode) ? event.keyCode : null;
+        return wire.send("Input.dispatchKeyEvent", { type: event.type === "keyDown" ? "keyDown" : "keyUp",
+          modifiers: (held.has("alt") ? 1 : 0) | (held.has("control") ? 2 : 0) | (held.has("meta") ? 4 : 0) | (held.has("shift") ? 8 : 0),
+          key: character ? (held.has("shift") ? character : character.toLowerCase()) : { Up: "ArrowUp", Down: "ArrowDown", Left: "ArrowLeft", Right: "ArrowRight", Space: " " }[event.keyCode] ?? event.keyCode,
+          ...(character ? { code: /\d/.test(character) ? `Digit${character}` : `Key${character}` } : {}),
+          windowsVirtualKeyCode: character ? character.charCodeAt(0) : { Enter: 13, Tab: 9, Escape: 27, Backspace: 8, Delete: 46, Space: 32, Home: 36, End: 35, PageUp: 33, PageDown: 34, Up: 38, Down: 40, Left: 37, Right: 39 }[event.keyCode] });
       },
       debugger: { isAttached: () => true, sendCommand: async (method, params) => { await beforeInput(); await wire.send("Page.bringToFront"); return wire.send(method, params); } },
     } },
@@ -156,7 +166,12 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
       close() { destroyed = true; wire.close(); },
     };
     wire.changed(() => { context = null; tab.webMcpRevision++; host.invalidate(tab.tabId); });
+    wire.events((method, params) => {
+      if (method === "Network.requestWillBeSent" && !["WebSocket", "EventSource"].includes(params.type) && !String(params.request?.url).startsWith("data:")) inFlight.set(params.requestId, Date.now());
+      else if (method === "Network.loadingFinished" || method === "Network.loadingFailed") inFlight.delete(params.requestId);
+    });
     void wire.send("Page.enable", {}, false).catch(() => {});
+    void wire.send("Network.enable", {}, false).catch(() => {});
     return tab;
   }
   async function refresh() {
@@ -197,6 +212,7 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
       return tab;
     },
     navigate: (tab, url) => tab.navigate(url),
+    inFlight: (tab, since) => [...tab.inFlight.values()].filter((started) => started >= since).length,
     siteTools: async () => ({ ok: true, tools: [] }), runSiteTool: async () => ({ ok: false, dispatched: false, code: "unsupported" }),
   });
   return {

@@ -109,6 +109,40 @@ The health identity has read-only Cloud Run/SQL/certificate visibility and no
 secret accessor, DNS write, IAM write, or Terraform state access. Cloud Scheduler
 uses a separate identity scoped to invoke the health job.
 
+### Approving operator permissions (before bootstrap)
+
+The **signed-in Cloud Shell operator**, not the runner, performs bootstrap IAM
+changes. Project IAM Admin plus Role Administrator is **not sufficient**:
+project IAM policy and a service account's own IAM policy are different resources.
+The operator also needs `iam.serviceAccounts.setIamPolicy` (and
+`iam.serviceAccounts.getIamPolicy`) on the five deployment-owned service accounts,
+including the runner. Bootstrap grants the runner `roles/iam.serviceAccountUser`
+on runtime/web/health/scheduler and grants the approving operator
+`roles/iam.serviceAccountTokenCreator` on the runner. Those grants cannot be
+created merely with project-level `resourcemanager.projects.setIamPolicy`.
+
+Have the customer's administrator approve the following capabilities before
+running the command; use equivalent scoped custom grants where appropriate:
+
+| Operator operation | Required permission boundary / example role |
+| --- | --- |
+| Verify project and public DNS zone | Project read and `dns.managedZones.get` on the selected project/zone |
+| Enable the listed APIs | `serviceusage.services.enable` and supporting service/operation reads; Service Usage Admin (`roles/serviceusage.serviceUsageAdmin`) |
+| Create/list the five deployment service accounts | `iam.serviceAccounts.create` and `iam.serviceAccounts.list` on the project |
+| Set/read policies on those service accounts | **`iam.serviceAccounts.setIamPolicy` and `iam.serviceAccounts.getIamPolicy`**; Service Account Admin (`roles/iam.serviceAccountAdmin`) is an administrative example, scoped to the deployment accounts where possible |
+| Grant the documented project roles | `resourcemanager.projects.getIamPolicy` / `setIamPolicy`; Project IAM Admin (`roles/resourcemanager.projectIamAdmin`) |
+| Create or verify the one-permission drain role | `iam.roles.create`, `iam.roles.list`, `iam.roles.get`; Role Administrator (`roles/iam.roleAdmin`) is an administrative example; bootstrap does not update an existing role |
+| Create/verify the versioned private state bucket and grant object access | Bucket create/list/get/update and bucket get/set IAM-policy permissions on the selected project/bucket; Storage Admin (`roles/storage.admin`) is an administrative example |
+
+These are **operator prerequisites, not additional runner permissions**. Do not
+add Service Account Admin, Role Administrator or Project IAM Admin to the runner
+to recover an operator's failed bootstrap. An administrator must explicitly
+authorize any temporary operator grant; remove temporary grants after the
+approved work, preserving pre-existing access. A denial before ADC enrollment is
+not proof of a Terraform/runtime permission failure. Inspect the exact denied
+service-account resource and operator permissions before retrying normal approval;
+never patch service-account policies outside the approved bootstrap as a bypass.
+
 ## Runtime
 
 Cloud SQL MySQL 8 with backups and deletion protection; Secret Manager;

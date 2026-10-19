@@ -31,7 +31,6 @@ import { WorkbotMarkdown } from "./markdown";
 import { OpenFileContext } from "./open-file";
 import { PreviewPanel } from "./preview";
 import { Welcome } from "./welcome";
-import { ShareWorkbot } from "./share-controls";
 import { TeamControls } from "./team-controls";
 import { WorkbotCalendar } from "./calendar";
 import { WorkbotDocuments } from "./documents";
@@ -592,7 +591,6 @@ function WorkbotHeader(props: {
       )}
       <div className="flex shrink-0 items-center gap-2.5 sm:gap-3.5">
         {props.remove}
-        <ShareWorkbot />
         <TeamControls />
         {files}
         {apps.length > 0 ? (

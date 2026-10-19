@@ -1,30 +1,15 @@
-# Share Workbot with coworkers
+# Inviting coworkers
 
-`workbotSharing` is off by default on cloud and self-hosted deployments. This
-initial slice is **copy-only sharing**, not email invitations. A member can
-copy the current Workbot URL, with a visible reminder that the link grants no
-access and a team admin must invite coworkers. Copy success follows the
-real clipboard result; browser denial leaves the URL available for manual
-copy. Turning the feature off removes the copy action and shows a lock with
-its owner. No conversation or draft is changed.
+The copy-only Share Workbot control is removed. Its retired `workbotSharing`
+setting is accepted and ignored for compatibility with older configuration;
+it no longer advertises a share control in Workbot's session response.
 
-## Invitation security boundary
+Email invitations remain in Den's Members screen and on its
+session-authenticated `/v1/invitations` route. `invitations.manage`, recent
+sign-in, seat checks, delivery-error handling and invite acceptance are unchanged.
+A Workbot MCP grant is not an invitation session and must not bypass those checks.
 
-This slice deliberately introduces no Workbot invitation-write endpoint.
-Workbot authenticates with an MCP grant. That grant does not carry a verified
-recent-authentication claim. Den's internal MCP re-entry synthesizes a current
-session timestamp, so routing an invitation through it would not preserve the
-existing recent-sign-in requirement.
-
-Email invitations stay on Den's session-authenticated `/v1/invitations`
-route, with `invitations.manage`, recent sign-in, seat checks and email-error
-handling unchanged. A future in-Workbot invitation flow needs a server-verified
-fresh-authentication proof or a real Den session handoff, explicit organization
-binding, a signed and allowlisted acceptance return to Workbot, and typed-email
-preservation across seat/payment and email-delivery failures. It must never
-infer freshness from token issuance, refresh time, or Workbot cookie age.
-
-Proof: `workbot-sharing.proof.test.ts` exercises current-URL copy and actual
-browser clipboard denial; `workbot-sharing.api.test.ts` proves that an MCP
-token, a member without invitation permission and a stale Den session still
-cannot create an invitation.
+`workbot-sharing.proof.test.ts` checks that the removed entry and copy fallback
+never appear, including with an older server's sharing hint, and that an owner
+can still send an email invitation through Den. `workbot-sharing.api.test.ts`
+checks the real invitation permission and recent-sign-in boundaries.

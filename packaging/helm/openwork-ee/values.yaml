@@ -45,7 +45,6 @@ config:
     slackAssistant: ""             # default off · Answers Slack mentions and DMs for the organization after the Slack connector is set up.
     slackWorkbotReplies: ""        # default off · OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done.
     workbot: ""                    # default off · Members can use Workbot, with side chats, a Calendar tab of its scheduled work and the option to run stopped tasks again, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app.
-    workbotSharing: ""             # default off · Members can copy a Workbot link for coworkers; team access still requires an invitation.
     workbotTeamLinks: ""           # default off · Members with team management access can open their organization's Workbot settings and app connections from Workbot.
     workbotLunaDefault: ""         # default off · Workbot uses GPT-6 Luna when no organization model is chosen. Admins can check availability and test a bounded synthetic completion without silently switching providers.
     workbotFirstRun: ""            # default off · People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable.

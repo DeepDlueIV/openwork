@@ -88,7 +88,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
 
   const clientFor = (member: Member) => createHeadlessRunnerClient({
     config: runnerFor(member), fetch: runnerFetch,
-    mintToken: async ({ readOnly }) => ({ token: await den.runToken(member.accessToken, { readOnly }) }),
+    mintToken: ({ readOnly, sessionId, messageId }) => den.runToken(member.accessToken, { readOnly, sessionId, messageId }),
     maxTokenTtlMs: RUN_TOKEN_TTL_MS,
   })
   /** Workbot bound to this person: their runner conversation, and turn tokens Den mints for them. */

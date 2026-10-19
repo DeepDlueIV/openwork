@@ -59,7 +59,7 @@ test("message and edit routes fail closed before runner access; normal chat stil
   if (!address || typeof address === "string") throw new Error("No runner address")
   try {
     const config = loadConfig({ WORKBOT_PUBLIC_URL: "http://localhost:3090", WORKBOT_DEN_API_URL: "http://localhost:3091", WORKBOT_RUNNER_URL: `http://127.0.0.1:${address.port}`, WORKBOT_RUNNER_TOKEN: "x".repeat(32), WORKBOT_SESSION_SECRET: "s".repeat(32) })
-    const den = { ...createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl }), runToken: async () => "scoped-test-token", webUrl: async () => "http://localhost:3091" }
+    const den = { ...createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl }), runToken: async () => ({ token: "scoped-test-token" }), webUrl: async () => "http://localhost:3091" }
     const auth = createAuth({ config, den })
     const app = new Hono<AppEnv>()
     registerWorkbotRoutes(app, { config, den, sameOrigin: auth.sameOrigin, member: async (c, next) => {

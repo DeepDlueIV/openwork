@@ -1959,7 +1959,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
         return;
       }
       try {
-        const response = await props.client.resolveArtifacts(props.workspaceId, openTargets);
+        const response = await props.client.resolveArtifacts(props.workspaceId, openTargets, { sessionId: props.sessionId });
         if (!cancelled) {
           const nextTargets = response.items as OpenTarget[];
           updateVerifiedOpenTargets(nextTargets);

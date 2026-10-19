@@ -11,6 +11,8 @@ import {
   FreeAutoPurchaseTable,
   ConnectedAccountTable,
   DesktopHandoffGrantTable,
+  HeadlessResumeGrantTable,
+  HeadlessResumeRevocationTable,
   ExternalIdentityTable,
   InvitationTable,
   InferenceOrgLimitPolicyTable,
@@ -80,6 +82,7 @@ import { platformAdminChangeCapture } from "../../audit/service-capture.js"
 import { hasOpenWorkWebComplimentaryAccess, resolveOpenWorkWebAccess, setOpenWorkWebComplimentaryAccess } from "../../openwork-web-access.js"
 import { isOpenWorkWebAvailable } from "../../openwork-web-availability.js"
 import { calculateOrganizationSeatBillingCounts, getOrganizationSeatBillingCounts, isEligibleOpenWorkWebSubscriptionStatus, isOngoingOpenWorkWebSubscriptionStatus, organizationHasOngoingOpenWorkWebSubscription, refreshOrgSubscriptionFromStripe, syncSeatSubscriptionQuantityAfterMemberChange } from "../../stripe-billing.js"
+import { unlessResumeTableMissing } from "../../headless-runner/resume-grant-revocation.js"
 import { buildAdminPageInfo, normalizeAdminPageRequest, sanitizeAdminSearchForLike, type AdminPageRequest } from "./scale-performance.js"
 
 type UserId = typeof AuthUserTable.$inferSelect.id
@@ -1755,6 +1758,9 @@ export function registerAdminRoutes<T extends { Variables: AuthContextVariables 
         await tx.delete(AuthSessionTable).where(eq(AuthSessionTable.userId, userId))
         await tx.delete(AuthAccountTable).where(eq(AuthAccountTable.userId, userId))
         await tx.delete(DesktopHandoffGrantTable).where(eq(DesktopHandoffGrantTable.user_id, userId))
+        // Each table on its own: one not migrated yet holds no rows; the other's rows must still go.
+        await unlessResumeTableMissing("headless_resume_grant", () => tx.delete(HeadlessResumeGrantTable).where(eq(HeadlessResumeGrantTable.userId, userId)))
+        await unlessResumeTableMissing("headless_resume_revocation", () => tx.delete(HeadlessResumeRevocationTable).where(eq(HeadlessResumeRevocationTable.userId, userId)))
         await tx.delete(ExternalIdentityTable).where(eq(ExternalIdentityTable.userId, userId))
         await tx.delete(ScimSyncEventTable).where(eq(ScimSyncEventTable.userId, userId))
         if (membershipRows.length > 0) {

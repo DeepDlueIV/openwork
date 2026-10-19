@@ -407,6 +407,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `nativeCloudSkills` | `DEN_FEATURE_NATIVE_CLOUD_SKILLS` | default off | In the desktop app (OpenCode v2), organization and plugin skills are listed next to local skills with their full description and load with their full instructions in one step, and a skill a message names loads before the agent starts. |
 | `mcpSkillsExtension` | `DEN_FEATURE_MCP_SKILLS_EXTENSION` | default off | MCP clients connected to OpenWork (Claude Code, Codex, Cursor and others) get a short list of the member's skills when they connect, and clients that support the MCP Skills Extension can list and load those skills directly. |
 | `remoteSessionSubagents` | `DEN_FEATURE_REMOTE_SESSION_SUBAGENTS` | default off | A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop. |
+| `headlessDurableTurns` | `DEN_FEATURE_HEADLESS_DURABLE_TURNS` | default off | Workbot, Slack and Automations answers keep going after a restart, deploy or server failure, without waiting for someone to reopen the chat. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`

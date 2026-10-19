@@ -10,7 +10,8 @@ export type DesktopView = "browser" | "computer"
 /** The existing conversation computer owns the desktop too; it never provisions a second machine. */
 export class Desktop {
   private readonly starting = new Map<string, Promise<void>>()
-  constructor(private readonly provider: SandboxProvider) {}
+  /** privateBrowsing lets the browser open loopback and private pages: operator diagnostics on a dedicated VM only. */
+  constructor(private readonly provider: SandboxProvider, private readonly options: { privateBrowsing?: boolean } = {}) {}
 
   start(box: SandboxHandle): Promise<void> {
     const key = JSON.stringify(box.ref)
@@ -29,7 +30,8 @@ export class Desktop {
       readFile(new URL("../dist/desktop-guest.mjs", import.meta.url)),
       readFile(new URL("../dist/cloud-desktop.sh", import.meta.url)),
     ])
-    const version = createHash("sha256").update(guest).update(helper).digest("hex")
+    const privateBrowsing = this.options.privateBrowsing === true
+    const version = createHash("sha256").update(guest).update(helper).update(privateBrowsing ? "private-browsing" : "").digest("hex")
     const ready = await run(box, { command: `sudo test -s ${STATE}/token && sudo curl -sf --max-time 2 -X POST -H "Authorization: Bearer $(sudo cat ${STATE}/token)" -d '{}' http://127.0.0.1:6080/health`, timeoutMs: 5_000 }).catch(() => ({ exitCode: 1, stdout: "{}" }))
     try { if (ready.exitCode === 0 && z.object({ version: z.literal(version) }).safeParse(JSON.parse(ready.stdout)).success) return }
     catch { /* A stale or unavailable guest is replaced below. */ }
@@ -38,7 +40,7 @@ export class Desktop {
     await files.write(box, `${STATE}/guest.mjs`, guest, { timeoutMs: 15_000, mode: 0o600 })
     await files.write(box, `${STATE}/start.sh`, helper, { timeoutMs: 15_000, mode: 0o700 })
     const result = await run(box, {
-      command: `sudo env WORKBOT_DESKTOP_VNC=1 sh ${STATE}/start.sh ${STATE} :99 && sudo env WORKBOT_DESKTOP_STATE=${STATE} WORKBOT_DESKTOP_VERSION=${version} DISPLAY=:99 XAUTHORITY=${STATE}/cloud-desktop/.Xauthority sh -c 'test -s ${STATE}/token || (umask 077; head -c 32 /dev/urandom | base64 > ${STATE}/token); setsid -f node ${STATE}/guest.mjs > ${STATE}/guest.log 2>&1 < /dev/null'`,
+      command: `sudo env WORKBOT_DESKTOP_VNC=1 sh ${STATE}/start.sh ${STATE} :99 && sudo env WORKBOT_DESKTOP_STATE=${STATE} WORKBOT_DESKTOP_VERSION=${version}${privateBrowsing ? " WORKBOT_DESKTOP_PRIVATE_BROWSING=1" : ""} DISPLAY=:99 XAUTHORITY=${STATE}/cloud-desktop/.Xauthority sh -c 'test -s ${STATE}/token || (umask 077; head -c 32 /dev/urandom | base64 > ${STATE}/token); setsid -f node ${STATE}/guest.mjs > ${STATE}/guest.log 2>&1 < /dev/null'`,
       timeoutMs: 30_000,
     })
     if (result.exitCode !== 0) throw new Error("The computer's snapshot needs Chromium, Xvfb, openbox, xdotool, ImageMagick, x11vnc and Node 22 or newer.")

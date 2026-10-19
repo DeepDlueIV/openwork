@@ -45,7 +45,8 @@ const provider = {
     return { url, expiresAt: new Date(Date.now() + 75_000), kind: "signed-expiring" as const }
   },
 }
-const desktop = new Desktop(provider)
+// The fixture page below is served on the VM's loopback, which agent browsing may not reach.
+const desktop = new Desktop(provider, { privateBrowsing: true })
 const box = await fake.create({ idempotencyKey: "desktop-proof", image: null, labels: {}, env: {}, storage: [], exposePorts: [] }, { timeoutMs: 1000 })
 await desktop.start(box)
 const fixture = `/tmp/openwork-vnc-proof-${randomUUID()}`
@@ -55,6 +56,9 @@ const fixtureSource = `const fs=require('node:fs'),path=require('node:path');con
 await remote(`mkdir -p ${fixture}; printf %s ${shellQuote(Buffer.from(html).toString("base64"))} | base64 -d > ${fixture}/index.html; printf %s ${shellQuote(Buffer.from(fixtureSource).toString("base64"))} | base64 -d > ${fixture}/server.cjs; setsid -f node ${fixture}/server.cjs ${shellQuote(fixture)} > ${fixture}/server.log 2>&1 < /dev/null; for n in 1 2 3 4 5 6 7 8 9 10; do test -s ${fixture}/port && break; sleep 0.1; done`)
 const port = Number((await remote(`cat ${fixture}/port`)).trim())
 assert.ok(Number.isInteger(port) && port > 0)
+// The desktop user's firewall refuses loopback; open only the fixture's port, and close it at the end.
+const fixtureRule = `OPENWORK_DESKTOP_EGRESS -p tcp -d 127.0.0.1 --dport ${port} -j RETURN`
+await remote(`sudo iptables -w -I ${fixtureRule.replace("OPENWORK_DESKTOP_EGRESS", "OPENWORK_DESKTOP_EGRESS 1")}`)
 const browser = (operation: string, args: Record<string, unknown>) => desktop.call(box, "/browser/task", { sessionId: "vnc-proof", operation, args })
 const opened = await browser("open", { url: `http://127.0.0.1:${port}/` })
 assert.ok(typeof opened === "object" && opened !== null && "tabId" in opened)
@@ -139,5 +143,5 @@ const nativeProgram = z.object({ ok: z.literal(true), value: z.object({ width: z
 }))
 assert.equal(nativeProgram.value.width, 1280)
 assert.equal(nativeProgram.value.height, 800)
-await remote(`kill $(cat ${fixture}/pid); rm -r ${fixture}`)
+await remote(`kill $(cat ${fixture}/pid); rm -r ${fixture}; sudo iptables -w -D ${fixtureRule}`)
 console.log(JSON.stringify({ signedBrowserStream: true, signedDesktopStream: true, oneUseTickets: true, sharedBrowserTool: true, manualKeyboardSave: true, serverReadOnlyEnforced: true, takeoverPausesAgent: true, boundedBrowserProgram: true, stopCancelsProgram: true, boundedNativeProgram: true }))

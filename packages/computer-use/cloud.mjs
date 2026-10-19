@@ -11,7 +11,7 @@ const execute = promisify(execFile);
 const failure = (code, error) => Object.assign(new Error(error), { code });
 
 /** One member-owned VM, one input lease, and the existing browser and computer contracts. */
-export async function createCloudComputer({ directory, display = ":99", enabled, machine, browserEndpoint, applications, onActivity = () => {} }) {
+export async function createCloudComputer({ directory, display = ":99", enabled, machine, browserEndpoint, applications, onActivity = () => {}, privateBrowsing = false }) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   let owner = null;
   let paused = false;
@@ -45,7 +45,7 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
     if (closed || paused || !current || current.generation !== generation) throw failure("paused", "Computer control was interrupted. Observe again after Continue.");
     current.signal.throwIfAborted();
   }
-  const browser = createCloudBrowser({ statePath: join(directory, "browser-tabs.json"), endpoint: browserEndpoint,
+  const browser = createCloudBrowser({ statePath: join(directory, "browser-tabs.json"), endpoint: browserEndpoint, privateBrowsing,
     enabled: () => !closed && !paused, assertActive,
     // Browser input invalidates every native observation. Ending the native
     // lease leaves the browser alive; the next computer call opens a fresh one.

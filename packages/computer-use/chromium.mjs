@@ -2,9 +2,35 @@
 // get the existing conversation-owned browser contract, never arbitrary CDP.
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import { lookup } from "node:dns/promises";
+import { BlockList, isIP } from "node:net";
 import { createBrowserTaskHost } from "./browser-task.mjs";
 
-export function createCloudBrowser({ statePath, assertActive, enabled, beforeInput, endpoint = "http://127.0.0.1:9222" }) {
+// Loopback, private, shared, link-local (including cloud metadata) and unspecified ranges.
+const PRIVATE = new BlockList();
+for (const [network, prefix] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.168.0.0", 16]]) PRIVATE.addSubnet(network, prefix, "ipv4");
+for (const [network, prefix] of [["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10]]) PRIVATE.addSubnet(network, prefix, "ipv6");
+const privateAddress = (address) => {
+  const family = isIP(address);
+  if (family === 6 && /^::ffff:/i.test(address)) return privateAddress(address.slice(7));
+  return family === 4 ? PRIVATE.check(address, "ipv4") : family === 6 ? PRIVATE.check(address, "ipv6") : true;
+};
+
+/** Agent-chosen pages may reach the public web only; the VM firewall enforces the same boundary. */
+export async function publicDestination(value) {
+  let url;
+  try { url = new URL(value); } catch { return false; }
+  if (!["http:", "https:"].includes(url.protocol)) return url.href === "about:blank";
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) return false;
+  if (isIP(host)) return !privateAddress(host);
+  try {
+    const addresses = await lookup(host, { all: true, verbatim: true });
+    return addresses.length > 0 && addresses.every(({ address }) => !privateAddress(address));
+  } catch { return false; }
+}
+
+export function createCloudBrowser({ statePath, assertActive, enabled, beforeInput, endpoint = "http://127.0.0.1:9222", privateBrowsing = false }) {
   const tabs = new Map();
   const owners = new Map();
   let loaded = false;
@@ -153,10 +179,11 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
   const host = createBrowserTaskHost({
     getTab: id => tabs.get(id), tabsFor: sessionId => [...tabs.values()].filter(tab => owners.get(tab.tabId) === sessionId),
     ownerOf: id => owners.get(id), activeFor: sessionId => [...owners].find(([id, owner]) => owner === sessionId && tabs.has(id))?.[0],
-    // This browser is inside the member's full computer, alongside native input
-    // and shell access. Local apps and private sites are intentionally reachable.
-    // Network restrictions belong at the VM boundary, not solely in this tool.
-    isVisible: () => true, enabled, allowed: async () => true, changed: () => {},
+    // Prompt-injected pages must not steer the agent to this VM's worker, other
+    // private hosts or cloud metadata. The VM firewall backs this up for pages
+    // the person opens themselves and for redirects.
+    // privateBrowsing is only for operator diagnostics on a dedicated VM.
+    isVisible: () => true, enabled, allowed: privateBrowsing ? async () => true : publicDestination, changed: () => {},
     beforeInput: (tab) => tab.view.webContents.prepareInput(),
     async openTab(url, sessionId, signal, admit) {
       if (tabs.size >= 12) throw new Error("Close a browser tab before opening another.");

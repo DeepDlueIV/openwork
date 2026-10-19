@@ -7,4 +7,4 @@ export interface CloudComputer {
   interact(input: Record<string, unknown>): Promise<unknown>;
   close(): Promise<void>;
 }
-export function createCloudComputer(options: { directory: string; display?: string; enabled: () => Promise<boolean>; onActivity?: () => void; applications?: { list(): Promise<unknown>; launch(args: Record<string, unknown>, signal: AbortSignal): Promise<unknown> } }): Promise<CloudComputer>;
+export function createCloudComputer(options: { directory: string; display?: string; enabled: () => Promise<boolean>; onActivity?: () => void; /** Operator diagnostics only: lets the browser open loopback and private pages. */ privateBrowsing?: boolean; applications?: { list(): Promise<unknown>; launch(args: Record<string, unknown>, signal: AbortSignal): Promise<unknown> } }): Promise<CloudComputer>;

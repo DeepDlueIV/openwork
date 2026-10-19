@@ -15,7 +15,9 @@ const tickets = new Map();
 const sockets = new Set();
 const transports = new Map();
 process.umask(0o077);
+// Set only by root's start command for operator diagnostics; never by the agent or a conversation.
 const computer = await createCloudComputer({ directory, display: ":99", enabled: async () => Date.now() < until,
+  privateBrowsing: process.env.WORKBOT_DESKTOP_PRIVATE_BROWSING === "1",
   applications: createDesktopApplications({ directory: `${directory}/apps`, display: ":99" }),
 });
 const json = (response, status, payload) => {

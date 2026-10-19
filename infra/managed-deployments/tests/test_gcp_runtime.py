@@ -101,7 +101,7 @@ class ImagePinTests(unittest.TestCase):
                 "images": {kind: repository + "@sha256:" + character * 64 for (kind, repository), character in
                            zip(install.IMAGE_REPOSITORIES.items(), "abc")}}
 
-    def mirror(self, manifest, destination_mismatch=False, bad_local=False):
+    def mirror(self, manifest, destination_mismatch=False, bad_local=False, docker_hub_alias=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             if manifest is not None:
@@ -115,7 +115,7 @@ class ImagePinTests(unittest.TestCase):
                 if command[:3] == ["docker", "image", "inspect"]:
                     return Mock(stdout=json.dumps([{"Id": "sha256:" + "d" * 64,
                         "Os": "linux", "Architecture": "arm64" if bad_local else "amd64",
-                        "RepoDigests": [command[-1]]}]))
+                        "RepoDigests": [command[-1].removeprefix("docker.io/library/") if docker_hub_alias and command[-1].startswith("docker.io/library/") else command[-1]]}]))
                 return Mock(stdout="private-token")
             def cloud(*arguments):
                 if arguments[:4] == ("artifacts", "docker", "images", "describe"):
@@ -147,6 +147,24 @@ class ImagePinTests(unittest.TestCase):
                         self.assertEqual(ref.split("@")[1], manifest["images"][kind].split("@")[1])
                     self.assertTrue(all(command[2] == "sha256:" + "d" * 64 for command in calls if command[:2] == ["docker", "tag"]))
 
+    def test_docker_hub_familiar_health_digest_survives_actual_mirror_guard(self):
+        self.mirror(self.inventory(), docker_hub_alias=True)
+
+    def test_docker_hub_reference_aliases_keep_the_exact_repository_and_digest(self):
+        digest = "@sha256:" + "c" * 64
+        for full, familiar in [("docker.io/library/x", "x"), ("index.docker.io/library/x", "library/x"),
+                               ("docker.io/user/x", "user/x"), ("index.docker.io/user/x", "docker.io/user/x")]:
+            with self.subTest(full=full, familiar=familiar):
+                self.assertTrue(runner.image_source_matches(full + digest, [familiar + digest]))
+        ghcr = "ghcr.io/different-ai/x" + digest
+        self.assertEqual(runner.canonical_image_reference(ghcr), ghcr)
+        self.assertFalse(runner.image_source_matches(ghcr, ["different-ai/x" + digest]))
+        self.assertFalse(runner.image_source_matches("docker.io/library/x" + digest, ["x@sha256:" + "e" * 64]))
+        self.assertFalse(runner.image_source_matches("docker.io/library/x" + digest, ["other/x" + digest]))
+        self.assertFalse(runner.image_source_matches("docker.io/library/x" + digest, ["evil.example/library/x" + digest]))
+        for observed in (None, [], [None], ["x:latest"], ["x@sha256:bad"]):
+            self.assertFalse(runner.image_source_matches("docker.io/library/x" + digest, observed))
+
     def test_reads_release_inventory_and_ignores_source_env_overrides(self):
         self.mirror(self.inventory())
 
@@ -159,6 +177,7 @@ class ImagePinTests(unittest.TestCase):
 
     def test_wrong_local_platform_rejected_before_tag_push(self):
         self.mirror(self.inventory(), bad_local=True)
+        self.mirror(self.inventory(), bad_local=True, docker_hub_alias=True)
 
     def test_mutable_wrong_repo_or_wrong_version_inventory_rejected(self):
         variants = []

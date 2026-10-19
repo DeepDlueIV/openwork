@@ -5,13 +5,14 @@ import Link from "next/link";
 import { DenButton } from "../app/(den)/_components/ui/button";
 import { AdminDashboard } from "./admin/admin-dashboard";
 import { DenSelect } from "../app/(den)/_components/ui/select";
-import { Copy, Pencil, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Copy, Download, Pencil, Search, Trash2 } from "lucide-react";
 import { mapFeatures } from "@openwork/features";
 import { denApiCredentials, denBrowserEndpoint } from "../app/(den)/_lib/den-api-origin";
 import { withStoredBearer } from "./admin/admin-request";
 import { adminOrganizationHref, useAdminListLocation, type AdminDataSection } from "./admin/admin-list-location";
 import { AdminDeferredContent } from "./admin/admin-deferred-content";
 import { AdminAccessScreen } from "./admin/admin-access-screen";
+import { AdminRecentOrganizationsPanel, AdminRecentOrganizationsStrip } from "./admin/admin-recent-organizations";
 import { parseAdminOrganizationFeatures, type AdminOrganizationFeatures } from "./admin/admin-organization-feature-controls";
 
 type AccessState = "ready" | "signed-out" | "forbidden" | "error";
@@ -1150,6 +1151,10 @@ function formatOptionalCount(value: number | null): string {
   return value === null ? "Deferred" : String(value);
 }
 
+function formatCount(value: number): string {
+  return new Intl.NumberFormat().format(value);
+}
+
 function formatUsageAmount(value: number): string {
   return new Intl.NumberFormat(undefined, {
     notation: Math.abs(value) >= 10_000 ? "compact" : "standard",
@@ -1366,6 +1371,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
   const [includeBilling, setIncludeBilling] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
   const [organizationsLoading, setOrganizationsLoading] = useState(false);
+  const [expandedOrgIds, setExpandedOrgIds] = useState<Record<string, boolean>>({});
   const [orgDrafts, setOrgDrafts] = useState<Record<string, { tier: AdminOrganization["plan"]["tier"]; seatLimit: string }>>({});
   const [savingOrgId, setSavingOrgId] = useState<string | null>(null);
   const [freeSeatsDialog, setFreeSeatsDialog] = useState<{ org: AdminOrganization; totalFreeSeats: string } | null>(null);
@@ -2148,6 +2154,17 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
             >
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
+            {section !== "overview" ? (
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={viewMode === "organizations" ? filteredOrganizations.length === 0 : filteredUsers.length === 0}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download size={15} strokeWidth={1.75} aria-hidden="true" />
+                Export current page CSV
+              </button>
+            ) : null}
 
           </div>
         </div>
@@ -2234,16 +2251,6 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
       </div>
 
       {section !== "overview" ? <div className="py-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={exportCsv}
-              disabled={viewMode === "organizations" ? filteredOrganizations.length === 0 : filteredUsers.length === 0}
-              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Export current page CSV
-            </button>
-        </div>
 
         {isAdminScaleFixtureEnabled() ? (
           <div data-testid="admin-scale-eval-status" className="mt-4 rounded-md border border-violet-200 bg-violet-50 px-4 py-3 text-sm leading-6 text-violet-900">
@@ -2258,10 +2265,11 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
         ) : null}
 
         {viewMode === "organizations" ? (
-          <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between" data-testid="admin-orgs-page">
-            <div className="grid w-full max-w-xl gap-2">
-              <label className="grid gap-2">
-                <span className="text-xs font-medium text-slate-500">Search organizations</span>
+          <div className="grid gap-4" data-testid="admin-orgs-page">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <label className="relative block w-full max-w-xl">
+                <span className="sr-only">Search organizations</span>
+                <Search size={16} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   maxLength={160}
                   aria-label="Search organizations"
@@ -2274,36 +2282,41 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     setOrganizationVisibleDurationMs(null);
                     setSearch(event.target.value);
                   }}
-                  placeholder="Org name, slug, or id"
-                  className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                  placeholder="Search by name, slug, or id"
+                  className="w-full rounded-md border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                 />
               </label>
-              <p className="text-xs leading-5 text-slate-500">
-                Page {routePage} · {payload.organizationPage.total} matching organizations · {pageDurationLabel} {payload.organizationPage.durationMs} ms{organizationVisibleDurationMs === null ? "" : ` · browser visible ${organizationVisibleDurationMs} ms`}
-              </p>
+              <div className="flex shrink-0 items-center gap-3">
+                <p className="text-xs tabular-nums text-slate-500" title={`${pageDurationLabel} ${payload.organizationPage.durationMs} ms${organizationVisibleDurationMs === null ? "" : ` · browser visible ${organizationVisibleDurationMs} ms`}`}>
+                  {payload.organizationPage.total === 0
+                    ? "No matches"
+                    : `${formatCount(payload.organizationPage.offset + 1)}–${formatCount(payload.organizationPage.offset + payload.organizationPage.returned)} of ${formatCount(payload.organizationPage.total)}`}
+                </p>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPage(Math.max(1, routePage - 1));
+                    }}
+                    disabled={organizationsLoading || payload.organizationPage.offset === 0}
+                    className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPage(routePage + 1);
+                    }}
+                    disabled={organizationsLoading || !payload.organizationPage.hasMore}
+                    className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setPage(Math.max(1, routePage - 1));
-                }}
-                disabled={organizationsLoading || payload.organizationPage.offset === 0}
-                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPage(routePage + 1);
-                }}
-                disabled={organizationsLoading || !payload.organizationPage.hasMore}
-                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Next
-              </button>
-            </div>
+            <AdminRecentOrganizationsStrip />
           </div>
         ) : (
           <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -2373,43 +2386,143 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
         <div className="mt-6 grid gap-3">
           {viewMode === "organizations" ? (
             filteredOrganizations.length > 0 ? (
-              <>
+              <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <div aria-hidden="true" className="hidden border-b border-slate-200 bg-slate-50/80 px-4 py-2 text-xs font-medium text-slate-500 lg:grid lg:grid-cols-[minmax(0,1fr)_9rem_8.5rem_10rem] lg:gap-4 xl:grid-cols-[minmax(0,1fr)_9rem_8.5rem_6rem_10rem]">
+                  <span>Organization</span><span>Seats</span><span>OpenWork Web</span><span className="hidden xl:block">Created</span><span className="text-right">Actions</span>
+                </div>
+                <ul className="divide-y divide-slate-200">
                 {filteredOrganizations.map((org) => {
               const draft = orgDrafts[org.id] ?? { tier: org.plan.tier, seatLimit: String(org.seatLimit) };
               const changed = draft.tier !== org.plan.tier || draft.seatLimit !== String(org.seatLimit);
+              const expanded = Boolean(expandedOrgIds[org.id]) || changed;
+              const overLimit = org.memberCount > org.seatLimit;
+              const seatShare = org.seatLimit > 0 ? Math.min(100, Math.round((org.memberCount / org.seatLimit) * 100)) : 100;
+              const panelId = `admin-org-manage-${org.id}`;
 
               return (
-                <div key={org.id} data-testid={`admin-org-row-${org.slug}`} style={{ contentVisibility: "auto", containIntrinsicSize: "auto 900px" }} className="min-w-0 rounded-md border border-slate-200 bg-white px-4 py-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link href={adminOrganizationHref(org.id, routeSearch, routePage)} prefetch={false} className="truncate text-base font-semibold text-slate-950 hover:underline">{org.name}</Link>
+                <li key={org.id} data-testid={`admin-org-row-${org.slug}`} style={{ contentVisibility: "auto", containIntrinsicSize: expanded ? "auto 320px" : "auto 72px" }} className={`min-w-0 ${expanded ? "bg-slate-50/50" : ""}`}>
+                  <div className="grid min-w-0 grid-cols-2 items-center gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_9rem_8.5rem_10rem] lg:gap-4 xl:grid-cols-[minmax(0,1fr)_9rem_8.5rem_6rem_10rem]">
+                    <div className="col-span-2 min-w-0 lg:col-span-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Link href={adminOrganizationHref(org.id, routeSearch, routePage)} prefetch={false} className="min-w-0 truncate text-sm font-semibold text-slate-950 hover:underline">{org.name}</Link>
                         <PlanPill tier={org.plan.tier} />
                       </div>
-                      <p className="mt-1 truncate text-sm text-slate-500">/{org.slug} · {org.id}</p>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-slate-500">
+                        <span className="min-w-0 truncate font-mono">{org.slug && org.slug !== org.id ? `/${org.slug} · ${org.id}` : org.id}</span>
+                        <button
+                          type="button"
+                          aria-label={`Copy id for ${org.name}`}
+                          title="Copy organization id"
+                          onClick={() => {
+                            void copyOrgId(org.id);
+                          }}
+                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          {copiedOrgId === org.id ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-                        {org.memberCount} / {org.seatLimit} seats
-                      </span>
-                      <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                        {org.freeSeatCount} free
-                      </span>
-                      <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                        {org.billableSeatCount} chargeable
-                      </span>
+                    <div className="min-w-0" title={`${org.freeSeatCount} free · ${org.billableSeatCount} chargeable`}>
+                      <p className={`text-sm tabular-nums ${overLimit ? "font-medium text-amber-700" : "text-slate-700"}`}>
+                        {formatCount(org.memberCount)} / {formatCount(org.seatLimit)} <span className="text-xs text-slate-500">seats</span>
+                      </p>
+                      <div className="mt-1 h-1 w-full max-w-[8rem] overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+                        <div className={`h-full rounded-full ${overLimit ? "bg-amber-500" : seatShare >= 80 ? "bg-slate-600" : "bg-slate-400"}`} style={{ width: `${Math.max(seatShare, 4)}%` }} />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {org.freeSeatCount} free{org.billableSeatCount > 0 ? <span className="text-amber-700"> · {org.billableSeatCount} chargeable</span> : null}
+                      </p>
+                    </div>
+
+                    <div className="min-w-0"><OpenWorkWebAccessPill access={org.openworkWebAccess} /></div>
+
+                    <p className="text-sm text-slate-600 lg:hidden xl:block" title={formatDateTime(org.createdAt)}><span className="xl:hidden">Created </span>{org.createdAt ? formatRelativeTime(org.createdAt) : "—"}</p>
+
+                    <div className="flex items-center justify-end gap-1">
+                      <Link href={adminOrganizationHref(org.id, routeSearch, routePage, "features")} prefetch={false}
+                        data-testid="admin-organization-features-link" className="rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-950">
+                        Features
+                      </Link>
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-controls={panelId}
+                        aria-label={`Manage ${org.name}`}
+                        onClick={() => setExpandedOrgIds((current) => ({ ...current, [org.id]: !expanded }))}
+                        disabled={changed && expanded}
+                        className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-sm font-medium transition disabled:cursor-default ${expanded ? "border-slate-300 bg-white text-slate-950" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-950"}`}
+                      >
+                        Manage
+                        <ChevronRight size={14} aria-hidden="true" className={`transition-transform duration-150 ease-out ${expanded ? "rotate-90" : ""}`} />
+                      </button>
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <MetaCell label="Created" value={formatDateTime(org.createdAt)} />
-                    <MetaCell label="Plan source" value={formatProvider(org.plan.source)} />
-                    <MetaCell label="Members" value={String(org.memberCount)} />
-                    <div>
-                      <p className="text-xs font-medium text-slate-500">Free seats</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <p className="text-sm text-slate-700">{org.freeSeatCount}</p>
+                  {expanded ? (
+                  <div id={panelId} className="grid min-w-0 gap-5 border-t border-slate-200 px-4 py-4 lg:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-slate-200">
+                    <div className="min-w-0 lg:pr-5">
+                      <p className="text-sm font-semibold text-slate-950">Plan and seat limit</p>
+                      <p className="mt-0.5 text-xs text-slate-500">Plan source: {formatProvider(org.plan.source)}</p>
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        <label className="grid min-w-0 gap-1.5">
+                          <span className="text-xs font-medium text-slate-500">Plan</span>
+                          <DenSelect
+                            value={draft.tier}
+                            onChange={(event) => {
+                              const tier = event.target.value === "enterprise" || event.target.value === "team" ? event.target.value : "free";
+                              setOrgDrafts((current) => ({ ...current, [org.id]: { ...draft, tier } }));
+                            }}
+                            className="w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                          >
+                            <option value="free">Free</option>
+                            <option value="team">Team</option>
+                            <option value="enterprise">Enterprise</option>
+                          </DenSelect>
+                        </label>
+                        <label className="grid min-w-0 gap-1.5">
+                          <span className="text-xs font-medium text-slate-500">Seats</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={draft.seatLimit}
+                            onChange={(event) => setOrgDrafts((current) => ({ ...current, [org.id]: { ...draft, seatLimit: event.target.value } }))}
+                            className="w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                          />
+                        </label>
+                      </div>
+                      <div className="mt-3 flex items-center justify-end gap-2">
+                        {changed ? (
+                          <button
+                            type="button"
+                            onClick={() => setOrgDrafts((current) => {
+                              const next = { ...current };
+                              delete next[org.id];
+                              return next;
+                            })}
+                            disabled={savingOrgId === org.id}
+                            className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-60"
+                          >
+                            Discard
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void saveOrganizationPlan(org);
+                          }}
+                          disabled={!changed || savingOrgId === org.id}
+                          className="inline-flex items-center justify-center rounded-md bg-slate-950 px-4 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {savingOrgId === org.id ? "Saving..." : "Save access"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 lg:px-5">
+                      <p className="text-sm font-semibold text-slate-950">Free seats</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <p className="text-2xl font-semibold tabular-nums text-slate-950">{org.freeSeatCount}</p>
                         <button
                           type="button"
                           aria-label={`Edit free seats for ${org.name}`}
@@ -2419,32 +2532,23 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                           <Pencil size={13} aria-hidden="true" />
                         </button>
                       </div>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {org.seatsFreeAdditional > 0 ? `${org.seatsFreeAdditional} additional` : "Default included"}
+                      <p className="mt-1 text-xs text-slate-500">
+                        {org.seatsFreeAdditional > 0 ? `${org.seatsFreeAdditional} additional on top of the default` : "Default included"} · {org.billableSeatCount} chargeable
                       </p>
                     </div>
-                  </div>
 
-                  <Link href={adminOrganizationHref(org.id, routeSearch, routePage, "features")} prefetch={false}
-                    data-testid="admin-organization-features-link" className="mt-4 inline-block text-sm font-medium text-slate-700 underline-offset-2 hover:underline">
-                    Features
-                  </Link>
-
-                  <div className="mt-4 border-t border-slate-200 pt-4" data-testid="admin-openwork-web-access">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-xs font-medium text-slate-500">OpenWork Web billing access</p>
-                          <OpenWorkWebAccessPill access={org.openworkWebAccess} />
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">
-                          {org.openworkWebAccess.hasOngoingSubscription
-                            ? `A ${org.openworkWebAccess.subscriptionStatus ?? "current"} Stripe subscription controls access and billing.`
-                            : org.openworkWebAccess.complimentaryAccess
-                              ? "All joined members can use OpenWork Web without a Stripe subscription or per-member charge, even when deployment-wide availability is off."
-                              : "No complimentary grant or ongoing paid OpenWork Web subscription."}
-                        </p>
+                    <div className="min-w-0 lg:pl-5" data-testid="admin-openwork-web-access">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-950">OpenWork Web billing access</p>
+                        <OpenWorkWebAccessPill access={org.openworkWebAccess} />
                       </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">
+                        {org.openworkWebAccess.hasOngoingSubscription
+                          ? `A ${org.openworkWebAccess.subscriptionStatus ?? "current"} Stripe subscription controls access and billing.`
+                          : org.openworkWebAccess.complimentaryAccess
+                            ? "All joined members can use OpenWork Web without a Stripe subscription or per-member charge, even when deployment-wide availability is off."
+                            : "No complimentary grant or ongoing paid OpenWork Web subscription."}
+                      </p>
                       <button
                         type="button"
                         data-testid="admin-openwork-web-access-action"
@@ -2454,7 +2558,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                           reason: ""
                         })}
                         disabled={savingOpenWorkWebAccessOrgId === org.id || (!org.openworkWebAccess.complimentaryAccess && org.openworkWebAccess.hasOngoingSubscription)}
-                        className="inline-flex shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="mt-3 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {savingOpenWorkWebAccessOrgId === org.id
                           ? "Saving..."
@@ -2462,66 +2566,28 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                             ? "Revoke complimentary access"
                             : "Grant complimentary access"}
                       </button>
+                      {!org.openworkWebAccess.complimentaryAccess && org.openworkWebAccess.hasOngoingSubscription ? (
+                        <p className="mt-2 text-xs leading-5 text-amber-700">
+                          Cancel or finish the paid subscription in Stripe before granting complimentary access.
+                        </p>
+                      ) : null}
+                      {openworkWebAccessError?.orgId === org.id ? (
+                        <p data-testid="admin-openwork-web-access-error" className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
+                          {openworkWebAccessError.message}
+                        </p>
+                      ) : null}
                     </div>
-                    {!org.openworkWebAccess.complimentaryAccess && org.openworkWebAccess.hasOngoingSubscription ? (
-                      <p className="mt-2 text-xs leading-5 text-amber-700">
-                        Cancel or finish the paid subscription in Stripe before granting complimentary access.
-                      </p>
-                    ) : null}
-                    {openworkWebAccessError?.orgId === org.id ? (
-                      <p data-testid="admin-openwork-web-access-error" className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
-                        {openworkWebAccessError.message}
-                      </p>
-                    ) : null}
                   </div>
-
-                  <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 lg:grid-cols-[12rem_10rem_auto] lg:items-end">
-                    <label className="grid min-w-0 gap-2">
-                      <span className="text-xs font-medium text-slate-500">Plan</span>
-                      <DenSelect
-                        value={draft.tier}
-                        onChange={(event) => {
-                          const tier = event.target.value === "enterprise" || event.target.value === "team" ? event.target.value : "free";
-                          setOrgDrafts((current) => ({ ...current, [org.id]: { ...draft, tier } }));
-                        }}
-                        className="w-full min-w-0 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
-                      >
-                        <option value="free">Free</option>
-                        <option value="team">Team</option>
-                        <option value="enterprise">Enterprise</option>
-                      </DenSelect>
-                    </label>
-
-                    <label className="grid min-w-0 gap-2">
-                      <span className="text-xs font-medium text-slate-500">Seats</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={draft.seatLimit}
-                        onChange={(event) => setOrgDrafts((current) => ({ ...current, [org.id]: { ...draft, seatLimit: event.target.value } }))}
-                        className="w-full min-w-0 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void saveOrganizationPlan(org);
-                      }}
-                      disabled={!changed || savingOrgId === org.id}
-                      className="inline-flex items-center justify-center rounded-md bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {savingOrgId === org.id ? "Saving..." : "Save access"}
-                    </button>
-                  </div>
-                </div>
+                  ) : null}
+                </li>
               );
                 })}
-              </>
+                </ul>
+              </div>
             ) : (
-              <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
                 <p className="text-base font-semibold text-slate-950">No organizations match</p>
-                <p className="mt-2 text-sm leading-7 text-slate-500">Try a different search.</p>
+                <p className="mt-2 text-sm leading-7 text-slate-500">Try a different name, slug, or id.</p>
               </div>
             )
           ) : filteredUsers.length > 0 ? filteredUsers.map((user) => {

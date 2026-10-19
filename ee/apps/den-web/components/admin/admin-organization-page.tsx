@@ -12,6 +12,7 @@ import { AdminBreadcrumbs } from "./admin-breadcrumbs";
 import { ADMIN_LIST_PAGE_SIZE, useAdminListLocation } from "./admin-list-location";
 import { requestAdmin, withStoredBearer, type AdminResult } from "./admin-request";
 import { useAdminSessionCookie } from "./admin-shell";
+import { recordAdminOrganizationVisit } from "./admin-recent-organizations";
 
 const AdminOrganizationInsights = lazy(() => import("./admin-organization-insights").then((module) => ({ default: module.AdminOrganizationInsights })));
 
@@ -70,6 +71,13 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
     }, 75);
     return () => { controller.abort(); window.clearTimeout(timeout); };
   }, [hasSessionCookie, organizationId, section, search, offset, attempt]);
+
+  const visited = state.access === "ready" && state.data.organization.id === organizationId ? state.data.organization : null;
+  const visitedName = visited?.name;
+  const visitedSlug = visited?.slug;
+  useEffect(() => {
+    if (visitedName !== undefined) recordAdminOrganizationVisit({ id: organizationId, name: visitedName, slug: visitedSlug });
+  }, [organizationId, visitedName, visitedSlug]);
 
   const query = new URLSearchParams();
   if (search) query.set("search", search);

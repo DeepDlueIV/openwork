@@ -118,6 +118,10 @@ struct ElementRecord {
     var valueHash: Data? = nil
 
     static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"]
+    /// Roles whose AX value is what the control visibly shows (text, a state or a level).
+    /// Any other control's value may be hidden, such as a custom masked field.
+    static let valueRoles: Set<String> = ["AXStaticText", "AXCheckBox", "AXRadioButton", "AXSwitch", "AXToggle", "AXSlider",
+        "AXIncrementor", "AXPopUpButton", "AXDisclosureTriangle", "AXProgressIndicator", "AXLevelIndicator", "AXValueIndicator"]
     var textField: Bool { Self.textRoles.contains(role) && enabled && !protected }
 
     static let interactiveRoles: Set<String> = ["AXButton", "AXTextField", "AXTextArea", "AXSearchField", "AXCheckBox", "AXRadioButton",
@@ -152,7 +156,7 @@ struct ElementRecord {
         // Custom password widgets may be ordinary editable controls in AX.
         // Keep raw values inside the helper for stale-state checks. The model
         // reads normal field content from the image, never a hidden AX value.
-        if !settable, !Self.textRoles.contains(role), let value { result["value"] = value }
+        if !settable, !protected, Self.valueRoles.contains(role), let value { result["value"] = value }
         return result
     }
 }

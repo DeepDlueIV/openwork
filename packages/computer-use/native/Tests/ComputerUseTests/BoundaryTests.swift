@@ -21,6 +21,15 @@ final class BoundaryTests: XCTestCase {
             label: "Document", value: "Readable document content", frame: frame, actions: [], settable: false,
             enabled: true, protected: false)
         XCTAssertEqual(try text.payload(bounds: frame, width: 320, height: 240, compact: true)["value"] as? String, "Readable document content")
+        // Read-only custom controls and protected elements may hold masked values.
+        for (role, protected) in [("AXGroup", false), ("AXUnknown", false), ("AXStaticText", true)] {
+            let hidden = ElementRecord(ref: "e3", element: AXUIElementCreateApplication(getpid()), role: role,
+                label: "Code", value: "hidden-secret", frame: frame, actions: [], settable: false,
+                enabled: true, protected: protected)
+            for compact in [false, true] {
+                XCTAssertNil(try hidden.payload(bounds: frame, width: 320, height: 240, compact: compact)["value"], role)
+            }
+        }
     }
 
     func testMalformedInputNeverBecomesAnAction() throws {

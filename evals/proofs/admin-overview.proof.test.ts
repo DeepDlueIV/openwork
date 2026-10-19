@@ -325,10 +325,15 @@ test("an admin navigates organizations and member usage without loading every de
     // Keep the models section beyond the observer's 400px prefetch margin,
     // including while the earlier lazy charts are still settling their layout.
     await admin.resizeViewport({ width: 1280, height: 700, deviceScaleFactor: 1 });
-    await admin.click({ role: "link", label: "Insights" });
+    // A fresh deep link starts at the top, independent of the preceding Usage
+    // page's pagination/viewport scroll restoration during client navigation.
+    await admin.navigate(world.url(`${world.detailPath}/insights`));
     await admin.see({ testId: "admin-organization-insights" }, { text: /Active member adoption/ });
     await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Insights" });
-    const deferredModels = await adminProbe.dom('[aria-label="Most used models"] [data-admin-deferred="pending"]');
+    const deferredModels = await adminProbe.eventually(
+      () => adminProbe.dom('[aria-label="Most used models"] [data-admin-deferred="pending"]'),
+      { within: 10_000, until: (value) => value.elements.length === 1, label: "the below-prefetch model chart placeholder is mounted" },
+    );
     expect(deferredModels.elements).toHaveLength(1);
     expect(deferredModels.elements[0].rect.top).toBeGreaterThan(700 + 400);
     expect((await adminProbe.dom('[aria-label="Top eight models by AI requests"]')).elements).toHaveLength(0);

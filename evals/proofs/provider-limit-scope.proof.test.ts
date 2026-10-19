@@ -19,7 +19,9 @@ defaultTest("an owner manages provider-specific limits without a feature overrid
     await user.click({ role: "link", label: "Edit Default provider limit" });
     await user.see({ testId: "gateway-limit-editor" });
     await user.see({ role: "combobox", label: "Provider" }, { value: "Providers without their own limit", timeoutMs: 60_000 });
-    await user.notSee({ text: "Checking provider choices. The saved scope is unchanged." }, { timeoutMs: 60_000 });
+    await probe.eventually(() => probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)'), {
+      within: 60_000, until: (value) => value.elements.length === 1, label: "provider choices are verified and editable",
+    });
     await user.click({ role: "combobox", label: "Provider" });
     await user.see({ role: "option", label: /Saved model provider/ });
     const enabled = await probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)');
@@ -32,7 +34,9 @@ defaultTest("an owner manages provider-specific limits without a feature overrid
   await step("the saved provider policy remains separate from the default and editable", async () => {
     await user.click({ role: "link", label: "Edit Saved provider limit" });
     await user.see({ role: "combobox", label: "Provider" }, { value: "Saved model provider", timeoutMs: 60_000 });
-    await user.notSee({ text: "Checking provider choices. The saved scope is unchanged." }, { timeoutMs: 60_000 });
+    await probe.eventually(() => probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)'), {
+      within: 60_000, until: (value) => value.elements.length === 1, label: "provider choices are verified and editable",
+    });
     await user.click({ role: "combobox", label: "Provider" });
     await user.see({ role: "option", label: /Providers without their own limit/ });
     const enabled = await probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)');

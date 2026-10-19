@@ -17,6 +17,8 @@ import { refreshProviderListQueries } from "@/react-app/infra/provider-list-quer
 import { getReactQueryClient } from "@/react-app/infra/query-client";
 import type { RouteWorkspace } from "./route-workspaces";
 import { toast } from "@/components/ui/sonner";
+import { useLiveProviderSync } from "@/react-app/domains/connections/provider-auth/use-live-provider-sync";
+import { shouldRefreshProvidersForReloadEvent } from "@/react-app/domains/connections/provider-auth/live-provider-sync";
 
 const reloadAfterOrgOnboardingKey = "openwork.reloadAfterOrgOnboarding";
 
@@ -28,6 +30,8 @@ export type UseEngineReloadInput = {
   client: OpenworkServerClient | null;
   workspaceId: string;
   workspace: RouteWorkspace | null | undefined;
+  /** The selected workspace's engine URL; keys its live provider-sync status. */
+  opencodeBaseUrl: string;
   endpointForWorkspace: (
     workspace: RouteWorkspace | null | undefined,
   ) => ResolvedWorkspaceEndpoint | null;
@@ -41,12 +45,14 @@ export function useEngineReload(input: UseEngineReloadInput) {
     client,
     workspaceId,
     workspace,
+    opencodeBaseUrl,
     endpointForWorkspace,
     activeReloadBlockingSessions,
     onError,
     refreshRouteState,
   } = input;
   const reloadCoordinator = useReloadCoordinator();
+  const liveProviderSync = useLiveProviderSync(client, opencodeBaseUrl);
   const [engineReloadVersion, setEngineReloadVersion] = useState(0);
   const [routeEngineInfo, setRouteEngineInfo] = useState<EngineInfo | null>(null);
   const [engineRolloverAvailable, setEngineRolloverAvailable] = useState(false);
@@ -162,7 +168,9 @@ export function useEngineReload(input: UseEngineReloadInput) {
           // The engine watches these changes in the running location. Refresh
           // the visible catalog without scheduling an engine reload.
           if (event.reason === "skills" || event.reason === "mcp" || event.reason === "config") {
-            await refreshProviderListQueries(getReactQueryClient());
+            // Native provider/model events drive live sync; the 3s reload-event poll
+            // must not become a second provider refresh loop.
+            if (shouldRefreshProvidersForReloadEvent(liveProviderSync)) await refreshProviderListQueries(getReactQueryClient());
             continue;
           }
           reloadCoordinator.markReloadRequired(event.reason, event.trigger);
@@ -179,7 +187,7 @@ export function useEngineReload(input: UseEngineReloadInput) {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [client, endpointForWorkspace, reloadCoordinator, workspace, workspaceId]);
+  }, [client, endpointForWorkspace, liveProviderSync, reloadCoordinator, workspace, workspaceId]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;

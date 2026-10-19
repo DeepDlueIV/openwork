@@ -532,7 +532,15 @@ export async function startServer(
     watcherHandle.close();
     watcherHandle = startReloadWatchers({ config, reloadEvents, logger });
   };
+  let resolvedLiveProviderSync = false;
+  const resolveLiveProviderSync = async () => {
+    resolvedLiveProviderSync = false;
+    resolvedLiveProviderSync = (await managedDesktopPolicy(config).current())?.liveProviderSync === true;
+    return resolvedLiveProviderSync;
+  };
   const engineV2Preview = createEngineV2Preview({ config, env, deferStart: true,
+    resolveLiveProviderSync,
+    providerSession: () => cloudProviderSync.currentSession(),
     hostReadRequest: async (path, init) => {
       // Internal dispatch retains the host credential in this process. The
       // native plugin receives only the context bridge's restricted token.
@@ -547,6 +555,12 @@ export async function startServer(
   const cloudProviderSync = new CloudProviderSync({
     config,
     env,
+    liveProviderSync: async () => {
+      // The same signed-in desktop-config hydration as organization defaults. A
+      // missing field/older Den is off; never infer this from org metadata.
+      await engineV2Preview.setLiveProviderSync(await resolveLiveProviderSync());
+      return engineV2Preview.status().liveProviderSync;
+    },
     reloadEngine: () => engineV2Preview.refreshProviders(),
     logger: toManagedProviderAuthLogger(logger),
   });
@@ -940,6 +954,7 @@ export async function proxyOpencodeV2Request(input: {
   headers.delete("x-openwork-client-id");
   headers.delete("host");
   headers.delete("origin");
+  headers.delete("transfer-encoding");
   headers.set("authorization", `Basic ${Buffer.from(`opencode:${input.connection.password}`).toString("base64")}`);
 
   // An engine that is down or restarting is an expected 502, not an
@@ -2079,7 +2094,13 @@ function createRoutes(
     const session = parseCloudProviderDenSession(await readJsonBody(ctx.request));
     if (!session) throw new ApiError(400, "invalid_payload", "baseUrl, token, and orgId are required");
     anonymousInference.setMemberSession(session);
-    await managedDesktopPolicy(config).setSession(session);
+    // Revoke the old bridge identity synchronously, before policy/network work.
+    const suspended = cloudProviderSync.suspendForSession(session);
+    try {
+      await managedDesktopPolicy(config).setSession(session);
+    } finally {
+      await suspended;
+    }
     await cloudProviderSync.setSession(session);
     return new Response(null, { status: 204 });
   });
@@ -2087,8 +2108,12 @@ function createRoutes(
   addRoute(routes, "DELETE", "/den-session", "host-token", async () => {
     ensureWritable(config);
     anonymousInference.setMemberSession(null);
-    await managedDesktopPolicy(config).clearSession();
-    await cloudProviderSync.clearSession();
+    const clearing = cloudProviderSync.clearSession();
+    try {
+      await managedDesktopPolicy(config).clearSession();
+    } finally {
+      await clearing;
+    }
     await anonymousInference.initialize(config.port);
     return new Response(null, { status: 204 });
   });

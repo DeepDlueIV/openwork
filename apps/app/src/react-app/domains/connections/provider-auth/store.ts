@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from "react";
+import { liveProviderSyncStatusQueryKey, usesLiveProviderSync, type LiveProviderSyncStatus } from "./live-provider-sync";
+import { isOpencodeV2BaseUrl } from "@/app/lib/opencode-v2-adapter";
 import { CLOUD_MODEL_CONFIG_VERSION } from "@openwork/types/cloud-model-fast";
 
 import { applyEdits, modify, parse } from "jsonc-parser";
@@ -86,7 +88,7 @@ import {
   type GatewayConnectProvider,
   resolveCloudProviderCredentials,
 } from "./cloud-provider-config";
-import { dispatchNewProviders } from "../../../../app/lib/provider-events";
+import { dispatchNewProviders, dispatchProviderCatalogChanged } from "../../../../app/lib/provider-events";
 import { hasPendingGatewayModelSelection } from "./pending-gateway-model-selection";
 import { readManagedDisabledProviders, updateManagedDisabledProviders } from "../managed-engine-config";
 import {
@@ -116,7 +118,7 @@ type CloudProviderSyncReason =
   | "settings_cloud_opened"
   | "manual";
 
-type CloudProviderSyncWorkResult = void | OpenworkCloudProviderSyncRun;
+type CloudProviderSyncWorkResult = void | OpenworkCloudProviderSyncRun | { status: "live" };
 
 type GlobalCloudProviderSyncOutcome = { contextKey: string } & (
   | { status: "completed"; result: CloudProviderSyncWorkResult }
@@ -2209,7 +2211,7 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
     return result;
   }
 
-  async function runCloudProviderSync(reason: CloudProviderSyncReason): Promise<void | { outcome: "handled_server_side" }> {
+  async function runCloudProviderSync(reason: CloudProviderSyncReason): Promise<void | { outcome: "handled_server_side" | "handled_live" }> {
     if (disposed) return;
     const delivery = syncDenSessionDelivery();
     const contextKey = getCloudProviderSyncContextKey();
@@ -2269,6 +2271,26 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
             // An old server session can still return noop after a failed token
             // refresh. Delivery must succeed before every run, not just no_session.
             if (!await pushDenSession() || !isCurrent()) return;
+            // Session delivery above must continue even when V2 owns provider
+            // reconciliation. Do not wake the legacy config writer in that mode.
+            if (isOpencodeV2BaseUrl(options.providerBaseUrl())) {
+              const status = await openworkClient.getEngineStatus().catch(() => null);
+              if (!isCurrent()) return;
+              const baseUrl = options.providerBaseUrl();
+              const queryClient = getReactQueryClient();
+              const key = liveProviderSyncStatusQueryKey(baseUrl);
+              const previouslyLive = usesLiveProviderSync({ baseUrl, status: queryClient.getQueryData<LiveProviderSyncStatus>(key) });
+              if (status) queryClient.setQueryData(key, status);
+              if (usesLiveProviderSync({ baseUrl, status })) {
+                // Registration may have emitted native events before the app
+                // knew who owned sync. Reconcile once when ownership is learned.
+                if (!previouslyLive) dispatchProviderCatalogChanged({
+                  baseUrl, directory: options.selectedWorkspaceRoot(), reason: "reconnect",
+                });
+                void refreshGatewayUsageAfterCloudSync(usageScope);
+                return { status: "live" as const };
+              }
+            }
             let result = await openworkClient.runCloudProviderSyncNow(reason, delivery?.controller.signal);
             if (!isCurrent()) return;
             if (result.status === "no_session") {
@@ -2282,6 +2304,7 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
         );
         if (!isCurrent()) return;
         if (!result) throw new Error("Cloud provider sync returned no result.");
+        if (result.status === "live") return { outcome: "handled_live" };
         // Re-derive the imported records (and reloadPending/skips) from the
         // server's status after EVERY server-handled pass. Without this the
         // Cloud Providers rows kept whatever the one-shot start() read found

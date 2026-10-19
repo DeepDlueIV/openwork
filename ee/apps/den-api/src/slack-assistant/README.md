@@ -60,15 +60,9 @@ platform capability are rechecked while processing each turn.
   Messages the member sent while it ran are kept and start next. A message sent
   while an earlier task runs in the thread gets one reply saying it will be done
   right after, and waiting messages run in the order they were sent.
-- Replies are quiet by default: Slack's working status (with its Stop button)
-  shows while a task runs, then the answer arrives as one reply, without the
-  notes the agent wrote on the way. Admins can turn on "Show progress while
-  working" (`progressUpdates`), which applies to tasks started afterwards: steps
-  and notes stream live, and tasks then post one line after four minutes
-  saying they will report back, an hourly "Still working on it" line, and the
-  final answer alone as a new reply that mentions the member.
-- With `slackWorkbotReplies` on (a feature, off by default; decided per message
-  when it starts, see below), replies work like Workbot's.
+- New replies work like Workbot's (see below). Older in-flight checkpoints
+  retain their original quiet/progress reply mode so deployment never changes
+  a message already running.
 - Tasks have no time limit and end with their answer, Stop, a failure, or the
   runner's stuck check. The runner
   pauses a long turn every 50 minutes and the read resumes it with a fresh MCP token.
@@ -83,7 +77,7 @@ platform capability are rechecked while processing each turn.
   minutes, and unused install OAuth state after ten minutes. Native sessions keep
   their existing retention policy. Deleting a connector removes its Slack data.
 
-## Replies like Workbot (`slackWorkbotReplies`)
+## Replies like Workbot
 
 - The runner session carries Slack's instructions (all the safety rules above,
   plus how to talk: one short sentence before looking things up, plain coworker

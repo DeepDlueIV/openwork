@@ -656,9 +656,8 @@ function logFeatureCacheError(stage: "get" | "set", child: CacheChild, id: strin
  * generation for all feature rows, bumped by den-api's feature writers
  * (features.ts updateFeatureRollout / updateOrganizationFeatureOverrides) after
  * the write. Successful bumps invalidate every replica immediately; the TTL
- * bounds failed bumps and external writes for ordinary flags. Permission
- * authorization MUST use features.ts, which overrides cached permissions with
- * a live database read regardless of whether invalidation succeeded.
+ * bounds failed bumps and external writes. Permission grants are always read
+ * from the database by permissions/resolve.ts, never from this flag cache.
  */
 const featureRolloutsEntry: GenerationCacheEntry<FeatureRollouts> = {
   entryKey: (generation) => cacheKey({ parent: "features", child: "rollouts", id: generation }),

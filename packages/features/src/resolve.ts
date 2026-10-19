@@ -37,10 +37,18 @@ export const RETIRED_FEATURE_KEYS = [
   // wherever Workbot or the desktop Calendar is.
   "denFlatPageHeaders", "dashboardActivity", "libraryIntegrated", "libraryUsage", "modelsAnalytics",
   "headlessAutomations", "calendarPolish",
-  // Removed (2026-10): organization Dashboards
-  "orgManagedDashboards",
+  // Removed (2026-10): organization Dashboards and copy-only Workbot sharing
+  "orgManagedDashboards", "workbotSharing",
   // Removed (2026-10): OpenCode v2 is the only engine; the v1 history import is not gated
   "engineV2Upgrade",
+  // Generally available (2026-10, third pass): always on, on cloud and self-hosted.
+  "agentPermissions", "appBuildProgress", "backgroundShellTasks", "desktopPolicyScreenRemoval",
+  "gatewayProviderUsageLimits", "googleDocumentTools", "inviteLinkVerifiesEmail", "lastTurnModelFooter",
+  "mcpSkillsExtension", "memberListToolbars", "modelRemovalRecovery", "nativeCloudSkills", "orgDefaultModel",
+  "permissions", "rememberLastOrganization", "sharedRoles", "slackWorkbotReplies", "teamAccessRows",
+  "teamMembershipCache", "teamPageTabs", "teamRoles", "workbot", "workbotLunaDefault",
+  // Folded into managedDeployments (2026-10), which stays off: Google Cloud and agent tools follow it.
+  "managedDeploymentsGcp", "managedDeploymentsMcp",
 ] as const
 
 export function isFeatureKey(value: string): value is FeatureKey {

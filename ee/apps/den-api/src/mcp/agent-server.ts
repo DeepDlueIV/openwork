@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server"
 import { workflowArtifactAppServerCapabilities } from "./workflow-artifact-app.js"
 import { REMOTE_SESSION_RECEIPT_INSTRUCTIONS } from "./remote-session-resources.js"
+import { SKILLS_EXTENSION_ID } from "./skills-extension.js"
 
 /**
  * Connect steering routes requests; it does not repeat tool rules. With App
@@ -56,7 +57,15 @@ export const LEGACY_AGENT_MCP_INSTRUCTIONS = agentMcpInstructions(false)
 /** Rolled out with `remote-session:status`; one rule, the details live in its description. */
 const REMOTE_SESSION_STATUS_INSTRUCTIONS = "To follow remote sessions, call remote-session:status with all of their commandIds or Cloud sessionIds and waitMs instead of calling remote-session:read repeatedly; read only for the transcript or the full answer."
 
-export function createAgentMcpServer(options: { appServers?: boolean; remoteSessionEvents?: boolean; remoteSessionStatus?: boolean } = {}): McpServer {
+export function createAgentMcpServer(options: {
+  appServers?: boolean
+  remoteSessionEvents?: boolean
+  remoteSessionStatus?: boolean
+  /** Advertise the MCP Skills Extension (SEP-2640); its handlers are registered by the caller. */
+  skillsExtension?: boolean
+  /** Short always-on list of the member's skills, appended to the instructions. */
+  skillIndex?: string
+} = {}): McpServer {
   const server = new McpServer({
     name: "openwork-den-api-agent",
     version: "1.0.0",
@@ -67,12 +76,16 @@ export function createAgentMcpServer(options: { appServers?: boolean; remoteSess
   }, {
     capabilities: {
       ...workflowArtifactAppServerCapabilities,
+      ...(options.skillsExtension ? {
+        extensions: { ...workflowArtifactAppServerCapabilities.extensions, [SKILLS_EXTENSION_ID]: {} },
+      } : {}),
       tools: { listChanged: true },
       resources: { listChanged: true, ...(options.remoteSessionEvents ? { subscribe: true } : {}) },
     },
     instructions: [options.appServers === false ? LEGACY_AGENT_MCP_INSTRUCTIONS : AGENT_MCP_INSTRUCTIONS,
       ...(options.remoteSessionEvents ? [REMOTE_SESSION_RECEIPT_INSTRUCTIONS] : []),
-      ...(options.remoteSessionStatus ? [REMOTE_SESSION_STATUS_INSTRUCTIONS] : [])].join("\n"),
+      ...(options.remoteSessionStatus ? [REMOTE_SESSION_STATUS_INSTRUCTIONS] : []),
+      ...(options.skillIndex ? [options.skillIndex] : [])].join("\n"),
   })
   server.registerResource("agent-guidance", AGENT_MCP_GUIDANCE_URI, {
     title: "OpenWork agent guidance",

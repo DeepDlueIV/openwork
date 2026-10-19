@@ -75,7 +75,7 @@ test("an admin navigates organizations and member usage without loading every de
     const tabs = await adminProbe.dom('nav[aria-label="Organization sections"] [aria-current="page"]');
     const traffic = await world.traffic("admin");
     const location = await world.location();
-    const blocked = await adminProbe.dom('[data-testid="admin-capability-appBuildProgress"][disabled]');
+    const blocked = await adminProbe.dom('[data-testid="admin-capability-offlineRecovery"][disabled]');
     const ok = location.pathname === `${world.detailPath}/features` && tabs.elements[0]?.text === "Features"
       && traffic.features === 1 && traffic.organizationUsage === 0 && traffic.organizationInsights === 0 && blocked.elements.length === 1;
     evidence.recordAssertionEvidence("The Features tab loads only this organization's flags and keeps the global kill switch locked", `${JSON.stringify(location)}; feature reads=${traffic.features}; locked controls=${blocked.elements.length}`, ok);
@@ -99,13 +99,13 @@ test("an admin navigates organizations and member usage without loading every de
 
   await step("long feature names, descriptions and reset actions fit a phone", async () => {
     await admin.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
-    await admin.see({ testId: "admin-capability-reset-slackWorkbotReplies" });
+    await admin.see({ testId: "admin-capability-reset-workbotDocuments" });
     const phone = await adminProbe.dom('[data-testid="admin-organization-features"] li, [data-testid="admin-organization-features"] label, [data-testid="admin-organization-features"] button');
     const phoneFits = phone.documentWidth <= phone.viewportWidth && phone.elements.every((entry) => entry.rect.left >= 0 && entry.rect.left + entry.rect.width <= phone.viewportWidth);
     expect(phoneFits).toBe(true);
     await admin.screenshot();
     await admin.resizeViewport({ width: 320, height: 740, deviceScaleFactor: 1 });
-    await admin.see({ testId: "admin-capability-slackWorkbotReplies" });
+    await admin.see({ testId: "admin-capability-workbotDocuments" });
     const compact = await adminProbe.dom('[data-testid="admin-organization-features"] li, [data-testid="admin-organization-features"] label, [data-testid="admin-organization-features"] button, nav[aria-label="Organization sections"] a');
     const ok = compact.documentWidth <= compact.viewportWidth && compact.elements.length > 0 && compact.elements.every((entry) => entry.rect.left >= 0 && entry.rect.left + entry.rect.width <= compact.viewportWidth);
     evidence.recordAssertionEvidence("Feature text, full-size switches, reset actions and tabs stay inside 390px and 320px screens", `390px document=${phone.documentWidth}; 320px document=${compact.documentWidth}; checked elements=${compact.elements.length}`, phoneFits && ok);
@@ -322,12 +322,20 @@ test("an admin navigates organizations and member usage without loading every de
   });
 
   await step("after: organization insights rank people and models, compare periods and show an activity chart", async () => {
-    await admin.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
-    await admin.click({ role: "link", label: "Insights" });
+    // Keep the models section beyond the observer's 400px prefetch margin,
+    // including while the earlier lazy charts are still settling their layout.
+    await admin.resizeViewport({ width: 1280, height: 700, deviceScaleFactor: 1 });
+    // A fresh deep link starts at the top, independent of the preceding Usage
+    // page's pagination/viewport scroll restoration during client navigation.
+    await admin.navigate(world.url(`${world.detailPath}/insights`));
     await admin.see({ testId: "admin-organization-insights" }, { text: /Active member adoption/ });
     await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Insights" });
-    const deferredModels = await adminProbe.dom('[aria-label="Most used models"] [data-admin-deferred="pending"]');
+    const deferredModels = await adminProbe.eventually(
+      () => adminProbe.dom('[aria-label="Most used models"] [data-admin-deferred="pending"]'),
+      { within: 10_000, until: (value) => value.elements.length === 1, label: "the below-prefetch model chart placeholder is mounted" },
+    );
     expect(deferredModels.elements).toHaveLength(1);
+    expect(deferredModels.elements[0].rect.top).toBeGreaterThan(700 + 400);
     expect((await adminProbe.dom('[aria-label="Top eight models by AI requests"]')).elements).toHaveLength(0);
     const report = await world.organizationInsights();
     const { current, previous, daily, people, models } = report.insights;
@@ -337,16 +345,16 @@ test("an admin navigates organizations and member usage without loading every de
       && models[0].name === "test-active-model" && models[0].requests === 4
       && !models.some((model) => model.name.includes("previous-period") || model.name.includes("outside-window"))
       && current.costMicroUsd === 2000000 && current.unpricedRequests === null;
-    evidence.recordAssertionEvidence("Insights preserve organization scope, retained usage, period bounds, current-member adoption and leader rankings", JSON.stringify({ current, previous, people: people.length, models }), ok);
+    evidence.recordAssertionEvidence("Insights preserve organization scope, retained usage, period bounds, current-member adoption and leader rankings", JSON.stringify({ current, previous, people: people.length, models, deferredModelChartTop: deferredModels.elements[0].rect.top, prefetchBoundary: 700 + 400 }), ok);
     expect(ok).toBe(true);
     await admin.click({ role: "button", label: "Chart metric" });
     await admin.click({ role: "option", label: "Active members" });
     await admin.see({ testId: "admin-dashboard-chart-activeMembers" });
     await admin.screenshot();
-    await admin.wheelAt({ x: 1000, y: 700, deltaY: 700 });
+    await admin.wheelAt({ x: 1000, y: 600, deltaY: 700 });
     await admin.see({ role: "heading", label: "Most active people" });
     await admin.screenshot();
-    await admin.wheelAt({ x: 1000, y: 700, deltaY: 700 });
+    await admin.wheelAt({ x: 1000, y: 600, deltaY: 700 });
     await admin.see({ role: "heading", label: "Most used models" });
     const modelChart = await adminProbe.eventually(() => adminProbe.dom('[aria-label="Top eight models by AI requests"]'), { within: 10_000, until: (value) => value.elements.length === 1, label: "visible model chart" });
     expect(modelChart.elements).toHaveLength(1);

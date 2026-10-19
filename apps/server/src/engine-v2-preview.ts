@@ -1,5 +1,7 @@
 import type { McpRegistrationInspection, McpRegistrationStatus } from "./agent-context-diagnostics.js";
 import { createV2ContextBridge } from "./opencode-v2-context-bridge.js";
+import { createV2ProviderSessionBridge } from "./opencode-v2-provider-session.js";
+import type { CloudProviderDenSession } from "./cloud-provider-sync.js";
 import { ApiError } from "./errors.js";
 import { hasV1Chat, hasV1ChatsSince, opencodeV1DatabasePath, runOpencodeV1HistoryMigration, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
 import { executionRules } from "./managed-policy-rules.js";
@@ -84,6 +86,8 @@ async function joinBounded(promise: Promise<unknown>, ms: number): Promise<void>
 }
 
 export interface EngineV2PreviewStatus {
+  /** Effective Gateway owner on the running engine, not merely the Den rollout. */
+  liveProviderSync: boolean;
   running: boolean;
   version?: string;
   pid?: number;
@@ -117,6 +121,7 @@ export interface EngineV2Preview {
   connection(): { url: string; username: string; password: string } | undefined;
   ensureWorkspaceReady(directory: string): Promise<void>;
   refreshProviders(): Promise<void>;
+  setLiveProviderSync(enabled: boolean): Promise<void>;
   /**
    * Reconcile a folder's MCP connections with the engine: register new or
    * changed ones, remove revoked ones, and restart failed ones after a back-off.
@@ -185,7 +190,17 @@ export function readEngineV2PreviewState(config: Pick<ServerConfig, "configPath"
         && typeof parsed.historyCopyResult.imported === "number" && typeof parsed.historyCopyResult.skipped === "number" && typeof parsed.historyCopyResult.total === "number"
         ? { historyCopyResult: { state: parsed.historyCopyResult.state, imported: parsed.historyCopyResult.imported,
           skipped: parsed.historyCopyResult.skipped, total: parsed.historyCopyResult.total,
-          ...(typeof parsed.historyCopyResult.error === "string" ? { error: parsed.historyCopyResult.error } : {}) } } : {}),
+          ...(typeof parsed.historyCopyResult.error === "string" ? { error: parsed.historyCopyResult.error } : {}),
+          ...(typeof parsed.historyCopyResult.backupPath === "string" ? { backupPath: parsed.historyCopyResult.backupPath } : {}),
+          ...(typeof parsed.historyCopyResult.startedAt === "string" ? { startedAt: parsed.historyCopyResult.startedAt } : {}),
+          ...(parsed.historyCopyResult.resumed === true ? { resumed: true } : {}),
+          ...(Array.isArray(parsed.historyCopyResult.notCopied) ? { notCopied: parsed.historyCopyResult.notCopied.flatMap((chat: unknown) =>
+            isRecord(chat) && typeof chat.id === "string" && typeof chat.title === "string"
+              && (chat.reason === "too_large" || chat.reason === "rejected" || chat.reason === "stopped")
+              ? [{ id: chat.id, title: chat.title, reason: chat.reason }] : []) } : {}),
+          ...(Array.isArray(parsed.historyCopyResult.trimmed) ? { trimmed: parsed.historyCopyResult.trimmed.flatMap((chat: unknown) =>
+            isRecord(chat) && typeof chat.id === "string" && typeof chat.title === "string"
+              ? [{ id: chat.id, title: chat.title }] : []) } : {}) } } : {}),
     };
   } catch {
     return { enabled: true, chatRouting: true };
@@ -322,12 +337,19 @@ export function mapRuntimeProvidersToV2Specs(
   return { specs, skippedProviderIds };
 }
 
-async function waitForEngineV2Catalog(
+export function shouldWaitForMirroredProviders(liveProviderSync: boolean, specs: readonly OpencodeV2ProviderSpec[]): boolean {
+  return !liveProviderSync || specs.some(spec => !/^ipr_/i.test(spec.id));
+}
+
+export async function waitForEngineV2Catalog(
   active: Pick<ManagedOpencodeV2Server, "fetchJson">,
   directory: string,
   specs: readonly OpencodeV2ProviderSpec[],
   timeoutMs = CATALOG_MIRROR_TIMEOUT_MS,
+  ownsGateway: () => boolean = () => false,
 ): Promise<{ modelIds: string[]; lastError?: string }> {
+  if (!shouldWaitForMirroredProviders(ownsGateway(), specs)) return { modelIds: [] };
+  const shouldConfirm = (providerID: string) => !ownsGateway() || !/^ipr_/i.test(providerID);
   const mirrored = new Set(specs.map((spec) => spec.id));
   const expectedModels = specs.flatMap((spec) => spec.models
     .filter((model) => engineListsModel(spec, model))
@@ -342,8 +364,8 @@ async function waitForEngineV2Catalog(
       (model): model is { providerID: string; id: string } =>
         isRecord(model) && typeof model.providerID === "string" && typeof model.id === "string",
     ) ? payload : undefined;
-    const missing = expectedModels.filter((expected) =>
-      !models?.some((model) => model.providerID === expected.providerID && model.id === expected.id));
+    const missing = expectedModels.filter((expected) => shouldConfirm(expected.providerID)
+      && !models?.some((model) => model.providerID === expected.providerID && model.id === expected.id));
     const message = isRecord(catalog.json) && typeof catalog.json.message === "string" ? ` ${catalog.json.message}` : "";
     return { models, missing, status: catalog.status, message,
       ready: catalog.status === 200 && models !== undefined && missing.length === 0 };
@@ -427,11 +449,20 @@ async function readLiveMcpStatus(
   return statuses;
 }
 
+/** Start-time feature decisions never reuse an earlier engine's ownership. */
+export async function resolveLiveProviderSyncForEngineStart(resolve?: () => Promise<boolean>): Promise<boolean> {
+  try { return await resolve?.() === true; }
+  catch { return false; }
+}
+
 export function createEngineV2Preview(options: {
   config: ServerConfig;
   env?: Pick<EnvService, "list" | "onChange">;
   deferStart?: boolean;
   hostReadRequest?: (path: string, init?: RequestInit) => Promise<unknown>;
+  providerSession?: () => CloudProviderDenSession | null;
+  /** Fresh Den resolution on every child start, independent of the cloud sync timer. */
+  resolveLiveProviderSync?: () => Promise<boolean>;
   waits?: Partial<typeof ENGINE_V2_UPKEEP_WAITS>;
 }): EngineV2Preview {
   const { config } = options;
@@ -448,6 +479,10 @@ export function createEngineV2Preview(options: {
   let migrationJob: Promise<void> | undefined;
   let migrationAbort: AbortController | undefined;
   let stopping = false;
+  // Selected once per child lifetime. A runtime kill changes only the next
+  // engine start: never resume the old writer while a live plugin still owns v2.
+  let liveProviderSync = false;
+  const ownsGateway = () => liveProviderSync;
   let v1HistoryCopiedAt = initialState.v1HistoryCopiedAt;
   let v1HistoryCopyStartedAt = initialState.v1HistoryCopyStartedAt;
   const persistState = (receipt: EngineV2MigrationStatus = migration) => writeEngineV2PreviewState(config, {
@@ -471,12 +506,15 @@ export function createEngineV2Preview(options: {
   const warn = (message: string) => { lastWarning = `${new Date().toISOString()} ${message}`; };
   let sidecar: ManagedOpencodeV2Server | undefined;
   let contextBridge: Awaited<ReturnType<typeof createV2ContextBridge>> | undefined;
+  let providerSessionBridge: Awaited<ReturnType<typeof createV2ProviderSessionBridge>> | undefined;
   let unsubscribe: (() => void) | undefined;
   let startPromise: Promise<void> | undefined;
   let mirrorInFlight: Promise<void> | undefined;
   // Settles once a mirror has pushed providers to the engine, before its
   // catalog confirmation; readiness joins this, never the whole mirror.
   let providerPush: Promise<void> | undefined;
+  // Resolves after local inventory is read, before any old push/confirmation.
+  let providerDiscovery: Promise<void> | undefined;
   let mirrorDirty = false;
   // The last mirror's push failure. A model the catalog has not listed is
   // reported in status but never fails a caller whose providers were pushed.
@@ -658,6 +696,7 @@ export function createEngineV2Preview(options: {
     return {
       migration: { ...migration },
       v1HistoryAvailable: hasV1History(),
+      liveProviderSync: ownsGateway(),
       running,
       ...(version === undefined ? {} : { version }),
       ...(pid === undefined ? {} : { pid }),
@@ -677,35 +716,53 @@ export function createEngineV2Preview(options: {
     let pushed = () => {};
     const push = new Promise<void>((resolve) => { pushed = resolve; });
     providerPush = push;
+    let discovered = () => {};
+    const discovery = new Promise<void>((resolve) => { discovered = resolve; });
+    providerDiscovery = discovery;
     try {
-      await pushAndConfirmProviders(active, pushed);
+      await pushAndConfirmProviders(active, pushed, discovered);
     } finally {
+      discovered();
       pushed();
+      if (providerDiscovery === discovery) providerDiscovery = undefined;
       if (providerPush === push) providerPush = undefined;
     }
   }
 
-  async function pushAndConfirmProviders(active: ManagedOpencodeV2Server, pushed: () => void): Promise<void> {
+  async function pushAndConfirmProviders(active: ManagedOpencodeV2Server, pushed: () => void, discovered: () => void): Promise<void> {
     const globalRuntime = await readGlobalRuntimeOpencodeConfig(config);
     const configured = runtimeProviderMap(globalRuntime);
     // The runtime `disabled_providers` list (e.g. a disconnected OpenCode
     // Zen). Re-enabling removes the entry and this mirror restores it.
     const disabledProviderIds = runtimeDisabledProviderList(globalRuntime);
     const disabled = new Set(disabledProviderIds);
+    const combinedProviders = configured;
+    // Native plugin is the sole Gateway owner. Local and legacy providers still
+    // use the old mirror, including their normal readiness/catalog checks.
+    const providerMap = Object.fromEntries(Object.entries(combinedProviders)
+      .filter(([id]) => !ownsGateway() || !/^ipr_/i.test(id)));
     const credentials = new Map((await options.env?.list() ?? []).map((entry) => [entry.key, entry.value]));
-    const mapped = mapRuntimeProvidersToV2Specs(configured, credentials);
+    const mapped = mapRuntimeProvidersToV2Specs(providerMap, credentials);
     const specs = mapped.specs.filter((spec) => !disabled.has(spec.id));
+    if (ownsGateway()) mirroredSpecs = specs;
+    discovered();
     const nextMirroredProviderIds = specs.map((spec) => spec.id);
-    await active.setProviders(specs, disabledProviderIds);
-    mirroredSpecs = specs;
+    const providerFilters = Object.fromEntries(Object.entries(combinedProviders).flatMap(([id, value]) => {
+      if (!isRecord(value)) return [];
+      const whitelist = Array.isArray(value.whitelist) ? value.whitelist.filter((id): id is string => typeof id === "string") : undefined;
+      const blacklist = Array.isArray(value.blacklist) ? value.blacklist.filter((id): id is string => typeof id === "string") : undefined;
+      return whitelist || blacklist ? [[id, { whitelist, blacklist }]] : [];
+    }));
+    await active.setProviders(specs, disabledProviderIds, providerFilters);
+    mirroredSpecs = specs.filter(spec => !ownsGateway() || !/^ipr_/i.test(spec.id));
     workspaceReadiness.clear();
-    mirroredProviderIds = nextMirroredProviderIds;
+    mirroredProviderIds = nextMirroredProviderIds.filter(id => !ownsGateway() || !/^ipr_/i.test(id));
     skippedProviderIds = [...mapped.skippedProviderIds];
     lastMirroredAt = new Date().toISOString();
     pushed();
     // Re-check folders already in use now, so their next prompt pays nothing.
     for (const directory of mcpLocations.keys()) void ensureWorkspaceReady(directory).catch(() => undefined);
-    const catalog = await waitForEngineV2Catalog(active, workspaceDir, specs);
+    const catalog = await waitForEngineV2Catalog(active, workspaceDir, specs, CATALOG_MIRROR_TIMEOUT_MS, ownsGateway);
     currentCatalogModelIds = catalog.modelIds;
     lastError = catalog.lastError;
   }
@@ -741,6 +798,24 @@ export function createEngineV2Preview(options: {
     if (mirrorError) throw new Error(mirrorError);
   }
 
+  async function setLiveProviderSync(next: boolean): Promise<void> {
+    // Signed-in cold boot delivers identity after the child starts. Activation
+    // is one-way for this lifetime: one watched-config write removes the old
+    // Gateway specs and registers the plugin atomically. A kill never resumes
+    // the old writer against a plugin that the engine may still have loaded.
+    if (!next || liveProviderSync || stopped) return;
+    liveProviderSync = true;
+    try {
+      await sidecar?.refreshConfig();
+    } catch (error) {
+      liveProviderSync = false;
+      throw error;
+    }
+    mirroredSpecs = mirroredSpecs.filter(spec => !/^ipr_/i.test(spec.id));
+    workspaceReadiness.clear();
+    if (sidecar) scheduleMirror();
+  }
+
   async function closeSidecar(): Promise<void> {
     const active = sidecar;
     workspaceReadiness.clear();
@@ -754,8 +829,10 @@ export function createEngineV2Preview(options: {
     pid = undefined;
     const bridge = contextBridge;
     contextBridge = undefined;
+    const sessionBridge = providerSessionBridge;
+    providerSessionBridge = undefined;
     try {
-      await Promise.all([bridge?.close(), active?.close()]);
+      await Promise.all([bridge?.close(), sessionBridge?.close(), active?.close()]);
     } catch (error) {
       lastError = errorMessage(error);
     }
@@ -773,15 +850,20 @@ export function createEngineV2Preview(options: {
     const resolved = await resolveBinary(config);
     binSource = resolved.source;
     if (stopped) return;
+    liveProviderSync = await resolveLiveProviderSyncForEngineStart(options.resolveLiveProviderSync);
+    if (stopped) return;
     await mkdir(workspaceDir, { recursive: true });
     // Remove copies left by the former Cloud skill materializer. Cloud skills
     // use metadata and on-demand Connect reads.
     await rm(join(rootDir, "cloud-skills"), { recursive: true, force: true });
     const opencodeModelsUrl = await resolveOpencodeModelsUrl();
     contextBridge = options.hostReadRequest ? await createV2ContextBridge(options.hostReadRequest) : undefined;
+    providerSessionBridge = options.providerSession ? await createV2ProviderSessionBridge(() =>
+      ownsGateway() ? options.providerSession?.() ?? null : null) : undefined;
     const globalSkills = globalSkillDirectories();
     const managed = await createManagedOpencodeV2Server({
       contextTools: contextBridge,
+      ...(providerSessionBridge ? { providerSession: { ...providerSessionBridge, enabled: ownsGateway } } : {}),
       bin: resolved.bin,
       rootDir,
       instanceId: engineInstanceId(),
@@ -892,6 +974,12 @@ export function createEngineV2Preview(options: {
   }
 
   async function ensureWorkspaceReady(directory: string): Promise<void> {
+    // Read local inventory first so mixed local/Gateway startup keeps local
+    // readiness. This is not the provider push or catalog confirmation join.
+    if (ownsGateway() && providerDiscovery) await providerDiscovery;
+    // Gateway discovery is native: no old push join or catalog/readiness poll
+    // is owed when the mirror has no local/legacy providers to prepare.
+    if (!shouldWaitForMirroredProviders(ownsGateway(), mirroredSpecs)) return;
     // Join a mirror only until its providers are pushed; its catalog
     // confirmation can take a minute and is status, not readiness.
     if (providerPush) await joinBounded(providerPush, waits.providerPushJoinMs);
@@ -1008,5 +1096,5 @@ export function createEngineV2Preview(options: {
     else void start().catch(recordStartError);
   }
   if (!options.deferStart) startWhenReady();
-  return { start: startWhenReady, migrateHistory, status, inspectMcpRegistration, connection, ensureWorkspaceReady, refreshProviders, syncWorkspaceMcp, settleWorkspaceMcp, warmWorkspace, settleWorkspaceSkills, stop };
+  return { start: startWhenReady, migrateHistory, status, inspectMcpRegistration, connection, ensureWorkspaceReady, refreshProviders, setLiveProviderSync, syncWorkspaceMcp, settleWorkspaceMcp, warmWorkspace, settleWorkspaceSkills, stop };
 }

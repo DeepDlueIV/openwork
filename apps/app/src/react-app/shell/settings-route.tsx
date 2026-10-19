@@ -2453,6 +2453,7 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
           <KeyboardShortcutsView
             client={opencodeClient}
             baseUrl={opencodeBaseUrl}
+            pickerOptions={modelPicker.options}
             directory={selectedWorkspaceRoot}
             onOpenProviders={() => navigateSettingsPath("ai")}
           />

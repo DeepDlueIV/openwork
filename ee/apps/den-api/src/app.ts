@@ -1,6 +1,7 @@
 import "./load-env.js"
 import { registerSlackAssistantRoutes } from "./slack-assistant/routes.js"
 import { registerWorkbotRoutes } from "./workbot/routes.js"
+import { registerHeadlessRunnerRoutes } from "./headless-runner/routes.js"
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { swaggerUI } from "@hono/swagger-ui"
 import { and, eq, isNull, sql } from "@openwork-ee/den-db/drizzle"
@@ -59,6 +60,7 @@ import { preclaimScopeMiddleware } from "./middleware/preclaim-scope.js"
 import { auditRequestMiddleware } from "./audit/request-capture.js"
 import { isOperationalErrorPath, normalizeOperationalErrorResponse, operationalErrorResponse } from "./operational-errors.js"
 import { sanitizePublicResponseHeaders } from "./public-response-headers.js"
+import { AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER } from "@openwork/types/automations"
 
 type AppVariables = RequestIdVariables & AuthContextVariables & Partial<UserOrganizationsContext> & Partial<OrganizationContextVariables> & Partial<MemberTeamsContext>
 
@@ -191,7 +193,9 @@ if (!env.corsHandledByEdge) {
     cors({
       origin: resolveStrictCorsOrigin,
       credentials: true,
-      allowHeaders: ["Content-Type", "Authorization", "X-Api-Key", "X-Request-Id", "X-OpenWork-Legacy-Org-Id", "X-OpenWork-Org-Id", "X-OpenWork-Audit-Correlation"],
+      // Browser clients (app-web) send the Automation model-attention capability header on create/update/run;
+      // without it here the preflight fails and the request never reaches Den ("Failed to fetch").
+      allowHeaders: ["Content-Type", "Authorization", "X-Api-Key", "X-Request-Id", "X-OpenWork-Legacy-Org-Id", "X-OpenWork-Org-Id", "X-OpenWork-Audit-Correlation", AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER],
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       exposeHeaders: ["Content-Length", "Content-Disposition", "X-Audit-Next-Cursor", "X-Audit-Snapshot-Sequence", "X-Audit-Resource-Scope"],
       maxAge: 600,
@@ -292,6 +296,7 @@ registerRemoteSessionRoutes(app)
 registerOrgRoutes(app)
 registerSlackAssistantRoutes(app)
 registerWorkbotRoutes(app)
+registerHeadlessRunnerRoutes(app)
 registerVersionRoutes(app)
 registerFeatureRoutes(app)
 registerWebhookRoutes(app)
@@ -426,6 +431,7 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "Worker Activity", description: "Worker heartbeat and activity reporting routes." },
       { name: "Managed deployments", description: "OpenWork installations in an organization's own cloud account: launch approval, installer milestones and health reports." },
       { name: "Automations", description: "Scheduled Automations, their runs, and desktop runner presence." },
+      { name: "Documents", description: "Connected Drive documents, inline editing and file-bound temporary Office sessions." },
       { name: "Workbot", description: "The signed-in member's single Workbot conversation." },
       { name: "Workflows", description: "Saved Workflows (Code Mode scripts), their versions, snapshots, and views." },
       { name: "Workflow Runs", description: "Durable Workflow run history." },
@@ -480,6 +486,11 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
           type: "http",
           scheme: "bearer",
           description: "Deployment maintenance token (DEN_MAINTENANCE_TOKEN) used by scheduled jobs, passed as `Authorization: Bearer <token>`.",
+        },
+        headlessRunnerCallbackToken: {
+          type: "http",
+          scheme: "bearer",
+          description: "Headless runner callback token (DEN_HEADLESS_RUNNER_CALLBACK_TOKEN) the runner presents to exchange a turn's resume grant, passed as `Authorization: Bearer <token>`.",
         },
         workerHeartbeatToken: {
           type: "http",

@@ -43,6 +43,9 @@ import { clearSessionDraft, saveSessionDraft } from "../sync/draft-store";
  * so choices made before the session exists carry into the session that the
  * hero creates.
  */
+/** Moves the new-task draft whose `draftOwnerKey` matches to `groupId` (empty for no group). */
+export const MOVE_NEW_TASK_DRAFT_EVENT = "openwork:move-new-task-draft";
+
 export type NewTaskComposerContext = {
   destination?: NewSessionDestination;
   draftSessionId?: string;
@@ -58,6 +61,7 @@ export type NewTaskComposerContext = {
   modelOptions?: readonly ModelOption[];
   modelUnavailable?: boolean;
   modelUnavailableMessage?: string | null;
+  modelRecoveryScope?: string;
   organizationModelsEmpty?: boolean;
   onRefreshOrganizationModels?: () => void | Promise<void>;
   modelPickerOpen: boolean;
@@ -482,6 +486,23 @@ export function NewTaskComposer(props: NewTaskComposerProps) {
     }
   };
 
+  // Cmd+K > Move to Group on an empty composer: move this draft, text and
+  // attachments included, exactly as its own destination menu would.
+  const changeDestinationRef = useRef(changeDestination);
+  changeDestinationRef.current = changeDestination;
+  const moveTargetKey = context?.draftOwnerKey;
+  useEffect(() => {
+    const onMove = (event: Event) => {
+      if (!(event instanceof CustomEvent) || !moveTargetKey || event.detail?.draftOwnerKey !== moveTargetKey) return;
+      const source = context?.destination;
+      if (!source) return;
+      const groupId = typeof event.detail.groupId === "string" && event.detail.groupId ? event.detail.groupId : undefined;
+      changeDestinationRef.current({ ...source, groupId });
+    };
+    window.addEventListener(MOVE_NEW_TASK_DRAFT_EVENT, onMove);
+    return () => window.removeEventListener(MOVE_NEW_TASK_DRAFT_EVENT, onMove);
+  }, [moveTargetKey, context?.destination]);
+
   return (
     <div>
     {destinationError ? <div role="alert" className="mb-2 text-sm text-red-11">{destinationError}</div> : null}
@@ -527,6 +548,7 @@ export function NewTaskComposer(props: NewTaskComposerProps) {
       ]}
       modelUnavailable={context?.modelUnavailable}
       modelUnavailableMessage={context?.modelUnavailableMessage}
+      modelRecoveryScope={context?.modelRecoveryScope}
       organizationModelsEmpty={context?.organizationModelsEmpty}
       statusLabel=""
       modelPickerOpen={context?.modelPickerOpen ?? false}

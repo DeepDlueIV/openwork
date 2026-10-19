@@ -1,4 +1,5 @@
 import type { RunnerMessage, RunnerSnapshot, RunnerTurn } from "@openwork-ee/headless-protocol"
+import { readWorkbotContextPrompt, type WorkbotViewContext } from "@openwork/types/workbot-context"
 
 /**
  * Workbot is one conversation per person. The runner keeps the transcript;
@@ -85,6 +86,7 @@ export type WorkbotTask = {
 export type WorkbotTurn = {
   id: string
   text: string
+  context?: WorkbotViewContext
   sentAt: number | null
   finishedAt: number | null
   status: WorkbotTurnStatus
@@ -371,9 +373,11 @@ export function buildWorkbotTurns(snapshot: RunnerSnapshot, files: FileNames = n
     const outputs = outputsOf(files, turn.createdAt ?? null, working ? null : (turn.updatedAt ?? null))
     // A report is Workbot speaking first: the task's notes to it stay hidden, and it brings back what the task made.
     const task = turn.kind === "report" ? snapshot.turns.find((entry) => entry.messageId === turn.parent) : undefined
+    const visible = readWorkbotContextPrompt(user.text)
     turns.push({
       id: turn.messageId.slice(WORKBOT_MESSAGE_PREFIX.length),
-      text: turn.kind === "report" || greeting ? "" : user.text,
+      text: turn.kind === "report" || greeting ? "" : visible.text,
+      ...(!greeting && turn.kind !== "report" && visible.context ? { context: visible.context } : {}),
       sentAt: turn.createdAt ?? null,
       finishedAt: working ? null : turn.updatedAt ?? null,
       status,

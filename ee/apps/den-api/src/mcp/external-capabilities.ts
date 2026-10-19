@@ -120,8 +120,6 @@ export async function resolveMcpMemberIdentity(input: {
 export async function resolveMcpMember(input: {
   userId: string
   organizationId: string
-  /** The organization's teamMembershipCache flag, when the caller already resolved its features. */
-  teamMembershipCache?: boolean
 }): Promise<{ identity: McpMemberIdentity; teams: Awaited<ReturnType<typeof listTeamsForMember>> } | null> {
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   const member = await cache.org.membership({
@@ -129,7 +127,7 @@ export async function resolveMcpMember(input: {
     userId: normalizeDenTypeId("user", input.userId),
   })
   if (!member) return null
-  const teams = await listTeamsForMember({ organizationId, memberId: member.id, teamMembershipCache: input.teamMembershipCache })
+  const teams = await listTeamsForMember({ organizationId, memberId: member.id })
   return { identity: { orgMembershipId: member.id, teamIds: teams.map((team) => team.id) }, teams }
 }
 

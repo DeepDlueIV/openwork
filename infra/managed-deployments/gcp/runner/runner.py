@@ -87,6 +87,18 @@ def unsafe_changes(plan):
     return unsafe
 
 
+def wait_for_completion(check, message, timeout=600):
+    # Only observe here: never replay an update, execution or SQL migration.
+    deadline = time.monotonic() + timeout
+    while True:
+        if check():
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError(message)
+        time.sleep(min(3, remaining))
+
+
 def service_status(service):
     return gcloud("run", "services", "describe", service, "--region=" + os.environ["REGION"])
 
@@ -139,16 +151,19 @@ def drained_instances(observations, since, required_revisions):
     return True
 
 
-def verify_no_running_migration():
-    executions = gcloud("run", "jobs", "executions", "list", "--job=" + name(os.environ["DEPLOYMENT_ID"]) + "-migrate",
-                        "--region=" + os.environ["REGION"])
-    if not isinstance(executions, list):
-        raise ValueError("unknown prior migration executions; inspect before retry")
-    for execution in executions:
-        status = execution.get("status", {})
-        if not status.get("completionTime") or not any(condition.get("type") == "Completed" and condition.get("status") in ("True", "False")
-                                                       for condition in status.get("conditions", [])):
-            raise ValueError("prior migration still running or unknown; inspect before retry")
+def verify_no_running_migration(timeout=600):
+    def completed():
+        executions = gcloud("run", "jobs", "executions", "list", "--job=" + name(os.environ["DEPLOYMENT_ID"]) + "-migrate",
+                            "--region=" + os.environ["REGION"])
+        if not isinstance(executions, list):
+            raise ValueError("unknown prior migration executions; inspect before retry")
+        for execution in executions:
+            status = execution.get("status", {})
+            if not status.get("completionTime") or not any(condition.get("type") == "Completed" and condition.get("status") in ("True", "False")
+                                                           for condition in status.get("conditions", [])):
+                return False
+        return True
+    wait_for_completion(completed, "prior migration still running or unknown before deadline; inspect before retry", timeout)
 
 
 def maintenance_fence(plan, timeout=900):
@@ -198,7 +213,10 @@ def maintenance_fence(plan, timeout=900):
     while time.monotonic() < deadline:
         states = [service_status(service) for service in sorted(expected)]
         if not all(disabled_service(status) for status in states):
-            raise ValueError("service fence not observed; maintenance retained")
+            # The completed update can precede propagation to describe/status.
+            # Never migrate while waiting for the disabled generation to appear.
+            time.sleep(min(3, max(0, deadline - time.monotonic())))
+            continue
         if all(drained_instances(instance_observations(service, disabled_at), disabled_at, revisions[service]) for service in sorted(expected)):
             # Recheck to catch an independent deployer resuming a service while
             # monitoring was read. Independent deployers are unsupported.
@@ -210,22 +228,25 @@ def maintenance_fence(plan, timeout=900):
     raise ValueError("no authoritative zero-instance observation; maintenance retained")
 
 
-def verify_maintained_revisions(images):
-    for key, suffix in (("den_api", "-api"), ("den_web", "-web")):
-        service = name(os.environ["DEPLOYMENT_ID"]) + suffix
-        live = service_status(service)
-        status = live.get("status", {})
-        revision = status.get("latestReadyRevisionName")
-        traffic = status.get("traffic", [])
-        template = live.get("spec", {}).get("template", {})
-        containers = template.get("spec", {}).get("containers", [])
-        if (not disabled_service(live) or not revision or status.get("latestCreatedRevisionName") != revision
-                or template.get("metadata", {}).get("name") != revision
-                or len(traffic) != 1 or traffic[0].get("revisionName") != revision or traffic[0].get("percent") != 100
-                or len(containers) != 1 or containers[0].get("image") != images[key]):
-            raise ValueError("API-only revision ownership not verified; maintenance retained")
-        if key == "den_api" and (containers[0].get("command") != ["node"] or containers[0].get("args") != ["/app/ee/apps/den-api/dist/main.js"]):
-            raise ValueError("migration-capable API command; maintenance retained")
+def verify_maintained_revisions(images, timeout=600):
+    def ready():
+        for key, suffix in (("den_api", "-api"), ("den_web", "-web")):
+            service = name(os.environ["DEPLOYMENT_ID"]) + suffix
+            live = service_status(service)
+            status = live.get("status", {})
+            revision = status.get("latestReadyRevisionName")
+            traffic = status.get("traffic", [])
+            template = live.get("spec", {}).get("template", {})
+            containers = template.get("spec", {}).get("containers", [])
+            if (not disabled_service(live) or not revision or status.get("latestCreatedRevisionName") != revision
+                    or template.get("metadata", {}).get("name") != revision
+                    or len(traffic) != 1 or traffic[0].get("revisionName") != revision or traffic[0].get("percent") != 100
+                    or len(containers) != 1 or containers[0].get("image") != images[key]):
+                return False
+            if key == "den_api" and (containers[0].get("command") != ["node"] or containers[0].get("args") != ["/app/ee/apps/den-api/dist/main.js"]):
+                return False
+        return True
+    wait_for_completion(ready, "API-only revision ownership not verified before deadline; maintenance retained", timeout)
 
 
 def terraform_binary(root):
@@ -391,14 +412,17 @@ def apply(root, images):
     return {key: value["value"] for key, value in json.loads(raw).items()}
 
 
-def verify_services(outputs):
-    for service in outputs["service_names"].values():
-        status = gcloud("run", "services", "describe", service, "--region=" + os.environ["REGION"])
-        observed = status.get("status", {})
-        generation = status.get("metadata", {}).get("generation")
-        if (generation is None or str(observed.get("observedGeneration")) != str(generation)
-                or not any(c.get("type") == "Ready" and c.get("status") == "True" for c in observed.get("conditions", []))):
-            raise ValueError("latest service revision not ready")
+def verify_services(outputs, timeout=600):
+    def ready():
+        for service in outputs["service_names"].values():
+            status = service_status(service)
+            observed = status.get("status", {})
+            generation = status.get("metadata", {}).get("generation")
+            if (generation is None or str(observed.get("observedGeneration")) != str(generation)
+                    or not any(c.get("type") == "Ready" and c.get("status") == "True" for c in observed.get("conditions", []))):
+                return False
+        return True
+    wait_for_completion(ready, "latest service revision not ready before deadline", timeout)
 
 
 def verify_health(outputs, attempts=120, delay=30):

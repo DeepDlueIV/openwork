@@ -317,10 +317,10 @@ class RuntimeReadinessTests(unittest.TestCase):
                       "status": {"observedGeneration": observed, "conditions": [{"type": "Ready", "status": "True"}]}}
             with self.subTest(generation=generation, observed=observed), patch.dict(os.environ, ENV, clear=True), patch.object(runner, "gcloud", return_value=status):
                 if accepted:
-                    runner.verify_services({"service_names": {"den_api": "ow-api"}})
+                    runner.verify_services({"service_names": {"den_api": "ow-api"}}, timeout=0)
                 else:
                     with self.assertRaises(ValueError):
-                        runner.verify_services({"service_names": {"den_api": "ow-api"}})
+                        runner.verify_services({"service_names": {"den_api": "ow-api"}}, timeout=0)
 
     def test_html_and_api_health_are_not_web_upstream_readiness(self):
         outputs = {"web_url": "https://openwork.example.com", "api_url": "https://api.openwork.example.com"}

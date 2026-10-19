@@ -103,7 +103,18 @@ class AdoptionTests(unittest.TestCase):
                         "image": images["den_api" if api else "den_web"], "command": ["node"] if api else [],
                         "args": ["/app/ee/apps/den-api/dist/main.js"] if api else []}]}}}}
         with patch.dict(os.environ, ENV), patch.object(runner, "service_status", side_effect=live):
-            runner.verify_maintained_revisions(images)
+            runner.verify_maintained_revisions(images, timeout=0)
+        reads = []
+        def converging(service):
+            result = live(service)
+            if not reads:
+                result["status"]["latestReadyRevisionName"] = "old"
+            reads.append(service)
+            return result
+        with patch.dict(os.environ, ENV), patch.object(runner, "service_status", side_effect=converging), patch.object(runner.time, "sleep") as poll:
+            runner.verify_maintained_revisions(images, timeout=10)
+        self.assertEqual(len(reads), 3)
+        poll.assert_called_once_with(3)
         for failure in ("old-ready", "split", "image", "command", "enabled"):
             def invalid(service):
                 result = live(service)
@@ -120,7 +131,7 @@ class AdoptionTests(unittest.TestCase):
                 return result
             with self.subTest(failure=failure), patch.dict(os.environ, ENV), patch.object(runner, "service_status", side_effect=invalid):
                 with self.assertRaises(ValueError):
-                    runner.verify_maintained_revisions(images)
+                    runner.verify_maintained_revisions(images, timeout=0)
 
     def test_custom_observer_role_is_one_read_permission_not_monitoring_viewer(self):
         source = (GCP / "runner/install.py").read_text()
@@ -135,6 +146,30 @@ class AdoptionTests(unittest.TestCase):
         self.assertNotIn('"jobs", "execute"', apply_source)
         self.assertNotIn("-target=", apply_source)
         self.assertIn('approved_plan("maintained-platform")', apply_source)
+
+
+class CompletionWaitTests(unittest.TestCase):
+    def test_service_readiness_observes_stale_pending_then_completed(self):
+        stale = {"metadata": {"generation": 2}, "status": {"observedGeneration": 1, "conditions": [{"type": "Ready", "status": "True"}]}}
+        pending = {"metadata": {"generation": 2}, "status": {"observedGeneration": 2, "conditions": [{"type": "Ready", "status": "Unknown"}]}}
+        ready = {"metadata": {"generation": 2}, "status": {"observedGeneration": 2, "conditions": [{"type": "Ready", "status": "True"}]}}
+        with patch.dict(os.environ, ENV), patch.object(runner, "gcloud", side_effect=[stale, pending, ready]) as cloud, patch.object(runner.time, "sleep") as poll:
+            runner.verify_services({"service_names": {"den_api": "owned-api"}}, timeout=10)
+        self.assertEqual(poll.call_count, 2)
+        self.assertTrue(all(call.args[:3] == ("run", "services", "describe") for call in cloud.call_args_list))
+
+    def test_previous_execution_is_observed_to_completion_without_execution_retry(self):
+        completed = [{"status": {"completionTime": "known", "conditions": [{"type": "Completed", "status": "True"}]}}]
+        with patch.dict(os.environ, ENV), patch.object(runner, "gcloud", side_effect=[[{"status": {}}], completed]) as cloud, patch.object(runner.time, "sleep") as poll:
+            runner.verify_no_running_migration(timeout=10)
+        poll.assert_called_once_with(3)
+        self.assertTrue(all(call.args[:4] == ("run", "jobs", "executions", "list") for call in cloud.call_args_list))
+
+    def test_pending_completion_has_a_monotonic_deadline(self):
+        with patch.object(runner.time, "monotonic", side_effect=[0, 1, 5]), patch.object(runner.time, "sleep") as poll:
+            with self.assertRaisesRegex(ValueError, "deadline"):
+                runner.wait_for_completion(lambda: False, "deadline", timeout=5)
+        poll.assert_called_once_with(3)
 
 
 class FenceTests(unittest.TestCase):
@@ -165,7 +200,9 @@ class FenceTests(unittest.TestCase):
     def test_fence_clears_tags_disables_owned_services_then_waits_for_fresh_both_state_zeroes(self):
         disabled = set()
         order = []
+        lagged = False
         def cloud(*args):
+            nonlocal lagged
             if args[:3] == ("run", "jobs", "executions"):
                 return []
             service = args[3]
@@ -174,17 +211,23 @@ class FenceTests(unittest.TestCase):
                 self.assertIn("--scaling=0", args)
                 disabled.add(service)
             if args[:3] == ("run", "services", "describe"):
+                observed = 2
+                if len(disabled) == 2 and not lagged:
+                    lagged = True
+                    observed = 1
                 return {"metadata": {"name": service, "generation": 2, "annotations": {
                     "run.googleapis.com/scalingMode": "manual" if service in disabled else "automatic",
                     "run.googleapis.com/manualInstanceCount": "0"}},
                     "spec": {"traffic": [{"percent": 100}]},
-                    "status": {"observedGeneration": 2, "traffic": [{"revisionName": service + "-r1"}]}}
+                    "status": {"observedGeneration": observed, "traffic": [{"revisionName": service + "-r1"}]}}
             return {}
         def metrics(service, since):
             return observations(service + "-r1", "0" if len(disabled) == 2 else "1")
         with patch.dict(os.environ, ENV), patch.object(runner, "gcloud", side_effect=cloud), \
-                patch.object(runner, "instance_observations", side_effect=metrics):
+                patch.object(runner, "instance_observations", side_effect=metrics), patch.object(runner.time, "sleep") as poll:
             self.assertTrue(runner.maintenance_fence(self.plan()))
+        self.assertTrue(lagged)
+        poll.assert_called_once_with(3)
         self.assertEqual(len(disabled), 2)
         self.assertEqual(order.count(("run", "services", "update-traffic")), 2)
         self.assertNotIn(("run", "services", "delete"), order)
@@ -193,10 +236,10 @@ class FenceTests(unittest.TestCase):
         for executions in ({}, [{"status": {}}], [{"status": {"completionTime": "known", "conditions": [{"type": "Completed", "status": "Unknown"}]}}]):
             with patch.dict(os.environ, ENV), patch.object(runner, "gcloud", return_value=executions):
                 with self.assertRaises(ValueError):
-                    runner.verify_no_running_migration()
+                    runner.verify_no_running_migration(timeout=0)
         for executions in ([], [{"status": {"completionTime": "known", "conditions": [{"type": "Completed", "status": "True"}]}}]):
             with patch.dict(os.environ, ENV), patch.object(runner, "gcloud", return_value=executions):
-                runner.verify_no_running_migration()
+                runner.verify_no_running_migration(timeout=0)
 
     def test_tags_unobserved_generation_or_resumed_autoscaling_are_not_disabled(self):
         good = {"metadata": {"generation": 3, "annotations": {"run.googleapis.com/scalingMode": "manual", "run.googleapis.com/manualInstanceCount": "0"}},

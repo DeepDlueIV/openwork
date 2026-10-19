@@ -10,14 +10,18 @@ Slack and Automations retain their existing default policy.
 
 ## Required correction-safety dependency
 
-Integrate [PR #6147](https://github.com/different-ai/openwork/pull/6147), original
-source head `fc5f230f3ecf8febfab625bd5fb7ae6b7e8eb63a`, **before the Luna default
-rollout**. The dependency is logical: this branch carries its unchanged
-six-commit patch stack/authorship replayed onto dev
-`7433f98aad4ad5bc54a73d58b3e671f730ac329c`. The rebased dependency prefix ends at
-`e5457c2928ed47e97cd7d0eb44602c80c6bed7c2`; the original source SHA is no longer
-an ancestor of this refreshed branch. No competing correction implementation
-or changes to its UI, pending or context work were introduced. Corrections
+Integrate [PR #6147](https://github.com/different-ai/openwork/pull/6147), latest
+source head `512539d555c309709fa930aaebeb5b2f5b23065b`, **before the Luna default
+rollout**. That head has the same source tree as its functional source head
+`fc5f230f3ecf8febfab625bd5fb7ae6b7e8eb63a`; its extra commit only refreshed CI.
+The dependency is logical: this branch carries all six unchanged source
+patches/authorship replayed onto dev
+`2f11350cba1ed2239f7b82b8612927eb5d709d39`, without copying an empty CI trigger.
+The rebased dependency prefix ends at
+`2f507cea9a429029f4441af4f4674689e5bd307d`; original dependency SHAs are source
+references, not literal ancestors of this refreshed branch. No competing
+correction implementation or changes to its UI, pending or context work were
+introduced. Corrections
 append instead of deleting earlier turns. An earlier successful catalog check is not a safety boundary: the next
 lookup inside `modelFor` can fail. Append-only corrections keep the original
 history and failed correction recoverable even in that race. There is no

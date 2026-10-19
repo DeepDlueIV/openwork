@@ -102,6 +102,7 @@
 .ow-editor-toolbar strong { font-weight: 500; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ow-editor-toolbar > span { color: var(--doc-muted); font-size: 12px; margin-right: auto; }
 .ow-editor-toolbar button { display: flex; align-items: center; gap: 7px; }
+.ow-editor-toolbar a.ow-editor-open-google { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .ow-editor-toolbar button:has(svg.lucide-save) { border: 1px solid var(--doc-line); }
 .ow-editor-message { padding: 8px 16px; font-size: 12px; color: var(--doc-muted); border-bottom: 1px solid var(--doc-line); }
 .ow-editor-message button { text-decoration: underline; margin-left: 10px; }
@@ -152,6 +153,9 @@
 
 .ow-office-frame { display: block; border: 0; width: 100%; height: 100%; min-height: 550px; flex: 1; }
 .ow-office-canvas { display: flex; flex-direction: column; }
+/* Opacity, not visibility: a hidden frame may be throttled and load slower. */
+.ow-office-frame[data-loading] { opacity: 0; pointer-events: none; }
+.ow-office-loading { position: absolute; inset: 0; background: var(--doc-bg); }
 
 /* The workspace controls are composed in React, independent of the file engine. */
 .ow-document-commandbar { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; flex-shrink: 0; min-height: 44px; padding: 6px 12px; border-bottom: 1px solid var(--doc-line); background: var(--doc-bg); }

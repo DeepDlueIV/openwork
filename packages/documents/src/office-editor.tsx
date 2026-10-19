@@ -62,7 +62,19 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn)
   }, [dirty])
+  // The engine paints an empty frame, then an empty document, before the file
+  // arrives. Keep the opening skeleton over it until the document has loaded,
+  // or long enough that the engine's own progress is better than waiting.
+  const [loadingTooLong, setLoadingTooLong] = useState(false)
   useEffect(() => {
+    setLoadingTooLong(false)
+    if (!session) return
+    const timer = setTimeout(() => setLoadingTooLong(true), 30_000)
+    return () => clearTimeout(timer)
+  }, [session])
+  const showFrame = ready || loadingTooLong
+  useEffect(() => {
+    setReady(false)
     if (!session) return
     const origin = new URL(session.serverUrl).origin
     const receive = (event: MessageEvent) => {
@@ -131,7 +143,8 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
     {session && <DocumentToolbar controller={controller}/>}
     {session && <div className="ow-office-canvas" inert={saving || !enabled} aria-busy={saving}>
       <form ref={form} method="post" action={collaboraWorkspaceUrl(session.editorUrl)} target={frameName} hidden><input type="hidden" name="access_token" value={session.accessToken}/><input type="hidden" name="access_token_ttl" value={Date.parse(session.expiresAt)}/></form>
-      <iframe ref={frame} name={frameName} title={`Edit ${item.name}`} className="ow-office-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals" allow="clipboard-read; clipboard-write" allowFullScreen referrerPolicy="no-referrer"/>
+      <iframe ref={frame} name={frameName} title={`Edit ${item.name}`} className="ow-office-frame" data-loading={showFrame ? undefined : ""} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals" allow="clipboard-read; clipboard-write" allowFullScreen referrerPolicy="no-referrer"/>
+      {!showFrame && <div className="ow-documents-skeleton ow-office-loading" aria-label="Opening full editor" aria-busy="true"><div/><div/><div/></div>}
     </div>}
   </section>
 }

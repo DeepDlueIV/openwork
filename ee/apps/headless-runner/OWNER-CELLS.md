@@ -29,6 +29,14 @@ Workbot ── + owner header ────┘   (src/worker/index.ts)  └─ ce
    `HEADLESS_FILES=s3`. Keep `wrangler.jsonc`'s `name` and class name: celld derives every cell's identity from
    them.
 3. Point `DEN_HEADLESS_RUNNER_URL` (den-api) and `WORKBOT_RUNNER_URL` (Workbot) at it. Tokens stay the same.
+4. For [self-resume](./README.md#self-resume), give the bundle `HEADLESS_DEN_API_URL`, `HEADLESS_DEN_CALLBACK_TOKEN` and
+   `HEADLESS_GRANT_KEY`, all three or cells refuse to start: either in `CELLD_RUNNER_VARS`, or (production) as the
+   `HEADLESS_DEN_API_URL` variable and the two secrets of the `celld-production` environment, which the deploy
+   workflow merges only when all three are set. Without them turns wait for their
+   callers after a crash or deploy, as before. With them each cell keeps a durable alarm while it has turns running or
+   waiting to resume: after a node dies, the alarm wakes the cell on another node, startup recovery marks its turns
+   interrupted, and the runner resumes them with fresh tokens from Den. A cell stores its own name (`cell` in its
+   Durable Object storage) on its first request, so an alarm, which has no request, acts only for the cell it was set by.
 
 **Keep the runner current.** Nodes only run what was last deployed to the bucket; they never build from the repo. In
 production, `.github/workflows/celld-runner-deploy.yml` does it on every `dev` push that changes the runner or a
@@ -67,10 +75,28 @@ Names and defaults are from [celld's docs](https://celld.dev/docs) (v0.6.2):
 - At least 2 nodes, for failover.
 - A supervisor that always restarts, with no attempt limit: a node that loses its lease exits, and only a restart
   brings it back.
-- Versioning on the celld bucket and the files bucket, replicated to a second bucket. Replication alone copies bad
-  writes and deletes; versioning keeps the earlier copies. Expire noncurrent versions after a while, or epoch GC frees
-  no space.
+- A backup outside the live bucket. celld's replication copies bad writes and deletes too. On S3, use versioning plus
+  replication to a second bucket (expire noncurrent versions, or epoch GC frees no space). R2 has no versioning: use
+  dated snapshots in a second bucket ([Backups and restore](#backups-and-restore)).
 - `HEADLESS_COMPUTER=off` until the computer is verified on celld (see [Check it](#check-it)).
+
+## Backups and restore
+
+`.github/workflows/celld-backup.yml` copies the whole bucket (celld cells under `fleet/`, kept files under
+`sessions/`, not `ci/`) once a day into `s3://$CELLD_BACKUP_BUCKET/snapshots/<UTC time>/`, with a `_snapshot.json`
+recording object counts. The backup bucket's lifecycle rule deletes snapshots after 15 days, which bounds how long a
+deleted conversation survives in backups. Configure it on the `celld-backup` environment: secrets
+`CELLD_BACKUP_R2_ACCESS_KEY_ID` / `CELLD_BACKUP_R2_SECRET_ACCESS_KEY` (an R2 token that reads the live bucket and
+writes the backup bucket, nothing else) and variables `CELLD_BACKUP_BUCKET` / `CELLD_BACKUP_S3_ENDPOINT`.
+
+A snapshot is copied from a running fleet, so it is consistent per object, not at one instant. To restore:
+
+1. Stop every node (scale the service to 0) so no cell writes while the bucket changes.
+2. Copy the chosen snapshot back over the live bucket's `fleet/` and `sessions/`
+   (`aws s3 sync s3://<backup>/snapshots/<time>/fleet s3://<live>/fleet --delete`, same for `sessions`).
+3. Start the nodes. Cells restore from the restored change chains; writes after the snapshot are lost.
+
+Rehearse a restore into a throwaway bucket prefix before relying on it.
 
 ## Deploying the runner
 
@@ -158,7 +184,8 @@ CELLD_BIN=/path/to/celld pnpm --filter @openwork-ee/headless-runner worker:e2e:c
 `owner-cells-e2e.ts` boots the real runtime with a streaming mock model and checks: Workbot owner routing and
 isolation between people; side chats sharing memory and listing; owner-less conversations; **Den's own Slack adapter**
 (`headlessRemoteCall`: create, send, read to the answer, stop, unknown session); idempotent re-sends; and killing
-the runtime mid-turn, then interrupted-turn recovery and resume with nothing lost.
+the runtime mid-turn, then interrupted-turn recovery and resume with nothing lost, and a turn sent with a resume grant
+completing after the kill with no caller re-send (its alarm, a fake Den exchange, and the runner's own resume).
 
 Not covered locally: celld's multi-node failover and bucket durability (celld's own guarantees; check them on the
 real fleet before pointing production at it), and the Freestyle/Daytona computer inside celld, which bundles but

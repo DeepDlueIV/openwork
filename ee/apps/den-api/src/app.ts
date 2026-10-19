@@ -1,6 +1,7 @@
 import "./load-env.js"
 import { registerSlackAssistantRoutes } from "./slack-assistant/routes.js"
 import { registerWorkbotRoutes } from "./workbot/routes.js"
+import { registerHeadlessRunnerRoutes } from "./headless-runner/routes.js"
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { swaggerUI } from "@hono/swagger-ui"
 import { and, eq, isNull, sql } from "@openwork-ee/den-db/drizzle"
@@ -295,6 +296,7 @@ registerRemoteSessionRoutes(app)
 registerOrgRoutes(app)
 registerSlackAssistantRoutes(app)
 registerWorkbotRoutes(app)
+registerHeadlessRunnerRoutes(app)
 registerVersionRoutes(app)
 registerFeatureRoutes(app)
 registerWebhookRoutes(app)
@@ -484,6 +486,11 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
           type: "http",
           scheme: "bearer",
           description: "Deployment maintenance token (DEN_MAINTENANCE_TOKEN) used by scheduled jobs, passed as `Authorization: Bearer <token>`.",
+        },
+        headlessRunnerCallbackToken: {
+          type: "http",
+          scheme: "bearer",
+          description: "Headless runner callback token (DEN_HEADLESS_RUNNER_CALLBACK_TOKEN) the runner presents to exchange a turn's resume grant, passed as `Authorization: Bearer <token>`.",
         },
         workerHeartbeatToken: {
           type: "http",

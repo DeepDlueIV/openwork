@@ -137,6 +137,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotGuidedNavigation: {
+    label: "Workbot: show me in the workspace",
+    description: "Workbot offers to open the documents it mentions, and the conversation stays open beside the document. Needs the workspace assistant.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   automationCalendar: {
     label: "Calendar: desktop app",
     description: "Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar.",
@@ -168,6 +175,13 @@ export const FEATURES = defineFeatures({
   remoteSessionSubagents: {
     label: "Desktop: tasks on other computers as sub-agents",
     description: "A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  headlessDurableTurns: {
+    label: "Workbot: tasks keep going on their own",
+    description: "Workbot, Slack and Automations answers keep going after a restart, deploy or server failure, without waiting for someone to reopen the chat.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

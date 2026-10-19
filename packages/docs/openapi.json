@@ -236,6 +236,11 @@
         "scheme": "bearer",
         "description": "Deployment maintenance token (DEN_MAINTENANCE_TOKEN) used by scheduled jobs, passed as `Authorization: Bearer <token>`."
       },
+      "headlessRunnerCallbackToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Headless runner callback token (DEN_HEADLESS_RUNNER_CALLBACK_TOKEN) the runner presents to exchange a turn's resume grant, passed as `Authorization: Bearer <token>`."
+      },
       "workerHeartbeatToken": {
         "type": "http",
         "scheme": "bearer",
@@ -2442,11 +2447,13 @@
               "workbotInlineConnect",
               "workbotDocuments",
               "workbotWorkspaceAssistant",
+              "workbotGuidedNavigation",
               "automationCalendar",
               "engineV2ForceUpgrade",
               "engineV2Upgrade",
               "remoteSessionEvents",
-              "remoteSessionSubagents"
+              "remoteSessionSubagents",
+              "headlessDurableTurns"
             ]
           },
           "label": {
@@ -2657,6 +2664,9 @@
                     "workbotWorkspaceAssistant": {
                       "type": "boolean"
                     },
+                    "workbotGuidedNavigation": {
+                      "type": "boolean"
+                    },
                     "automationCalendar": {
                       "type": "boolean"
                     },
@@ -2670,6 +2680,9 @@
                       "type": "boolean"
                     },
                     "remoteSessionSubagents": {
+                      "type": "boolean"
+                    },
+                    "headlessDurableTurns": {
                       "type": "boolean"
                     },
                     "gatewayDashboard": {
@@ -2692,11 +2705,13 @@
                     "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
+                    "workbotGuidedNavigation",
                     "automationCalendar",
                     "engineV2ForceUpgrade",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "remoteSessionSubagents",
+                    "headlessDurableTurns",
                     "gatewayDashboard"
                   ]
                 },
@@ -3375,6 +3390,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotGuidedNavigation": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "automationCalendar": {
                       "type": "object",
                       "properties": {
@@ -3654,6 +3725,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "headlessDurableTurns": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -3669,11 +3796,13 @@
                     "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
+                    "workbotGuidedNavigation",
                     "automationCalendar",
                     "engineV2ForceUpgrade",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
-                    "remoteSessionSubagents"
+                    "remoteSessionSubagents",
+                    "headlessDurableTurns"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -4079,6 +4208,9 @@
                     "workbotWorkspaceAssistant": {
                       "type": "boolean"
                     },
+                    "workbotGuidedNavigation": {
+                      "type": "boolean"
+                    },
                     "automationCalendar": {
                       "type": "boolean"
                     },
@@ -4092,6 +4224,9 @@
                       "type": "boolean"
                     },
                     "remoteSessionSubagents": {
+                      "type": "boolean"
+                    },
+                    "headlessDurableTurns": {
                       "type": "boolean"
                     },
                     "gatewayDashboard": {
@@ -4114,11 +4249,13 @@
                     "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
+                    "workbotGuidedNavigation",
                     "automationCalendar",
                     "engineV2ForceUpgrade",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "remoteSessionSubagents",
+                    "headlessDurableTurns",
                     "gatewayDashboard"
                   ]
                 },
@@ -4797,6 +4934,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotGuidedNavigation": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "automationCalendar": {
                       "type": "object",
                       "properties": {
@@ -5076,6 +5269,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "headlessDurableTurns": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -5091,11 +5340,13 @@
                     "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
+                    "workbotGuidedNavigation",
                     "automationCalendar",
                     "engineV2ForceUpgrade",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
-                    "remoteSessionSubagents"
+                    "remoteSessionSubagents",
+                    "headlessDurableTurns"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -26682,6 +26933,9 @@
           "workspaceAssistant": {
             "type": "boolean"
           },
+          "guidedNavigation": {
+            "type": "boolean"
+          },
           "teamLinks": {
             "type": "object",
             "properties": {
@@ -26737,6 +26991,9 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "resumeGrant": {
+            "type": "string"
           }
         },
         "required": [
@@ -29232,6 +29489,9 @@
                         "workbotWorkspaceAssistant": {
                           "type": "boolean"
                         },
+                        "workbotGuidedNavigation": {
+                          "type": "boolean"
+                        },
                         "automationCalendar": {
                           "type": "boolean"
                         },
@@ -29245,6 +29505,9 @@
                           "type": "boolean"
                         },
                         "remoteSessionSubagents": {
+                          "type": "boolean"
+                        },
+                        "headlessDurableTurns": {
                           "type": "boolean"
                         },
                         "gatewayDashboard": {
@@ -29267,11 +29530,13 @@
                         "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
+                        "workbotGuidedNavigation",
                         "automationCalendar",
                         "engineV2ForceUpgrade",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "remoteSessionSubagents",
+                        "headlessDurableTurns",
                         "gatewayDashboard"
                       ]
                     },
@@ -29950,6 +30215,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotGuidedNavigation": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "automationCalendar": {
                           "type": "object",
                           "properties": {
@@ -30229,6 +30550,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "headlessDurableTurns": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -30244,11 +30621,13 @@
                         "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
+                        "workbotGuidedNavigation",
                         "automationCalendar",
                         "engineV2ForceUpgrade",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
-                        "remoteSessionSubagents"
+                        "remoteSessionSubagents",
+                        "headlessDurableTurns"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -30403,6 +30782,9 @@
                         "workbotWorkspaceAssistant": {
                           "type": "boolean"
                         },
+                        "workbotGuidedNavigation": {
+                          "type": "boolean"
+                        },
                         "automationCalendar": {
                           "type": "boolean"
                         },
@@ -30416,6 +30798,9 @@
                           "type": "boolean"
                         },
                         "remoteSessionSubagents": {
+                          "type": "boolean"
+                        },
+                        "headlessDurableTurns": {
                           "type": "boolean"
                         },
                         "gatewayDashboard": {
@@ -30438,11 +30823,13 @@
                         "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
+                        "workbotGuidedNavigation",
                         "automationCalendar",
                         "engineV2ForceUpgrade",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "remoteSessionSubagents",
+                        "headlessDurableTurns",
                         "gatewayDashboard"
                       ]
                     },
@@ -31121,6 +31508,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotGuidedNavigation": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "automationCalendar": {
                           "type": "object",
                           "properties": {
@@ -31400,6 +31843,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "headlessDurableTurns": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -31415,11 +31914,13 @@
                         "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
+                        "workbotGuidedNavigation",
                         "automationCalendar",
                         "engineV2ForceUpgrade",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
-                        "remoteSessionSubagents"
+                        "remoteSessionSubagents",
+                        "headlessDurableTurns"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -102672,7 +103173,7 @@
         ],
         "x-mcp": false,
         "summary": "A short-lived token for one Workbot turn",
-        "description": "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. Refused when Workbot is off for the workspace.",
+        "description": "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. Refused when Workbot is off for the workspace.",
         "responses": {
           "200": {
             "description": "The token.",
@@ -102753,6 +103254,16 @@
                   },
                   "readOnly": {
                     "type": "boolean"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "messageId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                   }
                 }
               }

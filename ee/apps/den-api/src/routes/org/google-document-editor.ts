@@ -25,6 +25,7 @@ const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 const DOC = "application/vnd.google-apps.document"
 const SHEET = "application/vnd.google-apps.spreadsheet"
+const SLIDES = "application/vnd.google-apps.presentation"
 const MAX_BYTES = 12 * 1024 * 1024
 const base = "/v1/documents/google-drive/files/:fileId"
 const errorSchema = z.object({ error: z.string(), message: z.string() })
@@ -95,6 +96,7 @@ export function registerGoogleDocumentEditorRoutes<T extends { Variables: OrgRou
     return { ok: true, file: file.data } as const
   }
   const media = async (c: Parameters<typeof requestGoogleAction>[0], selected: GoogleWorkspaceActionDependencies, fileId: string) => { const url = readFile(fileId); url.searchParams.delete("fields"); url.searchParams.set("alt", "media"); return requestGoogleAction(c, selected, readScopes, url) }
+  const exportPdf = async (c: Parameters<typeof requestGoogleAction>[0], selected: GoogleWorkspaceActionDependencies, fileId: string) => { const url = googleUrl("https://www.googleapis.com", `/drive/v3/files/${fileId}/export`); url.searchParams.set("mimeType", "application/pdf"); return requestGoogleAction(c, selected, readScopes, url) }
   const readDoc = async (c: Parameters<typeof requestGoogleAction>[0], selected: GoogleWorkspaceActionDependencies, fileId: string) => { const url = googleUrl("https://docs.googleapis.com", `/v1/documents/${fileId}`); url.searchParams.set("includeTabsContent", "true"); const result = await requestGoogleAction(c, selected, readScopes, url); if (!result.ok) return result; const data = docSchema.safeParse(await readGoogleActionJson(result.response)); return data.success ? { ok: true, data: data.data } as const : { ok: false, reply: failure(c, "Google could not return this document.") } as const }
 
   const itemSchema = z.object({ id: documentIdSchema, name: z.string(), mimeType: z.string(), modifiedTime: z.string().nullable(), size: z.number().nullable(), openUrl: z.string().nullable() })
@@ -143,7 +145,7 @@ export function registerGoogleDocumentEditorRoutes<T extends { Variables: OrgRou
         if (file.mimeType === DOCX) return c.json({ ...common, ...await openWord(bytes) })
         return c.json({ ...common, kind: "text", text: new TextDecoder("utf-8", { fatal: true }).decode(bytes) })
       }
-      return c.json({ ...common, kind: "preview", mimeType: file.mimeType, canEdit: false })
+      return c.json({ ...common, kind: "preview", mimeType: file.mimeType, canEdit: false, ...(file.mimeType === SLIDES ? { notice: "Preview only. Open in Google Slides to edit; changes stay in the original presentation." } : {}) })
     } catch (error) { return failure(c, error instanceof Error ? error.message : "This file cannot be edited inline.") }
   })
 
@@ -194,9 +196,11 @@ export function registerGoogleDocumentEditorRoutes<T extends { Variables: OrgRou
   app.get(`${base}/content`, description("readGoogleDriveDocumentContent", "Preview a Drive PDF or image", z.unknown()), orgMemberRoute(), guard, paramValidator(params), queryValidator(z.object({ connectionId: connectionSchema })), async c => {
     const { fileId } = c.req.valid("param"); const auth = await authorize(c, c.req.valid("query").connectionId); if (!auth.ok) return auth.reply
     const meta = await metadata(c, auth.selected, fileId); if (!meta.ok) return meta.reply
-    if (!["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"].includes(meta.file.mimeType)) return failure(c, "This file has no safe inline preview.")
-    const result = await media(c, auth.selected, fileId); if (!result.ok) return result.reply
-    try { const bytes = await boundedBytes(result.response); return new Response(new Uint8Array(bytes).buffer, { headers: { "content-type": meta.file.mimeType, "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" } }) } catch { return failure(c, "This preview is too large.") }
+    // Google Slides previews as a PDF export; the presentation itself is never converted or copied.
+    const slides = meta.file.mimeType === SLIDES
+    if (!slides && !["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"].includes(meta.file.mimeType)) return failure(c, "This file has no safe inline preview.")
+    const result = slides ? await exportPdf(c, auth.selected, fileId) : await media(c, auth.selected, fileId); if (!result.ok) return result.reply
+    try { const bytes = await boundedBytes(result.response); return new Response(new Uint8Array(bytes).buffer, { headers: { "content-type": slides ? "application/pdf" : meta.file.mimeType, "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" } }) } catch { return failure(c, "This preview is too large.") }
   })
   routeApp.route("/", app)
 }

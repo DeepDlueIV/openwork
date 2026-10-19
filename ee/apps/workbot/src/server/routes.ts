@@ -91,7 +91,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       client: createHeadlessRunnerClient({
         config: runnerFor(member),
         fetch: runnerFetch,
-        mintToken: async ({ readOnly }) => ({ token: await den.runToken(member.accessToken, { readOnly }) }),
+        mintToken: ({ readOnly, sessionId, messageId }) => den.runToken(member.accessToken, { readOnly, sessionId, messageId }),
         maxTokenTtlMs: RUN_TOKEN_TTL_MS,
       }),
       canSchedule: async () => member.den.canSchedule,
@@ -140,6 +140,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       calendar: who.enabled && who.calendar === true,
       documents: who.enabled && who.documents === true,
       workspaceAssistant: who.enabled && who.workspaceAssistant,
+      guidedNavigation: who.enabled && who.workspaceAssistant && who.guidedNavigation,
       teamLinks: who.enabled ? who.teamLinks : undefined,
       canSchedule: who.enabled && who.canSchedule,
       sideChats: who.enabled && who.sideChats,

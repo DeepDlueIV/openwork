@@ -180,7 +180,7 @@ resource "aws_secretsmanager_secret" "app" {
 
 resource "aws_secretsmanager_secret_version" "app" {
   secret_id                = aws_secretsmanager_secret.app.id
-  secret_string            = var.write_only_secrets ? null : jsonencode(local.secret_values)
+  secret_string            = var.write_only_secrets ? null : jsonencode(var.managed_legacy_secrets ? local.managed_seed_values : local.secret_values)
   secret_string_wo         = var.write_only_secrets ? jsonencode(local.secret_values_wo) : null
   secret_string_wo_version = var.write_only_secrets ? var.secrets_version : null
 }

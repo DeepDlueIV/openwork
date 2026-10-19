@@ -238,13 +238,14 @@ class RunnerTests(unittest.TestCase):
                     patch.object(runner, "terraform_binary", return_value="terraform"), \
                     patch.object(runner, "terraform_inputs", return_value={}), \
                     patch.object(runner, "certificate_states", return_value={}), \
+                    patch.object(runner, "tls_redeploy"), \
                     patch.object(runner.subprocess, "run") as run, \
-                    patch.object(runner.subprocess, "check_output", side_effect=[json.dumps({"resource_changes": [resource]}), "{}"]):
+                    patch.object(runner.subprocess, "check_output", side_effect=[json.dumps({"resource_changes": [resource]}), json.dumps({"cluster_name": {"value": "owned"}, "service_names": {"value": {}}, "task_definition_arns": {"value": {}}})]):
                 if rotate:
                     with self.assertRaisesRegex(ValueError, "manual review"):
                         runner.apply(Path(directory), Path(directory))
                 else:
-                    self.assertEqual(runner.apply(Path(directory), Path(directory)), {})
+                    self.assertEqual(runner.apply(Path(directory), Path(directory)), {"cluster_name": "owned", "service_names": {}, "task_definition_arns": {}})
                 self.assertEqual(any(call.args[0][1] == "apply" for call in run.call_args_list), not rotate)
 
     def test_health_rejects_unexpected_origins(self):
@@ -400,31 +401,52 @@ class TlsLifecycleTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         plans = {row["@testrun"]: row["test_plan"] for row in map(json.loads, result.stdout.splitlines())
                  if row.get("type") == "test_plan"}
-        changes = {r["address"]: r["change"] for r in plans["upgrade_forgets_legacy_and_creates_retained_ca_revisions"]["resource_changes"]}
+        upgrade = plans["upgrade_forgets_legacy_and_creates_retained_ca_revisions"]["resource_changes"]
+        changes = {r["address"]: r["change"] for r in upgrade}
+        for resource in upgrade:
+            if resource["type"] in runner.PROTECTED_TYPES or resource["type"] in ("aws_lb", "aws_ecs_cluster"):
+                self.assertNotIn("delete", resource["change"]["actions"], resource["address"])
+                self.assertNotIn("forget", resource["change"]["actions"], resource["address"])
+        for address in ("aws_db_instance.this[0]", "aws_db_subnet_group.this[0]", "aws_secretsmanager_secret.app", "aws_lb.this[0]", "aws_ecs_cluster.this[0]"):
+            self.assertEqual(changes[address]["before"]["id"], changes[address]["after"]["id"], address)
+        for address in ("aws_secretsmanager_secret_version.app", "aws_secretsmanager_secret_version.tls[0]"):
+            self.assertEqual(changes[address]["actions"], ["no-op"], address)
+            self.assertEqual(changes[address]["before"]["secret_string"], changes[address]["after"]["secret_string"], address)
+        for name in ("better_auth", "db_encryption", "bootstrap_code"):
+            resource = next(r for r in upgrade if r["address"] == f"random_password.{name}[0]")
+            self.assertEqual(resource["previous_address"], f"random_password.{name}")
+            self.assertEqual(resource["change"]["before"]["result"], resource["change"]["after"]["result"])
+        self.assertEqual(next(r for r in upgrade if r["address"] == "aws_secretsmanager_secret_version.tls[0]")["previous_address"], "aws_secretsmanager_secret_version.tls")
         for name in ["api", "web"]:
             old = changes["aws_ecs_task_definition." + name]
             self.assertEqual(old["actions"], ["forget"])
             self.assertIs(old["before"]["skip_destroy"], False)
             self.assertIsNone(old["after"])
+            retained = next(r for r in upgrade if r["address"] == f"aws_ecs_task_definition.{name}_v1")
+            self.assertEqual(retained["previous_address"], f"aws_ecs_task_definition.{name}_ca")
+            self.assertTrue(retained["change"]["before"]["skip_destroy"])
+            self.assertTrue(retained["change"]["after"]["skip_destroy"])
         future = {r["address"]: r["change"] for r in plans["future_update_replaces_only_retained_ca_definitions"]["resource_changes"]}
-        for name in ["api_ca", "web_ca"]:
+        for name in ["api_v1", "web_v1"]:
             change = future["aws_ecs_task_definition." + name]
             self.assertEqual(set(change["actions"]), {"delete", "create"})
             self.assertIs(change["before"]["skip_destroy"], True)
             self.assertIs(change["after"]["skip_destroy"], True)
         with tempfile.TemporaryDirectory() as directory:
             wrapper = Path(directory)
-            source = json.dumps(str(tf_root / "modules/openwork-aws-ecs"))
+            source = json.dumps(str(ROOT.parents[1] / "terraform/modules/openwork-aws-ecs"))
             (wrapper / "main.tf").write_text('''terraform {
   required_providers {
-    aws = { source = "hashicorp/aws", version = "= 5.100.0" }
-    random = { source = "hashicorp/random", version = "= 3.7.2" }
+    aws = { source = "hashicorp/aws", version = "~> 6.69" }
+    random = { source = "hashicorp/random", version = "~> 3.9" }
     http = { source = "hashicorp/http", version = "= 3.6.2" }
   }
 }
 module "platform" {
   source = ''' + source + '''
   openwork_version = "0.18.58"
+  write_only_secrets = false
+  managed_legacy_secrets = true
   owner_emails = ["admin@example.com"]
   domain_name = "openwork.example.com"
   vpc_id = "vpc-test"
@@ -455,22 +477,23 @@ module "platform" {
                     visited.add(current)
                     pending.extend(adjacency.get(current, set()))
             return False
-        self.assertTrue(reaches("terraform_data.strict_redeploy", "aws_secretsmanager_secret_version.tls"))
-        self.assertTrue(reaches("aws_secretsmanager_secret_version.tls", "terraform_data.ca_ready"))
+        self.assertTrue(reaches("aws_lambda_invocation.migrate", "aws_secretsmanager_secret_version.tls"))
+        self.assertTrue(reaches("aws_secretsmanager_secret_version.tls", "aws_secretsmanager_secret_version.app"))
+        for name in ["api", "web", "migrate"]:
+            self.assertTrue(reaches("aws_secretsmanager_secret_version.tls", "aws_ecs_task_definition." + name + "_v1"))
         for name in ["api", "web"]:
-            self.assertTrue(reaches("terraform_data.ca_ready", "aws_ecs_service." + name))
-            self.assertTrue(reaches("aws_secretsmanager_secret_version.tls", "aws_ecs_service." + name))
-            self.assertTrue(reaches("aws_ecs_service." + name, "aws_ecs_task_definition." + name + "_ca"))
-            self.assertTrue(reaches("aws_ecs_service." + name, "aws_secretsmanager_secret_version.app"))
+            self.assertTrue(reaches("aws_ecs_service." + name, "terraform_data.migration_complete"))
+            self.assertTrue(reaches("aws_ecs_service." + name, "aws_ecs_task_definition." + name + "_v1"))
+            self.assertFalse(reaches("aws_secretsmanager_secret_version.tls", "aws_ecs_service." + name))
 
     def test_runtime_markers_validate_actual_uri_and_ca_without_leaking_values(self):
-        source = (ROOT / "terraform/modules/openwork-aws-ecs/tls.tf").read_text()
+        source = (ROOT.parents[1] / "terraform/modules/openwork-aws-ecs/security.tf").read_text()
         script = re.search(r"tls_check = <<-JS\n(.*?)\n  JS", source, re.S).group(1)
         certificate = subprocess.check_output(["node", "-e", "process.stdout.write(require('node:tls').rootCertificates[0])"], text=True)
         with tempfile.TemporaryDirectory() as directory:
             ca = Path(directory) / "public-ca.pem"
             ca.write_text(certificate)
-            for query, expected in [("sslaccept=accept", "bootstrap-accept"), ("sslaccept=strict", "strict"),
+            for query, expected in [("sslaccept=accept", None), ("sslaccept=strict", "strict"),
                                     ("sslmode=verify-full", "strict"), ("sslaccept=strict&sslaccept=accept", None)]:
                 env = {"PATH": os.environ["PATH"], "NODE_EXTRA_CA_CERTS": str(ca),
                        "DATABASE_URL": "mysql://unit:DO-NOT-PRINT@db.example.test:3306/app?" + query}

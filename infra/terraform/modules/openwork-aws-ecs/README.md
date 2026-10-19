@@ -1,9 +1,10 @@
 # openwork-aws-ecs (Terraform)
 
-For **direct Terraform users**. The managed AWS installer uses a separate frozen
-pre-contract module, not this implementation; its only adopted security change
-is RDS TLS/CA-first ordering and retained API/web revisions, not the direct
-migration or write-only secret lifecycle. See the managed installer README.
+Shared by **direct Terraform users** and the managed AWS installer. Both use
+one migration step and API-only replicas. Managed installs explicitly retain
+legacy state-backed secrets and use a runner maintenance fence; direct installs
+still default to write-only. See the managed installer README for approval and
+upgrade boundaries.
 
 ## What it deploys
 
@@ -35,8 +36,8 @@ Contract-v1 offline checks: Terraform 1.16.5 / AWS provider 6.69.1 and
 OpenTofu 1.11.14 / AWS provider 6.69.0, 2026-10-15, 37 tests each (including write-only existing-database coverage).
 The contract-v1 rows below are separate from historical task-local-migration runs.
 An earlier AWS 5.100.0 / random 3.7.2 run is historical evidence, not the current
-supported provider range. The decoupled managed root keeps its original pins
-and is checked independently against its frozen pre-contract module.
+supported provider range. The managed root now adopts AWS 6.x with its own
+committed lock; offline adoption tests are not a real provider-upgrade receipt.
 
 What has been applied end to end in an AWS test account with
 `examples/complete`, and what has not:
@@ -305,15 +306,23 @@ This module is for **direct Terraform users** and requires AWS `~> 6.69`,
 random `~> 3.9`, archive `~> 2.7` and HTTP `~> 3.5`. The temporary AWS 5.x/6.x
 compatibility-range exception has been removed.
 
-The managed AWS installer does **not** consume this module. It uses its own
-frozen pre-contract copy under
-`infra/managed-deployments/aws/terraform/modules/openwork-aws-ecs`, retaining
-its original behavior and AWS 5.100.0 / random 3.7.2 / archive 2.8.1 lock.
-Its earlier legacy-mode adapter, extra HTTP lock entry and migration mocks are
-not needed. The standalone live results here do not certify a managed-installer
-upgrade. Adopting the new module requires separate work and owner review for
-supporting-file packaging, bootstrap permissions/re-approval, a legacy fence
-and update/version handling. See the managed-deployments README for provenance.
+The managed AWS installer consumes this module with `write_only_secrets=false`
+and `managed_legacy_secrets=true`. The latter is an installer-only compatibility
+mode, not a direct-user default: it preserves the old accept seed and strict
+current version while the runner fences legacy tasks before migration. It must
+not be enabled by direct callers without that orchestration. Customers must
+approve the updated scoped migration Lambda/IAM/log permissions and a maintenance
+window. Direct-module live results do not certify that managed Update path.
+See `infra/managed-deployments/README.md` for the complete upgrade/recovery flow.
+
+Core definition addresses now use `api_v1`, `web_v1`, `migrate_v1`, with
+`skip_destroy=true` from creation. Earlier API/web/migrator addresses are
+forgotten without deregistration; managed `api_ca`/`web_ca` addresses move to the
+new ones. This intentionally retains historical revisions, including pre-CA or
+migration-capable ones: never manually restart them. Inventory/deregister owned
+retained definitions only after services are destroyed during decommissioning.
+API rollback remains disabled; managed web rollback is also disabled for safe
+first adoption. Direct web rollback behavior is unchanged.
 
 No provider lock file is shipped in this reusable module. Generate your root
 or example lock with the tool you use (`terraform init` / `tofu init`), then
@@ -332,7 +341,7 @@ verification through custom environment overrides.
 
 ## Inputs and defaults
 
-All inputs remain listed in `variables.tf` and `security.tf`; equivalent cloud
+All inputs remain listed in `variables.tf`, `security.tf` and `managed.tf`; equivalent cloud
 concepts use the common names below. AWS uses `tags` rather than GCP `labels`.
 
 | Input | Default / meaning |

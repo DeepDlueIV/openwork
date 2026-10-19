@@ -54,15 +54,15 @@ run "singleton_api_only_security_and_defaults" {
     smtp    = { username = "test-user", password = "test-password" }
   }
   assert {
-    condition     = length(jsondecode(aws_ecs_task_definition.api.container_definitions)) == 1 && jsondecode(aws_ecs_task_definition.api.container_definitions)[0].name == "den-api" && !strcontains(aws_ecs_task_definition.api.container_definitions, "bootstrap.js")
+    condition     = length(jsondecode(aws_ecs_task_definition.api_v1.container_definitions)) == 1 && jsondecode(aws_ecs_task_definition.api_v1.container_definitions)[0].name == "den-api" && !strcontains(aws_ecs_task_definition.api_v1.container_definitions, "bootstrap.js")
     error_message = "API replicas must not contain migrations."
   }
   assert {
-    condition     = length(jsondecode(aws_ecs_task_definition.migrate.container_definitions)) == 1 && jsondecode(aws_ecs_task_definition.migrate.container_definitions)[0].essential && strcontains(aws_ecs_task_definition.migrate.container_definitions, "bootstrap.js")
+    condition     = length(jsondecode(aws_ecs_task_definition.migrate_v1.container_definitions)) == 1 && jsondecode(aws_ecs_task_definition.migrate_v1.container_definitions)[0].essential && strcontains(aws_ecs_task_definition.migrate_v1.container_definitions, "bootstrap.js")
     error_message = "One standalone essential migrator must own bootstrap."
   }
   assert {
-    condition     = !strcontains(aws_ecs_task_definition.migrate.container_definitions, "openwork.example.com") && alltrue([for e in jsondecode(aws_ecs_task_definition.migrate.container_definitions)[0].environment : contains(["CI", "NODE_ENV", "DB_MODE", "DEN_DB_0097_WRITERS_STOPPED"], e.name)])
+    condition     = !strcontains(aws_ecs_task_definition.migrate_v1.container_definitions, "openwork.example.com") && alltrue([for e in jsondecode(aws_ecs_task_definition.migrate_v1.container_definitions)[0].environment : contains(["CI", "NODE_ENV", "DB_MODE", "DEN_DB_0097_WRITERS_STOPPED"], e.name)])
     error_message = "Public endpoint changes must not rerun the migration task; only database/migration settings belong in its environment."
   }
   assert {
@@ -78,18 +78,18 @@ run "singleton_api_only_security_and_defaults" {
     error_message = "Secret values must only be injected through ECS secrets, never plain environment."
   }
   assert {
-    condition     = var.database.tls_query == "sslaccept=strict" && strcontains(aws_ecs_task_definition.api.container_definitions, "NODE_EXTRA_CA_CERTS") && strcontains(aws_ecs_task_definition.web.container_definitions, "NODE_EXTRA_CA_CERTS") && strcontains(aws_ecs_task_definition.migrate.container_definitions, "NODE_EXTRA_CA_CERTS")
+    condition     = var.database.tls_query == "sslaccept=strict" && strcontains(aws_ecs_task_definition.api_v1.container_definitions, "NODE_EXTRA_CA_CERTS") && strcontains(aws_ecs_task_definition.web_v1.container_definitions, "NODE_EXTRA_CA_CERTS") && strcontains(aws_ecs_task_definition.migrate_v1.container_definitions, "NODE_EXTRA_CA_CERTS")
     error_message = "Both apps and migrator need strict TLS plus the CA."
   }
   assert {
-    condition     = alltrue([for d in [aws_ecs_task_definition.api, aws_ecs_task_definition.web, aws_ecs_task_definition.migrate] : can(regex("@sha256:[0-9a-f]{64}$", jsondecode(d.container_definitions)[0].image))])
+    condition     = alltrue([for d in [aws_ecs_task_definition.api_v1, aws_ecs_task_definition.web_v1, aws_ecs_task_definition.migrate_v1] : can(regex("@sha256:[0-9a-f]{64}$", jsondecode(d.container_definitions)[0].image))])
     error_message = "Default release images must be immutable."
   }
 }
 run "common_outputs_are_native_identifiers" {
   command = apply
   assert {
-    condition     = output.web_url == "https://openwork.example.com" && output.api_url == "https://api.openwork.example.com" && output.database_identifier == aws_db_instance.this[0].identifier && output.migration_step_identifier == aws_ecs_task_definition.migrate.arn
+    condition     = output.web_url == "https://openwork.example.com" && output.api_url == "https://api.openwork.example.com" && output.database_identifier == aws_db_instance.this[0].identifier && output.migration_step_identifier == aws_ecs_task_definition.migrate_v1.arn
     error_message = "Common outputs must expose both HTTPS URLs, the native RDS instance identifier and the migration task definition ARN."
   }
 }
@@ -134,7 +134,7 @@ run "write_only_existing_database_keeps_database_secret_reference" {
     }
   }
   assert {
-    condition     = length(aws_db_instance.this) == 0 && alltrue([for definition in [aws_ecs_task_definition.api, aws_ecs_task_definition.web, aws_ecs_task_definition.migrate] : contains([for secret in jsondecode(definition.container_definitions)[0].secrets : secret.name], "DATABASE_URL")])
+    condition     = length(aws_db_instance.this) == 0 && alltrue([for definition in [aws_ecs_task_definition.api_v1, aws_ecs_task_definition.web_v1, aws_ecs_task_definition.migrate_v1] : contains([for secret in jsondecode(definition.container_definitions)[0].secrets : secret.name], "DATABASE_URL")])
     error_message = "An ephemeral existing-DB URL must still be injected into API, web and migrator without creating RDS."
   }
 }

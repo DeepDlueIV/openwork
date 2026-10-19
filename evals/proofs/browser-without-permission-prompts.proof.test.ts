@@ -30,8 +30,11 @@ test("a conversation completes a changing application form and verifies one subm
     tabId = opened.tabId;
     await user.see({ role: "button", label: "Take over" });
     const seen = await task("observe", { tabId });
-    expect(seen.elements?.find(element => element.name === "Company name")).toMatchObject({ value: "Old company", required: true });
-    expect(seen.elements?.find(element => element.name === "Country")?.options).toContainEqual({ value: "blocked", label: "Unavailable", selected: false, disabled: true });
+    // Values the page already held stay in the page; the agent sees only that the field is filled.
+    const company = seen.elements?.find(element => element.name === "Company name");
+    expect(company).toMatchObject({ filled: true, valueWithheld: true, required: true });
+    expect(company).not.toHaveProperty("value");
+    expect(seen.elements?.find(element => element.name === "Country")?.options).toContainEqual({ value: "blocked", label: "Unavailable", disabled: true });
     expect(seen.elements?.find(element => element.name === "Business account")?.checked).toBe(false);
     expect((await witness()).formSubmissions).toHaveLength(0);
     evidence.recordAssertionEvidence("The agent can inspect the existing form", "Accessible labels, old values, required fields, checked state and unavailable options are visible; submissions: 0", seen.ok);

@@ -27,7 +27,11 @@ function observePage(id, query = null) {
   const key = "__openworkBrowserObservation";
   const nodes = new Map();
   const elements = [];
-  const describe = (element) => {
+  // Values the page or person filled (autofill, a typed address) stay in the page: the model sees
+  // only whether a field is filled, unless the agent entered that exact value itself. In-page
+  // staleness and verification checks read the real value (reveal).
+  const entered = globalThis.__openworkAgentEntered ??= new WeakMap();
+  const describe = (element, reveal = false) => {
     const text = (value, limit = 200) => (value || "").trim().slice(0, limit);
     const referenced = (attribute) => (element.getAttribute(attribute) || "").split(/\s+/)
       .map(id => document.getElementById(id)?.textContent || "").join(" ").trim();
@@ -63,18 +67,22 @@ function observePage(id, query = null) {
     if (input) state.type = element.type;
     if (!sensitive && (input || textarea || select || element.isContentEditable || ["textbox", "combobox"].includes(role))) {
       const value = input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "";
-      state.value = value.slice(0, 8000); state.valueTruncated = value.length > 8000;
+      if (reveal || (!select && entered.get(element) === value)) { state.value = value.slice(0, 8000); state.valueTruncated = value.length > 8000; }
+      else { state.filled = value.length > 0; state.valueWithheld = true; }
     }
     if (input && ["checkbox", "radio"].includes(element.type)) state.checked = element.indeterminate ? "mixed" : element.checked;
     else if (element.hasAttribute("aria-checked")) state.checked = element.getAttribute("aria-checked") === "mixed" ? "mixed" : element.getAttribute("aria-checked") === "true";
     if (element.hasAttribute("aria-expanded")) state.expanded = element.getAttribute("aria-expanded") === "true";
     if (element.hasAttribute("aria-selected")) state.selected = element.getAttribute("aria-selected") === "true";
     if (select && !sensitive) {
+      const chosen = [...element.selectedOptions].map(option => option.value);
+      const shown = reveal || entered.get(element) === JSON.stringify(chosen);
       state.multiple = element.multiple;
       state.options = [...element.options].slice(0, 200).map(option => ({ value: option.value, label: text(option.label),
-        selected: option.selected, disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) }));
+        ...(shown ? { selected: option.selected } : {}), disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) }));
       state.optionsTruncated = element.options.length > 200;
-      state.selectedValues = [...element.selectedOptions].map(option => option.value).slice(0, 200);
+      if (shown) { state.selectedValues = chosen.slice(0, 200); delete state.value; delete state.valueTruncated; delete state.filled; delete state.valueWithheld; }
+      else { delete state.value; delete state.valueTruncated; state.filled = chosen.length > 0; state.valueWithheld = true; }
     }
     if (element.validity || element.hasAttribute("aria-invalid")) {
       state.valid = (element.validity?.valid ?? true) && !["true", "grammar", "spelling"].includes(element.getAttribute("aria-invalid"));
@@ -113,7 +121,7 @@ function observePage(id, query = null) {
       if (/auto|scroll|hidden|clip/.test(parentStyle.overflowY)) { top = Math.max(top, clip.top); bottom = Math.min(bottom, clip.bottom); }
     }
     nodes.set(ref, element);
-    snapshots.set(element, JSON.stringify(control));
+    snapshots.set(element, JSON.stringify(describe(element, true)));
     elements.push({ ref, ...control, visible: right > left && bottom > top, needsReveal: left > rect.left || top > rect.top || right < rect.right || bottom < rect.bottom, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
   }
   const observation = { id, nodes, bounds: new Map(elements.map(({ ref, bounds }) => [ref, bounds])), activeElement: document.activeElement,
@@ -134,7 +142,7 @@ function prepareAction(id, action) {
   // Revalidate the chosen control rather than invalidating every control when
   // an unrelated spinner, clock or live region changes elsewhere on the page.
   const target = element || (action.type === "key" ? document.activeElement : null);
-  if (target && state.snapshots.get(target) !== JSON.stringify(state.describe(target))) throw new Error("stale_observation");
+  if (target && state.snapshots.get(target) !== JSON.stringify(state.describe(target, true))) throw new Error("stale_observation");
   if (action.type === "key" && state.activeElement !== document.activeElement) throw new Error("stale_observation");
   if (action.type === "key" && document.activeElement?.matches('input[type="password"],input[type="file"],input[autocomplete="one-time-code"]')) throw new Error("sign_in_required");
   // Only a directly focused, observed control can receive keys. Frames and
@@ -181,7 +189,11 @@ function applyFormAction(id, action) {
   const state = globalThis.__openworkBrowserObservation;
   const element = state?.id === id ? state.nodes.get(action.ref) : null;
   if (!element?.isConnected) throw new Error("stale_element");
-  if (state.snapshots.get(element) !== JSON.stringify(state.describe(element))) throw new Error("stale_observation");
+  if (state.snapshots.get(element) !== JSON.stringify(state.describe(element, true))) throw new Error("stale_observation");
+  // The agent may read back exactly what it entered.
+  if (action.type === "fill" || action.type === "select") globalThis.__openworkAgentEntered?.set(element, action.type === "select"
+    ? JSON.stringify([...element.options].filter(option => action.values.includes(option.value)).map(option => option.value))
+    : element instanceof HTMLTextAreaElement ? action.text.replace(/\r\n?/g, "\n") : action.text);
   element.focus();
   if (document.activeElement !== element || !element.isConnected) throw new Error("stale_element");
   if (action.type === "select") {
@@ -211,15 +223,19 @@ async function verifyFormAction(id, action) {
   let matchingSince = null, control;
   do {
     if (!element?.isConnected) throw new Error("stale_element");
-    control = state.describe(element);
+    control = state.describe(element, true);
     const matches = action.type === "set_checked" ? control.checked === action.checked
       : action.type === "select" ? control.selectedValues.length === new Set(action.values).size && action.values.every(value => control.selectedValues.includes(value))
       : !control.valueTruncated && control.value === (element instanceof HTMLTextAreaElement ? action.text.replace(/\r\n?/g, "\n") : action.text);
     matchingSince = matches ? matchingSince ?? performance.now() : null;
-    if (matchingSince !== null && performance.now() - matchingSince >= 150) return { verified: true, control };
+    if (matchingSince !== null && performance.now() - matchingSince >= 150) return { verified: true, control: state.describe(element) };
     await new Promise(resolve => setTimeout(resolve, 50));
   } while (performance.now() < deadline);
-  return { verified: false, control };
+  // What the page made of the agent's own entry (formatting, normalizing) is still the agent's value.
+  if (element.isConnected && action.type !== "set_checked") {
+    globalThis.__openworkAgentEntered?.set(element, action.type === "select" ? JSON.stringify(control.selectedValues ?? []) : control.value);
+  }
+  return { verified: false, control: element.isConnected ? state.describe(element) : control };
 }
 async function captureObservation(webContents, viewport) {
   if (typeof webContents.captureObservation === "function") return webContents.captureObservation(viewport);

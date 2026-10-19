@@ -168,7 +168,8 @@ function toSandboxClient(sandbox: Sandbox): DaytonaSandboxClient {
     refreshData: () => sandbox.refreshData(),
     start: (timeout) => sandbox.start(timeout),
     stop: (timeout) => sandbox.stop(timeout),
-    delete: (timeout) => sandbox.delete(timeout, true),
+    // The SDK's second argument is `wait` (block until destroyed); attached volumes are never deleted.
+    delete: (timeout) => sandbox.delete(timeout, /* wait */ true),
     pause: (timeout) => sandbox.pause(timeout),
     setTtl: minutes => sandbox.setTtl(minutes),
     refreshActivity: () => sandbox.refreshActivity(),

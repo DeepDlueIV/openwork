@@ -2,6 +2,7 @@
 import copy
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -131,6 +132,68 @@ class AdoptionPermissionAndSecretTests(unittest.TestCase):
             for statement in statements:
                 if statement.get("Effect") == "Allow" and "ecs:DeregisterTaskDefinition" in actions_of(statement):
                     self.assertNotEqual(statement["Resource"], "*")
+
+    def test_policy_covers_the_real_provider_invocation_qualifier(self):
+        terraform = shutil.which("terraform")
+        self.assertIsNotNone(terraform, "Terraform is required by the managed workflow")
+        tf_root = ROOT / "terraform"
+        # Get the actual module's invocation arguments, then let the locked real
+        # provider (not mock_provider) resolve SDK defaults such as qualifier.
+        result = subprocess.run([terraform, "test", "-json", "-verbose", "-filter=tests/lifecycle.tftest.hcl"],
+                                cwd=tf_root, capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plans = [row["test_plan"] for row in map(json.loads, result.stdout.splitlines()) if row.get("type") == "test_plan"]
+        invocation = next(r["change"]["after"] for r in plans[0]["resource_changes"] if r["address"] == "aws_lambda_invocation.migrate")
+        arguments = {"function_name": invocation["function_name"], "input": "{}"}
+        if invocation.get("qualifier") is not None:
+            arguments["qualifier"] = invocation["qualifier"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(tf_root / ".terraform.lock.hcl", root / ".terraform.lock.hcl")
+            required = {name: {"source": "hashicorp/" + name, "version": constraint}
+                        for name, constraint in re.findall(r'provider "registry\.terraform\.io/hashicorp/([^\"]+)" \{\s+version\s*=\s*"[^\"]+"\s+constraints\s*=\s*"([^\"]+)"', (root / ".terraform.lock.hcl").read_text())}
+            self.assertIn("aws", required)
+            (root / "main.tf.json").write_text(json.dumps({
+                "terraform": {"required_providers": required},
+                "provider": {"aws": {
+                    "region": "us-east-1", "access_key": "mock", "secret_key": "mock",
+                    "skip_credentials_validation": True, "skip_metadata_api_check": True,
+                    "skip_requesting_account_id": True, "skip_region_validation": True,
+                    "endpoints": [{"lambda": "http://127.0.0.1:1"}],
+                }},
+                "resource": {"aws_lambda_invocation": {"migrate": arguments}},
+            }))
+            for command in (["init", "-backend=false", "-input=false", "-lockfile=readonly", "-no-color",
+                             "-plugin-dir=" + str(tf_root / ".terraform/providers")],
+                            ["plan", "-input=false", "-out=invocation.tfplan", "-no-color"]):
+                result = subprocess.run([terraform, *command], cwd=root, capture_output=True, text=True, timeout=120)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            planned = json.loads(subprocess.check_output([terraform, "show", "-json", "invocation.tfplan"], cwd=root))
+        actual = planned["resource_changes"][0]["change"]["after"]
+        self.assertEqual(actual["qualifier"], "$LATEST", "Review IAM before changing the migration qualifier")
+        base = "arn:aws:lambda:us-east-1:123456789012:function:" + actual["function_name"]
+        invoked = base + ":" + actual["qualifier"]
+        template = json.loads((ROOT / "bootstrap/cloudformation.json").read_text())
+        for mode in ("dedicated", "existing"):
+            statements = runner_statements(template, mode)
+            invokes = [s for s in statements if s.get("Effect") == "Allow" and s.get("Sid") in ("MigrationFunction", "MigrationInvoke")
+                       and "lambda:InvokeFunction" in actions_of(s)]
+            resources = []
+            bindings = {"AWS::Partition": "aws", "AWS::Region": "us-east-1", "AWS::AccountId": "123456789012",
+                        "Name": actual["function_name"].removesuffix("-migrate")}
+            for invoke in invokes:
+                for resource in invoke["Resource"] if isinstance(invoke["Resource"], list) else [invoke["Resource"]]:
+                    text = resource["Fn::Sub"][0]
+                    for key, value in bindings.items():
+                        text = text.replace("${" + key + "}", value)
+                    resources.append(text)
+            self.assertEqual(set(resources), {base, invoked})
+            for invoke in invokes:
+                self.assertEqual(actions_of(invoke), ["lambda:InvokeFunction"])
+            for statement in statements:
+                if statement.get("Sid") == "MigrationFunction":
+                    self.assertNotIn("lambda:InvokeFunction", actions_of(statement))
+                    self.assertNotIn("$LATEST", json.dumps(statement["Resource"]))
 
     def test_native_initial_seed_plan_passes_guard_without_rotating_keys(self):
         terraform = shutil.which("terraform")

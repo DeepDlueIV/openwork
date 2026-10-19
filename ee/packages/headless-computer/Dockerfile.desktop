@@ -18,9 +18,13 @@ COPY ee/packages/headless-computer/src/image.ts /tmp/openwork-computer-image.ts
 RUN node --input-type=module -e "import { DESKTOP_COMPUTER_INSTALL_SCRIPT } from '/tmp/openwork-computer-image.ts'; import { writeFileSync } from 'node:fs'; writeFileSync('/tmp/install-computer.sh', DESKTOP_COMPUTER_INSTALL_SCRIPT)" \
     && bash /tmp/install-computer.sh && rm /tmp/install-computer.sh /tmp/openwork-computer-image.ts
 COPY ee/packages/headless-computer/src/desktop-apps.mjs /usr/local/share/openwork-desktop/apps.mjs
+COPY ee/packages/headless-computer/src/desktop-scripting.mjs /usr/local/share/openwork-desktop/desktop-scripting.mjs
 COPY ee/packages/headless-computer/scripts/configure-desktop-files.sh /usr/local/share/openwork-desktop/configure-files.sh
 COPY ee/packages/headless-computer/scripts/install-desktop-apps.sh /tmp/install-desktop-apps.sh
 RUN bash /tmp/install-desktop-apps.sh && rm /tmp/install-desktop-apps.sh
+# App scripting bridges run as the desktop user; see desktop-scripting.mjs.
+COPY ee/packages/headless-computer/src/scripting/ /usr/local/share/openwork-desktop/scripting/
+RUN chmod 0755 /usr/local/share/openwork-desktop/scripting && chmod 0644 /usr/local/share/openwork-desktop/scripting/*
 # Daytona's OCI-to-microVM import clears setuid bits. Restore only the two
 # packaged helpers as root before its unprivileged command daemon starts.
 COPY ee/packages/headless-computer/scripts/daytona-desktop-permissions.service /etc/systemd/system/daytona-desktop-permissions.service

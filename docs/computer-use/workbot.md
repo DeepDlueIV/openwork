@@ -120,6 +120,35 @@ report missing apps honestly and need an operator rebuild to add them. Existing
 computers are never replaced automatically. Launches use the same input rail
 and takeover pause as browser and native actions, with no extra consent screen.
 
+### Scripting apps instead of clicking
+
+`computer_app_script {app, ...}` drives an app through its own scripting
+interface, so a scene edit or spreadsheet change is one call instead of dozens
+of screenshot-and-click rounds. The GUI stays for looking at the result.
+
+| App | Interface | What it does |
+| --- | --- | --- |
+| Blender | `bpy` in the open session, or `blender --background` | Runs Python, returns objects, materials and camera, optionally renders (`viewport` or `final`) |
+| Calc, Writer, Impress, Draw | UNO over a named pipe | Reads and writes cell ranges, inserts text, exports PDF, and reports what changed |
+| GIMP | Script-Fu batch mode | Converts, resizes and rotates images |
+| Inkscape | `inkscape --actions` (`transform`) | Exports, resizes and transforms drawings |
+
+Launching Blender loads a small bridge (`--python`) that listens on a Unix
+socket in the desktop user's home; LibreOffice launches with a named UNO pipe.
+Both are sockets, not loopback ports, because the desktop egress guard refuses
+loopback for that user. Each Blender script is one undo step, so the person can
+press Ctrl+Z. LibreOffice edits stay unsaved in the open window unless the call
+passes `save: true`; a file with no open window is edited headlessly and saved.
+
+Scripts keep the trust boundary of the apps and `bash`: they run as
+`openwork-browser` inside the same egress guard, behind the same `computerUse`
+and `remoteComputers` rollout, with no new consent prompt. They use the shared
+input rail, so Stop and takeover cancel a running script (Blender interrupts it
+at the next Python line; other lanes end the process). A stopped, timed-out or
+interrupted script reports that its outcome is uncertain and is never retried.
+Launch receipts for scriptable apps include a one-line hint with the scripting
+route and a few shortcuts.
+
 ## MicroVM lifecycle and cost
 
 Daytona's `linux-vm` class is its hypervisor-backed microVM, also used by the
@@ -222,5 +251,10 @@ For image acceptance, copy `ee/packages/headless-computer/scripts/prove-desktop-
 into a dedicated prepared test guest, start its desktop, then run it as root with
 `DISPLAY=:99 XAUTHORITY=/workspace/.openwork-desktop/cloud-desktop/.Xauthority node prove-desktop-apps.mjs --dedicated-guest`.
 It checks the installed catalog, launches four GUI apps, saves text through the
-editor and renders a small Blender scene on CPU. It leaves its outputs and
-desktop screenshot under `/workspace/out/desktop-apps-proof-…` for inspection.
+editor and renders a small Blender scene on CPU. It then adds a red cube and
+renders it twice in a fresh open Blender: first through the GUI alone, replaying
+the clicks and keys a computer-use agent needs, then with one
+`computer_app_script` call, and prints the act, input and screenshot counts of
+each route. It also checks that Stop cancels a running script and exercises the
+office, GIMP and Inkscape lanes. It leaves its outputs and screenshots under
+`/workspace/out/desktop-apps-proof-…` for inspection.

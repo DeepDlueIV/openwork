@@ -106,13 +106,15 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
           return result;
         }
         if (path !== "/computer/task") throw failure("not_found", "Unknown computer operation.");
-        if (applications && ["computer_apps", "computer_launch"].includes(body.name)) {
-          // Application launches use the same input rail as browser/native input.
-          // Releasing the native lease invalidates coordinates from before launch.
-          if (body.name === "computer_launch" && owner) await control.endTurn({ sessionId: owner });
+        if (applications && ["computer_apps", "computer_launch", "computer_app_script"].includes(body.name)) {
+          // Application launches and scripts use the same input rail as browser/native input,
+          // so Stop and takeover cancel them. Both invalidate coordinates from before.
+          if (body.name !== "computer_apps" && owner) await control.endTurn({ sessionId: owner });
           browser.invalidate();
           assertActive();
-          const result = body.name === "computer_apps" ? await applications.list() : await applications.launch(body.args, current.signal);
+          const result = body.name === "computer_apps" ? await applications.list()
+            : body.name === "computer_launch" ? await applications.launch(body.args, current.signal)
+            : await applications.script(body.args, current.signal);
           assertActive();
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         }

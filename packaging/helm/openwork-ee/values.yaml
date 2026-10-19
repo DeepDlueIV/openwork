@@ -301,14 +301,7 @@ denApi:
   env: {}
   podAnnotations: {}
   podLabels: {}
-  # Small / trial baseline, not a tested user-capacity tier. See README.
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1Gi
-    limits:
-      cpu: "1"
-      memory: 2Gi
+  resources: {}
   probes:
     liveness:
       initialDelaySeconds: 30
@@ -336,13 +329,7 @@ denWeb:
   env: {}
   podAnnotations: {}
   podLabels: {}
-  resources:
-    requests:
-      cpu: 250m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 1Gi
+  resources: {}
   probes:
     liveness:
       initialDelaySeconds: 60
@@ -419,14 +406,7 @@ migrations:
   # --timeout (default 5m) or the release fails before this deadline.
   activeDeadlineSeconds: 1800
   podAnnotations: {}
-  # Provisional headroom: the short migration job's peak was not measured.
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1Gi
-    limits:
-      cpu: "1"
-      memory: 2Gi
+  resources: {}
   command:
     - node
   args:

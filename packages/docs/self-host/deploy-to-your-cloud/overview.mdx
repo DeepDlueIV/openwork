@@ -61,7 +61,8 @@ Optional Gateway, Workbot and runner services need separate sizing.
 | AWS ECS module | 1 vCPU / 2 GiB | 0.5 vCPU / 1 GiB | db.t4g.small, 2 GiB memory, 20 GiB disk | 1 vCPU / 2 GiB |
 | Google Cloud Run module | 1 vCPU / 2 GiB | 1 vCPU / 1 GiB | db-g1-small, 1.7 GB memory, 20 GB disk | 1 vCPU / 2 GiB |
 | Azure Container Apps module | 1 vCPU / 2 GiB | 0.5 vCPU / 1 GiB | B_Standard_B1ms, 2 GiB memory, 20 GB disk | 0.5 vCPU / 1 GiB |
-| Helm (requests → limits) | 500m / 1Gi → 1 / 2Gi | 250m / 256Mi → 500m / 1Gi | External MySQL; at least 2 GB memory / 20 GB disk | 500m / 1Gi → 1 / 2Gi |
+
+The Helm chart sets no default resource requests or limits; set them for your cluster.
 
 Cloud modules start with one API and one web copy; use two API copies when you
 need service redundancy, with additional compute cost. This alone does not make
@@ -83,7 +84,6 @@ exclude taxes, discounts/free tiers, network/backup charges and AWS CPU credits.
 | AWS Single-AZ MySQL instance | us-east-1 | micro $0.016/h → small $0.032/h; $11.68 → $23.36/month | **+$11.68** |
 | Cloud SQL zonal MySQL SSD | us-central1 | 10 → 20 GB at $0.17/GB-month; $1.70 → $3.40/month | **+$1.70** |
 | AWS/GCP application sizes; Azure module | us-east-1 / us-central1 / eastus | Unchanged | **$0** |
-| Helm requests/limits | Cluster-dependent | Previously unset → table above | Provider-dependent; may require paid node capacity |
 
 Sources: [AWS RDS pricing](https://aws.amazon.com/rds/mysql/pricing/),
 [Cloud SQL pricing](https://cloud.google.com/sql/pricing/).
@@ -91,9 +91,6 @@ Existing direct AWS users see an in-place class change and a database restart
 when performed; [pin micro before upgrading to opt out](/self-host/deploy-to-your-cloud/aws#upgrade-notes).
 Existing direct GCP users see online storage growth, which cannot be shrunk;
 [pin 10 GB before applying to opt out](/self-host/deploy-to-your-cloud/google-cloud#upgrade-notes).
-Helm upgrades that adopt the resource values roll application pods and require
-scheduling capacity; the [chart resource notes](https://github.com/different-ai/openwork/tree/dev/packaging/helm/openwork-ee#small--trial-resources)
-explain overrides and how to preserve the earlier unset resources.
 
 Managed installers retain their own pinned **small** profiles, not a promise of
 identical sizes across clouds. AWS currently pins micro, API 1 vCPU / 2 GiB,

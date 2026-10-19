@@ -1,5 +1,6 @@
 """Verified runner, executed with customer-approved short-lived impersonation."""
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -17,7 +18,10 @@ TERRAFORM_VERSION = "1.16.5"
 TERRAFORM_SHA256 = "2bc2fcfff033265c9e02ca0351f01794eb122f62a9b2a49a3294b9e49eaab5e4"
 PROTECTED_TYPES = {"google_sql_database_instance", "google_sql_database", "google_sql_user",
                    "google_secret_manager_secret", "google_secret_manager_secret_version",
-                   "google_storage_bucket", "google_kms_crypto_key", "google_compute_network", "random_password"}
+                   "google_storage_bucket", "google_kms_crypto_key", "google_compute_network", "random_password",
+                   "google_cloud_run_v2_service", "google_compute_global_address", "google_compute_region_network_endpoint_group",
+                   "google_compute_backend_service", "google_compute_managed_ssl_certificate", "google_compute_url_map",
+                   "google_compute_target_https_proxy", "google_compute_global_forwarding_rule"}
 
 
 def gcloud(*args):
@@ -64,8 +68,164 @@ def report(token, sequence, step, outcome="succeeded", code=None):
 
 
 def unsafe_changes(plan):
-    return [r["address"] for r in plan.get("resource_changes", [])
-            if r.get("type") in PROTECTED_TYPES and "delete" in r.get("change", {}).get("actions", [])]
+    unsafe = []
+    for resource in plan.get("resource_changes", []):
+        kind, change = resource.get("type"), resource.get("change", {})
+        actions = change.get("actions", [])
+        before, after = change.get("before"), change.get("after")
+        blocked = kind in PROTECTED_TYPES and "delete" in actions
+        if before is not None and kind in {"random_password", "google_secret_manager_secret_version"}:
+            # Existing secret versions/generators must remain byte-identical. No
+            # write-only conversion or unknown-value exception is authorized.
+            blocked |= actions != ["no-op"]
+        if before is not None and kind == "google_sql_user":
+            blocked |= after is None or before.get("password") != after.get("password") or bool(change.get("after_unknown", {}).get("password"))
+        if before is not None and kind == "google_sql_database_instance":
+            blocked |= after is None or before.get("database_version") != after.get("database_version")
+        if blocked:
+            unsafe.append(resource["address"])
+    return unsafe
+
+
+def service_status(service):
+    return gcloud("run", "services", "describe", service, "--region=" + os.environ["REGION"])
+
+
+def disabled_service(status):
+    metadata, observed = status.get("metadata", {}), status.get("status", {})
+    annotations = metadata.get("annotations", {})
+    traffic = status.get("spec", {}).get("traffic", [])
+    return (str(observed.get("observedGeneration")) == str(metadata.get("generation"))
+            and metadata.get("generation") is not None
+            and annotations.get("run.googleapis.com/scalingMode") == "manual"
+            and annotations.get("run.googleapis.com/manualInstanceCount") == "0"
+            and isinstance(traffic, list) and bool(traffic)
+            and all(not entry.get("tag") for entry in traffic)
+            and all(not entry.get("tag") for entry in observed.get("traffic", [])))
+
+
+def instance_observations(service, since):
+    # One added read permission: monitoring.timeSeries.list, not monitoring.viewer.
+    # Missing, stale or paginated results are UNKNOWN, never zero instances.
+    now = datetime.now(timezone.utc)
+    query = urllib.parse.urlencode({
+        "filter": 'metric.type="run.googleapis.com/container/instance_count" AND resource.type="cloud_run_revision" '
+                  'AND resource.labels.service_name="' + service + '" AND resource.labels.location="' + os.environ["REGION"] + '"',
+        "interval.startTime": since.isoformat(), "interval.endTime": now.isoformat(), "view": "FULL",
+    })
+    url = "https://monitoring.googleapis.com/v3/projects/" + os.environ["PROJECT_ID"] + "/timeSeries?" + query
+    return json.loads(request(url, headers=storage_headers(), limit=1024 * 1024))
+
+
+def drained_instances(observations, since, required_revisions):
+    if observations.get("nextPageToken") or not observations.get("timeSeries") or not required_revisions:
+        return False
+    observed_states = {(series.get("resource", {}).get("labels", {}).get("revision_name"),
+                        series.get("metric", {}).get("labels", {}).get("state")) for series in observations["timeSeries"]}
+    # Do not confuse zero active requests with zero idle instances. Both states
+    # of every previously observed/routed revision must have explicit fresh zeroes.
+    if not {(revision, state) for revision in required_revisions for state in ("active", "idle")}.issubset(observed_states):
+        return False
+    for series in observations["timeSeries"]:
+        points = series.get("points", [])
+        if not points:
+            return False
+        latest = points[0]
+        stamp = datetime.fromisoformat(latest.get("interval", {}).get("endTime", "").replace("Z", "+00:00"))
+        if stamp < since or (datetime.now(timezone.utc) - stamp).total_seconds() > 180:
+            return False
+        if latest.get("value", {}).get("int64Value") != "0":
+            return False
+    return True
+
+
+def verify_no_running_migration():
+    executions = gcloud("run", "jobs", "executions", "list", "--job=" + name(os.environ["DEPLOYMENT_ID"]) + "-migrate",
+                        "--region=" + os.environ["REGION"])
+    if not isinstance(executions, list):
+        raise ValueError("unknown prior migration executions; inspect before retry")
+    for execution in executions:
+        status = execution.get("status", {})
+        if not status.get("completionTime") or not any(condition.get("type") == "Completed" and condition.get("status") in ("True", "False")
+                                                       for condition in status.get("conditions", [])):
+            raise ValueError("prior migration still running or unknown; inspect before retry")
+
+
+def maintenance_fence(plan, timeout=900):
+    # Prior state is read, not guessed from cloud absence. Fence every existing
+    # owned service before native migration; never delete services or revisions.
+    def resources(module):
+        yield from module.get("resources", [])
+        for child in module.get("child_modules", []):
+            yield from resources(child)
+    existing = [r for r in resources(plan.get("prior_state", {}).get("values", {}).get("root_module", {}))
+                if r.get("type") == "google_cloud_run_v2_service"]
+    if not existing:
+        return False
+    expected = {name(os.environ["DEPLOYMENT_ID"]) + suffix for suffix in ("-api", "-web")}
+    if len(existing) != 2 or {r.get("values", {}).get("name") for r in existing} != expected:
+        raise ValueError("unknown service ownership; refusing maintenance")
+    region, project = os.environ["REGION"], os.environ["PROJECT_ID"]
+    for resource in existing:
+        values = resource.get("values", {})
+        if values.get("project") != project or values.get("location") != region:
+            raise ValueError("unexpected service target")
+    # A prior caught/unknown execution can outlive the old runner's mutex.
+    # Inspect it; never blindly retry migrations or cancel somebody else's job.
+    verify_no_running_migration()
+    # Permission/read preflight before taking anything offline.
+    started = datetime.now(timezone.utc)
+    revisions = {}
+    for service in sorted(expected):
+        observations = instance_observations(service, started - timedelta(minutes=5))
+        if observations.get("nextPageToken"):
+            raise ValueError("incomplete instance inventory")
+        live = service_status(service)
+        if live.get("metadata", {}).get("name") != service:
+            raise ValueError("unexpected live service identity")
+        revisions[service] = {series.get("resource", {}).get("labels", {}).get("revision_name")
+                              for series in observations.get("timeSeries", [])}
+        revisions[service].update(entry.get("revisionName") for entry in live.get("status", {}).get("traffic", []))
+        if not revisions[service] or None in revisions[service]:
+            raise ValueError("incomplete revision inventory")
+    for service in sorted(expected):
+        # Tag-only revisions are NOT disabled by scaling zero. Remove their
+        # request/restart path first; no rollback or tag is restored on failure.
+        gcloud("run", "services", "update-traffic", service, "--clear-tags", "--region=" + region)
+        gcloud("run", "services", "update", service, "--scaling=0", "--region=" + region)
+    disabled_at = datetime.now(timezone.utc)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        states = [service_status(service) for service in sorted(expected)]
+        if not all(disabled_service(status) for status in states):
+            raise ValueError("service fence not observed; maintenance retained")
+        if all(drained_instances(instance_observations(service, disabled_at), disabled_at, revisions[service]) for service in sorted(expected)):
+            # Recheck to catch an independent deployer resuming a service while
+            # monitoring was read. Independent deployers are unsupported.
+            if not all(disabled_service(service_status(service)) for service in sorted(expected)):
+                raise ValueError("service resumed while draining; maintenance retained")
+            verify_no_running_migration()
+            return True
+        time.sleep(3)
+    raise ValueError("no authoritative zero-instance observation; maintenance retained")
+
+
+def verify_maintained_revisions(images):
+    for key, suffix in (("den_api", "-api"), ("den_web", "-web")):
+        service = name(os.environ["DEPLOYMENT_ID"]) + suffix
+        live = service_status(service)
+        status = live.get("status", {})
+        revision = status.get("latestReadyRevisionName")
+        traffic = status.get("traffic", [])
+        template = live.get("spec", {}).get("template", {})
+        containers = template.get("spec", {}).get("containers", [])
+        if (not disabled_service(live) or not revision or status.get("latestCreatedRevisionName") != revision
+                or template.get("metadata", {}).get("name") != revision
+                or len(traffic) != 1 or traffic[0].get("revisionName") != revision or traffic[0].get("percent") != 100
+                or len(containers) != 1 or containers[0].get("image") != images[key]):
+            raise ValueError("API-only revision ownership not verified; maintenance retained")
+        if key == "den_api" and (containers[0].get("command") != ["node"] or containers[0].get("args") != ["/app/ee/apps/den-api/dist/main.js"]):
+            raise ValueError("migration-capable API command; maintenance retained")
 
 
 def terraform_binary(root):
@@ -205,19 +365,28 @@ def apply(root, images):
         "-backend-config=prefix=deployments/" + os.environ["DEPLOYMENT_ID"],
         "-backend-config=impersonate_service_account=" + os.environ["RUNNER_SERVICE_ACCOUNT"]], cwd=tf_root, env=environment, check=True)
 
-    def approved_plan(label, extra=()):
+    def approved_plan(label):
         plan = tf_root / (label + ".tfplan")
-        subprocess.run([binary, "plan", "-input=false", "-lock-timeout=120s", *extra, "-out=" + str(plan)], cwd=tf_root, env=environment, check=True)
-        raw = subprocess.check_output([binary, "show", "-json", str(plan)], cwd=tf_root, env=environment)
-        if unsafe_changes(json.loads(raw)):
-            raise ValueError("refusing deletion/replacement of data-bearing resources")
+        subprocess.run([binary, "plan", "-input=false", "-lock-timeout=120s", "-out=" + str(plan)], cwd=tf_root, env=environment, check=True)
+        raw = json.loads(subprocess.check_output([binary, "show", "-json", str(plan)], cwd=tf_root, env=environment))
+        if unsafe_changes(raw):
+            raise ValueError("refusing protected replacement, secret change or database version change; maintenance retained")
+        return plan, raw
+    plan, decoded = approved_plan("platform")
+    maintained = maintenance_fence(decoded)
+    if maintained:
+        # Keep scale zero THROUGH revision deployment. Restoring auto in the
+        # template-changing update could restart an old migration-capable revision.
+        variables.write_text(json.dumps({**inputs(images), "managed_maintenance": True}))
+        plan, _ = approved_plan("maintained-platform")
+    # run_execution_token executes and waits once inside the module graph. A
+    # second CLI jobs execute here would run the migration twice.
+    subprocess.run([binary, "apply", "-input=false", "-lock-timeout=120s", str(plan)], cwd=tf_root, env=environment, check=True)
+    if maintained:
+        verify_maintained_revisions(images)
+        variables.write_text(json.dumps({**inputs(images), "managed_maintenance": False}))
+        plan, _ = approved_plan("resume-api-only")
         subprocess.run([binary, "apply", "-input=false", "-lock-timeout=120s", str(plan)], cwd=tf_root, env=environment, check=True)
-    # Deliberate two-phase deployment: schema migration must complete before
-    # Terraform starts new service revisions. Both phases use saved, inspected plans.
-    approved_plan("migration", ["-target=google_cloud_run_v2_job.migrate"])
-    gcloud("run", "jobs", "execute", name(os.environ["DEPLOYMENT_ID"]) + "-migrate",
-           "--region=" + os.environ["REGION"], "--wait")
-    approved_plan("platform")
     raw = subprocess.check_output([binary, "output", "-json"], cwd=tf_root, env=environment)
     return {key: value["value"] for key, value in json.loads(raw).items()}
 

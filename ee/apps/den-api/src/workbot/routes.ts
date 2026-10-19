@@ -22,8 +22,11 @@ import { openworkYourConnectionsUrl } from "../mcp/connection-navigation.js"
 import { createInternalMcpPrincipalHeader } from "../session.js"
 import { getOrganizationContextForUser, listTeamsForMember } from "../orgs.js"
 import { listMemberUsableConnectionFacts } from "../routes/org/mcp-connections.js"
-import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
-import { headlessModelCatalog, organizationDefaultModel } from "./model.js"
+import { readWorkbotModel, WORKBOT_DEFAULT_MODEL_ID } from "@openwork/types/den/workbot-settings"
+import { cloudAgentModelCatalog, headlessModelCatalog, organizationDefaultModel } from "./model.js"
+import { headlessModelAccessSchema, createHeadlessRunnerClient } from "@openwork-ee/headless-protocol"
+import { workbotOwner } from "@openwork-ee/headless-protocol/workbot-routing"
+import { defaultHeadlessRunnerDeps } from "../headless-runner/client.js"
 import { explicitWorkbotModel } from "./readiness.js"
 import { recordWorkbotTelemetry, workbotTelemetrySchema, workbotTelemetryServiceAuthorized } from "./telemetry.js"
 import { resolvePermissionsForMember } from "../permissions/resolve.js"
@@ -72,6 +75,8 @@ const sessionSchema = z.object({
   model: z.string().nullable().optional(),
   /** Require an authenticated runner catalog before new turns; older Dens omit this. Reads remain available. */
   verifyModel: z.boolean().optional(),
+  /** Den authorizes the member's AI Gateway model for every turn; no deployment catalog precheck. */
+  gatewayModels: z.boolean().optional(),
 }).meta({ ref: "WorkbotSession" })
 
 const runTokenSchema = z.object({
@@ -82,6 +87,8 @@ const runTokenSchema = z.object({
    * headless runner can exchange for fresh tokens for this turn, so it continues on its own after a restart.
    */
   resumeGrant: z.string().optional(),
+  /** Server-to-server only; never returned in Workbot's browser session or transcript. */
+  modelAccess: headlessModelAccessSchema.optional(),
 }).meta({ ref: "WorkbotRunToken" })
 const runTokenRequestSchema = z.object({
   ttlMs: z.number().int().min(60_000).max(DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS).optional(),
@@ -89,6 +96,9 @@ const runTokenRequestSchema = z.object({
   /** The headless runner session and message the turn is sent as; both are needed for a resume grant. */
   sessionId: z.string().min(1).max(128).optional(),
   messageId: z.string().min(1).max(128).optional(),
+  /** A retry may name its original model. Den rechecks this member's current access to that exact alias. */
+  model: z.string().min(1).max(512).optional(),
+  modelAccessRequired: z.boolean().optional(),
 })
 const signedOutSchema = z.object({ error: z.string(), message: z.string().optional() })
 
@@ -305,14 +315,17 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         // Den's management list requires View all connections as well as the write permission.
         apps: permissions?.has("connections.manage") === true && permissions.has("connections.view"),
       }
-      const verifyModel = features.workbot && features.workbotLunaDefault
-      // Explicit routing applies only to Workbot. Slack and Automations retain their existing policy.
-      const model = verifyModel
-        ? explicitWorkbotModel(readWorkbotModel(organization.metadata), await headlessModelCatalog())
-        : await organizationDefaultModel(organization.id, {
-          features: async () => features,
-          chosenModel: async () => readWorkbotModel(organization.metadata),
-        }).catch(() => null)
+      const gatewayModels = features.workbot && features.cloudAgentGateway
+      const verifyModel = features.workbot && features.workbotLunaDefault && !gatewayModels
+      // Keep history readable during access failures. Starting a turn reauthorizes the exact alias in Den.
+      const model = gatewayModels
+        ? readWorkbotModel(organization.metadata) ?? (await cloudAgentModelCatalog({ organizationId: organization.id, userId: user.id }).catch(() => null))?.defaultModel ?? WORKBOT_DEFAULT_MODEL_ID
+        : verifyModel
+          ? explicitWorkbotModel(readWorkbotModel(organization.metadata), await headlessModelCatalog())
+          : await organizationDefaultModel(organization.id, {
+            features: async () => features,
+            chosenModel: async () => readWorkbotModel(organization.metadata),
+          }).catch(() => null)
       return c.json({
         user,
         organization: { id: organization.id, name: organization.name, brandAppName: readBrandAppName(organization.metadata) },
@@ -330,6 +343,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         teamLinks,
         model,
         ...(verifyModel ? { verifyModel: true } : {}),
+        ...(gatewayModels ? { gatewayModels: true } : {}),
       })
     },
   )
@@ -528,7 +542,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       "x-mcp": false,
       summary: "A short-lived token for one Workbot turn",
       description:
-        "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. Refused when Workbot is off for the workspace.",
+        "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.",
       responses: {
         200: jsonResponse("The token.", runTokenSchema),
         401: jsonResponse("The token is missing, expired or revoked, or the membership ended.", unauthorizedSchema),
@@ -554,9 +568,24 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       }
       const retryAfter = await checkRateLimit(`workbot-run-token:${principal.organizationId}:${principal.userId}`, RUN_TOKENS_PER_WINDOW, RUN_TOKEN_WINDOW_MS, Date.now())
       if (retryAfter !== null) return c.json({ error: "rate_limited" as const, retryAfter }, 429)
-      const { ttlMs = DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS, sessionId, messageId } = c.req.valid("json")
-      const { token, resumeGrant } = await mintHeadlessTurnCredentials({ ...principal, ttlMs, readOnly, sessionId, messageId })
-      return c.json({ token, expiresAt: new Date(Date.now() + ttlMs).toISOString(), ...(resumeGrant ? { resumeGrant } : {}) })
+      const { ttlMs = DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS, sessionId, messageId, model, modelAccessRequired } = c.req.valid("json")
+      try {
+        if (modelAccessRequired && !(await organizationFeatureEnabled(organization.id, "cloudAgentGateway"))) {
+          // OAuth callers cannot label new work as recovery to bypass a disabled rollout. Verify the actual
+          // persisted scoped turn, fenced to this member's owner on both cell and Node runners.
+          const runner = defaultHeadlessRunnerDeps()
+          if (!runner || !sessionId || !messageId || !model) return c.json({ error: "cloud_model_unavailable" }, 403)
+          const owner = workbotOwner(organization.id, resolved.memberId)
+          const snapshot = await createHeadlessRunnerClient({ ...runner, config: { ...runner.config, owner } }).readSession(sessionId, { messageId, expectedOwner: owner, limit: 1, outputs: "none" })
+          const turn = snapshot.ok ? snapshot.value.turns.find((entry) => entry.messageId === messageId) : undefined
+          if (!turn?.modelAccessRequired || turn.model !== model) return c.json({ error: "cloud_model_unavailable" }, 403)
+        }
+        const { token, resumeGrant, modelAccess } = await mintHeadlessTurnCredentials({ ...principal, ttlMs, readOnly, sessionId, messageId, model, modelAccessRequired })
+        return c.json({ token, expiresAt: new Date(Date.now() + ttlMs).toISOString(), ...(resumeGrant ? { resumeGrant } : {}), ...(modelAccess ? { modelAccess } : {}) })
+      } catch (error) {
+        if (!modelAccessRequired && !(await organizationFeatureEnabled(organization.id, "cloudAgentGateway"))) throw error
+        return c.json({ error: "cloud_model_unavailable", message: "Your workspace model isn't available to you. Ask your model administrator to check your AI Gateway access." }, 403)
+      }
     },
   )
 }

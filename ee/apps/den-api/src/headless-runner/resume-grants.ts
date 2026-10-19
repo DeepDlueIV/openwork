@@ -7,6 +7,9 @@ import { organizationFeatureEnabled } from "../features.js"
 import { mintHeadlessRunMcpToken, revokeHeadlessRunMcpToken } from "../mcp/headless-run-token-mint.js"
 import { appLogger } from "../observability/logger.js"
 import { checkRateLimit } from "../utils/rate-limit.js"
+import type { HeadlessModelAccess } from "@openwork-ee/headless-protocol"
+import { cloudAgentGatewayEnabled, organizationCloudModel } from "../workbot/model.js"
+import { cloudAgentGatewayAccess } from "../workbot/gateway-model.js"
 
 /**
  * Resume grants (feature `headlessDurableTurns`): a narrow credential Den hands the headless runner with each turn,
@@ -136,13 +139,20 @@ export async function mintHeadlessTurnCredentials(input: {
   readOnly?: boolean
   sessionId?: string
   messageId?: string
-}): Promise<{ token: string; tokenId: string; expiresAt: Date; resumeGrant?: string }> {
+  /** Exact selected alias; never an upstream credential or client-supplied route. */
+  model?: string
+  /** Trusted caller recovery retains the persisted turn's inference domain across rollout rollback. */
+  modelAccessRequired?: boolean
+}): Promise<{ token: string; tokenId: string; expiresAt: Date; resumeGrant?: string; modelAccess?: HeadlessModelAccess }> {
   // Taken before anything is minted: a credential revocation after this moment outranks the grant (see
   // headlessResumeGrantAuthorizedBeforeRevocation), however long minting takes.
   const authorizedAt = new Date()
+  const modelAccess = input.modelAccessRequired || await cloudAgentGatewayEnabled(input.organizationId)
+    ? await cloudAgentGatewayAccess(input, input.model ?? await organizationCloudModel(input) ?? "")
+    : undefined
   const minted = await mintHeadlessRunMcpToken(input)
   const resumeGrant = await resumeGrantForTurn({ ...input, authorizedAt })
-  return resumeGrant ? { ...minted, resumeGrant } : minted
+  return { ...minted, ...(resumeGrant ? { resumeGrant } : {}), ...(modelAccess ? { modelAccess } : {}) }
 }
 
 export type HeadlessResumeGrantError =
@@ -151,6 +161,7 @@ export type HeadlessResumeGrantError =
   | "grant_revoked"
   | "grant_mismatch"
   | "membership_inactive"
+  | "model_unavailable"
   | "feature_disabled"
 
 /** The stored grant behind a presented one, or null when it is malformed or unknown. */
@@ -207,7 +218,7 @@ async function headlessResumeGrantRevokedNow(row: GrantRow) {
 }
 
 export type HeadlessResumeExchange =
-  | { ok: true; mcpToken: string; expiresAt: Date; readOnly: boolean }
+  | { ok: true; mcpToken: string; expiresAt: Date; readOnly: boolean; modelAccess?: HeadlessModelAccess }
   | { ok: false; status: 403; error: HeadlessResumeGrantError }
   | { ok: false; status: 429; error: "rate_limited"; retryAfterMs: number }
 
@@ -222,6 +233,8 @@ export async function exchangeHeadlessResumeGrant(
     sessionId: string
     messageId: string
     memberId: string | null
+    model?: string
+    modelAccessRequired?: boolean
     now?: Date
     /** Tests only: runs after the token is minted and before the grant is checked again. */
     afterMint?: () => Promise<void>
@@ -242,6 +255,16 @@ export async function exchangeHeadlessResumeGrant(
     now.getTime(),
   )
   if (retryAfterSeconds !== null) return { ok: false, status: 429, error: "rate_limited", retryAfterMs: retryAfterSeconds * 1000 }
+  let modelAccess: HeadlessModelAccess | undefined
+  if (input.modelAccessRequired) {
+    if (!input.model) return { ok: false, status: 403, error: "model_unavailable" }
+    try {
+      // The persisted turn keeps its selected alias across rollout rollback; current member access is rechecked.
+      modelAccess = await cloudAgentGatewayAccess(row, input.model)
+    } catch {
+      return { ok: false, status: 403, error: "model_unavailable" }
+    }
+  }
   const minted = await mintHeadlessRunMcpToken({ userId: row.userId, organizationId: row.organizationId, readOnly: row.readOnly })
   await input.afterMint?.()
   // A credential revocation may have run between the checks above and the mint. Revocation records its moment before
@@ -255,5 +278,5 @@ export async function exchangeHeadlessResumeGrant(
     .update(HeadlessResumeGrantTable)
     .set({ lastUsedAt: now, useCount: sql`${HeadlessResumeGrantTable.useCount} + 1` })
     .where(eq(HeadlessResumeGrantTable.id, row.id))
-  return { ok: true, mcpToken: minted.token, expiresAt: minted.expiresAt, readOnly: row.readOnly }
+  return { ok: true, mcpToken: minted.token, expiresAt: minted.expiresAt, readOnly: row.readOnly, ...(modelAccess ? { modelAccess } : {}) }
 }

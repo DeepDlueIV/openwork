@@ -188,7 +188,10 @@ class ManagedDesktopPolicy {
       if (!DESKTOP_POLICY_ENFORCEMENT_ENABLED) {
         // Never block on Den: keep the last policy verified for this sign-in, or none.
         console.warn("[openwork:model-access] Den unreachable; using the last known model access");
-        return this.lastKnown?.key === sessionKey(session) ? this.lastKnown.policy : null;
+        // Model access/permissions keep their offline policy. A rollout is
+        // different: a newly started engine must not resurrect live sync from
+        // a stale grant after its kill switch changed while disconnected.
+        return this.lastKnown?.key === sessionKey(session) ? { ...this.lastKnown.policy, liveProviderSync: false } : null;
       }
       throw new ApiError(403, "policy_unavailable", "Your organization's policy could not be verified. Try again when connected.");
     }

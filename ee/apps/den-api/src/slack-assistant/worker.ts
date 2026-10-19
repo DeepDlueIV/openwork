@@ -10,7 +10,6 @@ import {
 import { z } from "zod"
 import { appLogger } from "../observability/logger.js"
 import { openworkYourConnectionsUrl } from "../mcp/connection-navigation.js"
-import { organizationFeatureEnabled } from "../features.js"
 import {
   buildSlackEnvelope,
   buildSlackPrompt,
@@ -25,12 +24,12 @@ import {
   createSlackRunner,
   openSlackRunnerEvents,
   slackRunnerAvailable,
+  slackTurnModel,
   type SlackRunner,
   type SlackSessionSettings,
 } from "./headless.js"
 import { createLiveFeeds, type LiveFeedSource } from "./live.js"
 import { createSlackEventLoop } from "./queue.js"
-import { slackAssistantModel } from "../workbot/model.js"
 import {
   slackAssistantEnabledForInstallation,
   admitSlackRun,
@@ -55,6 +54,7 @@ import {
 import { pruneSlackEvents, renewSlackLease, SlackLeaseLostError } from "./repository.js"
 
 type WorkerDeps = {
+  model?: typeof slackTurnModel
   slack: typeof slackClient
   runner: (actor: SlackActor) => SlackRunner
   live: LiveFeedSource
@@ -138,7 +138,20 @@ export async function processSlackEvent(event: EventRow, suppliedDeps: WorkerDep
       await renewSlackLease(event)
       return suppliedDeps.slack(token)(method, body)
     },
-    runner: (actor) => leasedRunner(suppliedDeps.runner(actor), event),
+    runner: (actor) => {
+      const runner = suppliedDeps.runner(actor)
+      return leasedRunner({
+        ...runner,
+        // The actor-bound adapter reads the saved turn before resolving a new turn's policy.
+        send: (input) => runner.send({
+          ...input,
+          resolveModel: () => {
+            if (!installation) throw new Error("model_access_unavailable")
+            return (suppliedDeps.model ?? slackTurnModel)(installation, actor)
+          },
+        }),
+      }, event)
+    },
     live: suppliedDeps.live,
   }
   const installation = await getInstallation(event.connectionId)
@@ -293,7 +306,7 @@ export async function processSlackEvent(event: EventRow, suppliedDeps: WorkerDep
     // Quiet by default: Slack's working status, then the answer. Admins can turn on live steps and notes.
     cp.live = installation.progressUpdates
     // Chosen once per message, so turning the feature off never changes a reply half-way.
-    cp.workbot = await organizationFeatureEnabled(installation.organizationId, "slackWorkbotReplies")
+    cp.workbot = true
     cp.recipientUserId = event.slackUserId
     cp.recipientTeamId = event.teamId
     cp.privateReply =
@@ -366,7 +379,6 @@ export async function processSlackEvent(event: EventRow, suppliedDeps: WorkerDep
     },
     persist: (checkpoint) => persistSlackCheckpoint(event, checkpoint),
     title: `${event.channelId} · ${(payload.text ?? "Task").slice(0, 85)}`,
-    model: cp.phase === "send" ? await slackAssistantModel(installation) : undefined,
     settings: slackSessionSettings(cp.workbot),
     ...(cp.workbot ? { live: deps.live } : {}),
     renew: () => renewSlackLease(event),
@@ -397,7 +409,6 @@ export async function processSlackEvent(event: EventRow, suppliedDeps: WorkerDep
 async function watchSlackEvent(event: EventRow, installation: InstallationRow, slack: SlackCall, deps: WorkerDeps, cp: Checkpoint) {
   const stop = () => checkpointEvent(event, { status: "done" })
   if (event.cancelled || !installation.enabled || !slackRunnerAvailable()) return stop()
-  if (!(await organizationFeatureEnabled(installation.organizationId, "slackWorkbotReplies"))) return stop()
   if (!(await slackAssistantEnabledForInstallation(installation))) return stop()
   const actor = await resolveSlackActor(installation, event.slackUserId)
   if (!actor) return stop()

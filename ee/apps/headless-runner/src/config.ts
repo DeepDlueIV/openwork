@@ -13,6 +13,11 @@ const safeUrl = z
   .url()
   .refine(isSafeUrl, "must be https (http is allowed only for loopback hosts)")
   .transform((value) => value.replace(/\/+$/, ""))
+/**
+ * Den's API for self-resume. The runner sends its callback token and resume grants there and gets member-scoped MCP
+ * tokens back, so it must be https; plain http is allowed only for loopback development hosts, like the other URLs.
+ */
+const denUrl = safeUrl
 
 const csv = z
   .string()
@@ -25,15 +30,24 @@ const optionalText = z
   .optional()
   .transform((value) => value?.trim() || undefined)
 
+const telemetryDenOrigin = safeUrl
+  .refine((value) => {
+    const url = new URL(value)
+    return !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash
+  }, "must be the trusted Den API origin, without credentials, a path, query or fragment")
+  .transform((value) => new URL(value).origin)
+
 const configSchema = z.object({
   HEADLESS_API_TOKEN: z.string().min(32, "HEADLESS_API_TOKEN must be at least 32 characters"),
   HEADLESS_PORT: z.coerce.number().int().min(1).max(65_535).default(8795),
   HEADLESS_DB_PATH: z.string().min(1).default("./data/headless.sqlite"),
-  HEADLESS_MODEL_PROTOCOL: z.enum(["anthropic", "openai"]),
+  HEADLESS_MODEL_PROTOCOL: z.enum(["anthropic", "openai", "openai-responses"]),
   HEADLESS_MODEL_BASE_URL: safeUrl,
   HEADLESS_MODEL: z.string().min(1),
   HEADLESS_MODEL_API_KEY: z.string().min(1).optional(),
   HEADLESS_MCP_URL: safeUrl.optional(),
+  /** Explicit trusted Den destination; never inferred from the generic MCP host. Unset: no Workbot telemetry. */
+  HEADLESS_WORKBOT_DEN_API_URL: optionalText.pipe(telemetryDenOrigin.optional()),
   HEADLESS_MCP_TOOL_ALLOWLIST: csv,
   HEADLESS_MAX_CONCURRENT_TURNS: z.coerce.number().int().min(1).max(1_000).default(32),
   /** Model calls per turn; 0 means no limit, so a long task is bounded by the turn timeout and Stop instead. */
@@ -54,21 +68,16 @@ const configSchema = z.object({
   HEADLESS_CONTEXT_CHAR_BUDGET: z.coerce.number().int().min(10_000).default(400_000),
   HEADLESS_SYSTEM_PROMPT: z.string().optional(),
   /**
-   * Saved files (uploads and files the agent hands back): off, a folder on disk, any S3-compatible bucket, or a
-   * private Vercel Blob store. Only conversations created with `files: true` use them.
+   * Saved files (uploads and files the agent hands back): off, a folder on disk, or any S3-compatible bucket. Only
+   * conversations created with `files: true` use them.
    */
-  HEADLESS_FILES: z.enum(["off", "disk", "s3", "vercel"]).default("off"),
+  HEADLESS_FILES: z.enum(["off", "disk", "s3"]).default("off"),
   /** For `disk`. Defaults to a `files` folder next to the database, so both live on the same persistent volume. */
   HEADLESS_FILES_DIR: z.string().min(1).optional(),
   /** The largest single file a conversation may keep (uploads, saved files, computer outputs). */
   HEADLESS_FILES_MAX_BYTES: z.coerce.number().int().min(1024).default(100 * 1024 * 1024),
   /** How much one conversation may keep in total. */
   HEADLESS_FILES_MAX_SESSION_BYTES: z.coerce.number().int().min(1024).default(5 * 1024 * 1024 * 1024),
-  /** For `vercel`: the read-write token of one private Blob store, used only for that store. */
-  HEADLESS_VERCEL_BLOB_TOKEN: z
-    .string()
-    .optional()
-    .transform((value) => value || undefined),
   HEADLESS_S3_ENDPOINT: safeUrl.optional(),
   HEADLESS_S3_REGION: z.string().min(1).default("auto"),
   HEADLESS_S3_BUCKET: z.string().min(1).optional(),
@@ -98,6 +107,13 @@ const configSchema = z.object({
   HEADLESS_SENTRY_RELEASE: optionalText,
   /** Set by the runner image at build time; tagged on error reports. */
   HEADLESS_RUNNER_VERSION: optionalText,
+  /**
+   * Self-resume (all three, or none): Den's API, the token the runner calls it with, and the key that encrypts turns'
+   * resume grants at rest. With them the runner resumes interrupted turns itself and refreshes MCP tokens in place.
+   */
+  HEADLESS_DEN_API_URL: optionalText.pipe(denUrl.optional()),
+  HEADLESS_DEN_CALLBACK_TOKEN: optionalText.refine((value) => value === undefined || value.length >= 32, "must be at least 32 characters"),
+  HEADLESS_GRANT_KEY: optionalText.refine((value) => value === undefined || value.length >= 32, "must be at least 32 characters"),
 })
 
 export type Config = {
@@ -105,13 +121,15 @@ export type Config = {
   port: number
   dbPath: string
   model: {
-    protocol: "anthropic" | "openai"
+    protocol: "anthropic" | "openai" | "openai-responses"
     baseUrl: string
     model: string
     defaultApiKey?: string
     maxOutputTokens: number
   }
   mcp?: { url: string; toolAllowlist: string[] }
+  /** Constructed only from the separately configured, trusted Den API origin. */
+  workbotTelemetryUrl?: string
   limits: {
     maxConcurrentTurns: number
     maxSteps: number
@@ -124,12 +142,15 @@ export type Config = {
     | { kind: "off" }
     | { kind: "disk"; directory: string }
     | { kind: "s3"; endpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string; forcePathStyle: boolean }
-    | { kind: "vercel"; token: string }
   fileLimits: { maxFileBytes: number; maxSessionBytes: number }
   computer?: ComputerProviderConfig & { scope?: string; idlePauseMs: number; keepDays: number }
   /** Where error reports go; unset (no DSN) sends none. */
   errorReporting?: ErrorReportingConfig
+  /** Turns with a resume grant keep going on their own (see self-resume.ts); unset, callers resume them. */
+  selfResume?: SelfResumeConfig
 }
+
+export type SelfResumeConfig = { denApiUrl: string; callbackToken: string; grantKey: string }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   const parsed = configSchema.safeParse(env)
@@ -152,6 +173,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     mcp: value.HEADLESS_MCP_URL
       ? { url: value.HEADLESS_MCP_URL, toolAllowlist: value.HEADLESS_MCP_TOOL_ALLOWLIST }
       : undefined,
+    workbotTelemetryUrl: value.HEADLESS_WORKBOT_DEN_API_URL
+      ? new URL("/v1/workbot/telemetry", value.HEADLESS_WORKBOT_DEN_API_URL).toString()
+      : undefined,
     limits: {
       maxConcurrentTurns: value.HEADLESS_MAX_CONCURRENT_TURNS,
       maxSteps: value.HEADLESS_MAX_STEPS === 0 ? Number.POSITIVE_INFINITY : value.HEADLESS_MAX_STEPS,
@@ -164,7 +188,19 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     fileLimits: { maxFileBytes: value.HEADLESS_FILES_MAX_BYTES, maxSessionBytes: value.HEADLESS_FILES_MAX_SESSION_BYTES },
     computer: computerConfig(value),
     errorReporting: errorReportingConfig(value),
+    selfResume: selfResumeConfig(value),
   }
+}
+
+/** All three settings or none: a runner set up halfway would quietly never resume anything. */
+function selfResumeConfig(value: z.infer<typeof configSchema>): Config["selfResume"] {
+  const { HEADLESS_DEN_API_URL: denApiUrl, HEADLESS_DEN_CALLBACK_TOKEN: callbackToken, HEADLESS_GRANT_KEY: grantKey } = value
+  if (!denApiUrl && !callbackToken && !grantKey) return undefined
+  if (!denApiUrl || !callbackToken || !grantKey) {
+    const missing = [!denApiUrl && "HEADLESS_DEN_API_URL", !callbackToken && "HEADLESS_DEN_CALLBACK_TOKEN", !grantKey && "HEADLESS_GRANT_KEY"].filter(Boolean)
+    throw new Error(`Invalid headless-runner configuration:\nself-resume needs HEADLESS_DEN_API_URL, HEADLESS_DEN_CALLBACK_TOKEN and HEADLESS_GRANT_KEY together; missing ${missing.join(", ")}`)
+  }
+  return { denApiUrl, callbackToken, grantKey }
 }
 
 function errorReportingConfig(value: z.infer<typeof configSchema>): Config["errorReporting"] {
@@ -197,10 +233,6 @@ function computerConfig(value: z.infer<typeof configSchema>): Config["computer"]
 
 function filesConfig(value: z.infer<typeof configSchema>): Config["files"] {
   if (value.HEADLESS_FILES === "disk") return { kind: "disk", directory: value.HEADLESS_FILES_DIR ?? join(dirname(value.HEADLESS_DB_PATH), "files") }
-  if (value.HEADLESS_FILES === "vercel") {
-    if (!value.HEADLESS_VERCEL_BLOB_TOKEN) throw new Error("Invalid headless-runner configuration:\nHEADLESS_FILES=vercel needs HEADLESS_VERCEL_BLOB_TOKEN")
-    return { kind: "vercel", token: value.HEADLESS_VERCEL_BLOB_TOKEN }
-  }
   if (value.HEADLESS_FILES !== "s3") return { kind: "off" }
   const { HEADLESS_S3_ENDPOINT: endpoint, HEADLESS_S3_BUCKET: bucket, HEADLESS_S3_ACCESS_KEY_ID: accessKeyId, HEADLESS_S3_SECRET_ACCESS_KEY: secretAccessKey } = value
   if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {

@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { focusPaneComposerSoon } from "./workbench-pane-focus";
 import { newSessionDraftOwnerKey } from "./new-session-destination";
 import { usePendingConversationStore } from "./pending-conversation-store";
 import { PendingConversationView } from "./pending-conversation";
@@ -569,6 +570,18 @@ export function SessionPage(props: SessionPageProps) {
     setNarrowPane("chat");
   }, [focusedWorkbenchPane, isMobile, splitSession]);
 
+  // Opening a side chat (or switching it to another chat) puts the cursor in
+  // its composer, so you can type there right away. A side chat restored when
+  // the app starts does not take focus. Phones keep the keyboard closed.
+  const splitPaneKey = splitSession ? `${splitSession.workspaceId}:${splitSession.sessionId}` : null;
+  const shownSplitPaneRef = useRef(splitPaneKey);
+  useEffect(() => {
+    const previous = shownSplitPaneRef.current;
+    shownSplitPaneRef.current = splitPaneKey;
+    if (!splitPaneKey || splitPaneKey === previous || isMobile) return;
+    return focusPaneComposerSoon("secondary");
+  }, [isMobile, splitPaneKey]);
+
   useEffect(() => {
     if (isMobile && sidePanelOpen) setNarrowPane("panel");
   }, [isMobile, sidePanelOpen]);
@@ -761,7 +774,7 @@ export function SessionPage(props: SessionPageProps) {
         else reportOpenError(new Error("Connect to the workspace to open this file."));
         return;
       }
-      void resolveCollectibleOpenTarget(runtime.client, runtime.runtimeWorkspaceId, target)
+      void resolveCollectibleOpenTarget(runtime.client, runtime.runtimeWorkspaceId, target, sourceSessionId ?? props.selectedSessionId)
         .then((resolvedTarget) => {
           if (resolvedTarget) openFileTarget(resolvedTarget);
           else if (canOpenLocally) openLocalFile(target);

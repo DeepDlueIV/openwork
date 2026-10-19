@@ -39,7 +39,9 @@ function observePage(id, query = null) {
     const input = element instanceof HTMLInputElement;
     const textarea = element instanceof HTMLTextAreaElement;
     const select = element instanceof HTMLSelectElement;
-    const sensitive = element.matches('input[type="password"],input[autocomplete="one-time-code"]');
+    // One-time codes and payment-card fields (cc-number, cc-csc, cc-exp...) never leave the page.
+    const autofill = (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
+    const sensitive = element.matches('input[type="password"]') || autofill.some(token => token === "one-time-code" || token.startsWith("cc-"));
     const role = element.getAttribute("role");
     /** @type {{ tag: string, role: string | null, name: string, disabled: boolean, sensitive: boolean, required: boolean, readOnly: boolean,
      * type?: string, value?: string, valueTruncated?: boolean, checked?: boolean | "mixed", expanded?: boolean, selected?: boolean,
@@ -67,7 +69,7 @@ function observePage(id, query = null) {
     else if (element.hasAttribute("aria-checked")) state.checked = element.getAttribute("aria-checked") === "mixed" ? "mixed" : element.getAttribute("aria-checked") === "true";
     if (element.hasAttribute("aria-expanded")) state.expanded = element.getAttribute("aria-expanded") === "true";
     if (element.hasAttribute("aria-selected")) state.selected = element.getAttribute("aria-selected") === "true";
-    if (select) {
+    if (select && !sensitive) {
       state.multiple = element.multiple;
       state.options = [...element.options].slice(0, 200).map(option => ({ value: option.value, label: text(option.label),
         selected: option.selected, disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) }));

@@ -8,10 +8,12 @@ import { getDesktopReleaseMetadata } from "../desktop-releases.js"
 import { env } from "../env.js"
 import { parseOrganizationPlan, type PlanTier } from "../entitlements.js"
 import { normalizeOrganizationMetadata } from "../organization-limits.js"
-import { readFeatureRollouts, setFeatureRollout, setOrganizationFeatureOverrides } from "@openwork-ee/den-db/organization-features"
+import { readFeatureRollouts } from "@openwork-ee/den-db/organization-features"
+import { updateFeatureRollout, updateOrganizationFeatureOverrides } from "../features.js"
 import { FEATURE_KEYS, featureAvailableOn, featureDefinition, featureKeySchema, featureRollout, resolveFeature } from "@openwork/features"
 import { updateOrganizationMetadata } from "../organization-metadata.js"
 import { runPlatformAdminPlatformAction, runPlatformAdminServiceAction, type PlatformAdminAuditActor } from "../audit/mcp-service-audit.js"
+import { readWorkbotAdoptionReport, workbotAdoptionInputSchema } from "../workbot/adoption-report.js"
 
 /**
  * den-admin MCP toolset: read-only Den analytics for allowlisted platform
@@ -27,7 +29,7 @@ import { runPlatformAdminPlatformAction, runPlatformAdminServiceAction, type Pla
  * timeout so one expensive SELECT cannot pin an API worker indefinitely.
  */
 
-export const DEN_ADMIN_MCP_VERSION = "0.7.0"
+export const DEN_ADMIN_MCP_VERSION = "0.8.0"
 
 const QUERY_TIMEOUT_MS = 15_000
 const DEFAULT_ROW_LIMIT = 200
@@ -209,9 +211,9 @@ function isMissingTable(error: unknown): boolean {
   return isMissingTable(record.cause)
 }
 
-// --- activity (sign-in session days UNION Gateway request days) ---
+// --- activity (sign-in session days UNION session.active telemetry days) ---
 // Matches den-api /v1/admin/overview: a user is "active" on a day if they
-// have a sign-in session day or a Gateway request that day.
+// have a sign-in session day or a session.active telemetry event that day.
 
 async function activeUserCount(days: number): Promise<number> {
   const interval = intLiteral(days)
@@ -220,10 +222,10 @@ async function activeUserCount(days: number): Promise<number> {
         SELECT s.user_id AS uid FROM session s
          WHERE s.updated_at >= DATE_SUB(NOW(), INTERVAL ${interval} DAY)
         UNION
-        SELECT m.user_id FROM gateway_request_logs t
-          JOIN member m ON m.id = t.org_membership_id
+        SELECT m.user_id FROM telemetry_event t
+          JOIN member m ON m.id = t.member_id
          WHERE m.user_id IS NOT NULL
-           AND t.started_at >= DATE_SUB(NOW(), INTERVAL ${interval} DAY)
+           AND t.event_timestamp >= DATE_SUB(NOW(), INTERVAL ${interval} DAY)
       ) activity`)
     return n(result[0]?.count)
   } catch (error) {
@@ -235,16 +237,19 @@ async function activeUserCount(days: number): Promise<number> {
 }
 
 /**
- * "Real" active users have made an AI Gateway request in the window.
- * Returns 0 when Gateway request storage is unavailable.
+ * "Real" active users: executed at least one task in a session in the
+ * window — task.* telemetry with a session id, not just sign-ins or
+ * heartbeat pings. Returns 0 when the telemetry table is missing.
  */
 async function taskActiveUserCount(days: number): Promise<number> {
   const interval = intLiteral(days)
   try {
-    const result = await rows(sql`SELECT COUNT(DISTINCT m.user_id) AS count FROM gateway_request_logs t
-        JOIN member m ON m.id = t.org_membership_id
+    const result = await rows(sql`SELECT COUNT(DISTINCT m.user_id) AS count FROM telemetry_event t
+        JOIN member m ON m.id = t.member_id
        WHERE m.user_id IS NOT NULL
-         AND t.started_at >= DATE_SUB(NOW(), INTERVAL ${interval} DAY)`)
+         AND t.event_type IN ('task.started', 'task.completed', 'task.failed')
+         AND t.session_id IS NOT NULL
+         AND t.event_timestamp >= DATE_SUB(NOW(), INTERVAL ${interval} DAY)`)
     return n(result[0]?.count)
   } catch (error) {
     if (!isMissingTable(error)) throw error
@@ -256,8 +261,8 @@ async function activityDays(): Promise<Row[]> {
   try {
     return await rows(sql`SELECT s.user_id AS uid, DATE(s.updated_at) AS day FROM session s
         UNION
-        SELECT m.user_id, DATE(t.started_at) FROM gateway_request_logs t
-          JOIN member m ON m.id = t.org_membership_id
+        SELECT m.user_id, DATE(t.event_timestamp) FROM telemetry_event t
+          JOIN member m ON m.id = t.member_id
          WHERE m.user_id IS NOT NULL`)
   } catch (error) {
     if (!isMissingTable(error)) throw error
@@ -280,12 +285,12 @@ async function lastActiveByUser(userIds: string[]): Promise<Map<string, number>>
   )
   for (const row of sessionRows) merge(row.user_id, row.last)
   try {
-    const gatewayRows = await rows(
-      sql`SELECT m.user_id AS user_id, MAX(t.started_at) AS last FROM gateway_request_logs t
-           JOIN member m ON m.id = t.org_membership_id
+    const telemetryRows = await rows(
+      sql`SELECT m.user_id AS user_id, MAX(t.event_timestamp) AS last FROM telemetry_event t
+           JOIN member m ON m.id = t.member_id
           WHERE m.user_id IN (${idList(userIds)}) GROUP BY m.user_id`,
     )
-    for (const row of gatewayRows) merge(row.user_id, row.last)
+    for (const row of telemetryRows) merge(row.user_id, row.last)
   } catch (error) {
     if (!isMissingTable(error)) throw error
   }
@@ -434,7 +439,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
             status: row.status,
             count: n(row.count),
           })),
-          note: "active = sign-in session day or Gateway request; realActive = made at least one Gateway request",
+          note: "active = sign-in session day or any telemetry event; realActive = executed at least one task in a session (task.* events with a session id)",
         }
       }),
   )
@@ -498,7 +503,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
     "den_set_org_capability",
     {
       description:
-        "Admin write tool: turn one feature on or off for one organization (an organization override, the same switch as the admin panel), e.g. capability='workbot'. enabled=null removes the override so the feature follows the deployment-wide on/off state again. The kill switch (den_set_feature_rollout) still outranks it.",
+        "Admin write tool: turn one feature on or off for one organization (an organization override, the same switch as the admin panel), e.g. capability='workbotDocuments'. enabled=null removes the override so the feature follows the deployment-wide on/off state again. The kill switch (den_set_feature_rollout) still outranks it.",
       inputSchema: z.object({
         organizationId: z.string().min(1).describe("Organization id, e.g. org_..."),
         capability: featureKeySchema.describe("Feature to set (see packages/features/src/registry.ts)"),
@@ -522,7 +527,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
         if (!featureAvailableOn(capability, env.features.deployment)) {
           throw new Error(`${capability} is not part of this deployment.`)
         }
-        const overrides = await runPlatformAdminServiceAction("organization.capability.set", requireAdmin(), organization, () => setOrganizationFeatureOverrides(db, {
+        const overrides = await runPlatformAdminServiceAction("organization.capability.set", requireAdmin(), organization, () => updateOrganizationFeatureOverrides({
           organizationId,
           changes: { [capability]: enabled },
           source: "platform",
@@ -584,7 +589,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
         if (!featureAvailableOn(feature, env.features.deployment)) throw new Error(`${feature} is not part of this deployment.`)
         // Deployment-wide: no organization's data changes, so platform evidence only.
         const rollouts = await runPlatformAdminPlatformAction("feature.rollout.set", requireAdmin(), { type: "feature", id: feature }, () =>
-          setFeatureRollout(db, { key: feature, enabled, killed, defaultEnabled: featureDefinition(feature).default }))
+          updateFeatureRollout({ key: feature, enabled, killed, defaultEnabled: featureDefinition(feature).default }))
         return { ok: true, feature, ...featureRollout(feature, rollouts) }
       }),
   )
@@ -642,7 +647,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
     "den_retention",
     {
       description:
-        "Weekly cohort retention: users grouped by ISO signup week, with the percentage active in each week after signup (activity = sign-in session days + Gateway requests).",
+        "Weekly cohort retention: users grouped by ISO signup week, with the percentage active in each week after signup (activity = sign-in session days + session.active telemetry).",
       inputSchema: z.object({
         weeks: z.number().int().min(2).max(26).default(8).describe("How many signup-week cohorts"),
       }),
@@ -696,6 +701,21 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
           cohorts: result,
           note: "week0 = signup week; weekN = active N weeks after signup",
         }
+      }),
+  )
+
+  server.registerTool(
+    "den_workbot_adoption",
+    {
+      description:
+        "Platform-admin read-only Workbot adoption funnel, grouped by first recorded sign-in day (UTC) and organization: signed in, greeting completed, first message, at least one connected service. Includes id-only member pages with initial/greeting ready counts, later connection success counts, completion model/source details, and greeting failures by error code/model. Dates are inclusive, at most 90 days; totals cover the full cohort even when breakdowns are truncated. Never reads messages or profile fields.",
+      inputSchema: workbotAdoptionInputSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    },
+    async (input) =>
+      run(async () => {
+        if (!admin) throw new Error("Workbot adoption reports require an authenticated platform admin.")
+        return readWorkbotAdoptionReport(input, rows)
       }),
   )
 
@@ -840,7 +860,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
     "den_query",
     {
       description:
-        "Escape hatch: run a single read-only SQL statement (SELECT/WITH/SHOW/DESCRIBE/EXPLAIN) against the Den database. Useful tables: user, session, organization, member, invitation, team, org_subscriptions, gateway_request_logs, worker, audit_event. Avoid encrypted columns (scim_provider.scim_token, sso_provider.*_config, llm_provider.api_key, config_object_version payloads, inference upstream keys).",
+        "Escape hatch: run a single read-only SQL statement (SELECT/WITH/SHOW/DESCRIBE/EXPLAIN) against the Den database. Useful tables: user, session, organization, member, invitation, team, org_subscriptions, telemetry_event, worker, audit_event. Avoid encrypted columns (scim_provider.scim_token, sso_provider.*_config, llm_provider.api_key, config_object_version payloads, inference upstream keys).",
       inputSchema: z.object({
         sql: z.string().min(1).describe("A single read-only SQL statement"),
         limit: z.number().int().min(1).max(MAX_ROW_LIMIT).optional().describe("Row limit appended when the query has none"),

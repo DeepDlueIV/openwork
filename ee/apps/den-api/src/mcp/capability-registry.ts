@@ -1,6 +1,7 @@
 import { Tool, toolError } from "@openwork/codemode"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { DenTypeId } from "@openwork-ee/utils/typeid"
+import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
 import { Effect } from "effect"
 import type { Hono } from "hono"
 import { z } from "zod"
@@ -9,6 +10,7 @@ import { AuditUnavailableError, auditUnavailableToolResult, runMcpServiceAction,
 import type { AuditServiceActionName } from "../audit/service-actions.js"
 import { isPlatformAdminUserId } from "../middleware/admin.js"
 import { mcpPrincipalCredentialId, type McpPrincipal } from "./auth.js"
+import { catalogOperationAvailableToCapabilities } from "./catalog-availability.js"
 import type { McpToolOperation } from "./catalog.js"
 import {
   executeAdminCapability,
@@ -46,6 +48,7 @@ import {
   parseExternalCapabilityName,
   probeExternalConnectionStatus,
   searchExternalCapabilities,
+  unavailableExternalCapabilityStatus,
   type ExternalCapabilityExecuteResult,
   type McpMemberIdentity,
 } from "./external-capabilities.js"
@@ -68,7 +71,6 @@ import {
 import {
   executeRemoteSessionCapability,
   parseRemoteSessionCapabilityName,
-  remoteSessionCapabilitiesEnabled,
   searchRemoteSessionCapabilities,
   type RemoteSessionAction,
 } from "./remote-session-capabilities.js"
@@ -84,6 +86,7 @@ import {
   type SearchCapabilityType,
 } from "./search.js"
 import { externalToolContent } from "./tool-content.js"
+import { withRemoteSessionReceiptUri } from "./remote-session-resources.js"
 
 export const CAPABILITY_SOURCE_KINDS = ["catalog", "native", "externalMcp", "marketplace", "builtinSkill", "remoteSession", "admin"] as const
 export type CapabilitySourceKind = (typeof CAPABILITY_SOURCE_KINDS)[number]
@@ -125,12 +128,19 @@ export type CapabilityRegistryContext = {
   member: McpMemberIdentity | null
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
-  externalMcpConnectionsEnabled: boolean
-  remoteSessionsEnabled: boolean
+  /** Managed deployment planning, launch preparation and status (managed deployments enabled). */
+  managedDeploymentsEnabled: boolean
+  /** Secure keys in chat: provider creation is offered to agents, never keys. */
+  secureSecretFieldsEnabled: boolean
+  remoteSessionEventsEnabled: boolean
+  /** `remote-session:status`, rolled out with the desktop's remote sub-agents. */
+  remoteSessionStatusEnabled: boolean
   resolvePlatformAdmin: () => Promise<boolean>
   resolveNamespaceContext: () => Promise<CodemodeConnectionNamespaceContext>
   /** Set only by MCP transports: direct service mutations are audited for this caller (src/audit/service-actions.ts). */
   audit: McpAuditPrincipal | null
+  /** What started these capability calls, recorded with each Library usage event. */
+  usageSource: CapabilityUsageSource
 }
 
 export type CapabilityRegistryContextInput = {
@@ -143,13 +153,18 @@ export type CapabilityRegistryContextInput = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
-  organizationFeatures: Pick<FeatureMap, "mcpConnections">
+  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents" | "remoteSessionSubagents" | "managedDeployments" | "secureSecretFields">>
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
+  /**
+   * What starts these calls, for Library usage: the member's agent (MCP agent
+   * transport), a saved Workflow run (the run route), a scheduled Automation,
+   * or an App. Live artifact renders derive an `artifact` context.
+   */
+  usageSource: CapabilityUsageSource
 }
 
 export function createCapabilityRegistryContext(input: CapabilityRegistryContextInput): CapabilityRegistryContext {
-  const externalMcpConnectionsEnabled = input.organizationFeatures.mcpConnections
   let platformAdmin: Promise<boolean> | undefined
   const resolvePlatformAdmin = () => {
     platformAdmin ??= isPlatformAdminUserId(input.principal.userId)
@@ -160,25 +175,42 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     namespaceContext ??= resolveCodemodeConnectionNamespaceContext({
       organizationId: input.organizationId,
       member: input.member,
-      includeExternalMcp: externalMcpConnectionsEnabled,
     })
     return namespaceContext
   }
   return {
     app: input.app,
     env: input.env,
+    // All capability paths (search, Code Mode, execution, saved Workflows) use this catalog.
+    // The route also checks the current rollout so a cached tool cannot bypass a kill switch.
     catalog: input.catalog,
     principal: input.principal,
     organizationId: input.organizationId,
     member: input.member,
     redirectUriBase: input.redirectUriBase,
     generatedArtifactViewsEnabled: input.generatedArtifactViewsEnabled,
-    externalMcpConnectionsEnabled,
-    remoteSessionsEnabled: remoteSessionCapabilitiesEnabled(),
+    managedDeploymentsEnabled: input.organizationFeatures.managedDeployments === true,
+    secureSecretFieldsEnabled: input.organizationFeatures.secureSecretFields === true,
+    remoteSessionEventsEnabled: input.organizationFeatures.remoteSessionEvents === true,
+    remoteSessionStatusEnabled: input.organizationFeatures.remoteSessionSubagents === true,
     resolvePlatformAdmin,
     resolveNamespaceContext,
     audit: input.audit ?? null,
+    usageSource: input.usageSource,
   }
+}
+
+/** The same context with calls credited to another Library usage source. */
+export function withUsageSource<T extends Pick<CapabilityRegistryContext, "usageSource">>(ctx: T, usageSource: CapabilityUsageSource): T {
+  return ctx.usageSource === usageSource ? ctx : { ...ctx, usageSource }
+}
+
+/**
+ * Capabilities a saved Workflow's script calls count as Workflow use when the
+ * member's agent started it; Automation, App and artifact runs keep their source.
+ */
+export function workflowUsageContext<T extends Pick<CapabilityRegistryContext, "usageSource">>(ctx: T): T {
+  return ctx.usageSource === "agent" ? withUsageSource(ctx, "workflow") : ctx
 }
 
 /** HTTP-equivalent status of a failed Workflow execution, or null on success. */
@@ -209,14 +241,7 @@ function remoteSessionResourceId(body: unknown): string | null {
   return serviceAuditResourceId(normalized.sessionId)
 }
 
-export function catalogOperationAvailableToCapabilities(
-  context: Pick<CapabilityRegistryContext, "generatedArtifactViewsEnabled">,
-  operation: Pick<McpToolOperation, "method" | "path">,
-) {
-  if (context.generatedArtifactViewsEnabled) return true
-  return operation.path !== "/v1/workflows/{configObjectId}/views"
-    && !operation.path.startsWith("/v1/artifact-views/")
-}
+export { catalogOperationAvailableToCapabilities }
 
 type CapabilitySearchContext = CapabilityRegistryContext & {
   sourceFilter: ReturnType<typeof searchCapabilitySourceFilter>
@@ -447,16 +472,18 @@ async function executeMarketplaceSource(
   input: CapabilityExecuteInput,
 ): Promise<MarketplaceCapabilityExecuteResult> {
   return executeMarketplaceCapability({
-    buildTools: () => buildCapabilityToolTree(ctx),
+    // Only a Workflow builds tools: what its script calls is Workflow use.
+    buildTools: () => buildCapabilityToolTree(workflowUsageContext(ctx)),
     organizationId: ctx.organizationId,
     member: ctx.member,
     pluginId: parsed.pluginId,
     configObjectId: parsed.configObjectId,
     body: input.body,
     validateScriptOutput: true,
-    enabled: ctx.externalMcpConnectionsEnabled,
     redirectUriBase: ctx.redirectUriBase,
     auditWorkflowExecution: workflowExecutionAudit(ctx),
+    usageSource: ctx.usageSource,
+    describeUnavailable: (missing) => liveArtifactConnectionFailure(ctx, missing),
   })
 }
 
@@ -541,6 +568,7 @@ const nativeSource: CapabilitySource = {
       path: input.path,
       query: input.query,
       body: input.body,
+      usageSource: ctx.usageSource,
     })
     return result ?? unknownCapabilityResult(input.name)
   },
@@ -553,7 +581,7 @@ const externalMcpSource: CapabilitySource = {
     return parsed ? { kind: "externalMcp", name, ...parsed } : null
   },
   search: async (ctx, query, limit) => {
-    if (!ctx.sourceFilter.mcp || !ctx.externalMcpConnectionsEnabled) return []
+    if (!ctx.sourceFilter.mcp) return []
     return searchExternalCapabilities({
       organizationId: ctx.organizationId,
       member: ctx.member,
@@ -565,26 +593,17 @@ const externalMcpSource: CapabilitySource = {
     })
   },
   enumerate: async (ctx) => {
-    if (!ctx.externalMcpConnectionsEnabled) return []
     return leavesFromBuilt(await buildExternalMcpToolTree({
       organizationId: ctx.organizationId,
       member: ctx.member,
       scopes: ctx.principal.scopes,
       redirectUriBase: ctx.redirectUriBase,
       namespaceContext: await ctx.resolveNamespaceContext(),
+      usageSource: ctx.usageSource,
     }))
   },
   execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "externalMcp")) return unknownCapabilityResult(input.name)
-    if (!ctx.externalMcpConnectionsEnabled) {
-      return {
-        isError: true,
-        content: textContent(JSON.stringify({
-          error: "unknown_capability",
-          message: "No external MCP connection capabilities are available for this organization.",
-        })),
-      }
-    }
     if (parsed.toolName === "*") {
       // A connection_status match: probing is the capability. Report the live
       // state as a successful result carrying the first-party connection
@@ -617,6 +636,7 @@ const externalMcpSource: CapabilitySource = {
       ...(input.requireSchemaMatch ? { requireSchemaMatch: true } : {}),
       ...(input.requireReadOnly ? { requireReadOnly: true } : {}),
       redirectUriBase: ctx.redirectUriBase,
+      usageSource: ctx.usageSource,
     })
     return result.ok
       ? externalCapabilitySuccessToolResult(result)
@@ -631,25 +651,22 @@ const marketplaceSource: CapabilitySource = {
     return parsed ? { kind: "marketplace", name, ...parsed } : null
   },
   search: async (ctx, query, limit) => {
-    if (!ctx.sourceFilter.marketplace || !ctx.externalMcpConnectionsEnabled) return []
+    if (!ctx.sourceFilter.marketplace) return []
     const matches = await searchMarketplaceCapabilities({
       organizationId: ctx.organizationId,
       member: ctx.member,
       objectTypes: ctx.marketplaceObjectTypes,
       query,
       limit,
-      enabled: ctx.externalMcpConnectionsEnabled,
     })
     return matches.map((match) => match.kind !== "workflow"
       ? { ...match, scriptPath: codemodeScriptPath("marketplace", match.name) }
       : match)
   },
   enumerate: async (ctx) => {
-    if (!ctx.externalMcpConnectionsEnabled) return []
     const references = await listAccessibleMarketplaceCapabilityReferences({
       organizationId: ctx.organizationId,
       member: ctx.member,
-      enabled: ctx.externalMcpConnectionsEnabled,
     })
     const uniqueReferences = new Map(references
       .filter((reference) => reference.objectType !== "workflow")
@@ -727,8 +744,8 @@ const remoteSessionSource: CapabilitySource = {
     return action ? { kind: "remoteSession", name, action } : null
   },
   search: async (ctx, query, limit) => {
-    if (!ctx.sourceFilter.api || !ctx.member || !ctx.remoteSessionsEnabled) return []
-    return searchRemoteSessionCapabilities(query, limit)
+    if (!ctx.sourceFilter.api || !ctx.member) return []
+    return searchRemoteSessionCapabilities(query, limit, { status: ctx.remoteSessionStatusEnabled })
   },
   // Deliberately absent from the confined-script tool tree in v1: remote
   // sessions are long-lived side effects that agents should drive through
@@ -736,15 +753,7 @@ const remoteSessionSource: CapabilitySource = {
   enumerate: () => Promise.resolve([]),
   execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "remoteSession")) return unknownCapabilityResult(input.name)
-    if (!ctx.remoteSessionsEnabled) {
-      return {
-        isError: true,
-        content: textContent(JSON.stringify({
-          error: "unknown_capability",
-          message: "Remote session capabilities are not available for this organization.",
-        })),
-      }
-    }
+    if (parsed.action === "status" && !ctx.remoteSessionStatusEnabled) return unknownCapabilityResult(input.name)
     if (!ctx.member) {
       return {
         isError: true,
@@ -754,14 +763,14 @@ const remoteSessionSource: CapabilitySource = {
         })),
       }
     }
-    const run = () => executeRemoteSessionCapability({
+    const run = async () => withRemoteSessionReceiptUri(await executeRemoteSessionCapability({
       action: parsed.action,
       organizationId: ctx.organizationId,
       userId: ctx.principal.userId,
       hasWriteScope: ctx.principal.scopes.has(DEN_MCP_WRITE_SCOPE),
       body: input.body,
       headlessRunTokenId: headlessRunTokenId(ctx.principal.payload),
-    })
+    }), ctx.remoteSessionEventsEnabled)
     const auditAction = remoteSessionAuditActions[parsed.action]
     if (!auditAction || !ctx.audit) return run()
     try {
@@ -897,6 +906,17 @@ export async function liveArtifactConnectionFailure(
   context: CapabilityRegistryContext,
   missing: readonly { capabilityName: string }[],
 ) {
+  const status = await nativeConnectionFailure(context, missing) ?? await externalConnectionFailure(context, missing)
+  return status ? {
+    connectionStatus: status,
+    connectionCard: connectionActionPayloadFromStatus(status),
+  } : null
+}
+
+async function nativeConnectionFailure(
+  context: CapabilityRegistryContext,
+  missing: readonly { capabilityName: string }[],
+) {
   const ids = new Set(missing.flatMap((entry) => {
     const parsed = parseNativeCapabilityName(entry.capabilityName)
     return parsed ? [parsed.connectionId] : []
@@ -904,10 +924,24 @@ export async function liveArtifactConnectionFailure(
   if (!ids.size) return null
   const namespace = await context.resolveNamespaceContext()
   const connection = namespace.nativeProviderEntries.find((entry) => ids.has(entry.id) && !entry.connectedForMe)
-  if (!connection) return null
-  const status = connectionStatusMatch(connection, 1).connectionStatus
-  return status ? {
-    connectionStatus: status,
-    connectionCard: connectionActionPayloadFromStatus(status),
-  } : null
+  return connection ? connectionStatusMatch(connection, 1).connectionStatus ?? null : null
+}
+
+async function externalConnectionFailure(
+  context: CapabilityRegistryContext,
+  missing: readonly { capabilityName: string }[],
+) {
+  for (const entry of missing) {
+    const parsed = parseExternalCapabilityName(entry.capabilityName)
+    if (!parsed) continue
+    const status = await unavailableExternalCapabilityStatus({
+      organizationId: context.organizationId,
+      member: context.member,
+      connectionId: parsed.connectionId,
+      toolName: parsed.toolName,
+      redirectUriBase: context.redirectUriBase,
+    })
+    if (status) return status
+  }
+  return null
 }

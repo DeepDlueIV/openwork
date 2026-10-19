@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useState } from "react";
 import { DenButton } from "../../_components/ui/button";
 import { DenPageHeader } from "../../_components/ui/page-header";
 import {
@@ -16,12 +16,10 @@ import {
   getYourConnectionsRoute,
 } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
-import { ownedAccessStatus } from "./access-summary";
-import { draftFromPluginGrants } from "./item-sharing";
-import { FilterInput, ItemFlatList, ItemMenu, LibraryListRow, removeEntry, ItemSection, ItemSectionSkeleton } from "./item-list";
+import { FilterInput, ItemMenu, ItemPanel, ItemRow, removeEntry, ItemSection, ItemSectionSkeleton } from "./item-list";
 import { ItemPage } from "./item-header";
-import { ConnectorLogo, LetterTile } from "./item-logo";
-import { LibraryAddDialog, type LibraryAddChoice, ConnectorLogoStrip } from "./library-add-dialog";
+import { ConnectorLogo, PluginLogo } from "./item-logo";
+import { LibraryAddDialog, type LibraryAddChoice } from "./library-add-dialog";
 import { type LibraryItem, libraryQueryKeys, useLibrary } from "./library-data";
 import {
   groupLibrary,
@@ -30,24 +28,21 @@ import {
   type LibraryFilter,
   libraryItemDescription,
   libraryItemReady,
-  libraryKindLabel,
   NEEDS_SIGN_IN_STATUS,
   needsViewerSignIn,
   parseLibraryFilter,
   parseNeedsSignIn,
-  receivedStatus,
 } from "./library-view";
-import { type ExternalMcpConnection, useDeleteMcpConnection, useMcpConnections } from "./mcp-connections-data";
+import { useDeleteMcpConnection, useMcpConnections } from "./mcp-connections-data";
 import { usePrefetchConnectorCatalog } from "./connector-catalog-screen";
 import { useMemberSignIn } from "./connector-setup";
 import { matchesModelQuery } from "./library-models";
 import { useLibraryModels, useModelSignIn } from "./library-models-data";
 import { LibraryModelRow } from "./library-models-ui";
 import { MemberApiKeyDialog } from "./member-api-key-dialog";
-import { usePluginAccess } from "./plugin-access-data";
 import { useDenToast } from "./den-toast";
 import { requestJson, getRequestError } from "../../_lib/den-flow";
-import { pluginQueryKeys, usePluginSummaries } from "./plugin-data";
+import { pluginQueryKeys } from "./plugin-data";
 
 function itemHref(orgSlug: string | null, item: LibraryItem): string {
   if (item.type === "connection") return getLibraryConnectorRoute(orgSlug, item.id);
@@ -57,28 +52,12 @@ function itemHref(orgSlug: string | null, item: LibraryItem): string {
 
 function ItemLogo({ item }: { item: LibraryItem }) {
   if (item.type === "connection") return <ConnectorLogo name={item.name} url={item.url} />;
-  return <LetterTile name={item.name} />;
+  return <PluginLogo name={item.name} />;
 }
 
-function OwnedConnectionStatus({ connection }: { connection: ExternalMcpConnection | undefined }) {
-  const { orgContext } = useOrgDashboard();
-  if (!orgContext) return null;
-  return <>{ownedAccessStatus(connection?.access ?? null, orgContext, orgContext.currentMember.id)}</>;
-}
-
-function OwnedPluginStatus({ pluginId }: { pluginId: string }) {
-  const { orgContext } = useOrgDashboard();
-  const summaries = usePluginSummaries();
-  const listed = summaries.data?.some((plugin) => plugin.id === pluginId && plugin.accessIncluded) ?? false;
-  const access = usePluginAccess(pluginId, { enabled: !summaries.isPending && !listed });
-  if (!orgContext || !access.data) return null;
-  return <>{ownedAccessStatus(draftFromPluginGrants(access.data), orgContext, orgContext.currentMember.id)}</>;
-}
-
-function LibraryItemRow({ item, mine, ownedConnection, signIn }: {
+function LibraryItemRow({ item, mine, signIn }: {
   item: LibraryItem;
   mine: boolean;
-  ownedConnection: ExternalMcpConnection | undefined;
   signIn: ReturnType<typeof useMemberSignIn>;
 }) {
   const router = useRouter();
@@ -100,18 +79,13 @@ function LibraryItemRow({ item, mine, ownedConnection, signIn }: {
     toast({ title: `${item.name} is removed`, description: "Nobody can use it anymore." });
   }
 
-  const status = mine
-    ? item.type === "connection" ? <OwnedConnectionStatus connection={ownedConnection} />
-      : item.type === "plugin" ? <OwnedPluginStatus pluginId={item.id} /> : "Only you"
-    : receivedStatus(item.edges);
-
   const needsSignIn = item.type === "connection" && item.state === "needs_signin";
   const apiKeyStatus = item.type === "connection" ? signIn.apiKeyStatus(item.id) : null;
   const action = needsSignIn && item.type === "connection" ? (
     item.transport === "native" ? (
-      <DenButton variant="secondary" size="xs" href={`${getYourConnectionsRoute(orgSlug)}?connectionId=${encodeURIComponent(item.id)}`}>Sign in</DenButton>
+      <DenButton variant="secondary" size="xs" aria-label="Sign in" href={`${getYourConnectionsRoute(orgSlug)}?connectionId=${encodeURIComponent(item.id)}`}>Sign in</DenButton>
     ) : (
-      <DenButton variant="secondary" size="xs" loading={signIn.pendingId === item.id} onClick={() => void signIn.signIn(item)}>
+      <DenButton variant="secondary" size="xs" aria-label={apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"} loading={signIn.pendingId === item.id} onClick={() => void signIn.signIn(item)}>
         {apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"}
       </DenButton>
     )
@@ -129,13 +103,14 @@ function LibraryItemRow({ item, mine, ownedConnection, signIn }: {
 
   return (
     <div data-library-item={item.name} data-library-kind={item.type} title={libraryItemDescription(item)}>
-      <LibraryListRow
+      <ItemRow
+        compact
+        wideAction={needsSignIn}
         href={href}
         logo={<ItemLogo item={item} />}
         title={item.name}
-        ready={libraryItemReady(item)}
-        kind={libraryKindLabel(item)}
-        status={status}
+        description={libraryItemDescription(item)}
+        status={needsSignIn ? undefined : libraryItemReady(item) ? "Ready" : item.type !== "plugin" && item.state === "needs_signin" ? "Sign in" : "Set up"}
         action={action}
       />
     </div>
@@ -144,17 +119,14 @@ function LibraryItemRow({ item, mine, ownedConnection, signIn }: {
 
 function LibraryEmpty({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="flex w-full flex-col items-center gap-5 rounded-2xl border border-gray-100 bg-white px-6 pb-14 pt-16 text-center" data-testid="library-empty">
-        <ConnectorLogoStrip size="md" />
-        <div className="flex flex-col gap-1.5">
-          <p className="text-[15px] font-semibold leading-5 text-gray-900">Nothing in your Library yet</p>
-          <p className="text-[13px] leading-[18px] text-gray-500">Add a connector, a skill or a plugin. Only you can use it until you share it.</p>
-        </div>
-        <DenButton icon={Plus} onClick={onAdd}>Add to your Library</DenButton>
+    <ItemPanel>
+      <div className="flex flex-col items-center gap-3 px-5 py-8 text-center" data-testid="library-empty">
+        <h2 className="text-sm font-medium text-[var(--dls-text-primary)]">Nothing in your Library yet</h2>
+        <p className="text-[13px] text-[var(--dls-text-secondary)]">Add a connector, skill or plugin.</p>
+        <DenButton icon={Plus} onClick={onAdd}>Add to library</DenButton>
+        <p className="text-xs text-[var(--dls-text-secondary)]">Only you can use it until you share it.</p>
       </div>
-      <p className="text-[12px] leading-4 text-gray-400">Things your organization gives you show up here too.</p>
-    </div>
+    </ItemPanel>
   );
 }
 
@@ -174,8 +146,6 @@ function LibraryContent() {
   const searchParams = useSearchParams();
   const { orgSlug, orgContext } = useOrgDashboard();
   const library = useLibrary();
-  // Carries who can use each plugin the viewer manages, so rows need no request each.
-  usePluginSummaries();
   const usable = useMcpConnections("usable");
   const signIn = useMemberSignIn();
   const prefetchCatalog = usePrefetchConnectorCatalog();
@@ -236,7 +206,7 @@ function LibraryContent() {
     <ItemPage testId="library-screen">
       <DenPageHeader
         title="My Library"
-        action={empty ? undefined : <DenButton icon={Plus} onClick={openAdd}>Add to your Library</DenButton>}
+        size="compact"
       />
 
       {library.error ? (
@@ -250,7 +220,7 @@ function LibraryContent() {
       {!empty && !library.error ? (
         <>
           <div className="-mt-1 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1.5" role="tablist" aria-label="Show">
+            <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Show">
               {LIBRARY_FILTERS.map((entry) => {
                 const active = entry.value === filter;
                 return (
@@ -283,31 +253,34 @@ function LibraryContent() {
                 </>
               ) : null}
             </div>
-            <FilterInput value={query} onChange={setQuery} className="w-[200px]" />
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterInput value={query} onChange={setQuery} className="w-[200px] max-w-full" />
+              <DenButton size="sm" icon={Plus} onClick={openAdd}>Add to library</DenButton>
+            </div>
           </div>
 
           {library.isLoading ? <ItemSectionSkeleton label="Loading your Library" /> : null}
 
           {groups.mine.length > 0 ? (
-            <ItemSection title="Added by you" meta={String(groups.mine.length)} testId="library-section-mine" variant="rule">
-              <ItemFlatList>
+            <ItemSection title="Added by you" testId="library-section-mine" variant="rule">
+              <ItemPanel>
                 {groups.mine.map((item) => (
-                  <LibraryItemRow key={`${item.type}:${item.id}`} item={item} mine ownedConnection={ownedConnections.get(item.id)} signIn={signIn} />
+                  <LibraryItemRow key={`${item.type}:${item.id}`} item={item} mine signIn={signIn} />
                 ))}
-              </ItemFlatList>
+              </ItemPanel>
             </ItemSection>
           ) : null}
 
           {groups.received.length > 0 || modelRows.length > 0 ? (
-            <ItemSection title="From OpenWork" meta={`${groups.received.length + modelRows.length} shared with you`} testId="library-section-received" variant="rule">
-              <ItemFlatList>
+            <ItemSection title="From OpenWork" testId="library-section-received" variant="rule">
+              <ItemPanel>
                 {groups.received.map((item) => (
-                  <LibraryItemRow key={`${item.type}:${item.id}`} item={item} mine={false} ownedConnection={undefined} signIn={signIn} />
+                  <LibraryItemRow key={`${item.type}:${item.id}`} item={item} mine={false} signIn={signIn} />
                 ))}
                 {modelRows.map((provider) => (
                   <LibraryModelRow key={`model:${provider.id}`} provider={provider} signIn={modelSignIn} />
                 ))}
-              </ItemFlatList>
+              </ItemPanel>
             </ItemSection>
           ) : null}
 

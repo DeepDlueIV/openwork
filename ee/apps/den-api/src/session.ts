@@ -5,7 +5,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import type { Context, MiddlewareHandler } from "hono"
 import { getSignedCookie } from "hono/cookie"
 import { DEN_API_KEY_HEADER, getApiKeySessionById, type DenApiKeySession } from "./api-keys.js"
-import { auth } from "./auth.js"
+import { auth, DEN_MCP_OPAQUE_ACCESS_TOKEN_PREFIX } from "./auth.js"
 import { cache, type CachedAuthSession } from "./cache.js"
 import { db } from "./db.js"
 import { env } from "./env.js"
@@ -430,11 +430,21 @@ export async function getRequestSession(headers: Headers, context?: Context): Pr
   }
 
   const bearerToken = readBearerToken(headers)
-  if (!bearerToken) {
+  if (!bearerToken || isMcpAccessToken(bearerToken)) {
     return null
   }
 
   return getSessionFromToken(bearerToken, sessionRequestContext(context))
+}
+
+/**
+ * MCP access tokens are JWTs or opaque `ow_mcp_at_` tokens, and verifyMcpRequest
+ * authenticates them. Den session tokens are 32 letters and digits, so no session
+ * row can match either shape: skip the lookup rather than pay for a miss on every
+ * MCP request (misses are not cached).
+ */
+function isMcpAccessToken(token: string) {
+  return token.includes(".") || token.startsWith(DEN_MCP_OPAQUE_ACCESS_TOKEN_PREFIX)
 }
 
 export function shouldSkipRequestSession(request: Request) {

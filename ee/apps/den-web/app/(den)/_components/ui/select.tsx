@@ -21,17 +21,19 @@ import {
   denDropdownFieldBaseClass,
   denDropdownFieldOpenClass,
   denDropdownListClass,
-  denDropdownMenuBaseClass,
   denDropdownRowActiveClass,
   denDropdownRowBaseClass,
   denDropdownRowIdleClass,
   denDropdownRowSelectedClass,
 } from "./dropdown-styles";
+import { DenDropdownPopup, DenDropdownRoot, DenDropdownTrigger, type DenDropdownWidth } from "./dropdown-popup";
 
 type DenSelectOption = {
   value: string;
   disabled: boolean;
   content: ReactNode;
+  /** Full text for the hover tooltip when the option truncates. */
+  title: string;
 };
 
 export type DenSelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "disabled"> & {
@@ -39,6 +41,12 @@ export type DenSelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "disa
   /** Adds a filter field above long option lists. The trigger stays a button. */
   searchLabel?: string;
   searchEmptyLabel?: string;
+  /**
+   * "trigger" keeps the menu exactly as wide as the field, with one-line rows
+   * that truncate and show their full text on hover. Give an `<option title>`
+   * when its content holds more than the name.
+   */
+  menuWidth?: DenDropdownWidth;
 };
 
 function getOptionText(node: ReactNode): string {
@@ -89,12 +97,15 @@ export function DenSelect({
   "aria-labelledby": ariaLabelledBy,
   searchLabel,
   searchEmptyLabel = "No options match this search.",
+  menuWidth = "content",
 }: DenSelectProps) {
+  const fitTrigger = menuWidth === "trigger";
   const [open, setOpen] = useState(false);
   const [activeValue, setActiveValue] = useState<string | null>(null);
   const [uncontrolledValue, setUncontrolledValue] = useState<string | null>(defaultValue !== undefined ? String(defaultValue) : null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const optionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -109,6 +120,7 @@ export function DenSelect({
       const option = child as ReactElement<{
         value?: string | number;
         disabled?: boolean;
+        title?: string;
         children?: ReactNode;
       }>;
 
@@ -117,6 +129,7 @@ export function DenSelect({
           value: option.props.value !== undefined ? String(option.props.value) : getOptionText(option.props.children),
           disabled: option.props.disabled === true,
           content: option.props.children,
+          title: option.props.title ?? getOptionText(option.props.children),
         } satisfies DenSelectOption,
       ];
     });
@@ -138,7 +151,7 @@ export function DenSelect({
   const selectedOption = options.find((option) => option.value === selectedValue) ?? options[0] ?? null;
 
   function focusTrigger() {
-    requestAnimationFrame(() => triggerRef.current?.focus());
+    requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
   }
 
   function openSelect(preferredValue?: string | null) {
@@ -150,9 +163,6 @@ export function DenSelect({
     setQuery("");
     const nextActive = options.find((option) => option.value === preferredValue && !option.disabled) ?? getFirstEnabledOption(options);
     setActiveValue(nextActive?.value ?? null);
-    if (searchLabel) {
-      requestAnimationFrame(() => searchRef.current?.focus());
-    }
   }
 
   function closeSelect({ focus = false }: { focus?: boolean } = {}) {
@@ -166,7 +176,7 @@ export function DenSelect({
 
   function commitValue(nextValue: string) {
     const nextOption = options.find((option) => option.value === nextValue);
-    if (!nextOption || nextOption.disabled) {
+    if (disabled || !nextOption || nextOption.disabled) {
       return;
     }
 
@@ -184,7 +194,7 @@ export function DenSelect({
       return;
     }
 
-    if (!activeValue) {
+    if (activeValue === null) {
       setActiveValue(step === 1 ? enabledOptions[0]?.value ?? null : enabledOptions[enabledOptions.length - 1]?.value ?? null);
       return;
     }
@@ -205,14 +215,22 @@ export function DenSelect({
 
     if (event.key === "Enter") {
       event.preventDefault();
-      if (activeValue && visibleOptions.some((option) => option.value === activeValue)) {
+      if (activeValue !== null && visibleOptions.some((option) => option.value === activeValue)) {
         commitValue(activeValue);
       }
       return;
     }
 
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      const enabledOptions = visibleOptions.filter((option) => !option.disabled);
+      setActiveValue((event.key === "Home" ? enabledOptions[0] : enabledOptions[enabledOptions.length - 1])?.value ?? null);
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       closeSelect({ focus: true });
     }
   }
@@ -262,7 +280,7 @@ export function DenSelect({
         return;
       }
 
-      if (activeValue) {
+      if (activeValue !== null) {
         commitValue(activeValue);
       }
       return;
@@ -270,30 +288,21 @@ export function DenSelect({
 
     if (event.key === "Escape" && open) {
       event.preventDefault();
+      event.stopPropagation();
       closeSelect({ focus: true });
     }
   }
 
   useEffect(() => {
-    if (!open) {
-      return;
+    if (disabled) {
+      setOpen(false);
+      setActiveValue(null);
+      setQuery("");
     }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      closeSelect();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, [open]);
+  }, [disabled]);
 
   useEffect(() => {
-    if (!open || !activeValue) {
+    if (!open || activeValue === null) {
       return;
     }
 
@@ -306,20 +315,29 @@ export function DenSelect({
     };
   }, [activeValue, open]);
 
-  const activeIndex = activeValue ? visibleOptions.findIndex((option) => option.value === activeValue) : -1;
+  const activeIndex = activeValue !== null ? visibleOptions.findIndex((option) => option.value === activeValue) : -1;
   const activeDescendant = activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined;
 
   return (
+    <DenDropdownRoot
+      open={open}
+      onOpenChange={(nextOpen, details) => {
+        if (nextOpen) {
+          openSelect(selectedOption?.value ?? null);
+        } else {
+          closeSelect({ focus: details.reason === "escape-key" });
+        }
+      }}
+    >
     <div
       ref={rootRef}
       className="relative"
-      onBlurCapture={() => {
+      onBlurCapture={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (nextTarget instanceof Node && (rootRef.current?.contains(nextTarget) || popupRef.current?.contains(nextTarget))) return;
         requestAnimationFrame(() => {
           const activeElement = document.activeElement;
-          if (rootRef.current && activeElement instanceof Node && !rootRef.current.contains(activeElement)) {
-            if (open) {
-              closeSelect();
-            }
+          if (activeElement instanceof Node && !rootRef.current?.contains(activeElement) && !popupRef.current?.contains(activeElement)) {
             onBlur?.(createBlurEvent(selectedValue, name));
           }
         });
@@ -327,7 +345,7 @@ export function DenSelect({
     >
       {name ? <input type="hidden" name={name} value={selectedValue} disabled={disabled} /> : null}
 
-      <button
+      <DenDropdownTrigger
         ref={triggerRef}
         id={id}
         type="button"
@@ -338,14 +356,18 @@ export function DenSelect({
         aria-expanded={open}
         aria-controls={listboxId}
         aria-activedescendant={searchLabel ? undefined : activeDescendant}
-        onClick={() => {
+        onClick={(event) => {
+          event.preventBaseUIHandler();
           if (open) {
             closeSelect();
             return;
           }
           openSelect(selectedOption?.value ?? null);
         }}
-        onKeyDown={handleTriggerKeyDown}
+        onKeyDown={(event) => {
+          event.preventBaseUIHandler();
+          handleTriggerKeyDown(event);
+        }}
         className={[
           denDropdownFieldBaseClass,
           "flex items-center justify-between gap-3 rounded-lg text-left",
@@ -357,16 +379,16 @@ export function DenSelect({
           .filter(Boolean)
           .join(" ")}
       >
-        <span className="truncate">{selectedOption?.content ?? null}</span>
+        <span className="truncate" title={fitTrigger ? selectedOption?.title : undefined}>{selectedOption?.content ?? null}</span>
         <span className={denDropdownChevronSlotClass}>
           <ChevronDown size={16} className={disabled ? "text-gray-300" : "text-gray-400"} aria-hidden="true" />
         </span>
-      </button>
+      </DenDropdownTrigger>
 
       {open ? (
-        <div className={denDropdownMenuBaseClass}>
+        <DenDropdownPopup anchor={triggerRef} popupRef={popupRef} initialFocus={searchLabel ? searchRef : false} width={menuWidth}>
           {searchLabel ? (
-            <div className="relative border-b border-gray-200">
+            <div className="relative shrink-0 border-b border-gray-200">
               <Search size={16} strokeWidth={1.5} className="pointer-events-none absolute inset-y-0 left-3 my-auto text-gray-400" aria-hidden="true" />
               <input
                 ref={searchRef}
@@ -414,20 +436,21 @@ export function DenSelect({
                   tabIndex={-1}
                   aria-selected={selected}
                   disabled={option.disabled}
-                  onMouseEnter={() => {
-                    if (!option.disabled) {
+                  onPointerMove={(event) => {
+                    if (event.pointerType !== "touch" && !option.disabled) {
                       setActiveValue(option.value);
                     }
                   }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    if (!option.disabled) {
-                      commitValue(option.value);
-                    }
+                  onPointerDown={(event) => {
+                    // Keep active-descendant focus on the control for mouse/pen,
+                    // but let touch gestures scroll before a click commits.
+                    if (event.pointerType !== "touch") event.preventDefault();
                   }}
+                  onClick={() => commitValue(option.value)}
+                  title={fitTrigger ? option.title : undefined}
                   className={[
                     denDropdownRowBaseClass,
-                    "items-center",
+                    "min-h-10 items-center",
                     option.disabled
                       ? "cursor-not-allowed opacity-50"
                       : selected
@@ -439,7 +462,7 @@ export function DenSelect({
                     .filter(Boolean)
                     .join(" ")}
                 >
-                  <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-gray-900">
+                  <span className={`min-w-0 flex-1 text-[14px] font-medium text-gray-900 ${fitTrigger ? "truncate" : "line-clamp-2 break-words whitespace-normal"}`}>
                     {option.content}
                   </span>
                   {selected ? <Check className="h-4 w-4 shrink-0 text-gray-900" aria-hidden="true" /> : null}
@@ -447,8 +470,9 @@ export function DenSelect({
               );
             })}
           </div>
-        </div>
+        </DenDropdownPopup>
       ) : null}
     </div>
+    </DenDropdownRoot>
   );
 }

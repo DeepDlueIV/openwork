@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { recordFreeAutoSignIn } from "@openwork-ee/den-db";
 import { readOrganizationMetadata } from "@openwork/types/den/managed-models-policy";
 import { invalidateTeamInferenceOAuth, revokeMemberGatewayCredentials } from "./llm/inference-provider-lifecycle.js";
 import { ensureMemberGatewayKey } from "./gateway-keys.js";
@@ -54,16 +55,16 @@ import {
 } from "./api-keys.js";
 import { revokeMembershipSessionCredentials } from "./credential-revocation.js";
 import {
-  canManageSecurityConfiguration,
   denOrganizationAccess,
   denOrganizationStaticRoles,
   validateInvitationRoleAssignment,
 } from "./organization-access.js";
+import { resolvePermissionsForMember } from "./permissions/resolve.js";
+import { roleAssignmentDenial } from "./permissions/team-grants.js";
 import {
   ORGANIZATION_ADMIN_ROLE,
   ORGANIZATION_MEMBER_ROLE,
   ORGANIZATION_OWNER_ROLE,
-  ORGANIZATION_SUPER_ADMIN_ROLE,
   normalizeOrganizationRoleName,
   organizationRoleValueIncludes,
   splitOrganizationRoles,
@@ -86,10 +87,7 @@ import {
   getSsoTestIntentIdFromCallbackUrl,
 } from "./sso-test-lifecycle.js";
 import {
-  getOrganizationContextForUser,
-  listAssignableRoles,
   reconcilePendingInvitationsForUser,
-  seedDefaultOrganizationRoles,
   validateOrganizationMemberRemovalForHook,
   validateOrganizationMemberRoleUpdate,
 } from "./orgs.js";
@@ -368,9 +366,11 @@ const RAW_BETTER_AUTH_MUTATION_DENIALS: readonly (readonly [string, string])[] =
   ["/organization/delete", "Workspace deletion through Better Auth is disabled."],
   ["/organization/update-member-role", "Use the Den member role API to change organization roles."],
   ["/organization/remove-member", "Use the Den member API to remove organization members."],
-  ["/organization/create-role", "Use the Den roles API to manage organization roles."],
-  ["/organization/update-role", "Use the Den roles API to manage organization roles."],
-  ["/organization/delete-role", "Use the Den roles API to manage organization roles."],
+  // Not registered by better-auth (dynamicAccessControl is off): Den serves and audits
+  // these refusals itself (routes/auth/raw-role-refusals.ts) with the same messages.
+  ["/organization/create-role", "Custom organization roles are not supported."],
+  ["/organization/update-role", "Custom organization roles are not supported."],
+  ["/organization/delete-role", "Custom organization roles are not supported."],
   ["/organization/create-team", "Use the Den teams API to manage teams."],
   ["/organization/update-team", "Use the Den teams API to manage teams."],
   ["/organization/remove-team", "Use the Den teams API to manage teams."],
@@ -442,6 +442,46 @@ async function hasPendingInvitationForEmail(input: { invitationIdOrToken: string
     .limit(1);
 
   return Boolean(invitation);
+}
+
+/** The invitation a sign-up names: `?invite=` on the request, then the query or body field. */
+function readSignUpInvite(ctx: { request?: Request; query?: unknown; body?: unknown } | null | undefined) {
+  if (!ctx) return null;
+  return readRequestQueryParam(ctx.request, "invite") ?? readStringProperty(ctx.query, "invite") ?? readStringProperty(ctx.body, "invite");
+}
+
+/**
+ * Whether signing up from an invitation link counts as verifying the email
+ * for every organization. Only the join token proves it, never the
+ * invitation id, which every member can see; the invitation must be pending,
+ * unexpired and addressed to this email.
+ */
+async function invitationLinkVerifiesEmail(input: { inviteToken: string | null; email: string }) {
+  if (!input.inviteToken) {
+    return false;
+  }
+
+  const [invitation] = await db
+    .select({ organizationId: schema.InvitationTable.organizationId })
+    .from(schema.InvitationTable)
+    .where(and(
+      eq(schema.InvitationTable.inviteToken, input.inviteToken),
+      eq(schema.InvitationTable.status, "pending"),
+      gt(schema.InvitationTable.expiresAt, new Date()),
+      sql`lower(${schema.InvitationTable.email}) = ${input.email.trim().toLowerCase()}`,
+    ))
+    .limit(1);
+
+  return Boolean(invitation);
+}
+
+async function isEmailAlreadyVerified(email: string) {
+  const [user] = await db
+    .select({ emailVerified: schema.AuthUserTable.emailVerified })
+    .from(schema.AuthUserTable)
+    .where(eq(schema.AuthUserTable.email, normalizeLoginEmail(email)))
+    .limit(1);
+  return user?.emailVerified === true;
 }
 
 function normalizeRawRoleValue(roleValue: string) {
@@ -540,33 +580,64 @@ async function assertLiveMcpSessionForRefreshGrant(ctx: Parameters<Parameters<ty
   }
 }
 
-async function assertBetterAuthInvitationRoleAssignment(input: {
-  organizationId: string;
-  userId: string;
-  role: string;
-}) {
+/** The signed-in user's membership and effective permissions in an organization, or null when they are not an active member. */
+async function resolveBetterAuthActor(input: { organizationId: string; userId: string }) {
   const organizationId = normalizeDenTypeId("organization", input.organizationId);
-  const context = await getOrganizationContextForUser({
+  const member = await cache.org.membership({
     organizationId,
     userId: normalizeDenTypeId("user", input.userId),
   });
-  if (!context) {
-    throw new APIError("FORBIDDEN", {
-      message: "Only organization members can assign invitation roles.",
-    });
+  if (!member) {
+    return null;
   }
+  return {
+    organizationId,
+    memberId: member.id,
+    permissions: await resolvePermissionsForMember({ organizationId, memberId: member.id }),
+  };
+}
 
-  const validation = validateInvitationRoleAssignment({
-    role: input.role || ORGANIZATION_MEMBER_ROLE,
-    availableRoles: await listAssignableRoles(organizationId),
-    currentMember: context.currentMember,
-    roles: context.roles,
+/** Effective permissions of the signed-in user in an organization, or null when they are not an active member. */
+async function resolveBetterAuthActorPermissions(input: { organizationId: string; userId: string }) {
+  return (await resolveBetterAuthActor(input))?.permissions ?? null;
+}
+
+/** Validates an invitation role for a Better Auth actor, including the admin role-assignment rules. */
+async function assertBetterAuthActorMayInvite(input: {
+  actor: NonNullable<Awaited<ReturnType<typeof resolveBetterAuthActor>>>;
+  role: string;
+}) {
+  const validation = await validateInvitationRoleAssignment({
+    role: input.role,
+    permissions: input.actor.permissions,
+    decideAdminAssignment: () => roleAssignmentDenial({
+      organizationId: input.actor.organizationId,
+      caller: input.actor.permissions,
+      callerMemberId: input.actor.memberId,
+      target: null,
+      nextRole: ORGANIZATION_ADMIN_ROLE,
+    }),
   });
   if (!validation.ok) {
     throw new APIError(validation.error === "invalid_role" ? "BAD_REQUEST" : "FORBIDDEN", {
       message: validation.message,
     });
   }
+}
+
+async function assertBetterAuthInvitationRoleAssignment(input: {
+  organizationId: string;
+  userId: string;
+  role: string;
+}) {
+  const actor = await resolveBetterAuthActor(input);
+  if (!actor) {
+    throw new APIError("FORBIDDEN", {
+      message: "Only organization members can assign invitation roles.",
+    });
+  }
+
+  await assertBetterAuthActorMayInvite({ actor, role: input.role || ORGANIZATION_MEMBER_ROLE });
 }
 
 async function assertBetterAuthInvitationRefreshRole(input: {
@@ -579,12 +650,8 @@ async function assertBetterAuthInvitationRefreshRole(input: {
     return;
   }
 
-  const organizationId = normalizeDenTypeId("organization", input.organizationId);
-  const context = await getOrganizationContextForUser({
-    organizationId,
-    userId: normalizeDenTypeId("user", input.userId),
-  });
-  if (!context) {
+  const actor = await resolveBetterAuthActor(input);
+  if (!actor) {
     throw new APIError("FORBIDDEN", {
       message: "Only organization members can refresh invitation roles.",
     });
@@ -594,7 +661,7 @@ async function assertBetterAuthInvitationRefreshRole(input: {
     .select({ role: schema.InvitationTable.role })
     .from(schema.InvitationTable)
     .where(and(
-      eq(schema.InvitationTable.organizationId, organizationId),
+      eq(schema.InvitationTable.organizationId, actor.organizationId),
       eq(schema.InvitationTable.email, input.email.trim().toLowerCase()),
       eq(schema.InvitationTable.status, "pending"),
       gt(schema.InvitationTable.expiresAt, new Date()),
@@ -606,17 +673,7 @@ async function assertBetterAuthInvitationRefreshRole(input: {
     return;
   }
 
-  const validation = validateInvitationRoleAssignment({
-    role: invitation.role,
-    availableRoles: await listAssignableRoles(organizationId),
-    currentMember: context.currentMember,
-    roles: context.roles,
-  });
-  if (!validation.ok) {
-    throw new APIError(validation.error === "invalid_role" ? "BAD_REQUEST" : "FORBIDDEN", {
-      message: validation.message,
-    });
-  }
+  await assertBetterAuthActorMayInvite({ actor, role: invitation.role });
 }
 
 async function getOrganizationMemberRole(input: {
@@ -636,6 +693,7 @@ async function getOrganizationMemberRole(input: {
   });
   if (!authority) return null;
   return {
+    memberId: authority.id,
     role: authority.directRole,
     adminTeams: authority.adminTeams,
     isOwner: hasRole(authority.directRole, ORGANIZATION_OWNER_ROLE),
@@ -730,10 +788,13 @@ export const auth = betterAuth({
           if (ssoProviderId && await isScimDeprovisionedEmailForSsoProvider({ ssoProviderId, email })) {
             throw new APIError("FORBIDDEN", { message: SCIM_DEPROVISIONED_SIGN_IN_MESSAGE });
           }
+          const verifiedByInvitation = context?.path === "/sign-up/email"
+            && await invitationLinkVerifiesEmail({ inviteToken: readSignUpInvite(context), email });
           return {
             data: {
               ...user,
               email,
+              ...(verifiedByInvitation ? { emailVerified: true } : {}),
             },
           };
         },
@@ -861,6 +922,8 @@ export const auth = betterAuth({
         // Every sign-in path that creates a session row: session.created in
         // the session's organization (src/audit/domain/sessions.ts).
         after: async (session, context) => {
+          await recordFreeAutoSignIn(db, { userId: normalizeDenTypeId("user", session.userId), now: session.createdAt })
+            .catch(() => logger.warn("Free Auto sign-in behavior could not be recorded."));
           await runAuditHook("session.create", () => recordSessionCreated(session, auditSessionMethod(context)));
         },
       },
@@ -996,10 +1059,16 @@ export const auth = betterAuth({
                 message: "The organization owner cannot leave the workspace. Transfer ownership first.",
               });
             }
-            if (member?.adminTeams.length && !hasRole(member.role, ORGANIZATION_SUPER_ADMIN_ROLE)) {
-              throw new APIError("FORBIDDEN", {
-                message: "Ask a workspace owner or super-admin to remove your Admin team membership before leaving.",
+            if (member?.adminTeams.length) {
+              const permissions = await resolvePermissionsForMember({
+                organizationId: normalizeDenTypeId("organization", organizationId),
+                memberId: member.memberId,
               });
+              if (!permissions.has("teams.manage_admin")) {
+                throw new APIError("FORBIDDEN", {
+                  message: "Ask the organization owner to remove your Admin team membership before you leave.",
+                });
+              }
             }
           }
         }
@@ -1074,7 +1143,7 @@ export const auth = betterAuth({
       const email = getAuthBodyEmail(ctx.body);
       if (ctx.path === "/sign-up/email") {
         const invitationAllowsSignup = await hasPendingInvitationForEmail({
-          invitationIdOrToken: readRequestQueryParam(ctx.request, "invite") ?? readStringProperty(ctx.query, "invite") ?? readStringProperty(ctx.body, "invite"),
+          invitationIdOrToken: readSignUpInvite(ctx),
           email,
         });
         const bootstrapGrant = readInitialAdminBootstrapGrantFromBody(ctx.body);
@@ -1332,6 +1401,11 @@ export const auth = betterAuth({
       expiresIn: 600,
       allowedAttempts: 5,
       async sendVerificationOTP({ email, otp, type }) {
+        // better-auth sends a sign-up code even when the new user is already
+        // verified (an invitation link verified it); there is nothing to verify.
+        if (type === "email-verification" && await isEmailAlreadyVerified(email)) {
+          return;
+        }
         await sendEmail({
           to: email,
           template: "verification",
@@ -1344,9 +1418,6 @@ export const auth = betterAuth({
       roles: denOrganizationStaticRoles,
       creatorRole: "owner",
       requireEmailVerificationOnInvitation: env.requireEmailVerification,
-      dynamicAccessControl: {
-        enabled: true,
-      },
       teams: {
         enabled: true,
         defaultTeam: {
@@ -1399,17 +1470,12 @@ export const auth = betterAuth({
         beforeDeleteTeam: denyBetterAuthTeamMutation,
         beforeAddTeamMember: denyBetterAuthTeamMutation,
         beforeRemoveTeamMember: denyBetterAuthTeamMutation,
-        afterCreateOrganization: async ({ organization }) => {
-          await seedDefaultOrganizationRoles(
-            normalizeDenTypeId("organization", organization.id),
-          );
-        },
         beforeAddMember: async ({ member }) => {
           if (readStringProperty(member, "teamId")) {
             await denyBetterAuthTeamMutation();
           }
           const role = typeof member.role === "string" ? member.role : "";
-          if (hasRole(role, ORGANIZATION_SUPER_ADMIN_ROLE)) {
+          if (hasRole(role, ORGANIZATION_ADMIN_ROLE)) {
             throw new APIError("FORBIDDEN", {
               message: "Use the Den invitation and member role APIs to grant privileged organization roles.",
             });
@@ -1656,7 +1722,7 @@ export const auth = betterAuth({
       // Group names are metadata, never organization role assignments.
       mapGroupToRoles: () => [],
       storeSCIMToken: SCIM_TOKEN_STORAGE_STRATEGY,
-      requiredRole: [ORGANIZATION_OWNER_ROLE, ORGANIZATION_SUPER_ADMIN_ROLE, ORGANIZATION_ADMIN_ROLE],
+      requiredRole: [ORGANIZATION_OWNER_ROLE, ORGANIZATION_ADMIN_ROLE],
       beforeSCIMTokenGenerated: async ({ member }) => {
         if (!member?.organizationId || !member.userId) {
           throw new APIError("FORBIDDEN", {
@@ -1664,14 +1730,14 @@ export const auth = betterAuth({
           });
         }
 
-        const organizationContext = await getOrganizationContextForUser({
-          organizationId: normalizeDenTypeId("organization", member.organizationId),
-          userId: normalizeDenTypeId("user", member.userId),
+        const permissions = await resolveBetterAuthActorPermissions({
+          organizationId: member.organizationId,
+          userId: member.userId,
         });
 
-        if (!canManageSecurityConfiguration(organizationContext)) {
+        if (!permissions?.has("scim.manage")) {
           throw new APIError("FORBIDDEN", {
-            message: "Only workspace owners and super-admins can manage SCIM.",
+            message: "You don't have permission to manage SCIM provisioning. Ask the organization owner.",
           });
         }
       },
@@ -1745,9 +1811,10 @@ export const auth = betterAuth({
           });
       },
     }),
-    // RFC 8628 device authorization for `openwork-bootstrap login`: the CLI
-    // shows a code, the person approves it on Den web's /device page, and the
-    // CLI receives a Den session token. No password ever reaches the CLI.
+    // RFC 8628 device authorization for `openwork-bootstrap login` and the
+    // OpenCode plugin (`opencode auth login openwork`): the client shows a code,
+    // the person approves it on Den web's /device page, and the client receives
+    // a Den session token. No password ever reaches the client.
     deviceAuthorization({
       expiresIn: DEN_DEVICE_CODE_EXPIRES_IN,
       interval: DEN_DEVICE_CODE_POLL_INTERVAL,

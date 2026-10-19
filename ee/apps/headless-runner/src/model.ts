@@ -1,5 +1,13 @@
 import { z } from "zod"
-import type { Message, ToolCall, ToolSpec } from "./types.js"
+import type { HeadlessModelAccess, Message, ToolCall, ToolSpec } from "./types.js"
+
+/** Constructed per run: never mutates the deployment adapter or retains another member's credentials. */
+export function createModelAdapter(access: HeadlessModelAccess, options: { maxOutputTokens: number; fetch?: typeof fetch }): ModelClient {
+  const config = { ...options, baseUrl: access.baseUrl }
+  return access.protocol === "anthropic" ? anthropicModel(config)
+    : access.protocol === "openai-responses" ? openAIResponsesModel(config)
+    : openAIModel(config)
+}
 
 export type ModelRequest = {
   system: string
@@ -14,8 +22,15 @@ export type ModelRequest = {
   onReset?: () => void
   /** The model started writing a call to this tool (streamed calls only), before its input is complete. */
   onTool?: (name: string) => void
+  /**
+   * Messages after which the provider may cache the request so far (Anthropic). Without them, the request is cached
+   * up to its last message. The system prompt is always a cache point, so at most three are used.
+   */
+  cacheAfter?: ReadonlySet<Message>
 }
 export type ModelStep = {
+  /** Provider-reported answering model, when the gateway exposes it (may differ from a requested alias). */
+  model?: string
   text: string
   toolCalls: ToolCall[]
   /** inputTokens includes cachedInputTokens. */
@@ -30,9 +45,34 @@ export class ModelError extends Error {
     message: string,
     readonly retryable: boolean,
     readonly retryAfterMs?: number,
+    /** What the provider said (its error message and request id), short, for logs and support; never shown as is. */
+    readonly detail?: string,
   ) {
     super(message)
   }
+}
+
+const errorBody = z
+  .object({ error: z.union([z.string(), z.object({ type: z.string().optional(), code: z.string().nullish(), message: z.string().optional() }).loose()]).optional(), message: z.string().optional() })
+  .loose()
+
+/** One line saying why a provider refused a request, from its error body, with the request id to look it up. */
+export function describeProviderError(body: string, requestId: string | null): string {
+  let text = body.trim()
+  try {
+    const parsed = errorBody.safeParse(JSON.parse(body))
+    if (parsed.success) {
+      const error = parsed.data.error
+      const kind = typeof error === "object" ? (error.type ?? error.code ?? "") : ""
+      const message = typeof error === "string" ? error : (error?.message ?? parsed.data.message ?? "")
+      if (message) text = kind ? `${kind}: ${message}` : message
+    }
+  } catch {
+    // Not JSON: keep the text.
+  }
+  // Provider messages don't carry keys, but never log one if a proxy echoes it.
+  const redacted = text.replace(/\b(sk|ow_[a-z]+|key)[-_][A-Za-z0-9_-]{8,}/g, "[redacted]").replace(/\s+/g, " ").slice(0, 300)
+  return requestId ? `${redacted} (request ${requestId})` : redacted
 }
 
 type Fetch = typeof fetch
@@ -84,12 +124,14 @@ async function openResponse(input: {
       continue
     }
     if (response.ok) return response
-    const detail = (await response.text().catch(() => "")).slice(0, 500)
+    const body = await response.text().catch(() => "")
+    const requestId = response.headers.get("x-openwork-request-id") ?? response.headers.get("request-id")
     lastError = new ModelError(
       `model_http_${response.status}`,
-      `The AI gateway returned ${response.status}${detail ? `: ${detail}` : ""}`,
+      `The AI gateway returned ${response.status}${body ? `: ${body.slice(0, 500)}` : ""}`,
       RETRYABLE_STATUS.has(response.status),
       retryAfterMs(response),
+      describeProviderError(body, requestId),
     )
     if (!lastError.retryable) throw lastError
   }
@@ -181,10 +223,61 @@ type AnthropicBlock = CacheControl &
   )
 type AnthropicMessage = { role: "user" | "assistant"; content: AnthropicBlock[] }
 
-/** Anthropic needs strict user/assistant alternation; adjacent same-role entries are merged. */
-export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
-  const out: AnthropicMessage[] = []
+/**
+ * A transcript every provider accepts, whatever produced it: it starts with a message from the person, each tool
+ * result directly follows the call it answers, every call has its result, and no message is empty. Providers
+ * refuse anything else with a 400, and the same transcript would then fail on every retry. Messages it keeps are
+ * returned as they were (same objects), so callers can still recognize them. `repairs` counts what it changed.
+ */
+export function normalizeTranscript(messages: readonly Message[]): { messages: Message[]; repairs: number } {
+  const out: Message[] = []
+  let repairs = 0
+  // The latest assistant message with tool calls, and the calls still waiting for their result.
+  let open: { index: number; waiting: Set<string> } | null = null
+  const settle = () => {
+    if (open && open.waiting.size) {
+      const waiting = open.waiting
+      const call = out[open.index]
+      if (call?.role === "assistant") {
+        const toolCalls = call.toolCalls.filter((entry) => !waiting.has(entry.id))
+        repairs += call.toolCalls.length - toolCalls.length
+        // Nothing answered it and it said nothing: no result follows it, so it is the last message so far.
+        if (toolCalls.length === 0 && !call.text.trim()) out.splice(open.index, 1)
+        else out[open.index] = { ...call, toolCalls }
+      }
+    }
+    open = null
+  }
   for (const message of messages) {
+    if (message.role === "tool") {
+      if (open?.waiting.delete(message.callId)) out.push(message)
+      else repairs += 1
+      continue
+    }
+    settle()
+    const empty = message.role === "user" ? !message.text.trim() && !message.images?.length && !message.documents?.length : false
+    if (empty || (out.length === 0 && message.role !== "user")) {
+      repairs += 1
+      continue
+    }
+    out.push(message)
+    if (message.role === "assistant" && message.toolCalls.length) open = { index: out.length - 1, waiting: new Set(message.toolCalls.map((call) => call.id)) }
+  }
+  settle()
+  return { messages: out, repairs }
+}
+
+/** Anthropic allows four cache points per request; the system prompt takes one. */
+const MAX_MESSAGE_CACHE_POINTS = 3
+
+/**
+ * Anthropic needs strict user/assistant alternation; adjacent same-role entries are merged. Messages in `cacheAfter`
+ * end with a cache point (the newest three at most).
+ */
+export function toAnthropicMessages(messages: readonly Message[], cacheAfter?: ReadonlySet<Message>): AnthropicMessage[] {
+  const out: AnthropicMessage[] = []
+  const cachePoints: AnthropicBlock[] = []
+  for (const message of normalizeTranscript(messages).messages) {
     const role = message.role === "assistant" ? "assistant" : "user"
     const blocks: AnthropicBlock[] =
       message.role === "user"
@@ -199,7 +292,8 @@ export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
               type: "image" as const,
               source: { type: "base64" as const, media_type: image.mediaType, data: image.data },
             })),
-            { type: "text" as const, text: message.text },
+            // An empty text block is refused; a message of only files has none.
+            ...(message.text.trim() ? [{ type: "text" as const, text: message.text }] : []),
           ]
         : message.role === "tool"
           ? [
@@ -225,7 +319,8 @@ export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
               },
             ]
           : [
-              ...(message.text ? [{ type: "text" as const, text: message.text }] : []),
+              // Whitespace-only text is refused too.
+              ...(message.text.trim() ? [{ type: "text" as const, text: message.text }] : []),
               ...message.toolCalls.map((call) => ({
                 type: "tool_use" as const,
                 id: call.id,
@@ -233,15 +328,21 @@ export function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
                 input: call.input,
               })),
             ]
-    if (blocks.length === 0) continue
+    const end = blocks.at(-1)
+    if (!end) continue
+    if (cacheAfter?.has(message)) cachePoints.push(end)
     const last = out.at(-1)
     if (last && last.role === role) last.content.push(...blocks)
     else out.push({ role, content: blocks })
   }
+  for (const block of cachePoints.slice(-MAX_MESSAGE_CACHE_POINTS)) block.cache_control = { type: "ephemeral" }
   return out
 }
 
+const reportedModel = (value: string | null | undefined) => value && /^[A-Za-z0-9][A-Za-z0-9_./:@+-]{0,127}$/.test(value) ? value : undefined
+
 const anthropicResponse = z.object({
+  model: z.string().nullish(),
   content: z.array(
     z.discriminatedUnion("type", [
       z.object({ type: z.literal("text"), text: z.string() }),
@@ -277,7 +378,7 @@ const anthropicEvent = z
   .object({
     type: z.string(),
     index: z.number().optional(),
-    message: z.object({ usage: z.record(z.string(), z.unknown()).optional() }).loose().optional(),
+    message: z.object({ model: z.string().nullish(), usage: z.record(z.string(), z.unknown()).optional() }).loose().optional(),
     content_block: z.object({ type: z.string(), id: z.string().optional(), name: z.string().optional() }).loose().optional(),
     delta: z
       .object({ type: z.string().optional(), text: z.string().optional(), partial_json: z.string().optional() })
@@ -300,11 +401,13 @@ async function readAnthropicStream(
   const blocks = new Map<number, { kind: "text"; text: string } | { kind: "tool"; id: string; name: string; json: string } | { kind: "other" }>()
   const usage: Usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }
   let stopped = false
+  let model: string | undefined
   try {
     for await (const raw of sseData(response, signal)) {
       const event = anthropicEvent.safeParse(raw)
       if (!event.success) continue
       const value = event.data
+      if (value.type === "message_start") model = reportedModel(value.message?.model)
       if (value.type === "message_start" && value.message?.usage) {
         const start = value.message.usage
         usage.cachedInputTokens = tokenCount(start.cache_read_input_tokens)
@@ -339,6 +442,8 @@ async function readAnthropicStream(
           kind === "overloaded_error" || kind === "api_error" ? "model_stream_interrupted" : `model_stream_${kind}`,
           `The AI gateway stream failed: ${(value.error?.message ?? kind).slice(0, 300)}`,
           kind === "overloaded_error" || kind === "api_error",
+          undefined,
+          describeProviderError(JSON.stringify({ error: value.error ?? {} }), response.headers.get("x-openwork-request-id") ?? response.headers.get("request-id")),
         )
       }
     }
@@ -349,6 +454,7 @@ async function readAnthropicStream(
   if (!stopped) throw streamInterrupted()
   const ordered = [...blocks.entries()].sort(([left], [right]) => left - right).map(([, block]) => block)
   return {
+    ...(model ? { model } : {}),
     text: ordered.flatMap((block) => (block.kind === "text" ? [block.text] : [])).join(""),
     toolCalls: ordered.flatMap((block) => (block.kind === "tool" ? [{ id: block.id, name: block.name, ...parseArguments(block.json) }] : [])),
     usage,
@@ -373,7 +479,7 @@ export function anthropicModel(options: {
       max_tokens: options.maxOutputTokens,
       ...(stream ? { stream: true } : {}),
       system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
-      messages: withCacheBreakpoint(toAnthropicMessages(request.messages)),
+      messages: request.cacheAfter ? toAnthropicMessages(request.messages, request.cacheAfter) : withCacheBreakpoint(toAnthropicMessages(request.messages)),
       ...(request.tools.length
         ? { tools: request.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.inputSchema })) }
         : {}),
@@ -404,6 +510,7 @@ export function anthropicModel(options: {
         }
       }
       return {
+        ...(reportedModel(parsed.data.model) ? { model: reportedModel(parsed.data.model) } : {}),
         text: text.join(""),
         toolCalls,
         usage: {
@@ -434,9 +541,10 @@ type OpenAIMessage =
     }
   | { role: "tool"; tool_call_id: string; content: string }
 
-export function toOpenAIMessages(system: string, messages: Message[]): OpenAIMessage[] {
+export function toOpenAIMessages(system: string, messages: readonly Message[]): OpenAIMessage[] {
   const out: OpenAIMessage[] = [{ role: "system", content: system }]
-  for (const message of messages) {
+  // OpenAI refuses a tool message that doesn't answer the assistant message before it, as Anthropic does.
+  for (const message of normalizeTranscript(messages).messages) {
     if (message.role === "user") {
       if (!message.images?.length && !message.documents?.length) out.push({ role: "user", content: message.text })
       else
@@ -474,10 +582,10 @@ export function toOpenAIMessages(system: string, messages: Message[]): OpenAIMes
           ],
         })
     }
-    else if (message.text || message.toolCalls.length) {
+    else if (message.text.trim() || message.toolCalls.length) {
       out.push({
         role: "assistant",
-        content: message.text || null,
+        content: message.text.trim() ? message.text : null,
         ...(message.toolCalls.length
           ? {
               tool_calls: message.toolCalls.map((call) => ({
@@ -494,6 +602,7 @@ export function toOpenAIMessages(system: string, messages: Message[]): OpenAIMes
 }
 
 const openAIResponse = z.object({
+  model: z.string().nullish(),
   choices: z
     .array(
       z.object({
@@ -519,6 +628,7 @@ const openAIResponse = z.object({
 
 const openAIChunk = z
   .object({
+    model: z.string().nullish(),
     choices: z
       .array(
         z
@@ -561,10 +671,12 @@ async function readOpenAIStream(
   const calls = new Map<number, { id: string; name: string; args: string }>()
   const usage: Usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }
   let finished = false
+  let model: string | undefined
   try {
     for await (const raw of sseData(response, signal)) {
       const chunk = openAIChunk.safeParse(raw)
       if (!chunk.success) continue
+      model = reportedModel(chunk.data.model) ?? model
       const choice = chunk.data.choices?.[0]
       if (choice?.delta?.content) {
         text += choice.delta.content
@@ -593,6 +705,7 @@ async function readOpenAIStream(
   }
   if (!finished) throw streamInterrupted()
   return {
+    ...(model ? { model } : {}),
     text,
     toolCalls: [...calls.entries()]
       .sort(([left], [right]) => left - right)
@@ -636,6 +749,7 @@ export function openAIModel(options: { baseUrl: string; maxOutputTokens: number;
       if (!parsed.success) throw new ModelError("model_bad_response", "Unexpected response from the AI gateway.", false)
       const message = parsed.data.choices[0].message
       return {
+        ...(reportedModel(parsed.data.model) ? { model: reportedModel(parsed.data.model) } : {}),
         text: message.content ?? "",
         toolCalls: (message.tool_calls ?? []).map((call) => ({
           id: call.id,
@@ -652,6 +766,173 @@ export function openAIModel(options: { baseUrl: string; maxOutputTokens: number;
   }
 }
 
+// ------------------------------------------------------------ OpenAI Responses
+
+/**
+ * OpenAI's Responses API, for models that only accept function tools there (newer OpenAI models refuse tools on
+ * Chat Completions). Stateless like the Chat Completions client: `store: false`, the whole transcript every call.
+ */
+type ResponsesContent =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image_url: string }
+  | { type: "input_file"; filename: string; file_data: string }
+type ResponsesItem =
+  | { role: "user"; content: ResponsesContent[] }
+  | { role: "assistant"; content: { type: "output_text"; text: string }[] }
+  | { type: "function_call"; call_id: string; name: string; arguments: string }
+  | { type: "function_call_output"; call_id: string; output: string }
+
+function responsesMedia(message: { images?: { mediaType: string; data: string }[]; documents?: { mediaType: string; data: string; name: string }[] }): ResponsesContent[] {
+  return [
+    ...(message.documents ?? []).map((document) => ({ type: "input_file" as const, filename: document.name, file_data: `data:${document.mediaType};base64,${document.data}` })),
+    ...(message.images ?? []).map((image) => ({ type: "input_image" as const, image_url: `data:${image.mediaType};base64,${image.data}` })),
+  ]
+}
+
+export function toResponsesInput(messages: readonly Message[]): ResponsesItem[] {
+  const out: ResponsesItem[] = []
+  // Like Chat Completions, a call's output must follow the call that asked for it.
+  for (const message of normalizeTranscript(messages).messages) {
+    if (message.role === "user") out.push({ role: "user", content: [...responsesMedia(message), { type: "input_text", text: message.text }] })
+    else if (message.role === "tool") {
+      out.push({ type: "function_call_output", call_id: message.callId, output: message.output })
+      // Function outputs are text-only, so images and PDFs follow as user content.
+      const media = responsesMedia(message)
+      if (media.length)
+        out.push({ role: "user", content: [{ type: "input_text", text: `${message.documents?.length ? "Files" : "Images"} returned by ${message.name}:` }, ...media] })
+    } else {
+      if (message.text.trim()) out.push({ role: "assistant", content: [{ type: "output_text", text: message.text }] })
+      for (const call of message.toolCalls) out.push({ type: "function_call", call_id: call.id, name: call.name, arguments: JSON.stringify(call.input) })
+    }
+  }
+  return out
+}
+
+const responsesResult = z
+  .object({
+    model: z.string().nullish(),
+    status: z.string().optional(),
+    output: z.array(
+      z
+        .object({
+          type: z.string(),
+          call_id: z.string().optional(),
+          name: z.string().optional(),
+          arguments: z.string().optional(),
+          content: z.array(z.object({ type: z.string(), text: z.string().optional() }).loose()).nullable().optional(),
+        })
+        .loose(),
+    ),
+    usage: z
+      .object({
+        input_tokens: z.number().optional(),
+        output_tokens: z.number().optional(),
+        input_tokens_details: z.object({ cached_tokens: z.number().optional() }).loose().nullable().optional(),
+      })
+      .loose()
+      .nullable()
+      .optional(),
+  })
+  .loose()
+
+function responsesStep(result: z.infer<typeof responsesResult>): ModelStep {
+  let text = ""
+  const toolCalls: ToolCall[] = []
+  for (const item of result.output) {
+    if (item.type === "message") for (const part of item.content ?? []) if (part.type === "output_text" && part.text) text += part.text
+    if (item.type === "function_call" && item.call_id && item.name) toolCalls.push({ id: item.call_id, name: item.name, ...parseArguments(item.arguments ?? "") })
+  }
+  return {
+    text,
+    toolCalls,
+    ...(reportedModel(result.model) ? { model: reportedModel(result.model) } : {}),
+    usage: {
+      inputTokens: result.usage?.input_tokens ?? 0,
+      cachedInputTokens: result.usage?.input_tokens_details?.cached_tokens ?? 0,
+      outputTokens: result.usage?.output_tokens ?? 0,
+    },
+  }
+}
+
+const responsesEvent = z
+  .object({
+    type: z.string(),
+    delta: z.string().optional(),
+    item: z.object({ type: z.string(), name: z.string().optional() }).loose().optional(),
+    response: z.unknown().optional(),
+    message: z.string().optional(),
+  })
+  .loose()
+
+/** Assembles a streamed Responses call into the same step a non-streamed call returns. */
+async function readResponsesStream(
+  response: Response,
+  signal: AbortSignal,
+  onText: (delta: string) => void,
+  onTool: (name: string) => void = () => undefined,
+): Promise<ModelStep> {
+  let final: z.infer<typeof responsesResult> | undefined
+  try {
+    for await (const raw of sseData(response, signal)) {
+      const event = responsesEvent.safeParse(raw)
+      if (!event.success) continue
+      const { type } = event.data
+      if (type === "response.output_text.delta" && event.data.delta) onText(event.data.delta)
+      else if (type === "response.output_item.added" && event.data.item?.type === "function_call" && event.data.item.name) onTool(event.data.item.name)
+      else if (type === "response.completed" || type === "response.incomplete") {
+        const parsed = responsesResult.safeParse(event.data.response)
+        if (!parsed.success) throw new ModelError("model_bad_response", "Unexpected response from the AI gateway.", false)
+        final = parsed.data
+      } else if (type === "response.failed" || type === "error") {
+        const failed = z.object({ error: z.object({ message: z.string().optional() }).loose().nullable().optional() }).loose().safeParse(event.data.response)
+        const reason = (failed.success ? failed.data.error?.message : undefined) ?? event.data.message ?? "unknown error"
+        throw new ModelError("model_failed", `The model failed: ${reason.slice(0, 300)}`, false, undefined, reason.slice(0, 300))
+      }
+    }
+  } catch (error) {
+    if (signal.aborted || error instanceof ModelError) throw error
+    throw streamInterrupted()
+  }
+  if (!final) throw streamInterrupted()
+  return responsesStep(final)
+}
+
+export function openAIResponsesModel(options: { baseUrl: string; maxOutputTokens: number; fetch?: Fetch; sleep?: Sleep }): ModelClient {
+  return {
+    async complete(request) {
+      const sleep = options.sleep ?? defaultSleep
+      const call = (stream: boolean) => ({
+        fetch: options.fetch ?? fetch,
+        sleep,
+        url: `${options.baseUrl}/responses`,
+        headers: { authorization: `Bearer ${request.apiKey}` },
+        signal: request.signal,
+        body: {
+          model: request.model,
+          instructions: request.system,
+          input: toResponsesInput(request.messages),
+          max_output_tokens: options.maxOutputTokens,
+          store: false,
+          ...(stream ? { stream: true } : {}),
+          ...(request.tools.length
+            ? {
+                // strict: false keeps MCP tool schemas as they are; strict mode would reject most of them.
+                tools: request.tools.map((tool) => ({ type: "function", name: tool.name, description: tool.description, parameters: tool.inputSchema, strict: false })),
+              }
+            : {}),
+        },
+      })
+      if (request.onText) {
+        const onText = request.onText
+        return withStreamRetries(request, sleep, async () => readResponsesStream(await openResponse(call(true)), request.signal, onText, request.onTool))
+      }
+      const parsed = responsesResult.safeParse(await postJson(call(false)))
+      if (!parsed.success) throw new ModelError("model_bad_response", "Unexpected response from the AI gateway.", false)
+      return responsesStep(parsed.data)
+    },
+  }
+}
+
 // ------------------------------------------------------------ model list
 
 export type ModelOption = { id: string; name: string }
@@ -664,7 +945,7 @@ const modelList = z.object({ data: z.array(z.object({ id: z.string(), name: z.st
  */
 export async function fetchGatewayModels(input: {
   baseUrl: string
-  protocol: "anthropic" | "openai"
+  protocol: "anthropic" | "openai" | "openai-responses"
   apiKey: string
   fetch?: Fetch
 }): Promise<ModelOption[]> {

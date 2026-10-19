@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { useChatEngineClient } from "@/react-app/domains/models/use-chat-engine-client";
 import { useAutoAccess } from "@/react-app/domains/cloud/auto-access-ui";
 import { freeAutoSwitchedOff } from "@/app/lib/inference-access";
 import { openNewSessionDraft } from "@/react-app/domains/session/chat/new-session-destination";
@@ -184,6 +185,7 @@ import { buildCommandPaletteSessions } from "./command-palette-sessions";
 import { useCommandPaletteShortcut } from "./use-shell-shortcuts";
 import { buildFeedbackUrl } from "@/app/lib/feedback";
 import { getDenInferenceUrl, readDenSettings, type DenSettings } from "@/app/lib/den";
+import { denDashboardUrl } from "@/app/lib/den-dashboard-links";
 import { readActiveWorkspaceId, writeActiveWorkspaceId } from "./session-memory";
 import { useUiStateStore } from "./ui-state-store";
 import {
@@ -991,7 +993,7 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
     reloadPending: providerAuthSnapshot.cloudProviderServerSync?.reloadPending === true,
   });
   const openProvidersInDen = useCallback(() => {
-    platform.openLink(new URL("/dashboard/gateway-providers", cloudSession.baseUrl).href);
+    platform.openLink(denDashboardUrl(cloudSession.baseUrl, "gatewayProviders"));
   }, [cloudSession.baseUrl, platform]);
   const autoClient = isDesktopRuntime() && openworkServerSnapshot.openworkServerClient && isLoopbackOpenworkServerUrl(openworkServerSnapshot.openworkServerClient.baseUrl) ? openworkServerSnapshot.openworkServerClient : null;
   const [autoPreferences, setAutoPreferences] = useState<DesktopFreePreferences | null>(null);
@@ -1155,9 +1157,15 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
   const handleModelPickerOpen = useCallback(() => {
     void providerAuthStore.runCloudProviderSync("model_picker_open");
   }, [providerAuthStore]);
+  // Model lists here come from the engine chat runs on, so they match the chat's picker.
+  const chatEngine = useChatEngineClient({
+    endpoint: selectedWorkspaceEndpoint,
+    workspaceRoot: selectedWorkspaceRoot,
+    fallback: { client: opencodeClient, baseUrl: opencodeBaseUrl },
+  });
   const modelPicker = useModelPicker({
-    client: opencodeClient,
-    baseUrl: opencodeBaseUrl,
+    client: chatEngine.client,
+    baseUrl: chatEngine.baseUrl,
     workspaceRoot: selectedWorkspaceRoot,
     onOpen: handleModelPickerOpen,
     onLoadError: handleModelPickerLoadError,
@@ -2234,7 +2242,7 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
                 key={`${cloudSession.baseUrl}:${cloudSession.activeOrganization?.id ?? "signed-out"}`}
                 embedded
                 onOpenDen={openProvidersInDen}
-                onOpenModelConnections={() => { void platform.openLink(new URL("/dashboard/model-connections", readDenSettings().baseUrl).toString()); }}
+                onOpenModelConnections={() => { void platform.openLink(denDashboardUrl(readDenSettings().baseUrl, "modelConnections")); }}
                 gatewayConnectProviders={gatewayConnectProviders}
                 connectingGatewayProviderId={connectingGatewayProviderId}
                 onConnectGatewayProvider={(provider) => { void handleConnectGatewayProvider(provider); }}
@@ -2485,8 +2493,9 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
       case "shortcuts":
         return (
           <KeyboardShortcutsView
-            client={opencodeClient}
-            baseUrl={opencodeBaseUrl}
+            client={chatEngine.client}
+            baseUrl={chatEngine.baseUrl}
+            pickerOptions={modelPicker.options}
             directory={selectedWorkspaceRoot}
             onOpenProviders={() => navigateSettingsPath("ai")}
           />

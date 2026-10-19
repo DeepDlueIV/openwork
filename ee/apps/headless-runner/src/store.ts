@@ -1,7 +1,5 @@
-import { mkdirSync } from "node:fs"
-import { dirname } from "node:path"
 import { randomUUID } from "node:crypto"
-import { DatabaseSync } from "node:sqlite"
+import type { SqlDriver } from "./sql.js"
 import { z } from "zod"
 import type { Usage } from "./model.js"
 import { withoutAttachments } from "./tool-files.js"
@@ -23,6 +21,8 @@ const sessionRow = z.object({
   instructions: z.string(),
   /** JSON of the caller's per-session settings; null for sessions created before there were any. */
   options: z.string().nullable().optional(),
+  owner: z.string().nullable().optional(),
+  ref: z.string().nullable().optional(),
   created_at: z.number(),
   updated_at: z.number(),
 })
@@ -32,6 +32,9 @@ const sessionOptions = z.object({
   computer: z.boolean().optional(),
   reactions: z.boolean().optional(),
   tasks: z.boolean().optional(),
+  timeZone: z.string().optional(),
+  autoTitle: z.boolean().optional(),
+  memoryOf: z.string().optional(),
 })
 type SessionOptions = z.infer<typeof sessionOptions>
 const tableColumns = z.array(z.object({ name: z.string() }).loose())
@@ -40,6 +43,7 @@ const turnRow = z.object({
   message_id: z.string(),
   status: turnStatusSchema,
   model: z.string().nullable(),
+  model_access_required: z.number().optional(),
   error: z.string().nullable(),
   input_tokens: z.number(),
   cached_input_tokens: z.number(),
@@ -49,6 +53,7 @@ const turnRow = z.object({
   kind: z.enum(["task", "report"]).nullable().optional(),
   parent: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
+  error_detail: z.string().nullable().optional(),
 })
 const messageRow = z.object({ seq: z.number(), message_id: z.string(), body: z.string(), created_at: z.number().optional() })
 const fileRow = z.object({ path: z.string(), size: z.number(), updated_at: z.number() })
@@ -72,22 +77,62 @@ export type Session = {
   reactions: boolean
   /** Whether the conversation may hand work to background tasks (start_task) and keep talking meanwhile. */
   tasks: boolean
+  /**
+   * Who the conversation belongs to, in the caller's own terms (for example one person in one organization), and
+   * the caller's id for it. A caller with several conversations per person lists them by owner (GET /v1/sessions).
+   */
+  owner: string | null
+  ref: string | null
+  /** The person's IANA time zone: their messages are shown to the model with the time they sent them, in it. */
+  timeZone: string | null
+  /** Name the conversation after its first answer, while its title is empty. */
+  autoTitle: boolean
+  /** Another conversation of the same person whose memory/ this one reads and writes, so they remember together. */
+  memoryOf: string | null
   createdAt: number
   updatedAt: number
 }
-/** What a caller may set on a session: its text, and its settings (stored together as JSON). */
-export type SessionInput = { title?: string; instructions?: string; repeats?: RepeatLimits; files?: boolean; computer?: boolean; reactions?: boolean; tasks?: boolean }
+/** What a caller may set on a session: its text, who it belongs to, and its settings (stored together as JSON). */
+export type SessionInput = {
+  title?: string
+  instructions?: string
+  repeats?: RepeatLimits
+  files?: boolean
+  computer?: boolean
+  reactions?: boolean
+  tasks?: boolean
+  owner?: string
+  ref?: string
+  timeZone?: string
+  autoTitle?: boolean
+  memoryOf?: string
+}
 
 /** The settings part of a session, leaving out what the caller didn't set. */
-function optionsOf(input: { repeats?: RepeatLimits | null; files?: boolean; computer?: boolean; reactions?: boolean; tasks?: boolean }): SessionOptions {
+function optionsOf(input: {
+  repeats?: RepeatLimits | null
+  files?: boolean
+  computer?: boolean
+  reactions?: boolean
+  tasks?: boolean
+  timeZone?: string | null
+  autoTitle?: boolean
+  memoryOf?: string | null
+}): SessionOptions {
   return {
     ...(input.repeats ? { repeats: input.repeats } : {}),
     ...(input.files !== undefined ? { files: input.files } : {}),
     ...(input.computer !== undefined ? { computer: input.computer } : {}),
     ...(input.reactions !== undefined ? { reactions: input.reactions } : {}),
     ...(input.tasks !== undefined ? { tasks: input.tasks } : {}),
+    ...(input.timeZone ? { timeZone: input.timeZone } : {}),
+    ...(input.autoTitle !== undefined ? { autoTitle: input.autoTitle } : {}),
+    ...(input.memoryOf ? { memoryOf: input.memoryOf } : {}),
   }
 }
+
+/** A new conversation's title: the caller's, or none yet when it is to be named after its first answer. */
+const initialTitle = (input: SessionInput) => input.title ?? (input.autoTitle ? "" : "Untitled")
 
 /** Stable JSON for the options column (null when there is nothing to keep), so equal settings compare equal. */
 function serializeOptions(options: SessionOptions) {
@@ -97,6 +142,9 @@ function serializeOptions(options: SessionOptions) {
     ...(options.computer ? { computer: true } : {}),
     ...(options.reactions ? { reactions: true } : {}),
     ...(options.tasks ? { tasks: true } : {}),
+    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+    ...(options.autoTitle ? { autoTitle: true } : {}),
+    ...(options.memoryOf ? { memoryOf: options.memoryOf } : {}),
   }
   return Object.keys(ordered).length ? JSON.stringify(ordered) : null
 }
@@ -106,7 +154,14 @@ export type Turn = {
   messageId: string
   status: TurnStatus
   model: string | null
+  /** Nonsecret durable policy: callers must reacquire scoped access even after a rollout is disabled. */
+  modelAccessRequired?: boolean
   error: string | null
+  /**
+   * What the model provider said when the turn failed (its error message and request id), for logs and support.
+   * Never shown to the person as is.
+   */
+  errorDetail?: string
   usage: Usage
   createdAt: number
   updatedAt: number
@@ -181,7 +236,9 @@ function toTurn(row: unknown): Turn {
     messageId: value.message_id,
     status: value.status,
     model: value.model,
+    ...(value.model_access_required === 1 ? { modelAccessRequired: true } : {}),
     error: value.error,
+    ...(value.error_detail ? { errorDetail: value.error_detail } : {}),
     usage: { inputTokens: value.input_tokens, cachedInputTokens: value.cached_input_tokens, outputTokens: value.output_tokens },
     createdAt: value.created_at,
     updatedAt: value.updated_at,
@@ -191,25 +248,31 @@ function toTurn(row: unknown): Turn {
   }
 }
 
+/**
+ * A turn's columns without its prompt and attachments (a prompt can be 100k characters), so listing turns reads only
+ * their state. The prompt is read where it is needed (startTranscript, waitingPrompts).
+ */
+const TURN_COLUMNS =
+  "session_id, message_id, status, model, model_access_required, error, input_tokens, cached_input_tokens, output_tokens, created_at, updated_at, kind, parent, title, error_detail"
+
 /** Leaves out background tasks' own transcripts: the conversation hears from a task through its report. */
 const CONVERSATION_ROWS = "message_id NOT IN (SELECT message_id FROM turns WHERE session_id = ? AND kind = 'task')"
 
 /**
- * Durable state in one SQLite file (WAL mode). Every transcript step is written
+ * Durable state in SQLite, supplied by the host runtime. Every transcript step is written
  * before the next one starts, so a crash loses at most the in-flight step.
  */
 export class Store {
-  readonly db: DatabaseSync
   /** Called after every write to a turn or its transcript, so live readers can re-read. */
   onChange: ((sessionId: string, messageId: string, status?: TurnStatus) => void) | null = null
 
-  constructor(path: string, private readonly now: () => number = Date.now) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true })
-    this.db = new DatabaseSync(path)
+  constructor(readonly db: SqlDriver, private readonly now: () => number = Date.now) {
+    this.migrate()
+  }
+
+  /** Schema changes are shared by every SQLite host; connection settings belong to the driver. */
+  migrate() {
     this.db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = NORMAL;
-      PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -268,11 +331,24 @@ export class Store {
     if (!columnsOf("turns").includes("attachments")) this.db.exec("ALTER TABLE turns ADD COLUMN attachments TEXT")
     // A saved file the agent revises keeps its id; this is when its bytes last changed.
     if (!columnsOf("saved_files").includes("updated_at")) this.db.exec("ALTER TABLE saved_files ADD COLUMN updated_at INTEGER")
-    // Background tasks and their reports (see Turn.kind).
+    // Background tasks and their reports (see Turn.kind), and what the provider said when a turn failed.
     const turnColumns = columnsOf("turns")
-    for (const column of ["kind", "parent", "title"]) {
+    for (const column of ["kind", "parent", "title", "error_detail"]) {
       if (!turnColumns.includes(column)) this.db.exec(`ALTER TABLE turns ADD COLUMN ${column} TEXT`)
     }
+    // Several conversations per person (Session.owner, .ref), and where a long conversation's context starts now
+    // (see contextMessages).
+    const sessionColumns = columnsOf("sessions")
+    for (const column of ["owner", "ref"]) {
+      if (!sessionColumns.includes(column)) this.db.exec(`ALTER TABLE sessions ADD COLUMN ${column} TEXT`)
+    }
+    if (!sessionColumns.includes("context_from")) this.db.exec("ALTER TABLE sessions ADD COLUMN context_from INTEGER")
+    this.db.exec("CREATE INDEX IF NOT EXISTS sessions_by_owner ON sessions (owner, updated_at)")
+    // A turn's resume grant, encrypted (see resume-grants.ts), and finding interrupted turns without reading them all.
+    if (!turnColumns.includes(RESUME_GRANT_COLUMN)) this.db.exec(`ALTER TABLE turns ADD COLUMN ${RESUME_GRANT_COLUMN} TEXT`)
+    // Nonsecret downgrade guard: scoped inference must be reacquired, never replaced by a deployment key.
+    if (!turnColumns.includes("model_access_required")) this.db.exec("ALTER TABLE turns ADD COLUMN model_access_required INTEGER NOT NULL DEFAULT 0")
+    this.db.exec("CREATE INDEX IF NOT EXISTS turns_by_status ON turns (status)")
   }
 
   close() {
@@ -280,35 +356,17 @@ export class Store {
   }
 
   transaction<T>(fn: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE")
-    try {
-      const result = fn()
-      this.db.exec("COMMIT")
-      return result
-    } catch (error) {
-      this.db.exec("ROLLBACK")
-      throw error
-    }
+    return this.db.transaction(fn)
   }
 
   createSession(input: SessionInput): Session {
     const at = this.now()
-    const options = optionsOf(input)
-    const session: Session = {
-      id: `hs_${randomUUID().replaceAll("-", "")}`,
-      title: input.title ?? "Untitled",
-      instructions: input.instructions ?? "",
-      repeats: options.repeats ?? null,
-      files: options.files ?? false,
-      computer: options.computer ?? false,
-      reactions: options.reactions ?? false,
-      tasks: options.tasks ?? false,
-      createdAt: at,
-      updatedAt: at,
-    }
+    const id = `hs_${randomUUID().replaceAll("-", "")}`
     this.db
-      .prepare("INSERT INTO sessions (id, title, instructions, options, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(session.id, session.title, session.instructions, serializeOptions(options), at, at)
+      .prepare("INSERT INTO sessions (id, title, instructions, options, owner, ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(id, initialTitle(input), input.instructions ?? "", serializeOptions(optionsOf(input)), input.owner ?? null, input.ref ?? null, at, at)
+    const session = this.getSession(id)
+    if (!session) throw new Error("session_missing_after_create")
     return session
   }
 
@@ -322,19 +380,29 @@ export class Store {
     const at = this.now()
     if (!existing) {
       this.db
-        .prepare("INSERT INTO sessions (id, title, instructions, options, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-        .run(id, input.title ?? "Untitled", input.instructions ?? "", serializeOptions(optionsOf(input)), at, at)
+        .prepare("INSERT INTO sessions (id, title, instructions, options, owner, ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, initialTitle(input), input.instructions ?? "", serializeOptions(optionsOf(input)), input.owner ?? null, input.ref ?? null, at, at)
     } else {
       // Settings the caller leaves out keep their current value.
       const options = { ...optionsOf(existing), ...optionsOf(input) }
       const changed =
         (input.title !== undefined && input.title !== existing.title) ||
         (input.instructions !== undefined && input.instructions !== existing.instructions) ||
+        (input.owner !== undefined && input.owner !== existing.owner) ||
+        (input.ref !== undefined && input.ref !== existing.ref) ||
         serializeOptions(options) !== serializeOptions(optionsOf(existing))
       if (changed) {
         this.db
-          .prepare("UPDATE sessions SET title = ?, instructions = ?, options = ?, updated_at = ? WHERE id = ?")
-          .run(input.title ?? existing.title, input.instructions ?? existing.instructions, serializeOptions(options), at, id)
+          .prepare("UPDATE sessions SET title = ?, instructions = ?, options = ?, owner = ?, ref = ?, updated_at = ? WHERE id = ?")
+          .run(
+            input.title ?? existing.title,
+            input.instructions ?? existing.instructions,
+            serializeOptions(options),
+            input.owner ?? existing.owner,
+            input.ref ?? existing.ref,
+            at,
+            id,
+          )
       }
     }
     const session = this.getSession(id)
@@ -346,19 +414,62 @@ export class Store {
     const row = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id)
     if (!row) return null
     const value = sessionRow.parse(row)
-    const options = value.options ? sessionOptions.safeParse(JSON.parse(value.options)) : null
+    const parsed = value.options ? sessionOptions.safeParse(JSON.parse(value.options)) : null
+    const options: SessionOptions = parsed?.success ? parsed.data : {}
     return {
       id: value.id,
       title: value.title,
       instructions: value.instructions,
-      repeats: options?.success ? (options.data.repeats ?? null) : null,
-      files: options?.success ? (options.data.files ?? false) : false,
-      computer: options?.success ? (options.data.computer ?? false) : false,
-      reactions: options?.success ? (options.data.reactions ?? false) : false,
-      tasks: options?.success ? (options.data.tasks ?? false) : false,
+      repeats: options.repeats ?? null,
+      files: options.files ?? false,
+      computer: options.computer ?? false,
+      reactions: options.reactions ?? false,
+      tasks: options.tasks ?? false,
+      owner: value.owner ?? null,
+      ref: value.ref ?? null,
+      timeZone: options.timeZone ?? null,
+      autoTitle: options.autoTitle ?? false,
+      memoryOf: options.memoryOf ?? null,
       createdAt: value.created_at,
       updatedAt: value.updated_at,
     }
+  }
+
+  /**
+   * One owner's conversations that have at least one message, most recently active first. `updatedAt` moves when a
+   * turn changes, so it is when the conversation was last used.
+   */
+  listSessions(owner: string, limit: number): Array<{ id: string; ref: string | null; title: string; createdAt: number; updatedAt: number }> {
+    return this.db
+      .prepare(
+        `SELECT id, ref, title, created_at, updated_at FROM sessions
+         WHERE owner = ? AND EXISTS (SELECT 1 FROM turns WHERE turns.session_id = sessions.id)
+         ORDER BY updated_at DESC LIMIT ?`,
+      )
+      .all(owner, limit)
+      .map((row) => {
+        const value = z.object({ id: z.string(), ref: z.string().nullable(), title: z.string(), created_at: z.number(), updated_at: z.number() }).parse(row)
+        return { id: value.id, ref: value.ref, title: value.title, createdAt: value.created_at, updatedAt: value.updated_at }
+      })
+  }
+
+  /** Names a conversation without counting as activity: the list order stays when it was last used. */
+  setTitle(id: string, title: string) {
+    this.db.prepare("UPDATE sessions SET title = ? WHERE id = ?").run(title, id)
+  }
+
+  /**
+   * Where the model's view of a long conversation starts (a message seq at the start of a turn), or null while it
+   * still sees the whole conversation. It only moves forward, in big steps (see buildContext), so the start of the
+   * context stays the same for many turns and the model provider's prompt cache keeps hitting.
+   */
+  contextFrom(id: string): number | null {
+    const row = this.db.prepare("SELECT context_from FROM sessions WHERE id = ?").get(id)
+    return row ? z.object({ context_from: z.number().nullable() }).parse(row).context_from : null
+  }
+
+  setContextFrom(id: string, seq: number) {
+    this.db.prepare("UPDATE sessions SET context_from = ? WHERE id = ?").run(seq, id)
   }
 
   deleteSession(id: string) {
@@ -396,14 +507,32 @@ export class Store {
   }
 
   getTurn(sessionId: string, messageId: string): Turn | null {
-    const row = this.db.prepare("SELECT * FROM turns WHERE session_id = ? AND message_id = ?").get(sessionId, messageId)
+    const row = this.db.prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND message_id = ?`).get(sessionId, messageId)
     return row ? toTurn(row) : null
   }
 
+  /** Every turn of the session. Not for reads a caller asks for: those are windowed (recentTurns, turnFamily). */
   listTurns(sessionId: string): Turn[] {
     return this.db
-      .prepare("SELECT * FROM turns WHERE session_id = ? ORDER BY created_at, rowid")
+      .prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? ORDER BY created_at, rowid`)
       .all(sessionId)
+      .map(toTurn)
+  }
+
+  /**
+   * One turn with the background tasks it started and those tasks' reports, oldest first: everything a caller
+   * following one turn looks at, however long the conversation is.
+   */
+  turnFamily(sessionId: string, messageId: string): Turn[] {
+    return this.db
+      .prepare(
+        `SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND (
+           message_id = ?
+           OR (kind = 'task' AND parent = ?)
+           OR (kind = 'report' AND parent IN (SELECT message_id FROM turns WHERE session_id = ? AND kind = 'task' AND parent = ?))
+         ) ORDER BY rowid`,
+      )
+      .all(sessionId, messageId, messageId, sessionId, messageId)
       .map(toTurn)
   }
 
@@ -411,7 +540,7 @@ export class Store {
   activeTurn(sessionId: string, options: { conversation?: boolean } = {}): Turn | null {
     const row = this.db
       .prepare(
-        `SELECT * FROM turns WHERE session_id = ? AND status IN (${[...ACTIVE].map(() => "?").join(", ")})${options.conversation ? " AND kind IS NOT 'task'" : ""} ORDER BY rowid LIMIT 1`,
+        `SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND status IN (${[...ACTIVE].map(() => "?").join(", ")})${options.conversation ? " AND kind IS NOT 'task'" : ""} ORDER BY rowid LIMIT 1`,
       )
       .get(sessionId, ...ACTIVE)
     return row ? toTurn(row) : null
@@ -420,7 +549,7 @@ export class Store {
   /** The session's newest background tasks, oldest first. */
   recentTasks(sessionId: string, limit: number): Turn[] {
     return this.db
-      .prepare("SELECT * FROM turns WHERE session_id = ? AND kind = 'task' ORDER BY rowid DESC LIMIT ?")
+      .prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND kind = 'task' ORDER BY rowid DESC LIMIT ?`)
       .all(sessionId, limit)
       .map(toTurn)
       .reverse()
@@ -454,11 +583,12 @@ export class Store {
     kind?: "task" | "report"
     parent?: string
     title?: string
+    modelAccessRequired?: boolean
   }): Turn {
     const at = this.now()
     this.db
       .prepare(
-        "INSERT INTO turns (session_id, message_id, status, prompt, model, error, attachments, kind, parent, title, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO turns (session_id, message_id, status, prompt, model, error, attachments, kind, parent, title, model_access_required, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         input.sessionId,
@@ -469,6 +599,7 @@ export class Store {
         input.kind ?? null,
         input.parent ?? null,
         input.title ?? null,
+        input.modelAccessRequired ? 1 : 0,
         at,
         at,
       )
@@ -492,11 +623,11 @@ export class Store {
     })
   }
 
-  setTurnStatus(sessionId: string, messageId: string, status: TurnStatus, error: string | null = null) {
+  setTurnStatus(sessionId: string, messageId: string, status: TurnStatus, error: string | null = null, errorDetail: string | null = null) {
     const at = this.now()
     this.db
-      .prepare("UPDATE turns SET status = ?, error = ?, updated_at = ? WHERE session_id = ? AND message_id = ?")
-      .run(status, error, at, sessionId, messageId)
+      .prepare("UPDATE turns SET status = ?, error = ?, error_detail = ?, updated_at = ? WHERE session_id = ? AND message_id = ?")
+      .run(status, error, errorDetail, at, sessionId, messageId)
     this.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(at, sessionId)
     this.onChange?.(sessionId, messageId, status)
   }
@@ -508,6 +639,52 @@ export class Store {
          output_tokens = output_tokens + ? WHERE session_id = ? AND message_id = ?`,
       )
       .run(usage.inputTokens, usage.cachedInputTokens, usage.outputTokens, sessionId, messageId)
+  }
+
+  /** Only a nonsecret boolean is durable; endpoint credentials stay in the runner's memory. */
+  modelAccessRequired(sessionId: string, messageId: string): boolean {
+    const row = this.db.prepare("SELECT model_access_required FROM turns WHERE session_id = ? AND message_id = ?").get(sessionId, messageId)
+    return z.object({ model_access_required: z.number() }).parse(row).model_access_required === 1
+  }
+
+  requireModelAccess(sessionId: string, messageId: string) {
+    this.db.prepare("UPDATE turns SET model_access_required = 1 WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+  }
+
+  /** Keeps (or, with null, forgets) a turn's encrypted resume grant. Never part of a turn as callers read it. */
+  setResumeGrant(sessionId: string, messageId: string, sealed: string | null) {
+    this.db.prepare(`UPDATE turns SET ${RESUME_GRANT_COLUMN} = ? WHERE session_id = ? AND message_id = ?`).run(sealed, sessionId, messageId)
+  }
+
+  /**
+   * The encrypted resume grant a turn resumes with: its own, else the one of the turn that started it (a report's
+   * task, then that task's message). `holder` is the turn that keeps it.
+   */
+  resumeGrantOf(sessionId: string, messageId: string): { sealed: string; holder: string } | null {
+    let id = messageId
+    for (let hop = 0; hop < 3; hop += 1) {
+      const row = this.db.prepare(`SELECT ${RESUME_GRANT_COLUMN}, kind, parent FROM turns WHERE session_id = ? AND message_id = ?`).get(sessionId, id)
+      if (!row) return null
+      const value = grantRow.parse(row)
+      if (value.resume_grant) return { sealed: value.resume_grant, holder: id }
+      if (!value.kind || !value.parent) return null
+      id = value.parent
+    }
+    return null
+  }
+
+  /** Every interrupted turn stopped for one of these reasons, oldest first, across sessions. */
+  interruptedTurns(errors: readonly string[]): Turn[] {
+    if (errors.length === 0) return []
+    return this.db
+      .prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE status = 'interrupted' AND error IN (${errors.map(() => "?").join(", ")}) ORDER BY created_at, rowid`)
+      .all(...errors)
+      .map(toTurn)
+  }
+
+  /** Whether any turn, in any session, is queued or running. */
+  hasActiveTurns(): boolean {
+    return this.db.prepare(`SELECT 1 AS n FROM turns WHERE status IN (${[...ACTIVE].map(() => "?").join(", ")}) LIMIT 1`).get(...ACTIVE) !== undefined
   }
 
   /** Marks every turn a previous process left queued or running as interrupted. */
@@ -546,6 +723,7 @@ export class Store {
     })
   }
 
+  /** The whole transcript. Not for reads a caller asks for: a long conversation's can be hundreds of megabytes. */
   messages(sessionId: string): StoredMessage[] {
     return this.db
       .prepare("SELECT seq, message_id, body, created_at FROM messages WHERE session_id = ? ORDER BY seq")
@@ -562,28 +740,42 @@ export class Store {
   }
 
   /**
-   * The newest part of the transcript that can matter for the model's context: rows are read newest first and
-   * reading stops once the current turn is in and the older turns' estimated size passes the budget. However
-   * long the conversation gets, a step reads about one context's worth of rows.
+   * The part of the transcript the model's context is built from, in whole turns: a turn is never split, since its
+   * tool results would lose the calls they answer. Once the conversation has outgrown the context it starts at
+   * `contextFrom`; until then rows are read newest first and reading stops, after finishing the turn being read,
+   * once the older turns' estimated size passes the budget. Either way a step reads about one context's worth of
+   * rows, however long the conversation gets. `partial` says the conversation goes back further than the rows.
    */
-  contextMessages(sessionId: string, currentMessageId: string, budget: number): StoredMessage[] {
+  contextMessages(sessionId: string, currentMessageId: string, budget: number): { rows: StoredMessage[]; partial: boolean } {
+    const from = this.contextFrom(sessionId)
+    if (from !== null) {
+      const rows = this.db
+        .prepare(`SELECT seq, message_id, body, created_at FROM messages WHERE session_id = ? AND seq >= ? AND ${CONVERSATION_ROWS} ORDER BY seq`)
+        .all(sessionId, from, sessionId)
+        .map(parseMessageRow)
+      return { rows, partial: true }
+    }
     const rows: StoredMessage[] = []
     let used = 0
     let seenCurrent = false
+    let partial = false
     for (const row of this.db
-      .prepare(`SELECT seq, message_id, body FROM messages WHERE session_id = ? AND ${CONVERSATION_ROWS} ORDER BY seq DESC`)
+      .prepare(`SELECT seq, message_id, body, created_at FROM messages WHERE session_id = ? AND ${CONVERSATION_ROWS} ORDER BY seq DESC`)
       .iterate(sessionId, sessionId)) {
       const entry = parseMessageRow(row)
+      if (seenCurrent && used > budget && entry.messageId !== rows.at(-1)?.messageId) {
+        partial = true
+        break
+      }
       rows.push(entry)
       if (entry.messageId === currentMessageId) {
         seenCurrent = true
         continue
       }
-      // Earlier turns are compacted for the model; estimate generously so the cut never lands short.
+      // Earlier turns are compacted for the model (see buildContext); this estimate errs on the large side.
       used += entry.message.role === "tool" ? Math.min(entry.message.output.length, 1_000) + 200 : JSON.stringify(entry.message).length
-      if (seenCurrent && used > budget) break
     }
-    return rows.reverse()
+    return { rows: rows.reverse(), partial }
   }
 
   /** The newest `limit` turns, optionally only those before `beforeMessageId`, oldest first. */
@@ -591,24 +783,46 @@ export class Store {
     const rows = beforeMessageId
       ? this.db
           .prepare(
-            `SELECT * FROM turns WHERE session_id = ? AND rowid < (SELECT rowid FROM turns WHERE session_id = ? AND message_id = ?)
+            `SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND rowid < (SELECT rowid FROM turns WHERE session_id = ? AND message_id = ?)
              ORDER BY rowid DESC LIMIT ?`,
           )
           .all(sessionId, sessionId, beforeMessageId, limit + 1)
-      : this.db.prepare("SELECT * FROM turns WHERE session_id = ? ORDER BY rowid DESC LIMIT ?").all(sessionId, limit + 1)
+      : this.db.prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? ORDER BY rowid DESC LIMIT ?`).all(sessionId, limit + 1)
     const turns = rows.slice(0, limit).map(toTurn).reverse()
     return { turns, hasEarlier: rows.length > limit }
   }
 
-  /** The transcript of the given turns only. */
-  messagesForTurns(sessionId: string, messageIds: string[]): StoredMessage[] {
-    if (messageIds.length === 0) return []
-    return this.db
+  /**
+   * What caller-sent turns with no transcript yet were sent with: a message waiting behind the answer in progress, or
+   * one stopped before it started. Its transcript only starts when it runs, so a reader shows it from this.
+   */
+  waitingPrompts(sessionId: string, messageIds: string[]): Map<string, string> {
+    if (messageIds.length === 0) return new Map()
+    const rows = this.db
       .prepare(
-        `SELECT seq, message_id, body, created_at FROM messages WHERE session_id = ? AND message_id IN (${messageIds.map(() => "?").join(", ")}) ORDER BY seq`,
+        `SELECT message_id, prompt FROM turns WHERE session_id = ? AND kind IS NULL AND message_id IN (${messageIds.map(() => "?").join(", ")})
+         AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.session_id = turns.session_id AND messages.message_id = turns.message_id)`,
       )
       .all(sessionId, ...messageIds)
+    return new Map(z.array(z.object({ message_id: z.string(), prompt: z.string() })).parse(rows).map((row) => [row.message_id, row.prompt]))
+  }
+
+  /**
+   * The newest `limit` transcript messages of the turns from `firstMessageId` to `lastMessageId` (a window from
+   * recentTurns, so a run of consecutive turns), oldest first. Only those rows are read, whatever the turns hold.
+   */
+  windowMessages(sessionId: string, firstMessageId: string, lastMessageId: string, limit: number): StoredMessage[] {
+    return this.db
+      .prepare(
+        `SELECT seq, message_id, body, created_at FROM messages WHERE session_id = ? AND message_id IN (
+           SELECT message_id FROM turns WHERE session_id = ?
+             AND rowid >= (SELECT rowid FROM turns WHERE session_id = ? AND message_id = ?)
+             AND rowid <= (SELECT rowid FROM turns WHERE session_id = ? AND message_id = ?)
+         ) ORDER BY seq DESC LIMIT ?`,
+      )
+      .all(sessionId, sessionId, sessionId, firstMessageId, sessionId, lastMessageId, limit)
       .map(parseMessageRow)
+      .reverse()
   }
 
   /** The files under memory/, which the model sees at the start of every turn. */
@@ -690,4 +904,47 @@ export class Store {
   deleteFile(sessionId: string, path: string) {
     return Number(this.db.prepare("DELETE FROM files WHERE session_id = ? AND path = ?").run(sessionId, path).changes) > 0
   }
+
+  /**
+   * Every row of one conversation exactly as stored, to move it to another runner (GET /v1/sessions/:id/export),
+   * except resume grants: they are secrets sealed with this runner's key, so the conversation's callers resume it there.
+   */
+  exportConversation(id: string): ConversationRows | null {
+    const session = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id)
+    if (!session) return null
+    const rows = (table: ConversationTable) => z.array(sqlRow).parse(this.db.prepare(`SELECT * FROM ${table} WHERE session_id = ? ORDER BY rowid`).all(id))
+    return { session: sqlRow.parse(session), turns: rows("turns").map(withoutGrant), messages: rows("messages"), files: rows("files"), saved_files: rows("saved_files") }
+  }
+
+  /** The columns this database has for a table: an export from a newer runner can name ones it lacks. */
+  columns(table: "sessions" | ConversationTable): Set<string> {
+    return new Set(tableColumns.parse(this.db.prepare(`PRAGMA table_info(${table})`).all()).map((column) => column.name))
+  }
+
+  /** Writes an exported conversation in one transaction: all of it, or nothing. Columns must be checked first. */
+  importConversation(conversation: ConversationRows) {
+    const insert = (table: "sessions" | ConversationTable, row: SqlRow) => {
+      const names = Object.keys(row)
+      if (!names.length || names.some((name) => !/^[a-z_]+$/.test(name))) throw new Error("invalid_column")
+      this.db.prepare(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(...names.map((name) => row[name] ?? null))
+    }
+    this.transaction(() => {
+      insert("sessions", conversation.session)
+      for (const table of CONVERSATION_TABLES) for (const row of conversation[table]) insert(table, table === "turns" ? withoutGrant(row) : row)
+    })
+  }
 }
+
+const RESUME_GRANT_COLUMN = "resume_grant"
+const grantRow = z.object({ resume_grant: z.string().nullable().optional(), kind: z.string().nullable().optional(), parent: z.string().nullable().optional() })
+/** A turn row without its resume grant, which never leaves the runner that sealed it. */
+function withoutGrant(row: SqlRow): SqlRow {
+  const { [RESUME_GRANT_COLUMN]: _grant, ...rest } = row
+  return rest
+}
+
+export const CONVERSATION_TABLES = ["turns", "messages", "files", "saved_files"] as const
+type ConversationTable = (typeof CONVERSATION_TABLES)[number]
+export const sqlRow = z.record(z.string(), z.union([z.string(), z.number(), z.null()]))
+type SqlRow = z.infer<typeof sqlRow>
+export type ConversationRows = { session: SqlRow } & Record<ConversationTable, SqlRow[]>

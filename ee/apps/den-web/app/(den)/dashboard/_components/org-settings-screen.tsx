@@ -7,6 +7,7 @@ import {
   getAllowedDesktopVersionsFromMetadata,
   getOrgAccessFlags,
   getRequireSsoFromMetadata,
+  permissionLockReason,
 } from "../../_lib/den-org";
 import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-template";
 import { DenButton } from "../../_components/ui/button";
@@ -17,6 +18,7 @@ import { DenNotice } from "../../_components/ui/notice";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { EnterprisePlanNotice } from "./enterprise-plan-notice";
 import { OrgWebOriginsSection } from "./org-web-origins-section";
+import { OrgDefaultModelSection } from "./default-model-section";
 import {
   allPublishedDesktopVersionsAllowed,
   compareDesktopVersions,
@@ -232,9 +234,11 @@ export function OrgSettingsScreen() {
   const access = getOrgAccessFlags(
     orgContext?.currentMember.role ?? "member",
     orgContext?.currentMember.isOwner ?? false,
-    orgContext?.roles,
+    orgContext?.currentMember.permissions,
   );
   const canManageSettings = access.canManageSettings;
+  // admins choose the model new desktop chats start with.
+
   const canManageDesktopVersions = access.canManageSettings;
   const canDeleteOrganization = access.canDeleteOrganization;
   const draftAllowedDomains = useMemo(
@@ -433,7 +437,7 @@ export function OrgSettingsScreen() {
     clearOrgSettingsCompletion();
 
     if (!canManageSettings) {
-      setPageError("Only workspace owners and super-admins can change settings.");
+      setPageError("You don't have permission to change settings.");
       return;
     }
 
@@ -518,7 +522,6 @@ export function OrgSettingsScreen() {
           ) : null}
         </span>
       )}
-      colors={["#D9F99D", "#0F172A", "#0F766E", "#FDE68A"]}
     >
       {orgContext && !orgContext.entitlements.orgControls ? (
         <EnterprisePlanNotice feature="Enforced SSO and desktop version control" />
@@ -800,7 +803,7 @@ export function OrgSettingsScreen() {
 
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
           <p className="text-[13px] text-gray-500">
-            {!canManageSettings ? "Admins can view settings here. Owners and super-admins can change them." : null}
+            {!canManageSettings ? `Read only. ${permissionLockReason("organization.update")}` : null}
           </p>
           <DenButton
             type="submit"
@@ -812,8 +815,12 @@ export function OrgSettingsScreen() {
         </div>
       </form>
 
-      {access.canViewSettings ? (
-        <OrgWebOriginsSection orgId={organizationId} canManage={canManageSettings} />
+      {access.canViewModelsSettings ? (
+        <OrgDefaultModelSection canManage={access.canManageModelsSettings} />
+      ) : null}
+
+      {access.canViewWebOrigins ? (
+        <OrgWebOriginsSection orgId={organizationId} canManage={access.canManageWebOrigins} />
       ) : null}
 
       {canDeleteOrganization ? (

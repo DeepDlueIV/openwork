@@ -16,6 +16,8 @@ import {
 import { DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS } from "../mcp/headless-run-token.js"
 import type { CloudAgentEvent, CloudAgentExecution, CloudAgentExecutorInput } from "./cloud-agent-executor.js"
 import { cloudAutomationRuntime } from "./headless-runtime.js"
+import { cloudAgentGatewayEnabled, organizationCloudModel, organizationDefaultModel } from "../workbot/model.js"
+import { cloudAgentGatewayCatalog } from "../workbot/gateway-model.js"
 
 /**
  * Runs one cloud agent Automation on the shared headless runner.
@@ -45,6 +47,7 @@ export function automationRepeatLimits(maximumRuntimeMs: number): RunnerRepeatLi
 
 export const HEADLESS_AUTOMATION_INSTRUCTIONS = [
   "This conversation is one run of a scheduled Automation. Nobody is watching while it runs.",
+  "OpenWork already decided this run should happen now, on its schedule or because someone chose Run now. Do the task now; never skip it because of a day, time or schedule written in the message, and use today's date for anything dated.",
   "Do the work the message describes, then reply with the result. Your reply is saved as the run's result, so lead with what matters and keep it short.",
   "If something you need is missing (a connection, access, or information), say exactly what is missing instead of guessing.",
 ].join("\n")
@@ -56,6 +59,11 @@ export type HeadlessAgentExecutorDeps = {
   ownerUserId: (scope: OwnerScope) => Promise<string | null>
   /** Live check that the organization still runs Automations headless. */
   stillHeadless: (organizationId: string) => Promise<boolean>
+  /** The organization's default model for runs on the cloud default; null: the runner's. */
+  defaultModel: (organizationId: string) => Promise<string | null>
+  gatewayEnabled: typeof cloudAgentGatewayEnabled
+  cloudModel: typeof organizationCloudModel
+  gatewayCatalog: typeof cloudAgentGatewayCatalog
   sleep: (ms: number, signal: AbortSignal) => Promise<void>
   pollIntervalMs: number
 }
@@ -105,6 +113,10 @@ function defaultDeps(): HeadlessAgentExecutorDeps {
     client: runner ? createHeadlessRunnerClient(runner) : null,
     ownerUserId,
     stillHeadless: async (organizationId) => (await cloudAutomationRuntime(organizationId)) === "headless",
+    defaultModel: (organizationId) => organizationDefaultModel(organizationId),
+    gatewayEnabled: cloudAgentGatewayEnabled,
+    cloudModel: organizationCloudModel,
+    gatewayCatalog: cloudAgentGatewayCatalog,
     sleep: abortableSleep,
     pollIntervalMs: POLL_INTERVAL_MS,
   }
@@ -186,10 +198,16 @@ function turnFailure(turn: RunnerTurn, messages: RunnerMessage[]): CloudAgentExe
 
 /**
  * The member's own selection when the runner can serve it, otherwise the
- * runner's default model. Either way the run records which model it used.
+ * runner's default model. An Automation on the cloud default runs on the
+ * organization's default model when admins chose one, else the runner's
+ * default. Either way the run records which model it used.
  */
-async function chooseModel(client: HeadlessRunnerClient, model: { providerId: string; modelId: string }) {
-  if (isAutomationCloudDefaultModel(model)) return { model: undefined, warning: null }
+export async function chooseModel(
+  client: Pick<HeadlessRunnerClient, "listModels">,
+  model: { providerId: string; modelId: string },
+  organizationModel: string | null = null,
+) {
+  if (isAutomationCloudDefaultModel(model)) return { model: organizationModel ?? undefined, warning: null }
   const modelId = model.modelId
   const catalog = await client.listModels()
   if (!catalog) return { model: undefined, warning: null }
@@ -245,13 +263,51 @@ export async function executeHeadlessAgent(
       await input.onAdmitted({ runtime: "headless", sessionId, messageId })
     }
 
-    const { model, warning } = await chooseModel(client, input.action.model)
+    let selection: Awaited<ReturnType<typeof chooseModel>>
+    let storedTurn: RunnerTurn | undefined
+    if (previous) {
+      const read = await client.readSession(sessionId, { messageId, limit: 1 })
+      if (!read.ok) return failure({ code: "execution_runtime_unavailable", message: "OpenWork could not read the saved run's model. Try resuming it again.", needsAttention: true })
+      storedTurn = read.value.turns.find((turn) => turn.messageId === messageId)
+    }
+    const gateway = await deps.gatewayEnabled(input.organizationId)
+    if (storedTurn?.modelAccessRequired && !storedTurn.model) {
+      return failure({ code: "provider_unavailable", message: "The saved run has no model and cannot be resumed safely.", needsAttention: true })
+    }
+    if (storedTurn?.model) {
+      // Recovery is the same turn, never a fresh selection from changed organization settings.
+      selection = { model: storedTurn.model, warning: null }
+    } else if (gateway) {
+      if (storedTurn) return failure({ code: "provider_unavailable", message: "The saved run has no model and cannot be resumed safely.", needsAttention: true })
+      try {
+        const selected = isAutomationCloudDefaultModel(input.action.model)
+          ? await deps.cloudModel(actor)
+          : input.action.model.modelId
+        const catalog = await deps.gatewayCatalog(actor)
+        if (!selected || !catalog.models.some((entry) => entry.id === selected)) throw new Error("cloud_agent_gateway_model_unavailable")
+        selection = { model: selected, warning: null }
+      } catch {
+        return failure({ code: "provider_unavailable", message: "The selected cloud model is not available to the Automation owner. Check their model access and try again.", needsAttention: true })
+      }
+    } else {
+      // Off preserves the legacy runner catalog and its default fallback.
+      const organizationModel = isAutomationCloudDefaultModel(input.action.model)
+        ? await deps.defaultModel(input.organizationId).catch(() => null)
+        : null
+      selection = await chooseModel(client, input.action.model, organizationModel)
+    }
+    let { model } = selection
+    let modelAccessRequired = storedTurn?.modelAccessRequired === true
+    const { warning } = selection
     const ttlMs = Math.min(input.maximumRuntimeMs + TOKEN_GRACE_MS, DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS)
     const runSessionId = sessionId
-    const sendTurn = () => client.sendTurn(actor, { sessionId: runSessionId, messageId, prompt: input.action.instructions, model, ttlMs })
+    const sendTurn = () => client.sendTurn(actor, { sessionId: runSessionId, messageId, prompt: input.action.instructions, model, ttlMs, ...(modelAccessRequired ? { modelAccessRequired: true } : {}) }).catch(() => null)
+    const accessFailure = () => failure({ code: "provider_unavailable", message: "The cloud model is not available to the Automation owner. Check their model access and try again.", needsAttention: true })
 
     const sent = await sendTurn()
+    if (!sent) return accessFailure()
     if (!sent.ok) {
+      if (sent.error === "headless_saved_model_unavailable" || sent.error === "headless_model_access_unavailable") return accessFailure()
       if (sent.status === 404) {
         return failure({ code: "execution_runtime_unavailable", message: "The headless runner lost this run's session.", needsAttention: Boolean(previous) })
       }
@@ -279,7 +335,11 @@ export async function executeHeadlessAgent(
       if (turn.status === "interrupted") {
         // The runner restarted mid-turn. The same message id resumes it; tool
         // calls whose outcome is unknown are never re-run by the runner.
+        model = turn.model ?? model
+        modelAccessRequired ||= turn.modelAccessRequired === true
         const resumed = await sendTurn()
+        if (!resumed) return accessFailure()
+        if (!resumed.ok && (resumed.error === "headless_saved_model_unavailable" || resumed.error === "headless_model_access_unavailable")) return accessFailure()
         if (!resumed.ok && resumed.status === 404) {
           return failure({ code: "execution_failed", message: "The headless runner lost this run's session before it finished.", needsAttention: true })
         }

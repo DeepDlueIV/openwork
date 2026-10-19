@@ -66,6 +66,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   support(`${GW}/*`, "capabilities_google_workspace", "app.use contextStorage so token resolvers can read signed internal capability headers; concrete handlers are declared."),
   support(`${MS}/*`, "capabilities_microsoft_365", "app.use contextStorage for the Microsoft token resolver; concrete handlers are declared."),
   support("/v1/direct-uploads/google-workspace/*", "direct_uploads_google_workspace", "app.use contextStorage for direct-upload handlers; concrete handlers are declared."),
+  support("/v1/direct-downloads/google-workspace/*", "direct_downloads_google_workspace", "app.use contextStorage for direct-download handlers; concrete handlers are declared."),
 
   // Google Workspace capabilities
   read(`${GW}/gmail-labels`, "capability.gmail.label.list", GWK, res("gmail_label"), CAP),
@@ -97,11 +98,20 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   external("POST", `${GW}/drive-folders`, "capability.google_drive.folder.create", GWK, res("google_drive_file"), GOOGLE, CAP),
   external("POST", `${GW}/drive-file-share/:fileId`, "capability.google_drive.file.share", GWK, res("google_drive_file", "fileId"), GOOGLE, `${CAP} Grants Drive permissions to other principals.`),
   read(`${GW}/spreadsheets/:spreadsheetId`, "capability.google_sheets.spreadsheet.read", GWK, res("google_spreadsheet", "spreadsheetId"), `${CAP} Metadata only.`),
+  access("GET", `${GW}/documents/:documentId/outline`, "capability.google_docs.outline.read", GWK, res("google_document", "documentId"), `${CAP} Bounded tab and heading labels; document content is not audit evidence.`),
+  access("GET", `${GW}/documents/:documentId/text`, "capability.google_docs.text.read", GWK, res("google_document", "documentId"), `${CAP} Bounded body passages; document text and search query are not audit evidence.`),
+  external("POST", `${GW}/documents/:documentId/replace-text`, "capability.google_docs.text.replace", GWK, res("google_document", "documentId"), GOOGLE, `${CAP} Exact passage and required revision; old and new text are never audit evidence.`),
   access("GET", `${GW}/spreadsheets/:spreadsheetId/values`, "capability.google_sheets.values.read", GWK, res("google_spreadsheet", "spreadsheetId"), CAP_CONTENT),
   external("POST", `${GW}/spreadsheets`, "capability.google_sheets.spreadsheet.create", GWK, res("google_spreadsheet"), GOOGLE, CAP),
   external("PUT", `${GW}/spreadsheets/:spreadsheetId/values`, "capability.google_sheets.values.update", GWK, res("google_spreadsheet", "spreadsheetId"), GOOGLE, CAP),
   external("POST", `${GW}/spreadsheets/:spreadsheetId/values/append`, "capability.google_sheets.values.append", GWK, res("google_spreadsheet", "spreadsheetId"), GOOGLE, CAP),
+  external("POST", `${GW}/drive-upload-sessions`, "capability.google_drive.upload.prepare", GWK, res("google_drive_file"), GOOGLE, `${CAP} Returns a secret resumable upload URL; no file bytes or session URL are captured in audit evidence.`),
+  external("POST", "/v1/direct-uploads/google-workspace/drive-upload-sessions", "capability.google_drive.host_upload.prepare", GWK, res("google_drive_file"), GOOGLE, "cloudTransportRoute; host prepares a selected-account resumable session, bytes bypass Den. Session URL is not audit evidence."),
   external("POST", "/v1/direct-uploads/google-workspace/drive-files", "capability.google_drive.file.upload", GWK, res("google_drive_file"), GOOGLE, "cloudTransportRoute (MCP OAuth token, org from token); host file transport, bytes not echoed. Conditional token refresh write."),
+  read("/v1/direct-downloads/google-workspace/drive-files/:fileId", "capability.google_drive.host_download.prepare", GWK, res("google_drive_file", "fileId"), "cloudTransportReadRoute (MCP OAuth token, org from token); file metadata and pull plan only, no content."),
+  access("GET", "/v1/direct-downloads/google-workspace/drive-files/:fileId/content", "capability.google_drive.host_download.content", GWK, res("google_drive_file", "fileId"), "cloudTransportReadRoute; streams the member's file bytes to their host, never stored or used as audit evidence. Conditional token refresh write."),
+  access("POST", `${GW}/drive-download-links`, "capability.google_drive.download_link.create", GWK, res("google_drive_file"), `${CAP} Returns a five-minute signed link to one file; the link is not audit evidence.`),
+  handlerRoute("tenant_access", "GET", "/v1/direct-downloads/google-workspace/drive-link", "capability.google_drive.download_link.use", GWK, res("google_drive_file"), { notes: "Signed five-minute link bound to one member, connection, file and format; attributed to that member after verification, with organization access rechecked. Bytes are not audit evidence." }),
   external("POST", "/v1/direct-uploads/google-workspace/gmail-drafts", "capability.gmail.draft.attachments.create", GWK, res("gmail_draft"), GOOGLE, "cloudTransportRoute (MCP OAuth token, org from token); creates a draft with attachments, never sends. Conditional token refresh write."),
 
   // Microsoft 365 capabilities
@@ -203,6 +213,8 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
 
   // Inference providers (reads, member OAuth, uncovered mutations)
   read("/v1/inference-providers", "inference_provider.list", IP, res("provider")),
+  read("/v1/inference-providers/inventory/revision", "inference_provider.inventory.revision", IP, res("provider"), "Read-only opaque member-scoped inventory revision; liveProviderSync gated."),
+  read("/v1/inference-providers/inventory/events", "inference_provider.inventory.watch", IP, res("provider"), "SSE opaque revisions only. Session, membership and rollout revalidated from the database every two seconds; fail closed on revocation or unavailable checks."),
   read("/v1/inference-providers/model-management", "inference_provider.model_management.list", IP, res("provider")),
   read("/v1/inference-providers/member-connections", "inference_provider.member_connection.list", IPO, res("provider_credential")),
   read("/v1/inference-providers/:inferenceProviderId", "inference_provider.read", IP, res("provider", "inferenceProviderId"), "Credential metadata incl. member emails; no secrets."),
@@ -215,8 +227,10 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   change("GET", "/v1/inference-providers/:inferenceProviderId/oauth/start", "inference_provider.member_oauth.start", IPO, res("provider", "inferenceProviderId"), "Writes OAuth state entry; returns entry URL."),
   handlerRoute("tenant_change", "GET", "/v1/inference-providers/oauth/browser-start", "inference_provider.member_oauth.browser_start", IPO, res("provider_credential_set"), { notes: "Public route. Attributed (attributeMemberOAuthEntry) once the live signed session cookie matches the entry's initiating user and the provider/set/client binding is rechecked: org = provider.organization_id, actor = that user + entry member; before the state rotation write. 302 to Google." }),
   handlerRoute("tenant_read", "GET", "/v1/inference-providers/oauth/browser-status", "inference_provider.member_oauth.browser_status", IPO, res("provider_credential_set"), { notes: "Public poll. Attributed like browser-start once the cookie user matches the entry; sign_in_required/account_mismatch answers stay unattributed (platform store when reads are enabled). No writes." }),
-  handlerRoute("tenant_external", "GET", "/v1/inference-providers/oauth/callback", "inference_provider.member_oauth.complete", IPO, res("provider_credential"), { external: "Google OAuth (code exchange; token revocation on cleanup)", notes: "Attributed after the signed cookie, single-use state and provider/set binding are verified and before the state claim and Google code exchange: org = provider.organization_id, actor = initiating user + member. Failures render HTML 400 or a 302 with an error parameter (a 302 maps to confirmed)." }),
-  external("DELETE", "/v1/inference-providers/:inferenceProviderId/oauth", "inference_provider.member_oauth.disconnect", IPO, res("provider", "inferenceProviderId"), "Google OAuth token revocation", "Deletes the member credential locally, then best-effort revocation after commit; status reflects the local result."),
+  handlerRoute("tenant_external", "POST", "/v1/inference-providers/oauth/browser-aws-start", "inference_provider.member_oauth.browser_aws_start", IPO, res("provider_credential_set"), { external: "AWS IAM Identity Center OIDC (RegisterClient, StartDeviceAuthorization)", notes: "Public route. Attributed (attributeMemberOAuthEntry) like browser-start once the live signed session cookie matches the entry's initiating user and the provider/set binding is rechecked; before the device authorization and the state rotation write." }),
+  handlerRoute("tenant_external", "POST", "/v1/inference-providers/oauth/browser-aws-poll", "inference_provider.member_oauth.browser_aws_poll", IPO, res("provider_credential"), { external: "AWS IAM Identity Center (CreateToken, GetRoleCredentials, Logout) and STS GetCallerIdentity", notes: "Public poll. Attributed like browser-aws-start once the cookie user matches the attempt; at most one AWS token request per polling interval. On approval verifies role credentials and identity, then stores the member credential and consumes the attempt." }),
+  handlerRoute("tenant_external", "GET", "/v1/inference-providers/oauth/callback", "inference_provider.member_oauth.complete", IPO, res("provider_credential"), { external: "Google OAuth or Microsoft Entra ID (code exchange; Google token revocation on cleanup)", notes: "Attributed after the signed cookie, single-use state and provider/set binding are verified and before the state claim and Google code exchange: org = provider.organization_id, actor = initiating user + member. Failures render HTML 400 or a 302 with an error parameter (a 302 maps to confirmed)." }),
+  external("DELETE", "/v1/inference-providers/:inferenceProviderId/oauth", "inference_provider.member_oauth.disconnect", IPO, res("provider", "inferenceProviderId"), "Google OAuth token revocation; AWS IAM Identity Center logout", "Deletes the member credential locally, then best-effort revocation after commit; status reflects the local result."),
   change("POST", "/v1/inference-providers/migrate-from-llm-provider", "inference_provider.llm_provider.migrate", IP, res("provider"), "Not covered by provider emitter (providerUncoveredRoutes)."),
 
   // LiteLLM providers (litellm feature; not covered by the provider emitter, see providerUncoveredRoutes)
@@ -228,6 +242,8 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   handlerRoute("tenant_external", "POST", "/v1/inference-providers/oauth/browser-litellm-check", "inference_provider.member_oauth.browser_litellm_check", IPO, res("provider_credential"), { external: LITELLM, notes: "Public route. Attributed like browser-litellm-key once the cookie user matches the entry and the provider/set binding and litellm feature are rechecked; before LiteLLM key creation for that member." }),
 
   // Models analytics
+  read("/v1/inference/analytics/usage", "models_analytics.usage.read", MA, res("inference_usage"), "Shared Models usage limits for the feature-gated analytics dashboard."),
+  route("tenant_signal", "POST", "/v1/inference/analytics/events", "models_analytics.events.report", MA, res("models_analytics_event"), "org_context", { notes: "Desktop task metadata for the caller's own OpenWork Models calls; dropped unless the organization opted in. High volume." }),
   access("GET", "/v1/inference/analytics/activity", "models_analytics.activity.list", MA, res("models_analytics_event"), "Per-member task analytics payloads (tool/skill/model metadata)."),
   read("/v1/inference/analytics/consumption", "models_analytics.consumption.read", MA, res("models_analytics_event"), "Aggregates only."),
   read("/v1/inference/analytics/settings", "models_analytics.settings.read", "models_analytics.configuration", res("models_analytics_settings")),
@@ -235,6 +251,16 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   change("POST", "/v1/inference/analytics/langfuse/connect", "models_analytics.export.connect", "models_analytics.configuration", res("models_analytics_export"), "Stores Langfuse credentials (write-only) after a test send to Langfuse; enables the export loop."),
   external("POST", "/v1/inference/analytics/langfuse/test", "models_analytics.export.test", "models_analytics.configuration", res("models_analytics_export"), "Langfuse", "Sends a test event with caller-supplied credentials; no local write."),
   change("DELETE", "/v1/inference/analytics/langfuse", "models_analytics.export.disconnect", "models_analytics.configuration", res("models_analytics_export")),
+
+  // Organization Analytics (desktop adoption telemetry)
+  route("tenant_signal", "POST", "/v1/telemetry/ingest", "telemetry.events.ingest", "telemetry.adoption", res("telemetry_event"), "org_context", { notes: "Desktop activity and session/task lifecycle pings for the calling member; identifiers and timings only. High volume." }),
+  read("/v1/telemetry/dimensions", "telemetry.dimensions.list", "telemetry.adoption", res("telemetry_session_dimension")),
+  read("/v1/telemetry/adoption", "telemetry.adoption.read", "telemetry.adoption", res("telemetry_event"), "Aggregates only."),
+  read("/v1/telemetry/analytics", "telemetry.analytics.read", "telemetry.adoption", res("telemetry_event"), "Aggregates only."),
+
+  // Library usage
+  read("/v1/library-usage", "library_usage.breakdown.read", "library_usage.reporting", res("capability_usage_event"), "Aggregates only: use, failure, distinct member and per-source counts grouped by item, member id and UTC day; member ids, never names or content."),
+  read("/v1/library-usage/:kind", "library_usage.read", "library_usage.reporting", res("capability_usage_event"), "Aggregates only: per skill, plugin or connector use counts, failure counts, distinct member counts and last use; no member identities."),
 
   // Legacy LLM providers
   read("/v1/llm-provider-catalog", "llm_provider_catalog.list", LLM, res("llm_provider_catalog")),
@@ -265,6 +291,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   read("/v1/mcp-connections/:connectionId/tools", "mcp_connection.tool.list", "mcp_connection.tools", res("mcp_connection", "connectionId"), "Upstream tools/list; conditional OAuth token refresh write."),
   read("/v1/mcp-connections/:connectionId/mcp-apps", "mcp_connection.mcp_app.list", "mcp_connection.tools", res("mcp_connection", "connectionId"), "Upstream tools/list; conditional OAuth token refresh write."),
   external("POST", "/v1/mcp-connections/:connectionId/tools/call", "mcp_connection.tool.call", "mcp_connection.tools", res("mcp_connection", "connectionId"), "Upstream MCP server (tools/call)", "Arbitrary upstream side effects; response carries upstream tool result (sensitive). Agents reach the same effect via the excluded /mcp/agent transport (service layer)."),
+  change("POST", "/v1/mcp-connections/:connectionId/check", "mcp_connection.readiness.check", MCP, res("mcp_connection", "connectionId"), "Read-only upstream initialize/tools-list probe; records readiness and its time. No tool execution or credential response."),
   change("POST", "/v1/mcp-connections", "mcp_connection.create", MCP, res("mcp_connection"), "May probe the MCP server (initialize) before storing; secrets write-only."),
   change("PUT", "/v1/mcp-connections/:connectionId", "mcp_connection.update", MCP, res("mcp_connection", "connectionId"), "May probe the MCP server when validating; secrets write-only."),
   change("DELETE", "/v1/mcp-connections/:connectionId", "mcp_connection.delete", MCP, res("mcp_connection", "connectionId")),
@@ -272,6 +299,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   change("DELETE", "/v1/mcp-connections/by-key/:externalKey", "mcp_connection.by_key.delete", MCP, res("mcp_connection", "externalKey")),
   change("PUT", "/v1/mcp-connections/:connectionId/access", "mcp_connection.access.replace", MCP, res("mcp_connection", "connectionId")),
   change("PUT", "/v1/mcp-connections/:connectionId/tool-policy", "mcp_connection.tool_policy.update", MCP, res("mcp_connection", "connectionId")),
+  external("PUT", "/v1/mcp-connections/:connectionId/shared-credential", "mcp_connection.shared_credential.set", MCP, res("mcp_connection", "connectionId"), "Upstream MCP server (initialize with the new key)", "Hidden; signed-in people only (API keys and MCP internal calls get 403); secureSecretFields. Stores the shared key encrypted, keeps a rejected key out, and never returns or logs the key or provider text."),
   change("POST", "/v1/mcp-connections/:connectionId/disconnect", "mcp_connection.disconnect_all", MCPO, res("mcp_connection", "connectionId"), "Removes all stored member credentials; no upstream revocation."),
   change("POST", "/v1/mcp-connections/:connectionId/disconnect-my-account", "mcp_connection.member_account.disconnect", MCPO, res("mcp_connection", "connectionId"), "No upstream revocation."),
   change("PUT", "/v1/mcp-connections/:connectionId/my-credential", "mcp_connection.member_credential.set_own", MCPO, res("mcp_connection", "connectionId"), "Session-only (API keys and MCP internal calls get 403); stores the caller's personal API key encrypted for a member-api-key connection; response is ok only. Removal uses disconnect-my-account."),
@@ -285,6 +313,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
 
   // Native OAuth providers (Google Workspace, Microsoft 365)
   read("/v1/oauth-providers/:providerId/client", "oauth_provider.client.read", "oauth_provider.configuration", res("oauth_client", "providerId"), "Client id only."),
+  external("GET", "/v1/oauth-providers/:providerId/api-check", "oauth_provider.api_check.read", "oauth_provider.configuration", res("oauth_client", "providerId"), "Google Drive, Docs, Sheets, Gmail, Calendar and Chat APIs", "Google Workspace only. One read per needed API with the caller's own connector sign-in; returns only whether each API is turned on, never Google content."),
   change("POST", "/v1/oauth-providers/:providerId/client", "oauth_provider.client.update", "oauth_provider.configuration", res("oauth_client", "providerId"), "Client secret write-only."),
   read("/v1/oauth-providers/:providerId/status", "oauth_provider.connection.status", OAP, res("oauth_provider_connection", "providerId")),
   change("GET", "/v1/oauth-providers/:providerId/connect/start", "oauth_provider.connect.start", OAP, res("oauth_provider_connection", "providerId"), "Writes OAuth state; returns authorize URL."),

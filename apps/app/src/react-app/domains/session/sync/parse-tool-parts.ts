@@ -72,7 +72,10 @@ function toolCallProviderMetadata(part: ToolPart): ProviderMetadata {
     ? stateMetadata.sessionId.trim()
     : null;
   const appBuilder = /(?:^|_)(?:search_capabilities|prepare_app|create_app|update_app)$/.test(part.tool);
-  const toolStartedAt = (appBuilder || part.tool === "task" || part.metadata?.openworkV2CodeMode === true) && "time" in part.state && typeof part.state.time?.start === "number"
+  // A task started or followed up on another computer keeps its start time after it returns.
+  const remoteSession = /(?:^|_)execute_capability$/.test(part.tool) && isRecord(part.state.input)
+    && typeof part.state.input.name === "string" && part.state.input.name.startsWith("remote-session:");
+  const toolStartedAt = (appBuilder || remoteSession || part.tool === "task" || part.metadata?.openworkV2CodeMode === true) && "time" in part.state && typeof part.state.time?.start === "number"
     && Number.isFinite(part.state.time.start)
     ? part.state.time.start
     : null;
@@ -87,6 +90,8 @@ function toolCallProviderMetadata(part: ToolPart): ProviderMetadata {
     ...(part.metadata?.openworkV2CodeMode === true ? {
       codeMode: {
         calls: Array.isArray(stateMetadata.toolCalls) && isJsonValue(stateMetadata.toolCalls) ? stateMetadata.toolCalls : [],
+        details: Array.isArray(stateMetadata.openworkToolDetails) && isJsonValue(stateMetadata.openworkToolDetails) ? stateMetadata.openworkToolDetails : [],
+        ...(stateMetadata.openworkToolDetailsTruncated === true ? { detailsTruncated: true } : {}),
       },
     } : {}),
   };

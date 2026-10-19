@@ -25,7 +25,8 @@ import {
   resetPosthogUser,
   trackPosthogEvent
 } from "../_lib/den-flow";
-import { EMPTY_RUNTIME_CONFIG, getRuntimeConfig, type DenWebRuntimeConfig } from "../_lib/runtime-config";
+import { EMPTY_RUNTIME_CONFIG, getRuntimeConfig, resetRuntimeConfig, type DenWebRuntimeConfig } from "../_lib/runtime-config";
+import { resolveMemberReturnTo, type MemberAuthCheckStatus } from "../_lib/member-auth-routing";
 import {
   getDesktopHandoffGrant,
   getDesktopHandoffOpenworkUrl,
@@ -38,9 +39,12 @@ import {
   getJoinOrgRoute,
   getOrgDashboardRoute,
   getWorkspaceClaimRoute,
+  parseOrgContextPayload,
   parseOrgListPayload,
 } from "../_lib/den-org";
-import { requestOrgSelectionOnNextLoad } from "../_lib/org-selection";
+import { consumeOrgSelectionRequest, requestOrgSelectionOnNextLoad } from "../_lib/org-selection";
+import { restoreRememberedOrganization } from "../_lib/org-memory";
+import { ORG_SCOPE_HEADER } from "../_lib/org-scope";
 
 type AuthNavigationResult = "dashboard" | "join-org" | null;
 
@@ -91,6 +95,9 @@ type DenFlowContextValue = {
   signupPasswordFeedback: string[];
   user: AuthUser | null;
   sessionHydrated: boolean;
+  memberAuthCheckStatus: MemberAuthCheckStatus;
+  memberAuthCheckError: string | null;
+  retryMemberAuthCheck: () => void;
   desktopAuthRequested: boolean;
   desktopAuthScheme: string;
   setupPending: boolean;
@@ -117,6 +124,16 @@ type DenFlowContextValue = {
 };
 
 const DenFlowContext = createContext<DenFlowContextValue | null>(null);
+
+function isEmailNotVerifiedError(payload: unknown) {
+  return typeof payload === "object" && payload !== null && "code" in payload && payload.code === "EMAIL_NOT_VERIFIED";
+}
+
+function signUpReturnedVerifiedUser(payload: unknown) {
+  if (typeof payload !== "object" || payload === null || !("user" in payload)) return false;
+  const user = payload.user;
+  return typeof user === "object" && user !== null && "emailVerified" in user && user.emailVerified === true;
+}
 
 function getPendingOrgInvitationId() {
   if (typeof window === "undefined") {
@@ -156,6 +173,7 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
   const continuationRef = useRef<SetupContinuation | null>(null);
   const handoffBusyRef = useRef(false);
   const sessionEpochRef = useRef(0);
+  const landingGenerationRef = useRef(0);
   const [authMode, setAuthModeState] = useState<AuthMode>("sign-up");
   const [email, setEmail] = useState("");
   const [authName, setAuthName] = useState("");
@@ -181,6 +199,9 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
   });
   const [hydratedSession, setHydratedSession] = useState<{ token: string | null } | null>(null);
   const sessionHydrated = hydratedSession !== null && hydratedSession.token === authToken;
+  const [memberAuthCheckStatus, setMemberAuthCheckStatus] = useState<MemberAuthCheckStatus>("checking");
+  const [memberAuthCheckError, setMemberAuthCheckError] = useState<string | null>(null);
+  const [memberAuthCheckAttempt, setMemberAuthCheckAttempt] = useState(0);
   const desktopAuthScheme = continuation?.desktopScheme ?? "openwork";
   const setupPending = Boolean(user && continuation?.userId === user.id && continuation.setup);
   const [webAuthRequested, setWebAuthRequested] = useState(false);
@@ -466,22 +487,22 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
     if (!isCurrent() || epoch !== sessionEpochRef.current) return null;
 
     if (!response.ok) {
-      setUser(null);
-      if (response.status === 401 && authToken) {
-        setAuthToken(null);
+      if (response.status === 401) {
+        setUser(null);
+        if (authToken) {
+          setAuthToken(null);
+        }
+        if (!quiet) {
+          setAuthError("No active session found. Sign in first.");
+        }
+        return null;
       }
-      if (!quiet) {
-        setAuthError("No active session found. Sign in first.");
-      }
-      return null;
+      throw new Error(getErrorMessage(payload, `Could not check your sign-in status (${response.status}).`));
     }
 
     const sessionUser = getUser(payload);
     if (!sessionUser) {
-      if (!quiet) {
-        setAuthError("Session response did not include a user.");
-      }
-      return null;
+      throw new Error("Session response did not include a user.");
     }
 
     setUser(sessionUser);
@@ -495,7 +516,7 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
       headers.set("Authorization", `Bearer ${authToken}`);
     }
 
-    const { response, payload } = await requestJson("/v1/me/orgs", { method: "GET", headers }, 12000);
+    const { response, payload } = await requestJson("/v1/me/orgs", { method: "GET", headers, cache: "no-store" }, 12000);
     if (!response.ok) {
       throw new Error(getErrorMessage(payload, "Could not load your organizations. Refresh to try again."));
     }
@@ -646,6 +667,9 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
+    // A prior normal login must not carry its picker request into an explicit
+    // invitation, claim, setup, or install continuation.
+    consumeOrgSelectionRequest();
     const pendingClaimToken = getPendingWorkspaceClaimToken();
     if (pendingClaimToken) {
       return getWorkspaceClaimRoute(pendingClaimToken);
@@ -659,21 +683,58 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
     if (continuationRef.current?.userId === user.id && continuationRef.current.setup) {
       return continuationRef.current.setup.route;
     }
+
+    const returnTo = resolveMemberReturnTo(
+      new URLSearchParams(window.location.search).get("returnTo"),
+      desktopAuthRequested || webAuthRequested,
+    );
+    if (returnTo) {
+      return returnTo;
+    }
     if (runtimeConfig === EMPTY_RUNTIME_CONFIG) {
       setAuthError("Could not load workspace configuration. Refresh to try again.");
       return null;
     }
 
     const epoch = sessionEpochRef.current;
+    const generation = ++landingGenerationRef.current;
+    const currentContinuation = continuationRef.current;
+    const currentUrl = window.location.href;
+    const isCurrent = () => epoch === sessionEpochRef.current
+      && generation === landingGenerationRef.current
+      && continuationRef.current === currentContinuation
+      && window.location.href === currentUrl
+      && !getPendingOrgInvitationId() && !getPendingWorkspaceClaimToken();
     let directory: Awaited<ReturnType<typeof loadOrgDirectory>>;
     try {
       directory = await loadOrgDirectory();
     } catch (error) {
-      if (epoch === sessionEpochRef.current) setAuthError(error instanceof Error ? error.message : "Could not load your organizations.");
+      if (isCurrent()) setAuthError(error instanceof Error ? error.message : "Could not load your organizations.");
       return null;
     }
-    if (epoch !== sessionEpochRef.current) return null;
-    requestOrgSelectionOnNextLoad(directory.orgs);
+    if (!isCurrent()) return null;
+    const remembered = await restoreRememberedOrganization({
+      userId: user.id,
+      organizations: directory.orgs,
+      isCurrent,
+      loadContext: async (organizationId) => {
+        const headers = new Headers({ [ORG_SCOPE_HEADER]: organizationId });
+        if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+        const { response, payload } = await requestJson("/v1/org", { method: "GET", headers, cache: "no-store" }, 12000);
+        return response.ok ? parseOrgContextPayload(payload) : null;
+      },
+      setActive: async (organizationId) => {
+        const { response, payload } = await requestJson("/api/auth/organization/set-active", {
+          method: "POST",
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
+          body: JSON.stringify({ organizationId }),
+        }, 12000);
+        if (!response.ok) throw new Error(getErrorMessage(payload, "Could not restore your organization."));
+      },
+    });
+    if (!isCurrent()) return null;
+    if (remembered) consumeOrgSelectionRequest();
+    else requestOrgSelectionOnNextLoad(directory.orgs);
     if (directory.orgs.length === 0) {
       if (!isSingleOrgMode) continueSetup(null, "/organization");
       return "/organization";
@@ -734,7 +795,9 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        if (response.status === 403 && !isSingleOrgMode) {
+        // Only better-auth's unverified-email refusal means a code was sent;
+        // any other 403 (SSO-managed, sign-up policy) is a plain error.
+        if (response.status === 403 && !isSingleOrgMode && isEmailNotVerifiedError(payload)) {
           openVerificationStep(trimmedEmail, `Enter the 6-digit code we sent to ${trimmedEmail} to finish verifying your email.`);
         }
         const message = getErrorMessage(payload, `Authentication failed with ${response.status}.`);
@@ -753,6 +816,13 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
       }
 
       const token = getToken(payload);
+
+      // Signing up from an invitation link can verify the email right away
+      // (inviteLinkVerifiesEmail). Den still answers without a session, so
+      // exchange the password for one instead of asking for an emailed code.
+      if (submitMode === "sign-up" && !token && signUpReturnedVerifiedUser(payload)) {
+        return await finalizeEmailPasswordSignIn(submitMode, trimmedEmail, payload);
+      }
 
       if (submitMode === "sign-up" && !token) {
         setUser(null);
@@ -860,6 +930,7 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
     }
 
     sessionEpochRef.current += 1;
+    consumeOrgSelectionRequest();
     persistContinuation(null);
     clearPendingAuthIntent();
     setDesktopRedirectUrl(null);
@@ -922,20 +993,34 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
     return nextUser;
   }
 
+  function retryMemberAuthCheck() {
+    resetRuntimeConfig();
+    setRuntimeConfig(EMPTY_RUNTIME_CONFIG);
+    setRuntimeConfigLoaded(false);
+    setHydratedSession(null);
+    setMemberAuthCheckError(null);
+    setMemberAuthCheckStatus("checking");
+    setMemberAuthCheckAttempt((current) => current + 1);
+  }
+
   useEffect(() => {
     let cancelled = false;
 
     void getRuntimeConfig().then((config) => {
-      if (!cancelled) {
-        setRuntimeConfig(config);
-        setRuntimeConfigLoaded(true);
+      if (cancelled) return;
+      if (config === EMPTY_RUNTIME_CONFIG) {
+        setMemberAuthCheckError("Could not load workspace configuration.");
+        setMemberAuthCheckStatus("error");
+        return;
       }
+      setRuntimeConfig(config);
+      setRuntimeConfigLoaded(true);
     });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [memberAuthCheckAttempt]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -988,14 +1073,22 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
+    setHydratedSession(null);
+    setMemberAuthCheckError(null);
+    setMemberAuthCheckStatus("checking");
 
     const hydrateSession = async () => {
       const epoch = sessionEpochRef.current;
       try {
         await refreshSession(true, () => !cancelled);
-      } finally {
         if (!cancelled && epoch === sessionEpochRef.current) {
           setHydratedSession({ token: authToken });
+          setMemberAuthCheckStatus("ready");
+        }
+      } catch {
+        if (!cancelled && epoch === sessionEpochRef.current) {
+          setMemberAuthCheckError("Could not check your sign-in status.");
+          setMemberAuthCheckStatus("error");
         }
       }
     };
@@ -1006,6 +1099,11 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [authToken, runtimeConfigLoaded]);
+
+  useEffect(() => {
+    // Invalidate a pending preference restore on account/session changes or unmount.
+    return () => { landingGenerationRef.current += 1; };
+  }, [user?.id, authToken, sessionHydrated]);
 
   useEffect(() => {
     if (!user) {
@@ -1131,6 +1229,9 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
     signupPasswordFeedback,
     user,
     sessionHydrated,
+    memberAuthCheckStatus,
+    memberAuthCheckError,
+    retryMemberAuthCheck,
     desktopAuthRequested,
     desktopAuthScheme,
     setupPending,

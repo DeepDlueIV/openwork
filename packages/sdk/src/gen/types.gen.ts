@@ -38,6 +38,10 @@ export type AdminFreeAutoUsageResponse = {
      */
     estimatedRequests: number;
     inputTokens: number;
+    /**
+     * The part of inputTokens served from OpenAI's prompt cache, charged at the cached input price. Not recorded before cached pricing, so older requests count as uncached.
+     */
+    cachedInputTokens: number;
     outputTokens: number;
     activePeople: number;
     activeOrganizations: number;
@@ -50,6 +54,10 @@ export type AdminFreeAutoUsageResponse = {
      */
     estimatedRequests: number;
     inputTokens: number;
+    /**
+     * The part of inputTokens served from OpenAI's prompt cache, charged at the cached input price. Not recorded before cached pricing, so older requests count as uncached.
+     */
+    cachedInputTokens: number;
     outputTokens: number;
     activePeople: number;
   };
@@ -61,6 +69,10 @@ export type AdminFreeAutoUsageResponse = {
      */
     estimatedRequests: number;
     inputTokens: number;
+    /**
+     * The part of inputTokens served from OpenAI's prompt cache, charged at the cached input price. Not recorded before cached pricing, so older requests count as uncached.
+     */
+    cachedInputTokens: number;
     outputTokens: number;
   };
   week: {
@@ -83,6 +95,10 @@ export type AdminFreeAutoUsageResponse = {
      */
     estimatedRequests: number;
     inputTokens: number;
+    /**
+     * The part of inputTokens served from OpenAI's prompt cache, charged at the cached input price. Not recorded before cached pricing, so older requests count as uncached.
+     */
+    cachedInputTokens: number;
     outputTokens: number;
     id: string;
     name: string;
@@ -110,6 +126,10 @@ export type AdminFreeAutoUsageResponse = {
      */
     estimatedRequests: number;
     inputTokens: number;
+    /**
+     * The part of inputTokens served from OpenAI's prompt cache, charged at the cached input price. Not recorded before cached pricing, so older requests count as uncached.
+     */
+    cachedInputTokens: number;
     outputTokens: number;
     organizations: number;
   } | null;
@@ -136,25 +156,602 @@ export type ForbiddenError = {
   message?: string;
 };
 
+export type AdminFreeAutoConversions = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  attributionDays: 30;
+  firstRecordedAt: string | null;
+  totals: {
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+    unlinkedGuests: number;
+  };
+  daily: Array<{
+    date: string;
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+  }>;
+  rows: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    startedAsGuest: boolean;
+    exhaustedAt: string;
+    signedInAt: string | null;
+    signedUpAt: string | null;
+    subscribedAt: string | null;
+  }>;
+  page: {
+    page: number;
+    pageSize: 50;
+    total: number;
+    hasMore: boolean;
+  };
+};
+
+export type AdminOrganizationDetail = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+};
+
 export type NotFoundError = {
   error: string;
   message?: string;
 };
 
+export type AdminOrganizationUsage = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  usage: {
+    from: string;
+    to: string;
+    totals: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+    };
+    members: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      memberId: string;
+    }>;
+  };
+};
+
+export type AdminOrganizationInsights = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  insights: {
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+    current: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    previous: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    daily: [
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+    ];
+    people: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      memberId: string;
+      userId: string | null;
+      name: string | null;
+      email: string | null;
+      currentMember: boolean;
+    }>;
+    models: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      id: string;
+      name: string;
+      provider: string;
+    }>;
+  };
+};
+
+export type AdminDashboard = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  activeUsers: {
+    today: number;
+    days7: number;
+    days30: number;
+  };
+  activeOrganizations: number;
+  totals: {
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+  };
+  daily: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    date: string;
+  }>;
+  organizations: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    id: string;
+    name: string;
+  }>;
+};
+
 export type AdminFeature = {
   key:
-    | "installLinks"
-    | "mcpConnections"
-    | "dashboardActivity"
-    | "modelsAnalytics"
-    | "auditLogs"
-    | "orgManagedDashboards"
+    | "cloudAgentGateway"
+    | "liveProviderSync"
+    | "offlineRecovery"
+    | "secureSecretFields"
+    | "modelsAnalyticsUi"
+    | "taskAnalyticsUi"
+    | "managedDeployments"
     | "slackAssistant"
-    | "slackAssistantHeadless"
-    | "headlessAutomations"
-    | "workbot"
-    | "litellm"
-    | "platformAuditReads";
+    | "workbotTeamLinks"
+    | "workbotFirstRun"
+    | "workbotInlineConnect"
+    | "workbotDocuments"
+    | "workbotWorkspaceAssistant"
+    | "workbotGuidedNavigation"
+    | "automationCalendar"
+    | "engineV2ForceUpgrade"
+    | "engineV2Upgrade"
+    | "remoteSessionEvents"
+    | "remoteSessionSubagents"
+    | "headlessDurableTurns";
   label: string;
   description: string;
   since: string;
@@ -192,19 +789,27 @@ export type AdminUsersPageResponse = {
 
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
-    capabilities: {
-      installLinks: boolean;
-      mcpConnections: boolean;
-      dashboardActivity: boolean;
-      modelsAnalytics: boolean;
-      auditLogs: boolean;
-      orgManagedDashboards: boolean;
+    capabilities?: {
+      cloudAgentGateway: boolean;
+      liveProviderSync: boolean;
+      offlineRecovery: boolean;
+      secureSecretFields: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
+      managedDeployments: boolean;
       slackAssistant: boolean;
-      slackAssistantHeadless: boolean;
-      headlessAutomations: boolean;
-      workbot: boolean;
-      litellm: boolean;
-      platformAuditReads: boolean;
+      workbotTeamLinks: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
+      workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
+      workbotGuidedNavigation: boolean;
+      automationCalendar: boolean;
+      engineV2ForceUpgrade: boolean;
+      engineV2Upgrade: boolean;
+      remoteSessionEvents: boolean;
+      remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -215,8 +820,8 @@ export type AdminOrganizationsPageResponse = {
     /**
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
-    featureStates: {
-      installLinks: {
+    featureStates?: {
+      cloudAgentGateway: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -225,7 +830,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      mcpConnections: {
+      liveProviderSync: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -234,7 +839,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      dashboardActivity: {
+      offlineRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -243,7 +848,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      modelsAnalytics: {
+      secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -252,7 +857,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      auditLogs: {
+      modelsAnalyticsUi: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -261,7 +866,16 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      orgManagedDashboards: {
+      taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -279,7 +893,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      slackAssistantHeadless: {
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -288,7 +902,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
+      workbotFirstRun: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -297,7 +911,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbot: {
+      workbotInlineConnect: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -306,7 +920,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      litellm: {
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -315,7 +929,70 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      platformAuditReads: {
+      workbotWorkspaceAssistant: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotGuidedNavigation: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      automationCalendar: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2ForceUpgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2Upgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -387,18 +1064,26 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
-      installLinks: boolean;
-      mcpConnections: boolean;
-      dashboardActivity: boolean;
-      modelsAnalytics: boolean;
-      auditLogs: boolean;
-      orgManagedDashboards: boolean;
+      cloudAgentGateway: boolean;
+      liveProviderSync: boolean;
+      offlineRecovery: boolean;
+      secureSecretFields: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
+      managedDeployments: boolean;
       slackAssistant: boolean;
-      slackAssistantHeadless: boolean;
-      headlessAutomations: boolean;
-      workbot: boolean;
-      litellm: boolean;
-      platformAuditReads: boolean;
+      workbotTeamLinks: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
+      workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
+      workbotGuidedNavigation: boolean;
+      automationCalendar: boolean;
+      engineV2ForceUpgrade: boolean;
+      engineV2Upgrade: boolean;
+      remoteSessionEvents: boolean;
+      remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -410,7 +1095,7 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      installLinks: {
+      cloudAgentGateway: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -419,7 +1104,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      mcpConnections: {
+      liveProviderSync: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -428,7 +1113,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      dashboardActivity: {
+      offlineRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -437,7 +1122,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      modelsAnalytics: {
+      secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -446,7 +1131,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      auditLogs: {
+      modelsAnalyticsUi: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -455,7 +1140,16 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      orgManagedDashboards: {
+      taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -473,7 +1167,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      slackAssistantHeadless: {
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -482,7 +1176,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
+      workbotFirstRun: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -491,7 +1185,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbot: {
+      workbotInlineConnect: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -500,7 +1194,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      litellm: {
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -509,7 +1203,70 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      platformAuditReads: {
+      workbotWorkspaceAssistant: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotGuidedNavigation: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      automationCalendar: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2ForceUpgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2Upgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -666,6 +1423,22 @@ export type UpdateCurrentUserProfileResponse = {
   };
 };
 
+export type DenDesktopAgentPermissions = {
+  rules: Array<{
+    action: string;
+    resource: string;
+    effect: "allow" | "ask" | "deny";
+    source: string;
+  }>;
+};
+
+export type DenDesktopConfigDefaultModel = {
+  providerID: string;
+  modelID: string;
+  source: "team" | "organization";
+  teamName?: string;
+};
+
 export type CurrentUserDesktopConfigResponse = {
   allowCustomProviders?: boolean;
   allowZenModel?: boolean;
@@ -711,8 +1484,11 @@ export type CurrentUserDesktopConfigResponse = {
   automationsEnabled?: boolean;
   dashboardEnabled?: boolean;
   connectEnabled?: boolean;
+  liveProviderSync?: boolean;
   onboardingPrompts?: Array<string>;
   onboardingPromptDescriptions?: Array<string>;
+  agentPermissions?: DenDesktopAgentPermissions;
+  defaultModel?: DenDesktopConfigDefaultModel;
 };
 
 export type AutomationRunnerTokenResponse = {
@@ -928,6 +1704,11 @@ export type AutomationRunList = {
   nextCursor: string | null;
 };
 
+export type AutomationRunRange = {
+  items: Array<AutomationRun>;
+  nextCursor: string | null;
+};
+
 export type AutomationRunEventType =
   | "user"
   | "assistant"
@@ -954,6 +1735,58 @@ export type AutomationRunReceipt = {
   automation: Automation;
   revision: AutomationRevision;
   events: Array<AutomationRunEvent>;
+};
+
+export type RemoteSessionStatusResult = {
+  threads: Array<
+    | {
+        ref: string;
+        changed: true;
+        version: string;
+        target: "cloud" | "desktop";
+        state: "starting" | "running" | "waiting" | "idle" | "error";
+        waitingFor: "permission" | "question" | null;
+        title: string | null;
+        computerId: string | null;
+        computerLabel: string | null;
+        sessionId: string | null;
+        workspaceId: string | null;
+        messageCount: number | null;
+        preview: string | null;
+        error: {
+          code: string;
+          message: string;
+        } | null;
+        observedAt: number | null;
+      }
+    | {
+        ref: string;
+        changed: false;
+        version: string;
+        stale?: boolean;
+      }
+  >;
+  retryAfterMs: number | null;
+};
+
+export type RemoteSessionError = {
+  error: string;
+  message?: string;
+  retryable?: boolean;
+  [key: string]: unknown;
+};
+
+export type RemoteSessionStatusRequest = {
+  threads: Array<{
+    commandId?: string;
+    sessionId?: string;
+    version?: string;
+  }>;
+  waitMs?: number;
+};
+
+export type RemoteSessionResult = {
+  [key: string]: unknown;
 };
 
 export type OrganizationResponse = {
@@ -1065,6 +1898,68 @@ export type OrganizationContextResponse = {
     [key: string]: unknown;
   };
   currentMember: {
+    /**
+     * The caller's effective permission keys in this organization, sorted. The owner gets every key; there is no wildcard. Gate UI on these rather than on role names. Older servers omit the field.
+     */
+    permissions: Array<
+      | "organization.update"
+      | "branding.update"
+      | "web_origins.view"
+      | "web_origins.manage"
+      | "invitations.manage"
+      | "members.update"
+      | "members.delete"
+      | "teams.view"
+      | "teams.manage"
+      | "teams.manage_admin"
+      | "permissions.view"
+      | "permissions.manage"
+      | "agent_permissions.view"
+      | "agent_permissions.manage"
+      | "sharing.manage_all"
+      | "sharing.share_org_wide"
+      | "sso.view"
+      | "sso.manage"
+      | "scim.view"
+      | "scim.manage"
+      | "api_keys.view"
+      | "api_keys.manage"
+      | "audit.view"
+      | "audit.manage"
+      | "egress_diagnostics.view"
+      | "egress_diagnostics.manage"
+      | "desktop_policies.view"
+      | "desktop_policies.manage"
+      | "deployments.view"
+      | "deployments.manage"
+      | "billing.view"
+      | "billing.manage"
+      | "billing_portal.use"
+      | "inference.view"
+      | "inference.manage"
+      | "usage_analytics.view"
+      | "analytics.view"
+      | "analytics.manage"
+      | "llm_providers.view"
+      | "llm_providers.update"
+      | "llm_providers.delete"
+      | "llm_provider_credentials.manage"
+      | "gateway_providers.view"
+      | "gateway_providers.manage"
+      | "gateway_usage.view"
+      | "gateway_limits.view"
+      | "gateway_limits.manage"
+      | "connections.view"
+      | "connections.manage"
+      | "connections.update"
+      | "connections.disconnect"
+      | "connections.delete"
+      | "oauth_clients.view"
+      | "oauth_clients.manage"
+      | "marketplaces.manage"
+      | "plugins.import"
+      | "connectors.manage"
+    >;
     [key: string]: unknown;
   };
   currentMemberTeams: Array<{
@@ -1094,9 +1989,55 @@ export type OrganizationContextResponse = {
     sso: boolean;
     desktopPolicies: boolean;
     orgControls: boolean;
+    analytics: boolean;
     auditLogs: boolean;
   };
   [key: string]: unknown;
+};
+
+export type DashboardActivityTarget =
+  | {
+      type: "connection";
+      connectionId: string;
+    }
+  | {
+      type: "llm_provider";
+      llmProviderId: string;
+    }
+  | {
+      type: "gateway_provider";
+      inferenceProviderId: string;
+    }
+  | {
+      type: "marketplace";
+      marketplaceId: string;
+    }
+  | {
+      type: "skill";
+      pluginId: string;
+      skillId: string;
+    };
+
+export type DashboardActivityEntry = {
+  id: string;
+  kind: "connection" | "skill" | "plugin" | "provider";
+  title: string;
+  detail: string;
+  occurredAt: string;
+  target: DashboardActivityTarget;
+  logo?: {
+    name: string;
+    url?: string;
+    providerId?: string;
+  };
+};
+
+export type DashboardActivity = {
+  activity: Array<DashboardActivityEntry>;
+};
+
+export type InventoryRevision = {
+  revision: string | null;
 };
 
 export type DeleteOrganizationResponse = {
@@ -1214,67 +2155,81 @@ export type InvalidManagedBrandAssetError = {
   message: string;
 };
 
-export type DashboardElement = {
-  serverName: string;
-  connectionId?: string;
-  toolName: string;
-  projectedToolName: string;
-  resourceUri: string;
-  title: string;
-  launchArguments?: {
-    [key: string]: unknown;
-  };
-  requiresApproval?: boolean;
-  organizationAutoLaunch?: boolean;
-};
-
-export type Dashboard = {
-  id: string;
-  organizationId: string;
-  name: string;
-  elements: Array<DashboardElement>;
-  createdByOrgMembershipId: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type DashboardListResponse = {
-  items: Array<Dashboard>;
-};
-
-export type DashboardResponse = {
-  item: Dashboard;
-};
-
-export type DashboardAccessGrant = {
-  id: string;
-  orgMembershipId: string | null;
-  teamId: string | null;
-  orgWide: boolean;
-  role: "viewer" | "editor" | "manager";
-  createdByOrgMembershipId: string;
-  createdAt: string;
-  removedAt: string | null;
-};
-
-export type DashboardAccessListResponse = {
-  items: Array<DashboardAccessGrant>;
-};
-
-export type DashboardAccessResponse = {
-  ok: true;
-  item: DashboardAccessGrant;
-};
-
-export type MeDashboard = {
-  id: string;
-  name: string;
-  elements: Array<DashboardElement>;
-  updatedAt: string;
-};
-
-export type MeDashboardListResponse = {
-  items: Array<MeDashboard>;
+export type WorkflowRunListResponse = {
+  runs: Array<{
+    /**
+     * Den TypeID with 'wfr_' prefix and a 26-character base32 suffix.
+     */
+    id: string;
+    source: string;
+    status: "succeeded" | "failed";
+    errorKind: string | null;
+    errorMessage: string | null;
+    toolCallCount: number;
+    toolCalls: Array<{
+      name: string;
+    }> | null;
+    durationMs: number;
+    startedAt: string;
+    finishedAt: string;
+    createdAt: string;
+    orgMembershipId: string | null;
+    workflow: {
+      configObjectId: string;
+      title: string;
+      graph: {
+        nodes: Array<
+          | {
+              id: string;
+              kind: "input";
+              label: string;
+              fields: Array<string>;
+            }
+          | {
+              id: string;
+              kind: "tool";
+              label: string;
+              namespace: string;
+              tool: string;
+              scriptPath: string;
+              assignsTo: string | null;
+              parallelGroup: string | null;
+            }
+          | {
+              id: string;
+              kind: "search";
+              label: string;
+            }
+          | {
+              id: string;
+              kind: "branch";
+              label: string;
+            }
+          | {
+              id: string;
+              kind: "loop";
+              label: string;
+            }
+          | {
+              id: string;
+              kind: "return";
+              label: string;
+            }
+        >;
+        edges: Array<{
+          from: string;
+          to: string;
+          label: string | null;
+          kind: "flow" | "data";
+        }>;
+        parseError: string | null;
+      } | null;
+    } | null;
+  }>;
+  /**
+   * Pass as cursor to fetch the next page; null on the last page.
+   */
+  nextCursor: string | null;
 };
 
 export type BuiltMcpApp = {
@@ -1345,6 +2300,63 @@ export type DesktopPolicyListResponse = {
   }>;
 };
 
+export type AgentPermissionSetting = {
+  decision?: "allow" | "ask" | "deny";
+  allow?: Array<string>;
+  block?: Array<string>;
+};
+
+export type AgentPermissionSettings = {
+  commands?: AgentPermissionSetting;
+  fileEdits?: AgentPermissionSetting;
+  websites?: AgentPermissionSetting;
+  webSearch?: AgentPermissionSetting;
+  localSkills?: AgentPermissionSetting;
+  localMcpServers?: AgentPermissionSetting;
+};
+
+export type AgentPermissionPolicy = {
+  teamId: string | null;
+  name: string;
+  memberCount: number | null;
+  settings: AgentPermissionSettings;
+  updatedAt: string | null;
+};
+
+export type AgentPermissionPolicyList = {
+  everyone: AgentPermissionPolicy;
+  teams: Array<AgentPermissionPolicy>;
+  canEdit: boolean;
+};
+
+export type AgentPermissionPolicyResponse = {
+  policy: AgentPermissionPolicy;
+};
+
+export type AgentPermissionPolicyWrite = {
+  settings: AgentPermissionSettings;
+};
+
+export type InferenceStatus = {
+  enabled: boolean;
+  tier: "tier1" | "tier2";
+  memberCount: number;
+  proxyBaseUrl: string;
+  upstreamProviderConfigured: boolean;
+  subscribed?: boolean;
+  buckets: Array<{
+    windowType: "five_hour" | "weekly" | "monthly";
+    windowStartAt: string;
+    windowEndAt: string;
+    limitAmount: number;
+    usedAmount: number;
+  }>;
+};
+
+export type InferenceStatusResponse = {
+  inference: InferenceStatus;
+};
+
 export type InferenceAccessResponse = {
   access: {
     kind: "free" | "paid" | "exhausted" | "unavailable";
@@ -1378,29 +2390,57 @@ export type InferenceAccessResponse = {
   };
 };
 
-export type InferenceStatus = {
-  enabled: boolean;
-  tier: "tier1" | "tier2";
-  memberCount: number;
-  proxyBaseUrl: string;
-  upstreamProviderConfigured: boolean;
-  subscribed?: boolean;
-  buckets: Array<{
-    windowType: "five_hour" | "weekly" | "monthly";
-    windowStartAt: string;
-    windowEndAt: string;
-    limitAmount: number;
-    usedAmount: number;
-  }>;
-};
-
-export type InferenceStatusResponse = {
-  inference: InferenceStatus;
-};
-
 export type InferenceProviderMissingError = {
   error: "openrouter_management_api_key_missing";
   message: string;
+};
+
+export type LibraryUsageSourceCounts = {
+  agent?: number;
+  workflow?: number;
+  automation?: number;
+  app?: number;
+  artifact?: number;
+};
+
+export type LibraryUsageBreakdownRow = {
+  itemId: string | null;
+  memberId: string | null;
+  date: string | null;
+  uses: number;
+  people: number;
+  failures: number | null;
+  lastUsedAt: string | null;
+  sources: LibraryUsageSourceCounts;
+};
+
+export type LibraryUsageBreakdown = {
+  kind: "skills" | "plugins" | "connectors";
+  days: number;
+  from: string;
+  to: string;
+  timezone: "UTC";
+  groupBy: Array<"item" | "member" | "day">;
+  trackingSince: string | null;
+  rows: Array<LibraryUsageBreakdownRow>;
+};
+
+export type LibraryUsageRow = {
+  id: string;
+  name: string;
+  detail: string | null;
+  pluginId: string | null;
+  uses: number;
+  people: number;
+  failures: number | null;
+  lastUsedAt: string | null;
+};
+
+export type LibraryUsageReport = {
+  kind: "skills" | "plugins" | "connectors";
+  days: number;
+  trackingSince: string | null;
+  items: Array<LibraryUsageRow>;
 };
 
 export type OrganizationScimConnection = {
@@ -1610,37 +2650,26 @@ export type InvitationNotPendingError = {
   status: string;
 };
 
-export type CreateInstallLinkResponse = {
-  token: string;
+export type InvitationLinkResponse = {
   /**
-   * Share this page: it downloads the OpenWork desktop app for this organization.
+   * Den TypeID with 'inv_' prefix and a 26-character base32 suffix.
    */
-  installPageUrl: string;
-  /**
-   * Open on a computer that already has OpenWork installed to point the desktop app at this organization. Short-lived; mint a new link when it expires.
-   */
-  connectUrl: string;
-  connectExpiresAt: string;
+  invitationId: string;
+  inviteLink: string;
+  expiresAt: string;
 };
 
-export type CapabilityDisabledError = {
-  error: "capability_disabled";
-  capability:
-    | "installLinks"
-    | "mcpConnections"
-    | "dashboardActivity"
-    | "modelsAnalytics"
-    | "auditLogs"
-    | "orgManagedDashboards"
-    | "slackAssistant"
-    | "slackAssistantHeadless"
-    | "headlessAutomations"
-    | "workbot"
-    | "litellm"
-    | "platformAuditReads";
+export type CreateInstallLinkResponse = {
+  /**
+   * Share this page: people sign in and download the OpenWork desktop app for their organization.
+   */
+  installPageUrl: string;
 };
 
 export type CreateInstallLinkRequest = {
+  /**
+   * Ignored. Install pages carry no token, so there is nothing to rotate.
+   */
   rotate?: boolean;
 };
 
@@ -1656,67 +2685,15 @@ export type AuthenticatedInstallConfig = {
   distribution: "cloud" | "enterprise";
 };
 
-export type InstallExperienceConfig = {
-  appName?: string;
-  clientName: string;
-  webUrl: string;
-  apiUrl: string;
-  requireSignin: boolean;
-  logoUrl: string | null;
-  iconUrl?: string | null;
-  connectUrl: string;
-  connectExpiresAt: string;
-  activationUrl: string;
-  activationExpiresAt: string;
-  desktopVersion: string;
-  distribution: "cloud" | "enterprise";
-};
-
-export type InstallLinkNotFoundError = {
-  error: "install_link_not_found";
-};
-
-export type ConnectLinkClaims = {
-  iss: string;
-  aud: "openwork-desktop-connect";
-  iat: number;
-  exp: number;
-  jti: string;
-  v: 1;
-  org: {
-    name: string;
-  };
-  brand: {
-    appName: string;
-    logoUrl: string | null;
-    iconUrl: string | null;
-  };
-  den: {
-    baseUrl: string;
-    apiBaseUrl?: string | null;
-  };
-  requireSignin: boolean;
-};
-
-export type DesktopConnectGrantStatusResponse = {
-  status: "pending" | "connected";
-  claims: ConnectLinkClaims;
-  expiresAt: string;
-};
-
-export type DesktopConnectGrantFailure = {
-  error: "connect_grant_invalid" | "connect_grant_expired" | "connect_grant_replayed";
-};
-
-export type DesktopConnectGrantResponse = {
-  claims: ConnectLinkClaims;
-};
-
 export type LlmProviderResponse = {
   llmProvider: {
     memberCredential?: {
       state: "missing" | "active" | "blocked" | "stale" | "error";
     };
+    /**
+     * True when the caller can't edit the provider and isn't granted it: providerConfig has only id, name and npm, model configs only id, name and limit, env key lists are empty and hasApiKey is false.
+     */
+    configRedacted?: boolean;
     [key: string]: unknown;
   };
 };
@@ -1760,6 +2737,10 @@ export type LlmProviderCatalogResponse = {
 
 export type LlmProviderListResponse = {
   llmProviders: Array<{
+    /**
+     * True when the caller can't edit the provider and isn't granted it: providerConfig has only id, name and npm, model configs only id, name and limit, env key lists are empty and hasApiKey is false.
+     */
+    configRedacted?: boolean;
     [key: string]: unknown;
   }>;
 };
@@ -1876,6 +2857,10 @@ export type GatewayProviderDetails = {
     credentialSetId: string;
     credentialSetName: string;
   }>;
+  /**
+   * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+   */
+  modelAssignmentsComplete: boolean;
   authorizationRequests: Array<{
     /**
      * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -1931,6 +2916,9 @@ export type GatewayProviderDetails = {
     id: string;
     name: string;
     createdAt?: string;
+    /**
+     * Who created the set. Omitted unless the caller holds Manage Gateway providers.
+     */
     createdBy?: {
       /**
        * Den TypeID with 'om_' prefix and a 26-character base32 suffix.
@@ -1945,6 +2933,13 @@ export type GatewayProviderDetails = {
     credentialStatus: "ready" | "member_auth_required" | "org_credential_missing";
     oauthClientId?: string | null;
     hasOauthClientSecret?: boolean;
+    oauthTenantId?: string | null;
+    awsSso?: {
+      startUrl: string;
+      region: string;
+      accountId: string;
+      roleName: string;
+    } | null;
   }>;
   accessGrants: Array<{
     /**
@@ -1979,6 +2974,9 @@ export type GatewayProviderDetails = {
     id: string;
   }>;
   oauthCallbackUrl?: string;
+  /**
+   * Per-person credential rows. Only for callers who hold Manage Gateway providers.
+   */
   credentials?: Array<{
     /**
      * Den TypeID with 'ipc_' prefix and a 26-character base32 suffix.
@@ -1992,10 +2990,19 @@ export type GatewayProviderDetails = {
     orgMembershipId: string | null;
     memberName: string | null;
     memberEmail: string | null;
-    kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure";
+    kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure" | "aws_sso";
     status: "active" | "revoked" | "refresh_failed";
     expiresAt: string | null;
   }>;
+  /**
+   * Credential counts by status, returned instead of credentials to callers who may only view providers.
+   */
+  credentialCounts?: {
+    total: number;
+    active: number;
+    revoked: number;
+    refreshFailed: number;
+  };
 };
 
 export type GatewayProviderSummary = {
@@ -2043,6 +3050,10 @@ export type GatewayProviderSummary = {
     credentialSetId: string;
     credentialSetName: string;
   }>;
+  /**
+   * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+   */
+  modelAssignmentsComplete: boolean;
   authorizationRequests: Array<{
     /**
      * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -2079,6 +3090,345 @@ export type GatewayProviderSummary = {
   };
 };
 
+export type PermissionDefinition = {
+  key: string;
+  area: string;
+  label: string;
+  description: string | null;
+  /**
+   * Using this permission requires a recent sign-in.
+   */
+  sensitive: boolean;
+  /**
+   * Default sets in which this permission can never be turned off.
+   */
+  lockedOn: Array<"admin">;
+  /**
+   * Default sets this permission starts on in.
+   */
+  defaultOn: Array<"member" | "admin">;
+};
+
+export type PermissionCatalog = {
+  areas: Array<{
+    key: string;
+    label: string;
+  }>;
+  permissions: Array<PermissionDefinition>;
+};
+
+export type PermissionsNotFoundError = {
+  error:
+    | "organization_not_found"
+    | "feature_disabled"
+    | "permission_set_not_found"
+    | "team_not_found"
+    | "permission_not_found"
+    | "member_not_found";
+  feature?: string;
+  message?: string;
+};
+
+export type PermissionSetTeam = {
+  id: string;
+  /**
+   * Null when the team no longer exists.
+   */
+  name: string | null;
+};
+
+export type PermissionSetAppliesToSummary =
+  | {
+      kind: "everyone";
+      memberCount: number;
+    }
+  | {
+      kind: "admins";
+      directAdminCount: number;
+      adminTeams: Array<{
+        id: string;
+        name: string;
+        memberCount: number;
+      }>;
+    }
+  | {
+      kind: "team";
+      team: PermissionSetTeam | null;
+      teams: Array<PermissionSetTeam>;
+      /**
+       * People in any of the set's teams, each counted once.
+       */
+      memberCount: number;
+    };
+
+export type PermissionSetSummary = {
+  id: string;
+  name: string;
+  kind: "member_default" | "admin_default" | "team";
+  /**
+   * The first team the set applies to. Kept for older clients; see teams.
+   */
+  team: PermissionSetTeam | null;
+  /**
+   * Every team the set applies to now. More than one only with Shared roles.
+   */
+  teams: Array<PermissionSetTeam>;
+  allowedCount: number;
+  createdAt: string;
+  appliesTo: PermissionSetAppliesToSummary;
+};
+
+export type PermissionSetList = {
+  sets: Array<PermissionSetSummary>;
+};
+
+export type PermissionDeniedError = {
+  error: "forbidden";
+  message?: string;
+  requiredPermission?: string;
+  [key: string]: unknown;
+};
+
+export type PermissionChangedBy = {
+  memberId: string;
+  name: string | null;
+  /**
+   * Null unless the caller holds teams.view, or when the member has no email.
+   */
+  email: string | null;
+};
+
+export type PermissionSetKeyState = {
+  key: string;
+  status: "allow" | "deny";
+  /**
+   * Always on in this set; it can't be turned off.
+   */
+  locked: boolean;
+  lastChangedAt: string | null;
+  lastChangedBy: PermissionChangedBy | null;
+  lastChangeSource: "user" | "seed" | "reconcile" | "migration" | null;
+};
+
+export type PermissionPerson = {
+  memberId: string;
+  name: string;
+  email: string;
+};
+
+export type PermissionSetAppliesTo =
+  | {
+      kind: "everyone";
+      memberCount: number;
+    }
+  | {
+      kind: "admins";
+      directAdminCount: number;
+      /**
+       * Names and emails of members with the admin role. Null unless the caller holds teams.view; directAdminCount is always returned.
+       */
+      directAdmins: Array<PermissionPerson> | null;
+      adminTeams: Array<{
+        id: string;
+        name: string;
+        memberCount: number;
+      }>;
+    }
+  | {
+      kind: "team";
+      team: PermissionSetTeam | null;
+      teams: Array<PermissionSetTeam>;
+      /**
+       * People in any of the set's teams, each counted once.
+       */
+      memberCount: number;
+      /**
+       * Names and emails of the people in the set's teams. Null unless the caller holds teams.view; memberCount is always returned.
+       */
+      members: Array<PermissionPerson> | null;
+    };
+
+export type PermissionSetDetail = {
+  id: string;
+  name: string;
+  kind: "member_default" | "admin_default" | "team";
+  /**
+   * The first team the set applies to. Kept for older clients; see teams.
+   */
+  team: PermissionSetTeam | null;
+  /**
+   * Every team the set applies to now. More than one only with Shared roles.
+   */
+  teams: Array<PermissionSetTeam>;
+  allowedCount: number;
+  createdAt: string;
+  archivedAt: string | null;
+  permissions: Array<PermissionSetKeyState>;
+  appliesTo: PermissionSetAppliesTo;
+};
+
+export type PermissionSetResponse = {
+  set: PermissionSetDetail;
+};
+
+export type PermissionEditError = {
+  error:
+    | "unknown_permission"
+    | "duplicate_permission"
+    | "admin_permissions_require_admin"
+    | "permission_locked"
+    | "permission_not_held";
+  message: string;
+  keys: Array<string>;
+};
+
+export type PermissionSetConflictError = {
+  error: "permission_set_archived" | "team_permission_set_exists";
+  message: string;
+  permissionSetId?: string;
+};
+
+export type CreatePermissionSetBody = {
+  /**
+   * The one team this set applies to, named "<team name> Permissions". A team can have one active permission set. Required unless Shared roles is on and name is given.
+   */
+  teamId?: string;
+  /**
+   * Shared roles: the role's name. Required when teamId is left out.
+   */
+  name?: string;
+  /**
+   * Shared roles: teams that get this role now. Each team's current custom role is replaced. Left out or empty, the role starts with no team.
+   */
+  teamIds?: Array<string>;
+  /**
+   * Initial status per key. Keys left out, or set to deny, start denied.
+   */
+  permissions: Array<{
+    /**
+     * Permission key from GET /v1/permissions/catalog, e.g. llm_provider.delete.
+     */
+    key: string;
+    status: "allow" | "deny";
+  }>;
+};
+
+export type DefaultPermissionSetError = {
+  error: "default_permission_set";
+  message: string;
+};
+
+export type RenamePermissionSetBody = {
+  /**
+   * The role's new name.
+   */
+  name: string;
+};
+
+export type TeamPermissionSetResponse = {
+  set: PermissionSetDetail | null;
+};
+
+export type TeamPermissionSetBody = {
+  /**
+   * The custom role (team permission set) the team gets, replacing its current one. Null leaves the team with no custom role.
+   */
+  permissionSetId: string | null;
+};
+
+export type UpdatePermissionSetPermissionsBody = {
+  /**
+   * Requested status per key. Each key at most once. Keys already at the requested status are left unchanged.
+   */
+  changes: Array<{
+    /**
+     * Permission key from GET /v1/permissions/catalog, e.g. llm_provider.delete.
+     */
+    key: string;
+    status: "allow" | "deny";
+  }>;
+};
+
+export type PermissionHistoryItem = {
+  id: string;
+  key: string;
+  /**
+   * Null when the key is no longer in the catalog.
+   */
+  label: string | null;
+  status: "allow" | "deny";
+  source: "user" | "seed" | "reconcile" | "migration";
+  changedBy: PermissionChangedBy | null;
+  createdAt: string;
+};
+
+export type PermissionHistoryPage = {
+  items: Array<PermissionHistoryItem>;
+  /**
+   * Pass as cursor to fetch the next page; null on the last page.
+   */
+  nextCursor: string | null;
+};
+
+export type PermissionKeyStatus = {
+  permission: PermissionDefinition;
+  sets: Array<{
+    id: string;
+    name: string;
+    kind: "member_default" | "admin_default" | "team";
+    team: PermissionSetTeam | null;
+    teams: Array<PermissionSetTeam>;
+    status: "allow" | "deny";
+    locked: boolean;
+  }>;
+};
+
+export type PermissionSource =
+  | {
+      kind: "owner";
+      label: string;
+    }
+  | {
+      kind: "member_default";
+      setId: string;
+      setName: string;
+      label: string;
+    }
+  | {
+      kind: "admin_default";
+      setId: string;
+      setName: string;
+      via: "role" | "team";
+      teamId?: string;
+      teamName?: string;
+      label: string;
+    }
+  | {
+      kind: "team";
+      setId: string;
+      setName: string;
+      teamId: string;
+      teamName: string;
+      label: string;
+    }
+  | {
+      kind: "code_default";
+      set: "member" | "admin";
+      label: string;
+    };
+
+export type MemberPermissions = {
+  memberId: string;
+  featureEnabled: boolean;
+  isOwner: boolean;
+  isAdmin: boolean;
+  permissions: Array<{
+    key: string;
+    label: string;
+    sources: Array<PermissionSource>;
+  }>;
+};
+
 export type OAuthClientConfigResponse = {
   ok: true;
   providerId: string;
@@ -2100,6 +3450,20 @@ export type OAuthClientConfigDetailResponse = {
   scopes: Array<string>;
   redirectUri: string;
   tenantId: string | null;
+};
+
+export type OAuthProviderApiCheck = {
+  providerId: string;
+  checked: boolean;
+  apis: Array<{
+    id: string;
+    name: string;
+    service: string;
+    features: Array<string>;
+    status: "enabled" | "disabled" | "unknown";
+    enableUrl: string | null;
+    detail: string | null;
+  }>;
 };
 
 export type OAuthConnectStartResponse = {
@@ -2125,6 +3489,113 @@ export type OAuthProviderStatusResponse = {
 
 export type OkResponse = {
   ok: true;
+};
+
+export type GoogleDriveUploadSessionResponse = {
+  ok: true;
+  /**
+   * Secret bearer upload-session URL. Never print, share, persist, or log it. Only upload the authorized file; no Google access token is needed.
+   */
+  uploadUrl: string;
+  method: "PUT";
+  size: number;
+  chunkSize: 8388608;
+  /**
+   * Present when the upload replaces an existing file's content.
+   */
+  replaces?: {
+    fileId: string;
+    previousRevision: string | null;
+  };
+  instructions: string;
+};
+
+export type GoogleDriveDownloadInfo = {
+  ok: true;
+  file: {
+    id: string;
+    name: string;
+    mimeType: string;
+    /**
+     * Google Docs, Sheets, Slides or Drawings file, pulled as an export.
+     */
+    native: boolean;
+    /**
+     * Pass back as baseRevision when replacing this file, so newer Drive changes are never overwritten silently.
+     */
+    revision: string | null;
+    md5Checksum: string | null;
+    size: number | null;
+    modifiedTime: string | null;
+    webViewLink: string | null;
+    parents: Array<string>;
+  };
+  download: {
+    format: string | null;
+    mimeType: string;
+    /**
+     * Extension the saved file needs, for exports.
+     */
+    extension: string | null;
+    /**
+     * Exact bytes for stored files; unknown until downloaded for exports.
+     */
+    size: number | null;
+    exported: boolean;
+    maxBytes: number;
+  };
+};
+
+export type GoogleDriveDownloadLink = {
+  ok: true;
+  file: {
+    id: string;
+    name: string;
+    mimeType: string;
+    /**
+     * Google Docs, Sheets, Slides or Drawings file, pulled as an export.
+     */
+    native: boolean;
+    /**
+     * Pass back as baseRevision when replacing this file, so newer Drive changes are never overwritten silently.
+     */
+    revision: string | null;
+    md5Checksum: string | null;
+    size: number | null;
+    modifiedTime: string | null;
+    webViewLink: string | null;
+    parents: Array<string>;
+  };
+  download: {
+    format: string | null;
+    mimeType: string;
+    /**
+     * Extension the saved file needs, for exports.
+     */
+    extension: string | null;
+    /**
+     * Exact bytes for stored files; unknown until downloaded for exports.
+     */
+    size: number | null;
+    exported: boolean;
+    maxBytes: number;
+  };
+  /**
+   * Secret bearer URL for this one file, valid for five minutes. Do not print, share, log or persist it.
+   */
+  downloadUrl: string;
+  expiresAt: string;
+  /**
+   * The same download as an MCP resource link.
+   */
+  resourceLink: {
+    type: "resource_link";
+    uri: string;
+    name: string;
+    mimeType: string;
+    size?: number;
+  };
+  instructions: string;
 };
 
 export type GoogleWorkspaceDriveFileSummary = {
@@ -2673,6 +4144,15 @@ export type Microsoft365TeamsMessageBody = {
 };
 
 export type ExternalMcpRequirementsDiscovery = {
+  /**
+   * Settings-view-only unverified suggestions; never applied until an administrator saves manual sign-in settings.
+   */
+  publishedSignInAddresses?: Array<{
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    advertisedIssuer: string;
+    metadataIssuer: string;
+  }>;
   status: "ready" | "manual_action_required" | "unsupported" | "unreachable";
   server: {
     url: string;
@@ -2793,6 +4273,13 @@ export type ExternalMcpResolveInput = {
   query: string;
 };
 
+export type ExternalMcpConnectionReadiness = {
+  status: "ready" | "could_not_verify";
+  checkedAt: string;
+  lastSuccessfulAt: string | null;
+  reason: string | null;
+};
+
 export type ExternalMcpConnectionRequiredBy = {
   pluginId: string;
   name: string;
@@ -2805,6 +4292,7 @@ export type ExternalMcpConnectionAccessSummary = {
 };
 
 export type ExternalMcpConnectionResponse = {
+  readiness?: ExternalMcpConnectionReadiness | null;
   id: string;
   name: string;
   externalKey: string | null;
@@ -2816,6 +4304,7 @@ export type ExternalMcpConnectionResponse = {
   connected: boolean;
   connectedAt: string | null;
   createdByName?: string | null;
+  createdByYou?: boolean;
   createdAt?: string;
   updatedAt?: string;
   connectedForMe: boolean;
@@ -2843,6 +4332,17 @@ export type ExternalMcpConnectionResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -2872,6 +4372,11 @@ export type ExternalMcpConnectionToolPolicyInput = {
   disabledTools: Array<string>;
 };
 
+export type ExternalMcpConnectionNotReadyError = {
+  error: "connection_not_ready";
+  message: string;
+};
+
 export type ExternalMcpConnectionToolAnnotations = {
   title?: string;
   readOnlyHint?: boolean;
@@ -2896,11 +4401,6 @@ export type ExternalMcpConnectionTool = {
 export type ExternalMcpConnectionToolListResponse = {
   tools: Array<ExternalMcpConnectionTool>;
   policy: ExternalMcpConnectionToolPolicy;
-};
-
-export type ExternalMcpConnectionNotReadyError = {
-  error: "connection_not_ready";
-  message: string;
 };
 
 export type ExternalMcpDiagnostic = {
@@ -3071,6 +4571,7 @@ export type ExternalMcpConnectionToolRunInput = {
 };
 
 export type ExternalMcpConnectionCreatedResponse = {
+  readiness?: ExternalMcpConnectionReadiness | null;
   id: string;
   name: string;
   externalKey: string | null;
@@ -3082,6 +4583,7 @@ export type ExternalMcpConnectionCreatedResponse = {
   connected: boolean;
   connectedAt: string | null;
   createdByName?: string | null;
+  createdByYou?: boolean;
   createdAt?: string;
   updatedAt?: string;
   connectedForMe: boolean;
@@ -3109,6 +4611,17 @@ export type ExternalMcpConnectionCreatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -3144,6 +4657,7 @@ export type ExternalMcpConnectionAccessInput = {
 };
 
 export type ExternalMcpConnectionUpdatedResponse = {
+  readiness?: ExternalMcpConnectionReadiness | null;
   id: string;
   name: string;
   externalKey: string | null;
@@ -3155,6 +4669,7 @@ export type ExternalMcpConnectionUpdatedResponse = {
   connected: boolean;
   connectedAt: string | null;
   createdByName?: string | null;
+  createdByYou?: boolean;
   createdAt?: string;
   updatedAt: string;
   connectedForMe: boolean;
@@ -3182,6 +4697,17 @@ export type ExternalMcpConnectionUpdatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -3216,6 +4742,13 @@ export type ExternalMcpConnectionByKeyUpsertInput = {
     clientSecret?: string;
     tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
   };
+  /**
+   * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: Array<string>;
   access?: ExternalMcpConnectionAccessInput;
@@ -3242,6 +4775,7 @@ export type ExternalMcpOAuthConfigurationRequiredError = {
 export type ExternalMcpOAuthIssuerMismatchError = {
   error: "mcp_oauth_issuer_mismatch";
   message: string;
+  diagnostic?: ExternalMcpDiagnostic;
 };
 
 export type ExternalMcpConnectStartConflictError =
@@ -3593,6 +5127,25 @@ export type PluginArchPluginDetailResponse = {
   item: PluginArchPlugin;
 };
 
+export type PluginArchResolvedPluginsResponse = {
+  /**
+   * Each visible plugin's resolved contents, keyed by plugin id: the body GET /v1/plugins/:pluginId/resolved returns.
+   */
+  plugins: {
+    [key: string]: PluginArchPluginMembershipListResponse;
+  };
+  /**
+   * Requested plugins the caller cannot view (403) or that do not exist (404), keyed by plugin id, with the error GET /v1/plugins/:pluginId/resolved returns.
+   */
+  failures: {
+    [key: string]: {
+      status: 403 | 404;
+      error: string;
+      message: string;
+    };
+  };
+};
+
 export type PluginArchPluginMcpRequirementConfigureResponse = {
   ok: true;
   item: {
@@ -3625,6 +5178,37 @@ export type PluginArchPluginMcpRequirementConfigureResponse = {
       yourConnections: string;
     };
   };
+  credentialPrompt?: {
+    schemaVersion: "1";
+    kind: "credential_prompt";
+    target:
+      | {
+          type: "mcp_connection_key";
+          connectionId: string;
+        }
+      | {
+          type: "plugin_connection_key";
+          pluginId: string;
+          configObjectId: string;
+          serverName: string;
+          connectionId: string;
+        }
+      | {
+          type: "gateway_provider_key";
+          inferenceProviderId: string;
+          credentialSetId: string;
+        }
+      | {
+          type: "gateway_provider_credential";
+          inferenceProviderId: string;
+          credentialSetId: string;
+          credentialKind: "aws_keys" | "gcp_service_account" | "api_key_map";
+          envNames?: Array<string>;
+        };
+    name: string;
+    destination: string | null;
+  };
+  nextStep?: string;
 };
 
 export type GithubPluginMcpImportServer = {
@@ -4792,6 +6376,104 @@ export type WebOriginNotFoundError = {
 
 export type RemoveWebOriginNotFound = WebOriginNotFoundError | WebOriginOrganizationNotFoundError;
 
+export type WorkbotModelTest =
+  | {
+      status: "answered";
+      errorCode: null;
+      requestedModel: string;
+      reportedModel: string | null;
+    }
+  | {
+      status: "failed";
+      errorCode:
+        | "model_unavailable"
+        | "runner_unavailable"
+        | "credentials_unavailable"
+        | "authentication_failed"
+        | "payment_required"
+        | "provider_unavailable"
+        | "timed_out"
+        | "invalid_response"
+        | "busy";
+      requestedModel: string;
+      reportedModel: null;
+    };
+
+export type WorkbotSettings = {
+  model: string | null;
+  defaultModel: string | null;
+  models: Array<{
+    id: string;
+    name: string;
+    provider?: string;
+  }>;
+  modelAvailable: boolean;
+  runnerReachable: boolean;
+  gatewayModels?: boolean;
+  defaultReadiness?: "available" | "unavailable" | "unverified";
+};
+
+export type WorkbotUnknownModelError = {
+  error: "unknown_model";
+  message: string;
+};
+
+export type WorkbotRunnerUnavailableError = {
+  error: "workbot_runner_unavailable";
+  message: string;
+};
+
+export type WorkbotSettingsInput = {
+  model: string | null;
+};
+
+export type DefaultModelChoice = {
+  providerId: string;
+  modelId: string;
+};
+
+export type DefaultModelTeam = {
+  teamId: string;
+  name: string;
+  memberCount: number;
+  model: DefaultModelChoice | null;
+  conflictingMemberCount: number;
+};
+
+export type DefaultModelSettings = {
+  everyone: DefaultModelChoice | null;
+  teams: Array<DefaultModelTeam>;
+  canEdit: boolean;
+};
+
+export type DefaultModelOption = {
+  providerId: string;
+  modelId: string;
+  providerName: string;
+  modelName: string;
+  logoProviderId: string;
+  source: "openwork" | "gateway" | "provider";
+};
+
+export type DefaultModelOptions = {
+  options: Array<DefaultModelOption>;
+  unavailableSources: Array<"openwork" | "gateway" | "provider">;
+};
+
+export type DefaultModelUnknownModelError = {
+  error: "unknown_model";
+  message: string;
+};
+
+export type DefaultModelSourceUnavailableError = {
+  error: "model_source_unavailable";
+  message: string;
+};
+
+export type DefaultModelWrite = {
+  model: DefaultModelChoice | null;
+};
+
 export type WorkbotSession = {
   user: {
     id: string;
@@ -4805,12 +6487,33 @@ export type WorkbotSession = {
   };
   memberId: string;
   enabled: boolean;
+  firstRun?: boolean;
+  canEnableWorkbot?: boolean;
   canSchedule: boolean;
+  calendar?: boolean;
+  documents?: boolean;
+  workspaceAssistant?: boolean;
+  guidedNavigation?: boolean;
+  teamLinks?: {
+    enabled: boolean;
+    settings: boolean;
+    apps: boolean;
+  };
+  sideChats: boolean;
+  model?: string | null;
+  verifyModel?: boolean;
+  gatewayModels?: boolean;
 };
 
 export type WorkbotRunToken = {
   token: string;
   expiresAt: string;
+  resumeGrant?: string;
+  modelAccess?: {
+    baseUrl: string;
+    apiKey: string;
+    protocol: "anthropic" | "openai" | "openai-responses";
+  };
 };
 
 export type DenAppVersionResponse = {
@@ -4854,6 +6557,9 @@ export type WorkerHeartbeatResponse = {
   openSessionCount: number | null;
   lastHeartbeatAt: string;
   lastActiveAt: string | null;
+  enginePolicy: {
+    upgrade: boolean;
+  };
 };
 
 export type WorkerInstance = {
@@ -4920,6 +6626,56 @@ export type OAuthProtectedResourceMetadata = {
   authorization_servers: Array<string>;
   scopes_supported: Array<string>;
   bearer_methods_supported: Array<string>;
+};
+
+export type TelemetryDimensionListResponse = {
+  items: Array<{
+    type: string;
+    value: string;
+    label: string;
+    sessionCount: number;
+    lastSeenAt: string;
+  }>;
+};
+
+export type TelemetryAdoptionResponse = {
+  members: number;
+  pendingInvites: number;
+  activeMembers7d: number;
+  activeMembers30d: number;
+  weeklyTrend: Array<number>;
+};
+
+export type TelemetryAnalyticsResponse = {
+  members: number;
+  pendingInvites: number;
+  activeMembers7d: number;
+  activeMembers30d: number;
+  sessions7d: number;
+  sessions30d: number;
+  tasksCompleted7d: number;
+  tasksFailed7d: number;
+  tasksCompleted30d: number;
+  tasksFailed30d: number;
+  avgTaskDurationMs30d: number | null;
+  weekly: Array<{
+    weekStart: string;
+    activeMembers: number;
+    sessions: number;
+    tasksCompleted: number;
+    tasksFailed: number;
+  }>;
+  models: {
+    usage30d: Array<{
+      id: string;
+      label: string;
+      sessions: number;
+    }>;
+    selection30d: {
+      default: number;
+      manual: number;
+    };
+  };
 };
 
 export type GetHealthData = {
@@ -4997,6 +6753,210 @@ export type GetV1AdminFreeAutoUsageResponses = {
 };
 
 export type GetV1AdminFreeAutoUsageResponse = GetV1AdminFreeAutoUsageResponses[keyof GetV1AdminFreeAutoUsageResponses];
+
+export type GetV1AdminFreeAutoConversionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    days?: number;
+    page?: number;
+    search?: string;
+    stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+  };
+  url: "/v1/admin/free-auto/conversions";
+};
+
+export type GetV1AdminFreeAutoConversionsErrors = {
+  /**
+   * Invalid query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminFreeAutoConversionsError =
+  GetV1AdminFreeAutoConversionsErrors[keyof GetV1AdminFreeAutoConversionsErrors];
+
+export type GetV1AdminFreeAutoConversionsResponses = {
+  /**
+   * Free Auto conversions returned.
+   */
+  200: AdminFreeAutoConversions;
+};
+
+export type GetV1AdminFreeAutoConversionsResponse =
+  GetV1AdminFreeAutoConversionsResponses[keyof GetV1AdminFreeAutoConversionsResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdError =
+  GetV1AdminOrganizationsByOrganizationIdErrors[keyof GetV1AdminOrganizationsByOrganizationIdErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationDetail;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdResponse =
+  GetV1AdminOrganizationsByOrganizationIdResponses[keyof GetV1AdminOrganizationsByOrganizationIdResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/usage";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageError =
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors[keyof GetV1AdminOrganizationsByOrganizationIdUsageErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationUsage;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponse =
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses[keyof GetV1AdminOrganizationsByOrganizationIdUsageResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/insights";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsError =
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors[keyof GetV1AdminOrganizationsByOrganizationIdInsightsErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationInsights;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponse =
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses[keyof GetV1AdminOrganizationsByOrganizationIdInsightsResponses];
+
+export type GetV1AdminDashboardData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/admin/dashboard";
+};
+
+export type GetV1AdminDashboardErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminDashboardError = GetV1AdminDashboardErrors[keyof GetV1AdminDashboardErrors];
+
+export type GetV1AdminDashboardResponses = {
+  /**
+   * Platform dashboard returned.
+   */
+  200: AdminDashboard;
+};
+
+export type GetV1AdminDashboardResponse = GetV1AdminDashboardResponses[keyof GetV1AdminDashboardResponses];
 
 export type PostV1AdminAdminsData = {
   body?: never;
@@ -5505,18 +7465,26 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
-      installLinks: boolean;
-      mcpConnections: boolean;
-      dashboardActivity: boolean;
-      modelsAnalytics: boolean;
-      auditLogs: boolean;
-      orgManagedDashboards: boolean;
+      cloudAgentGateway: boolean;
+      liveProviderSync: boolean;
+      offlineRecovery: boolean;
+      secureSecretFields: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
+      managedDeployments: boolean;
       slackAssistant: boolean;
-      slackAssistantHeadless: boolean;
-      headlessAutomations: boolean;
-      workbot: boolean;
-      litellm: boolean;
-      platformAuditReads: boolean;
+      workbotTeamLinks: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
+      workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
+      workbotGuidedNavigation: boolean;
+      automationCalendar: boolean;
+      engineV2ForceUpgrade: boolean;
+      engineV2Upgrade: boolean;
+      remoteSessionEvents: boolean;
+      remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -5528,7 +7496,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      installLinks: {
+      cloudAgentGateway: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5537,7 +7505,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      mcpConnections: {
+      liveProviderSync: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5546,7 +7514,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      dashboardActivity: {
+      offlineRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5555,7 +7523,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      modelsAnalytics: {
+      secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5564,7 +7532,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      auditLogs: {
+      modelsAnalyticsUi: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5573,7 +7541,16 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      orgManagedDashboards: {
+      taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5591,7 +7568,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      slackAssistantHeadless: {
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5600,7 +7577,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
+      workbotFirstRun: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5609,7 +7586,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbot: {
+      workbotInlineConnect: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5618,7 +7595,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      litellm: {
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5627,7 +7604,70 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      platformAuditReads: {
+      workbotWorkspaceAssistant: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotGuidedNavigation: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      automationCalendar: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2ForceUpgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2Upgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5687,18 +7727,26 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
-      installLinks: boolean;
-      mcpConnections: boolean;
-      dashboardActivity: boolean;
-      modelsAnalytics: boolean;
-      auditLogs: boolean;
-      orgManagedDashboards: boolean;
+      cloudAgentGateway: boolean;
+      liveProviderSync: boolean;
+      offlineRecovery: boolean;
+      secureSecretFields: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
+      managedDeployments: boolean;
       slackAssistant: boolean;
-      slackAssistantHeadless: boolean;
-      headlessAutomations: boolean;
-      workbot: boolean;
-      litellm: boolean;
-      platformAuditReads: boolean;
+      workbotTeamLinks: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
+      workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
+      workbotGuidedNavigation: boolean;
+      automationCalendar: boolean;
+      engineV2ForceUpgrade: boolean;
+      engineV2Upgrade: boolean;
+      remoteSessionEvents: boolean;
+      remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -5710,7 +7758,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      installLinks: {
+      cloudAgentGateway: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5719,7 +7767,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      mcpConnections: {
+      liveProviderSync: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5728,7 +7776,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      dashboardActivity: {
+      offlineRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5737,7 +7785,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      modelsAnalytics: {
+      secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5746,7 +7794,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      auditLogs: {
+      modelsAnalyticsUi: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5755,7 +7803,16 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      orgManagedDashboards: {
+      taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5773,7 +7830,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      slackAssistantHeadless: {
+      workbotTeamLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5782,7 +7839,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
+      workbotFirstRun: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5791,7 +7848,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbot: {
+      workbotInlineConnect: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5800,7 +7857,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      litellm: {
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5809,7 +7866,70 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      platformAuditReads: {
+      workbotWorkspaceAssistant: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotGuidedNavigation: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      automationCalendar: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2ForceUpgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2Upgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5944,6 +8064,10 @@ export type GetV1AdminOrganizationsData = {
     limit?: string;
     offset?: string;
     search?: string;
+    /**
+     * Set to 0 to omit capabilities and featureStates. Fetch one organization's features when its editor is opened. Defaults to 1 for existing clients.
+     */
+    includeFeatures?: "0" | "1";
   };
   url: "/v1/admin/organizations";
 };
@@ -7440,7 +9564,13 @@ export type MintAutomationRunnerTokenData = {
     runnerId: string;
     protocolVersion: 1;
     supportedExecutionTargets: ["desktop"];
-    capabilities?: Array<"model_attention_v1" | "remote_session_v1" | "remote_session_control_v1">;
+    capabilities?: Array<
+      | "model_attention_v1"
+      | "remote_session_v1"
+      | "remote_session_control_v1"
+      | "remote_session_only_v1"
+      | "remote_session_recovery_v1"
+    >;
     appVersion: string;
     platform: "darwin" | "win32" | "linux";
     concurrency: number;
@@ -8019,6 +10149,53 @@ export type ListAutomationRunsResponses = {
 
 export type ListAutomationRunsResponse = ListAutomationRunsResponses[keyof ListAutomationRunsResponses];
 
+export type ListAutomationRunsInRangeData = {
+  body?: never;
+  path?: never;
+  query: {
+    /**
+     * Inclusive lower bound, epoch milliseconds.
+     */
+    from: number;
+    /**
+     * Exclusive upper bound, epoch milliseconds.
+     */
+    to: number;
+    /**
+     * nextCursor from the previous page.
+     */
+    cursor?: string;
+    /**
+     * Maximum runs to scan for this page (default 200).
+     */
+    limit?: number;
+  };
+  url: "/v1/automation-runs";
+};
+
+export type ListAutomationRunsInRangeErrors = {
+  /**
+   * Invalid request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+};
+
+export type ListAutomationRunsInRangeError = ListAutomationRunsInRangeErrors[keyof ListAutomationRunsInRangeErrors];
+
+export type ListAutomationRunsInRangeResponses = {
+  /**
+   * Runs in the range returned.
+   */
+  200: AutomationRunRange;
+};
+
+export type ListAutomationRunsInRangeResponse =
+  ListAutomationRunsInRangeResponses[keyof ListAutomationRunsInRangeResponses];
+
 export type GetAutomationRunData = {
   body?: never;
   path: {
@@ -8073,6 +10250,217 @@ export type CancelAutomationRunResponses = {
 
 export type CancelAutomationRunResponse = CancelAutomationRunResponses[keyof CancelAutomationRunResponses];
 
+export type PostV1RemoteSessionsStatusData = {
+  body: RemoteSessionStatusRequest;
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/status";
+};
+
+export type PostV1RemoteSessionsStatusErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsStatusError = PostV1RemoteSessionsStatusErrors[keyof PostV1RemoteSessionsStatusErrors];
+
+export type PostV1RemoteSessionsStatusResponses = {
+  /**
+   * The status of each session.
+   */
+  200: RemoteSessionStatusResult;
+};
+
+export type PostV1RemoteSessionsStatusResponse =
+  PostV1RemoteSessionsStatusResponses[keyof PostV1RemoteSessionsStatusResponses];
+
+export type PostV1RemoteSessionsReadData = {
+  body: {
+    messageId?: string;
+    sessionId?: string;
+    commandId?: string;
+    requestId?: string;
+    workspaceId?: string;
+    from?: "start" | "end";
+    cursor?: string;
+    limit?: number;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/read";
+};
+
+export type PostV1RemoteSessionsReadErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsReadError = PostV1RemoteSessionsReadErrors[keyof PostV1RemoteSessionsReadErrors];
+
+export type PostV1RemoteSessionsReadResponses = {
+  /**
+   * The transcript page or receipt.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsReadResponse =
+  PostV1RemoteSessionsReadResponses[keyof PostV1RemoteSessionsReadResponses];
+
+export type PostV1RemoteSessionsSendData = {
+  body: {
+    messageId?: string;
+    sessionId: string;
+    workspaceId?: string;
+    prompt: string;
+    model?: {
+      providerId: string;
+      modelId: string;
+      variant?: string;
+    };
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/send";
+};
+
+export type PostV1RemoteSessionsSendErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsSendError = PostV1RemoteSessionsSendErrors[keyof PostV1RemoteSessionsSendErrors];
+
+export type PostV1RemoteSessionsSendResponses = {
+  /**
+   * The follow-up was accepted or is pending.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsSendResponse =
+  PostV1RemoteSessionsSendResponses[keyof PostV1RemoteSessionsSendResponses];
+
+export type PostV1RemoteSessionsStopData = {
+  body: {
+    sessionId: string;
+    workspaceId?: string;
+    messageId?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/stop";
+};
+
+export type PostV1RemoteSessionsStopErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsStopError = PostV1RemoteSessionsStopErrors[keyof PostV1RemoteSessionsStopErrors];
+
+export type PostV1RemoteSessionsStopResponses = {
+  /**
+   * Whether the session stopped, or a pending requestId.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsStopResponse =
+  PostV1RemoteSessionsStopResponses[keyof PostV1RemoteSessionsStopResponses];
+
 export type DeleteV1OrgData = {
   body?: never;
   path?: never;
@@ -8109,9 +10497,7 @@ export type DeleteV1OrgResponse = DeleteV1OrgResponses[keyof DeleteV1OrgResponse
 export type GetV1OrgData = {
   body?: never;
   path?: never;
-  query?: {
-    refreshRoles?: "true" | "false";
-  };
+  query?: never;
   url: "/v1/org";
 };
 
@@ -8269,6 +10655,1306 @@ export type PostV1OrgsInvitationsAcceptResponses = {
 export type PostV1OrgsInvitationsAcceptResponse =
   PostV1OrgsInvitationsAcceptResponses[keyof PostV1OrgsInvitationsAcceptResponses];
 
+export type GetV1OrgActivityData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/activity";
+};
+
+export type GetV1OrgActivityErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Only workspace owners and admins can read dashboard activity.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1OrgActivityError = GetV1OrgActivityErrors[keyof GetV1OrgActivityErrors];
+
+export type GetV1OrgActivityResponses = {
+  /**
+   * The newest dashboard activity.
+   */
+  200: DashboardActivity;
+};
+
+export type GetV1OrgActivityResponse = GetV1OrgActivityResponses[keyof GetV1OrgActivityResponses];
+
+export type GetV1OrgInventoryRevisionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/inventory-revision";
+};
+
+export type GetV1OrgInventoryRevisionErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+};
+
+export type GetV1OrgInventoryRevisionError = GetV1OrgInventoryRevisionErrors[keyof GetV1OrgInventoryRevisionErrors];
+
+export type GetV1OrgInventoryRevisionResponses = {
+  /**
+   * The current inventory revision.
+   */
+  200: InventoryRevision;
+};
+
+export type GetV1OrgInventoryRevisionResponse =
+  GetV1OrgInventoryRevisionResponses[keyof GetV1OrgInventoryRevisionResponses];
+
+export type GetV1ManagedDeploymentsConfigurationData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/managed-deployments/configuration";
+};
+
+export type GetV1ManagedDeploymentsConfigurationErrors = {
+  /**
+   * Invalid input.
+   */
+  400: {
+    error: string;
+  };
+  /**
+   * Authentication required.
+   */
+  401: {
+    error: string;
+  };
+  /**
+   * Owner or super-admin approval required.
+   */
+  403: {
+    error: string;
+  };
+  /**
+   * Deployment or feature unavailable.
+   */
+  404: {
+    error: string;
+  };
+  /**
+   * The deployment cannot accept this operation now.
+   */
+  409: {
+    error: string;
+  };
+  /**
+   * Too many attempts.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * No installer release is configured.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type GetV1ManagedDeploymentsConfigurationError =
+  GetV1ManagedDeploymentsConfigurationErrors[keyof GetV1ManagedDeploymentsConfigurationErrors];
+
+export type GetV1ManagedDeploymentsConfigurationResponses = {
+  /**
+   * Read which clouds can be launched
+   */
+  200: {
+    providers: Array<{
+      provider: "aws" | "azure" | "gcp";
+      available: boolean;
+      version: string | null;
+      reason?: "ready" | "not_configured" | "invalid_configuration" | "not_supported" | "feature_disabled";
+      missingFields?: Array<string>;
+    }>;
+    updateMode: "approval";
+  };
+};
+
+export type GetV1ManagedDeploymentsConfigurationResponse =
+  GetV1ManagedDeploymentsConfigurationResponses[keyof GetV1ManagedDeploymentsConfigurationResponses];
+
+export type GetV1ManagedDeploymentsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/managed-deployments";
+};
+
+export type GetV1ManagedDeploymentsErrors = {
+  /**
+   * Invalid input.
+   */
+  400: {
+    error: string;
+  };
+  /**
+   * Authentication required.
+   */
+  401: {
+    error: string;
+  };
+  /**
+   * Owner or super-admin approval required.
+   */
+  403: {
+    error: string;
+  };
+  /**
+   * Deployment or feature unavailable.
+   */
+  404: {
+    error: string;
+  };
+  /**
+   * The deployment cannot accept this operation now.
+   */
+  409: {
+    error: string;
+  };
+  /**
+   * Too many attempts.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * No installer release is configured.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type GetV1ManagedDeploymentsError = GetV1ManagedDeploymentsErrors[keyof GetV1ManagedDeploymentsErrors];
+
+export type GetV1ManagedDeploymentsResponses = {
+  /**
+   * List the organization's managed deployments
+   */
+  200: {
+    deployments: Array<
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "aws";
+          target: {
+            accountId: string;
+            region:
+              | "us-east-1"
+              | "us-east-2"
+              | "us-west-2"
+              | "eu-west-1"
+              | "eu-central-1"
+              | "ap-southeast-1"
+              | "ap-southeast-2";
+            route53ZoneId: string;
+            network?:
+              | {
+                  mode: "dedicated";
+                }
+              | {
+                  mode: "existing";
+                  vpcId: string;
+                  serviceSubnetIds: Array<string>;
+                  loadBalancerSubnetIds: Array<string>;
+                  ecsClusterArn?: string;
+                };
+          };
+        }
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "gcp";
+          target: {
+            projectId: string;
+            projectNumber: string;
+            region:
+              | "us-central1"
+              | "us-east1"
+              | "us-east4"
+              | "us-west1"
+              | "us-west2"
+              | "europe-west1"
+              | "europe-west2"
+              | "europe-west3"
+              | "asia-southeast1"
+              | "australia-southeast1";
+            dnsZoneName: string;
+          };
+        }
+    >;
+  };
+};
+
+export type GetV1ManagedDeploymentsResponse = GetV1ManagedDeploymentsResponses[keyof GetV1ManagedDeploymentsResponses];
+
+export type PostV1ManagedDeploymentsData = {
+  body:
+    | {
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size?: "small";
+        provider: "aws";
+        target: {
+          accountId: string;
+          region:
+            | "us-east-1"
+            | "us-east-2"
+            | "us-west-2"
+            | "eu-west-1"
+            | "eu-central-1"
+            | "ap-southeast-1"
+            | "ap-southeast-2";
+          route53ZoneId: string;
+          network?:
+            | {
+                mode: "dedicated";
+              }
+            | {
+                mode: "existing";
+                vpcId: string;
+                serviceSubnetIds: Array<string>;
+                loadBalancerSubnetIds: Array<string>;
+                ecsClusterArn?: string;
+              };
+        };
+      }
+    | {
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size?: "small";
+        provider: "gcp";
+        target: {
+          projectId: string;
+          projectNumber: string;
+          region:
+            | "us-central1"
+            | "us-east1"
+            | "us-east4"
+            | "us-west1"
+            | "us-west2"
+            | "europe-west1"
+            | "europe-west2"
+            | "europe-west3"
+            | "asia-southeast1"
+            | "australia-southeast1";
+          dnsZoneName: string;
+        };
+      };
+  path?: never;
+  query?: never;
+  url: "/v1/managed-deployments";
+};
+
+export type PostV1ManagedDeploymentsErrors = {
+  /**
+   * Invalid input.
+   */
+  400: {
+    error: string;
+  };
+  /**
+   * Authentication required.
+   */
+  401: {
+    error: string;
+  };
+  /**
+   * Owner or super-admin approval required.
+   */
+  403: {
+    error: string;
+  };
+  /**
+   * Deployment or feature unavailable.
+   */
+  404: {
+    error: string;
+  };
+  /**
+   * The deployment cannot accept this operation now.
+   */
+  409: {
+    error: string;
+  };
+  /**
+   * Too many attempts.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * No installer release is configured.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type PostV1ManagedDeploymentsError = PostV1ManagedDeploymentsErrors[keyof PostV1ManagedDeploymentsErrors];
+
+export type PostV1ManagedDeploymentsResponses = {
+  /**
+   * Create a managed deployment
+   */
+  200:
+    | {
+        id: string;
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size: "small";
+        updateMode: "approval";
+        createdAt: string;
+        webUrl: string;
+        consoleUrl: string;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        updateAvailable: boolean;
+        health: {
+          state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+          reportedAt: string | null;
+          version: string | null;
+          checks: Array<{
+            id:
+              | "api_health"
+              | "database_ready"
+              | "web_available"
+              | "services_running"
+              | "load_balancer_targets"
+              | "database_instance"
+              | "database_storage"
+              | "database_backups"
+              | "certificate";
+            status: "ok" | "warning" | "failing" | "unknown";
+            value?: number;
+            total?: number;
+            code?:
+              | "http_error"
+              | "unreachable"
+              | "slow"
+              | "not_running"
+              | "unhealthy"
+              | "unavailable"
+              | "permission_denied"
+              | "low_storage"
+              | "stale_backup"
+              | "backups_disabled"
+              | "not_issued"
+              | "expiring"
+              | "expired";
+          }>;
+        };
+        run: {
+          id: string;
+          kind: "install" | "update" | "retry";
+          version: string;
+          state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+          createdAt: string;
+          lastSeenAt: string | null;
+          expiresAt: string;
+          expired: boolean;
+          events: Array<{
+            sequence: number;
+            step:
+              | "runner_connected"
+              | "release_verified"
+              | "account_verified"
+              | "infrastructure_applied"
+              | "services_ready"
+              | "health_verified";
+            outcome: "succeeded" | "failed";
+            errorCode?:
+              | "release_verification_failed"
+              | "network_check_failed"
+              | "infrastructure_failed"
+              | "certificate_failed"
+              | "service_unhealthy"
+              | "health_check_failed"
+              | "runner_failed";
+            receivedAt: string;
+          }>;
+        } | null;
+        provider: "aws";
+        target: {
+          accountId: string;
+          region:
+            | "us-east-1"
+            | "us-east-2"
+            | "us-west-2"
+            | "eu-west-1"
+            | "eu-central-1"
+            | "ap-southeast-1"
+            | "ap-southeast-2";
+          route53ZoneId: string;
+          network?:
+            | {
+                mode: "dedicated";
+              }
+            | {
+                mode: "existing";
+                vpcId: string;
+                serviceSubnetIds: Array<string>;
+                loadBalancerSubnetIds: Array<string>;
+                ecsClusterArn?: string;
+              };
+        };
+      }
+    | {
+        id: string;
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size: "small";
+        updateMode: "approval";
+        createdAt: string;
+        webUrl: string;
+        consoleUrl: string;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        updateAvailable: boolean;
+        health: {
+          state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+          reportedAt: string | null;
+          version: string | null;
+          checks: Array<{
+            id:
+              | "api_health"
+              | "database_ready"
+              | "web_available"
+              | "services_running"
+              | "load_balancer_targets"
+              | "database_instance"
+              | "database_storage"
+              | "database_backups"
+              | "certificate";
+            status: "ok" | "warning" | "failing" | "unknown";
+            value?: number;
+            total?: number;
+            code?:
+              | "http_error"
+              | "unreachable"
+              | "slow"
+              | "not_running"
+              | "unhealthy"
+              | "unavailable"
+              | "permission_denied"
+              | "low_storage"
+              | "stale_backup"
+              | "backups_disabled"
+              | "not_issued"
+              | "expiring"
+              | "expired";
+          }>;
+        };
+        run: {
+          id: string;
+          kind: "install" | "update" | "retry";
+          version: string;
+          state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+          createdAt: string;
+          lastSeenAt: string | null;
+          expiresAt: string;
+          expired: boolean;
+          events: Array<{
+            sequence: number;
+            step:
+              | "runner_connected"
+              | "release_verified"
+              | "account_verified"
+              | "infrastructure_applied"
+              | "services_ready"
+              | "health_verified";
+            outcome: "succeeded" | "failed";
+            errorCode?:
+              | "release_verification_failed"
+              | "network_check_failed"
+              | "infrastructure_failed"
+              | "certificate_failed"
+              | "service_unhealthy"
+              | "health_check_failed"
+              | "runner_failed";
+            receivedAt: string;
+          }>;
+        } | null;
+        provider: "gcp";
+        target: {
+          projectId: string;
+          projectNumber: string;
+          region:
+            | "us-central1"
+            | "us-east1"
+            | "us-east4"
+            | "us-west1"
+            | "us-west2"
+            | "europe-west1"
+            | "europe-west2"
+            | "europe-west3"
+            | "asia-southeast1"
+            | "australia-southeast1";
+          dnsZoneName: string;
+        };
+      };
+};
+
+export type PostV1ManagedDeploymentsResponse =
+  PostV1ManagedDeploymentsResponses[keyof PostV1ManagedDeploymentsResponses];
+
+export type DeleteV1ManagedDeploymentsByDeploymentIdData = {
+  body?: never;
+  path: {
+    deploymentId: string;
+  };
+  query?: never;
+  url: "/v1/managed-deployments/{deploymentId}";
+};
+
+export type DeleteV1ManagedDeploymentsByDeploymentIdErrors = {
+  /**
+   * Invalid input.
+   */
+  400: {
+    error: string;
+  };
+  /**
+   * Authentication required.
+   */
+  401: {
+    error: string;
+  };
+  /**
+   * Owner or super-admin approval required.
+   */
+  403: {
+    error: string;
+  };
+  /**
+   * Deployment or feature unavailable.
+   */
+  404: {
+    error: string;
+  };
+  /**
+   * The deployment cannot accept this operation now.
+   */
+  409: {
+    error: string;
+  };
+  /**
+   * Too many attempts.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * No installer release is configured.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type DeleteV1ManagedDeploymentsByDeploymentIdError =
+  DeleteV1ManagedDeploymentsByDeploymentIdErrors[keyof DeleteV1ManagedDeploymentsByDeploymentIdErrors];
+
+export type DeleteV1ManagedDeploymentsByDeploymentIdResponses = {
+  /**
+   * Remove a deployment that was never installed
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type DeleteV1ManagedDeploymentsByDeploymentIdResponse =
+  DeleteV1ManagedDeploymentsByDeploymentIdResponses[keyof DeleteV1ManagedDeploymentsByDeploymentIdResponses];
+
+export type PostV1ManagedDeploymentsByDeploymentIdLaunchData = {
+  body: {
+    kind?: "install" | "update" | "retry";
+  };
+  path: {
+    deploymentId: string;
+  };
+  query?: never;
+  url: "/v1/managed-deployments/{deploymentId}/launch";
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdLaunchErrors = {
+  /**
+   * Invalid input.
+   */
+  400: {
+    error: string;
+  };
+  /**
+   * Authentication required.
+   */
+  401: {
+    error: string;
+  };
+  /**
+   * Owner or super-admin approval required.
+   */
+  403: {
+    error: string;
+  };
+  /**
+   * Deployment or feature unavailable.
+   */
+  404: {
+    error: string;
+  };
+  /**
+   * The deployment cannot accept this operation now.
+   */
+  409: {
+    error: string;
+  };
+  /**
+   * Too many attempts.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * No installer release is configured.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdLaunchError =
+  PostV1ManagedDeploymentsByDeploymentIdLaunchErrors[keyof PostV1ManagedDeploymentsByDeploymentIdLaunchErrors];
+
+export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponses = {
+  /**
+   * Prepare an install, retry or approved update
+   */
+  200: {
+    deployment:
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "aws";
+          target: {
+            accountId: string;
+            region:
+              | "us-east-1"
+              | "us-east-2"
+              | "us-west-2"
+              | "eu-west-1"
+              | "eu-central-1"
+              | "ap-southeast-1"
+              | "ap-southeast-2";
+            route53ZoneId: string;
+            network?:
+              | {
+                  mode: "dedicated";
+                }
+              | {
+                  mode: "existing";
+                  vpcId: string;
+                  serviceSubnetIds: Array<string>;
+                  loadBalancerSubnetIds: Array<string>;
+                  ecsClusterArn?: string;
+                };
+          };
+        }
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "gcp";
+          target: {
+            projectId: string;
+            projectNumber: string;
+            region:
+              | "us-central1"
+              | "us-east1"
+              | "us-east4"
+              | "us-west1"
+              | "us-west2"
+              | "europe-west1"
+              | "europe-west2"
+              | "europe-west3"
+              | "asia-southeast1"
+              | "australia-southeast1";
+            dnsZoneName: string;
+          };
+        };
+    kind: "install" | "update" | "retry";
+    approvalUrl: string | null;
+    command: string | null;
+    handoff?:
+      | {
+          action: "open_link";
+          url: string;
+          command: null;
+          instructions: string;
+        }
+      | {
+          action: "run_in_cloud_shell";
+          url: string;
+          command: string;
+          instructions: string;
+        };
+    expiresAt: string;
+  };
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponse =
+  PostV1ManagedDeploymentsByDeploymentIdLaunchResponses[keyof PostV1ManagedDeploymentsByDeploymentIdLaunchResponses];
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollData = {
+  body:
+    | {
+        headers: {
+          authorization: string;
+          "x-amz-date": string;
+          "x-amz-security-token": string;
+          "x-openwork-proof": string;
+        };
+      }
+    | {
+        provider: "gcp";
+        idToken: string;
+      };
+  path: {
+    deploymentId: string;
+    runId: string;
+  };
+  query?: never;
+  url: "/v1/managed-deployments/{deploymentId}/runs/{runId}/enroll";
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollErrors = {
+  /**
+   * Invalid input.
+   */
+  400: {
+    error: string;
+  };
+  /**
+   * Authentication required.
+   */
+  401: {
+    error: string;
+  };
+  /**
+   * Owner or super-admin approval required.
+   */
+  403: {
+    error: string;
+  };
+  /**
+   * Deployment or feature unavailable.
+   */
+  404: {
+    error: string;
+  };
+  /**
+   * The deployment cannot accept this operation now.
+   */
+  409: {
+    error: string;
+  };
+  /**
+   * Too many attempts.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * No installer release is configured.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollError =
+  PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollErrors[keyof PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollErrors];
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollResponses = {
+  /**
+   * Enroll a customer-side installer run
+   */
+  200: {
+    token: string;
+    expiresAt: string;
+  };
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollResponse =
+  PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollResponses[keyof PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollResponses];
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsData = {
+  body: {
+    sequence: number;
+    step:
+      | "runner_connected"
+      | "release_verified"
+      | "account_verified"
+      | "infrastructure_applied"
+      | "services_ready"
+      | "health_verified";
+    outcome: "succeeded" | "failed";
+    errorCode?:
+      | "release_verification_failed"
+      | "network_check_failed"
+      | "infrastructure_failed"
+      | "certificate_failed"
+      | "service_unhealthy"
+      | "health_check_failed"
+      | "runner_failed";
+  };
+  path: {
+    deploymentId: string;
+    runId: string;
+  };
+  query?: never;
+  url: "/v1/managed-deployments/{deploymentId}/runs/{runId}/events";
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsErrors = {
+  /**
+   * Invalid input.
+   */
+  400: {
+    error: string;
+  };
+  /**
+   * Authentication required.
+   */
+  401: {
+    error: string;
+  };
+  /**
+   * Owner or super-admin approval required.
+   */
+  403: {
+    error: string;
+  };
+  /**
+   * Deployment or feature unavailable.
+   */
+  404: {
+    error: string;
+  };
+  /**
+   * The deployment cannot accept this operation now.
+   */
+  409: {
+    error: string;
+  };
+  /**
+   * Too many attempts.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * No installer release is configured.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsError =
+  PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsErrors[keyof PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsErrors];
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsResponses = {
+  /**
+   * Report an installer milestone
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsResponse =
+  PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsResponses[keyof PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEventsResponses];
+
+export type PostV1ManagedDeploymentsByDeploymentIdHeartbeatData = {
+  body?: never;
+  path: {
+    deploymentId: string;
+  };
+  query?: never;
+  url: "/v1/managed-deployments/{deploymentId}/heartbeat";
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdHeartbeatErrors = {
+  /**
+   * Invalid input.
+   */
+  400: {
+    error: string;
+  };
+  /**
+   * Authentication required.
+   */
+  401: {
+    error: string;
+  };
+  /**
+   * Owner or super-admin approval required.
+   */
+  403: {
+    error: string;
+  };
+  /**
+   * Deployment or feature unavailable.
+   */
+  404: {
+    error: string;
+  };
+  /**
+   * The deployment cannot accept this operation now.
+   */
+  409: {
+    error: string;
+  };
+  /**
+   * Too many attempts.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * No installer release is configured.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdHeartbeatError =
+  PostV1ManagedDeploymentsByDeploymentIdHeartbeatErrors[keyof PostV1ManagedDeploymentsByDeploymentIdHeartbeatErrors];
+
+export type PostV1ManagedDeploymentsByDeploymentIdHeartbeatResponses = {
+  /**
+   * Report installation health
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type PostV1ManagedDeploymentsByDeploymentIdHeartbeatResponse =
+  PostV1ManagedDeploymentsByDeploymentIdHeartbeatResponses[keyof PostV1ManagedDeploymentsByDeploymentIdHeartbeatResponses];
+
 export type GetV1ApiKeysData = {
   body?: never;
   path?: never;
@@ -8286,7 +11972,7 @@ export type GetV1ApiKeysErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can list API keys.
+   * The caller needs the View API keys permission.
    */
   403: OrganizationApiKeyForbiddenError;
   /**
@@ -8323,7 +12009,7 @@ export type PostV1ApiKeysErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and super-admins can create API keys.
+   * The caller needs the Manage API keys permission and a recent sign-in.
    */
   403: OrganizationApiKeyForbiddenError;
   /**
@@ -8367,12 +12053,12 @@ export type UpdateAuditCaptureErrors = {
    */
   402: EnterprisePlanRequiredError;
   /**
-   * Administrator permission, fresh authentication, audit feature and visibility required.
+   * Administrator permission, fresh authentication and visibility required.
    */
   403:
     | ForbiddenError
     | {
-        error: "audit_feature_disabled" | "audit_visibility_disabled";
+        error: "audit_visibility_disabled";
       };
   /**
    * Organization or retained operation not found, including foreign-tenant targets.
@@ -8458,10 +12144,10 @@ export type GetAuditEventTypesErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -8561,10 +12247,10 @@ export type GetAuditOperationsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -8655,10 +12341,10 @@ export type GetAuditOperationEventsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -8769,10 +12455,10 @@ export type GetAuditUsageErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -8899,10 +12585,10 @@ export type GetAuditExportErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -8984,7 +12670,7 @@ export type PostV1OrgBrandAssetsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and super-admins can upload brand assets.
+   * The caller needs the Change branding permission and a recent sign-in.
    */
   403: ForbiddenError;
   /**
@@ -9003,6 +12689,45 @@ export type PostV1OrgBrandAssetsResponses = {
 };
 
 export type PostV1OrgBrandAssetsResponse = PostV1OrgBrandAssetsResponses[keyof PostV1OrgBrandAssetsResponses];
+
+export type GetV1WorkflowRunsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Opaque cursor returned as nextCursor by the previous page. Omit for the first page.
+     */
+    cursor?: string;
+    limit?: number;
+  };
+  url: "/v1/workflow-runs";
+};
+
+export type GetV1WorkflowRunsErrors = {
+  /**
+   * The Workflow run list query was invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in to list Workflow runs.
+   */
+  401: UnauthorizedError;
+  /**
+   * Workflow run analytics requires an Enterprise plan.
+   */
+  402: EnterprisePlanRequiredError;
+};
+
+export type GetV1WorkflowRunsError = GetV1WorkflowRunsErrors[keyof GetV1WorkflowRunsErrors];
+
+export type GetV1WorkflowRunsResponses = {
+  /**
+   * Workflow runs returned successfully.
+   */
+  200: WorkflowRunListResponse;
+};
+
+export type GetV1WorkflowRunsResponse = GetV1WorkflowRunsResponses[keyof GetV1WorkflowRunsResponses];
 
 export type GetV1WorkflowsData = {
   body?: never;
@@ -10656,362 +14381,6 @@ export type DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponse
 export type DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponse =
   DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponses[keyof DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponses];
 
-export type GetV1DashboardsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/dashboards";
-};
-
-export type GetV1DashboardsErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can list dashboards.
-   */
-  403: ForbiddenError;
-};
-
-export type GetV1DashboardsError = GetV1DashboardsErrors[keyof GetV1DashboardsErrors];
-
-export type GetV1DashboardsResponses = {
-  /**
-   * Dashboards returned successfully.
-   */
-  200: DashboardListResponse;
-};
-
-export type GetV1DashboardsResponse = GetV1DashboardsResponses[keyof GetV1DashboardsResponses];
-
-export type PostV1DashboardsData = {
-  body: {
-    name: string;
-    elements?: Array<DashboardElement>;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/dashboards";
-};
-
-export type PostV1DashboardsErrors = {
-  /**
-   * The dashboard request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can create dashboards.
-   */
-  403: ForbiddenError;
-};
-
-export type PostV1DashboardsError = PostV1DashboardsErrors[keyof PostV1DashboardsErrors];
-
-export type PostV1DashboardsResponses = {
-  /**
-   * Dashboard created successfully.
-   */
-  201: DashboardResponse;
-};
-
-export type PostV1DashboardsResponse = PostV1DashboardsResponses[keyof PostV1DashboardsResponses];
-
-export type DeleteV1DashboardsByDashboardIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type DeleteV1DashboardsByDashboardIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can delete dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type DeleteV1DashboardsByDashboardIdError =
-  DeleteV1DashboardsByDashboardIdErrors[keyof DeleteV1DashboardsByDashboardIdErrors];
-
-export type DeleteV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard deleted successfully.
-   */
-  204: void;
-};
-
-export type DeleteV1DashboardsByDashboardIdResponse =
-  DeleteV1DashboardsByDashboardIdResponses[keyof DeleteV1DashboardsByDashboardIdResponses];
-
-export type GetV1DashboardsByDashboardIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type GetV1DashboardsByDashboardIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can view dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type GetV1DashboardsByDashboardIdError =
-  GetV1DashboardsByDashboardIdErrors[keyof GetV1DashboardsByDashboardIdErrors];
-
-export type GetV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard returned successfully.
-   */
-  200: DashboardResponse;
-};
-
-export type GetV1DashboardsByDashboardIdResponse =
-  GetV1DashboardsByDashboardIdResponses[keyof GetV1DashboardsByDashboardIdResponses];
-
-export type PatchV1DashboardsByDashboardIdData = {
-  body: {
-    name?: string;
-    elements?: Array<DashboardElement>;
-  };
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type PatchV1DashboardsByDashboardIdErrors = {
-  /**
-   * The dashboard request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can update dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type PatchV1DashboardsByDashboardIdError =
-  PatchV1DashboardsByDashboardIdErrors[keyof PatchV1DashboardsByDashboardIdErrors];
-
-export type PatchV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard updated successfully.
-   */
-  200: DashboardResponse;
-};
-
-export type PatchV1DashboardsByDashboardIdResponse =
-  PatchV1DashboardsByDashboardIdResponses[keyof PatchV1DashboardsByDashboardIdResponses];
-
-export type GetV1DashboardsByDashboardIdAccessData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access";
-};
-
-export type GetV1DashboardsByDashboardIdAccessErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can list dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type GetV1DashboardsByDashboardIdAccessError =
-  GetV1DashboardsByDashboardIdAccessErrors[keyof GetV1DashboardsByDashboardIdAccessErrors];
-
-export type GetV1DashboardsByDashboardIdAccessResponses = {
-  /**
-   * Dashboard access grants returned successfully.
-   */
-  200: DashboardAccessListResponse;
-};
-
-export type GetV1DashboardsByDashboardIdAccessResponse =
-  GetV1DashboardsByDashboardIdAccessResponses[keyof GetV1DashboardsByDashboardIdAccessResponses];
-
-export type PostV1DashboardsByDashboardIdAccessData = {
-  body: {
-    /**
-     * Den TypeID with 'om_' prefix and a 26-character base32 suffix.
-     */
-    orgMembershipId?: string;
-    /**
-     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
-     */
-    teamId?: string;
-    orgWide?: boolean;
-    role: "viewer" | "editor" | "manager";
-  };
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access";
-};
-
-export type PostV1DashboardsByDashboardIdAccessErrors = {
-  /**
-   * The grant request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can grant dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard, member, or team was not found.
-   */
-  404: NotFoundError;
-};
-
-export type PostV1DashboardsByDashboardIdAccessError =
-  PostV1DashboardsByDashboardIdAccessErrors[keyof PostV1DashboardsByDashboardIdAccessErrors];
-
-export type PostV1DashboardsByDashboardIdAccessResponses = {
-  /**
-   * Dashboard access granted successfully.
-   */
-  201: DashboardAccessResponse;
-};
-
-export type PostV1DashboardsByDashboardIdAccessResponse =
-  PostV1DashboardsByDashboardIdAccessResponses[keyof PostV1DashboardsByDashboardIdAccessResponses];
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-    /**
-     * Den TypeID with 'dsg_' prefix and a 26-character base32 suffix.
-     */
-    grantId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access/{grantId}";
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can revoke dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard or grant was not found.
-   */
-  404: NotFoundError;
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdError =
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors[keyof DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors];
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses = {
-  /**
-   * Dashboard access revoked successfully.
-   */
-  204: void;
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdResponse =
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses[keyof DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses];
-
-export type GetV1MeDashboardsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/me/dashboards";
-};
-
-export type GetV1MeDashboardsErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-};
-
-export type GetV1MeDashboardsError = GetV1MeDashboardsErrors[keyof GetV1MeDashboardsErrors];
-
-export type GetV1MeDashboardsResponses = {
-  /**
-   * Granted dashboards returned successfully.
-   */
-  200: MeDashboardListResponse;
-};
-
-export type GetV1MeDashboardsResponse = GetV1MeDashboardsResponses[keyof GetV1MeDashboardsResponses];
-
 export type GetV1McpAppsData = {
   body?: never;
   path?: never;
@@ -11034,7 +14403,7 @@ export type GetV1McpAppsError = GetV1McpAppsErrors[keyof GetV1McpAppsErrors];
 
 export type GetV1McpAppsResponses = {
   /**
-   * Apps built in OpenWork that can be added to a dashboard.
+   * Apps built in OpenWork the member can use.
    */
   200: BuiltMcpAppListResponse;
 };
@@ -11170,7 +14539,7 @@ export type DeleteV1DesktopPoliciesByDesktopPolicyIdErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and super-admins can delete desktop policies.
+   * The caller lacks the Manage desktop policies permission.
    */
   403: ForbiddenError;
   /**
@@ -11258,7 +14627,7 @@ export type PatchV1DesktopPoliciesByDesktopPolicyIdErrors = {
    */
   402: EnterprisePlanRequiredError;
   /**
-   * Only workspace owners and super-admins can update desktop policies.
+   * The caller lacks the Manage desktop policies permission.
    */
   403: ForbiddenError;
   /**
@@ -11293,7 +14662,7 @@ export type GetV1DesktopPoliciesErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can list desktop policies.
+   * The caller lacks the View desktop policies permission.
    */
   403: ForbiddenError;
 };
@@ -11338,7 +14707,7 @@ export type PostV1DesktopPoliciesErrors = {
    */
   402: EnterprisePlanRequiredError;
   /**
-   * Only workspace owners and super-admins can create desktop policies.
+   * The caller lacks the Manage desktop policies permission.
    */
   403: ForbiddenError;
   /**
@@ -11358,6 +14727,162 @@ export type PostV1DesktopPoliciesResponses = {
 
 export type PostV1DesktopPoliciesResponse = PostV1DesktopPoliciesResponses[keyof PostV1DesktopPoliciesResponses];
 
+export type GetV1AgentPermissionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-permissions";
+};
+
+export type GetV1AgentPermissionsErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.view permission.
+   */
+  403: ForbiddenError;
+  /**
+   * Agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AgentPermissionsError = GetV1AgentPermissionsErrors[keyof GetV1AgentPermissionsErrors];
+
+export type GetV1AgentPermissionsResponses = {
+  /**
+   * Agent permissions returned successfully.
+   */
+  200: AgentPermissionPolicyList;
+};
+
+export type GetV1AgentPermissionsResponse = GetV1AgentPermissionsResponses[keyof GetV1AgentPermissionsResponses];
+
+export type PutV1AgentPermissionsEveryoneData = {
+  body: AgentPermissionPolicyWrite;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-permissions/everyone";
+};
+
+export type PutV1AgentPermissionsEveryoneErrors = {
+  /**
+   * A permission or pattern was not valid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * Agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type PutV1AgentPermissionsEveryoneError =
+  PutV1AgentPermissionsEveryoneErrors[keyof PutV1AgentPermissionsEveryoneErrors];
+
+export type PutV1AgentPermissionsEveryoneResponses = {
+  /**
+   * Everyone's agent permissions saved.
+   */
+  200: AgentPermissionPolicyResponse;
+};
+
+export type PutV1AgentPermissionsEveryoneResponse =
+  PutV1AgentPermissionsEveryoneResponses[keyof PutV1AgentPermissionsEveryoneResponses];
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/agent-permissions/teams/{teamId}";
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The team was not found, or agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdError =
+  DeleteV1AgentPermissionsTeamsByTeamIdErrors[keyof DeleteV1AgentPermissionsTeamsByTeamIdErrors];
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdResponses = {
+  /**
+   * The team's overrides were removed.
+   */
+  204: void;
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdResponse =
+  DeleteV1AgentPermissionsTeamsByTeamIdResponses[keyof DeleteV1AgentPermissionsTeamsByTeamIdResponses];
+
+export type PutV1AgentPermissionsTeamsByTeamIdData = {
+  body: AgentPermissionPolicyWrite;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/agent-permissions/teams/{teamId}";
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdErrors = {
+  /**
+   * A permission or pattern was not valid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The team was not found, or agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdError =
+  PutV1AgentPermissionsTeamsByTeamIdErrors[keyof PutV1AgentPermissionsTeamsByTeamIdErrors];
+
+export type PutV1AgentPermissionsTeamsByTeamIdResponses = {
+  /**
+   * The team's agent permissions saved.
+   */
+  200: AgentPermissionPolicyResponse;
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdResponse =
+  PutV1AgentPermissionsTeamsByTeamIdResponses[keyof PutV1AgentPermissionsTeamsByTeamIdResponses];
+
 export type GetV1DiagnosticsEgressData = {
   body?: never;
   path?: never;
@@ -11371,7 +14896,7 @@ export type GetV1DiagnosticsEgressErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can inspect egress diagnostics.
+   * The caller lacks the View network diagnostics permission.
    */
   403: ForbiddenError;
 };
@@ -11404,7 +14929,7 @@ export type PostV1DiagnosticsEgressErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and super-admins can run egress diagnostics.
+   * The caller lacks the Run network diagnostics permission.
    */
   403: ForbiddenError;
   /**
@@ -11555,7 +15080,7 @@ export type PutV1DiagnosticsEgressTokenErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and super-admins can configure egress diagnostics.
+   * The caller lacks the Run network diagnostics permission.
    */
   403: ForbiddenError;
 };
@@ -11573,6 +15098,33 @@ export type PutV1DiagnosticsEgressTokenResponses = {
 export type PutV1DiagnosticsEgressTokenResponse =
   PutV1DiagnosticsEgressTokenResponses[keyof PutV1DiagnosticsEgressTokenResponses];
 
+export type GetV1InferenceAnalyticsUsageData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference/analytics/usage";
+};
+
+export type GetV1InferenceAnalyticsUsageErrors = {
+  /**
+   * Models analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsUsageError =
+  GetV1InferenceAnalyticsUsageErrors[keyof GetV1InferenceAnalyticsUsageErrors];
+
+export type GetV1InferenceAnalyticsUsageResponses = {
+  /**
+   * Models usage limits.
+   */
+  200: InferenceStatusResponse;
+};
+
+export type GetV1InferenceAnalyticsUsageResponse =
+  GetV1InferenceAnalyticsUsageResponses[keyof GetV1InferenceAnalyticsUsageResponses];
+
 export type GetV1InferenceFreeProviderData = {
   body?: never;
   path?: never;
@@ -11586,7 +15138,7 @@ export type GetV1InferenceFreeProviderErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Workspace admin permission required.
+   * The caller lacks the View OpenWork Models settings permission.
    */
   403: ForbiddenError;
   /**
@@ -11669,7 +15221,7 @@ export type PatchV1InferenceFreePinsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Fresh workspace admin permission required.
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
    */
   403: ForbiddenError;
   /**
@@ -11781,7 +15333,7 @@ export type GetV1InferenceErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can read inference settings.
+   * The caller lacks the View OpenWork Models settings permission.
    */
   403: ForbiddenError;
 };
@@ -11852,6 +15404,16 @@ export type GetV1InferenceAnalyticsSettingsData = {
   url: "/v1/inference/analytics/settings";
 };
 
+export type GetV1InferenceAnalyticsSettingsErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsSettingsError =
+  GetV1InferenceAnalyticsSettingsErrors[keyof GetV1InferenceAnalyticsSettingsErrors];
+
 export type GetV1InferenceAnalyticsSettingsResponses = {
   /**
    * Task analytics settings
@@ -11882,6 +15444,16 @@ export type PatchV1InferenceAnalyticsSettingsData = {
   url: "/v1/inference/analytics/settings";
 };
 
+export type PatchV1InferenceAnalyticsSettingsErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type PatchV1InferenceAnalyticsSettingsError =
+  PatchV1InferenceAnalyticsSettingsErrors[keyof PatchV1InferenceAnalyticsSettingsErrors];
+
 export type PatchV1InferenceAnalyticsSettingsResponses = {
   /**
    * Updated task analytics choice
@@ -11902,6 +15474,76 @@ export type PatchV1InferenceAnalyticsSettingsResponses = {
 export type PatchV1InferenceAnalyticsSettingsResponse =
   PatchV1InferenceAnalyticsSettingsResponses[keyof PatchV1InferenceAnalyticsSettingsResponses];
 
+export type PostV1InferenceAnalyticsEventsData = {
+  body: {
+    events: Array<{
+      id: string;
+      type:
+        | "task.started"
+        | "task.completed"
+        | "task.failed"
+        | "task.cancelled"
+        | "tool.executed"
+        | "skill.loaded"
+        | "model.call";
+      timestamp: string;
+      sessionId: string;
+      taskId: string;
+      callId?: string;
+      durationMs?: number;
+      status?: "completed" | "failed" | "cancelled";
+      model?: string;
+      provider?: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+      costUsd?: number;
+      usageComplete?: boolean;
+      tool?: string;
+      skill?: string;
+      skillVersion?: string;
+      mcp?: string;
+      metadata?: {
+        [key: string]: string | number | boolean;
+      };
+    }>;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/inference/analytics/events";
+};
+
+export type PostV1InferenceAnalyticsEventsErrors = {
+  /**
+   * Invalid request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+};
+
+export type PostV1InferenceAnalyticsEventsError =
+  PostV1InferenceAnalyticsEventsErrors[keyof PostV1InferenceAnalyticsEventsErrors];
+
+export type PostV1InferenceAnalyticsEventsResponses = {
+  /**
+   * Accepted event ids.
+   */
+  202: {
+    acceptedIds: Array<string>;
+  };
+  /**
+   * Task analytics are not enabled for this organization; nothing was recorded.
+   */
+  204: void;
+};
+
+export type PostV1InferenceAnalyticsEventsResponse =
+  PostV1InferenceAnalyticsEventsResponses[keyof PostV1InferenceAnalyticsEventsResponses];
+
 export type GetV1InferenceAnalyticsActivityData = {
   body?: never;
   path?: never;
@@ -11915,6 +15557,16 @@ export type GetV1InferenceAnalyticsActivityData = {
   };
   url: "/v1/inference/analytics/activity";
 };
+
+export type GetV1InferenceAnalyticsActivityErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsActivityError =
+  GetV1InferenceAnalyticsActivityErrors[keyof GetV1InferenceAnalyticsActivityErrors];
 
 export type GetV1InferenceAnalyticsActivityResponses = {
   /**
@@ -11979,6 +15631,16 @@ export type GetV1InferenceAnalyticsConsumptionData = {
   url: "/v1/inference/analytics/consumption";
 };
 
+export type GetV1InferenceAnalyticsConsumptionErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsConsumptionError =
+  GetV1InferenceAnalyticsConsumptionErrors[keyof GetV1InferenceAnalyticsConsumptionErrors];
+
 export type GetV1InferenceAnalyticsConsumptionResponses = {
   /**
    * Model consumption
@@ -12003,6 +15665,77 @@ export type GetV1InferenceAnalyticsConsumptionResponses = {
 export type GetV1InferenceAnalyticsConsumptionResponse =
   GetV1InferenceAnalyticsConsumptionResponses[keyof GetV1InferenceAnalyticsConsumptionResponses];
 
+export type GetV1LibraryUsageData = {
+  body?: never;
+  path?: never;
+  query: {
+    kind: "skills" | "plugins" | "connectors";
+    days?: "7" | "30" | "90";
+    groupBy?: string;
+    memberId?: string;
+    teamId?: string;
+    itemId?: string;
+  };
+  url: "/v1/library-usage";
+};
+
+export type GetV1LibraryUsageErrors = {
+  /**
+   * Invalid query
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign-in required
+   */
+  401: UnauthorizedError;
+  /**
+   * View usage analytics permission required
+   */
+  403: ForbiddenError;
+  /**
+   * The team is not in this organization
+   */
+  404: NotFoundError;
+  /**
+   * Too many rows; narrow the window, grouping or filters
+   */
+  422: {
+    error: "library_usage_too_many_rows";
+    message: string;
+  };
+};
+
+export type GetV1LibraryUsageError = GetV1LibraryUsageErrors[keyof GetV1LibraryUsageErrors];
+
+export type GetV1LibraryUsageResponses = {
+  /**
+   * Library usage breakdown
+   */
+  200: LibraryUsageBreakdown;
+};
+
+export type GetV1LibraryUsageResponse = GetV1LibraryUsageResponses[keyof GetV1LibraryUsageResponses];
+
+export type GetV1LibraryUsageByKindData = {
+  body?: never;
+  path: {
+    kind: "skills" | "plugins" | "connectors";
+  };
+  query?: {
+    days?: "7" | "30" | "90";
+  };
+  url: "/v1/library-usage/{kind}";
+};
+
+export type GetV1LibraryUsageByKindResponses = {
+  /**
+   * Library usage
+   */
+  200: LibraryUsageReport;
+};
+
+export type GetV1LibraryUsageByKindResponse = GetV1LibraryUsageByKindResponses[keyof GetV1LibraryUsageByKindResponses];
+
 export type PostV1InferenceAnalyticsLangfuseTestData = {
   body: {
     host: string;
@@ -12024,12 +15757,16 @@ export type PostV1InferenceAnalyticsLangfuseTestErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace admins can configure analytics exports, or task analytics are not enabled.
+   * The caller lacks the Manage task analytics permission, or task analytics are not enabled.
    */
   403: {
     error: string;
     message?: string;
   };
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type PostV1InferenceAnalyticsLangfuseTestError =
@@ -12068,12 +15805,16 @@ export type PostV1InferenceAnalyticsLangfuseConnectErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace admins can configure analytics exports, or task analytics are not enabled.
+   * The caller lacks the Manage task analytics permission, or task analytics are not enabled.
    */
   403: {
     error: string;
     message?: string;
   };
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type PostV1InferenceAnalyticsLangfuseConnectError =
@@ -12104,9 +15845,13 @@ export type DeleteV1InferenceAnalyticsLangfuseErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace admins can disconnect analytics exports.
+   * The caller lacks the Manage task analytics permission.
    */
   403: ForbiddenError;
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type DeleteV1InferenceAnalyticsLangfuseError =
@@ -12141,7 +15886,7 @@ export type DeleteV1ScimErrors = {
    */
   401: ScimUnauthorizedError;
   /**
-   * Only workspace owners and super-admins can manage SCIM.
+   * The caller needs the Manage SCIM provisioning permission and a recent sign-in.
    */
   403: ScimForbiddenError;
   /**
@@ -12178,7 +15923,7 @@ export type GetV1ScimErrors = {
    */
   401: ScimUnauthorizedError;
   /**
-   * Only workspace owners and admins can read SCIM.
+   * The caller needs the View SCIM provisioning permission.
    */
   403: ScimForbiddenError;
   /**
@@ -12213,7 +15958,7 @@ export type PatchV1ScimErrors = {
    */
   401: unknown;
   /**
-   * Only workspace owners and super-admins can manage SCIM.
+   * The caller needs the Manage SCIM provisioning permission and a recent sign-in.
    */
   403: unknown;
   /**
@@ -12248,7 +15993,7 @@ export type PostV1ScimTokenErrors = {
    */
   401: ScimUnauthorizedError;
   /**
-   * Only workspace owners and super-admins can manage SCIM.
+   * The caller needs the Manage SCIM provisioning permission and a recent sign-in.
    */
   403: ScimForbiddenError;
   /**
@@ -12285,7 +16030,7 @@ export type PostV1ScimReconcileErrors = {
    */
   401: ScimUnauthorizedError;
   /**
-   * Only workspace owners and super-admins can manage SCIM.
+   * The caller needs the Manage SCIM provisioning permission and a recent sign-in.
    */
   403: ScimForbiddenError;
   /**
@@ -12322,7 +16067,7 @@ export type DeleteV1SsoErrors = {
    */
   401: SsoUnauthorizedError;
   /**
-   * Only workspace owners and super-admins can manage SSO.
+   * The caller needs the Manage single sign-on permission and a recent sign-in.
    */
   403: SsoForbiddenError;
   /**
@@ -12359,7 +16104,7 @@ export type GetV1SsoErrors = {
    */
   401: SsoUnauthorizedError;
   /**
-   * Only workspace owners and admins can read SSO.
+   * The caller needs the View single sign-on permission.
    */
   403: SsoForbiddenError;
   /**
@@ -12400,7 +16145,7 @@ export type PostV1SsoSamlErrors = {
    */
   402: EnterprisePlanRequiredError;
   /**
-   * Only workspace owners and super-admins can manage SSO.
+   * The caller needs the Manage single sign-on permission and a recent sign-in.
    */
   403: SsoForbiddenError;
   /**
@@ -12441,7 +16186,7 @@ export type PostV1SsoOidcErrors = {
    */
   402: EnterprisePlanRequiredError;
   /**
-   * Only workspace owners and super-admins can manage SSO.
+   * The caller needs the Manage single sign-on permission and a recent sign-in.
    */
   403: SsoForbiddenError;
   /**
@@ -12530,7 +16275,7 @@ export type PostV1SsoTestByIntentIdCancelErrors = {
    */
   401: SsoUnauthorizedError;
   /**
-   * Only workspace owners and super-admins can manage SSO.
+   * The caller needs the Manage single sign-on permission and a recent sign-in.
    */
   403: SsoForbiddenError;
   /**
@@ -12590,7 +16335,7 @@ export type PostV1SsoDisableErrors = {
    */
   401: SsoUnauthorizedError;
   /**
-   * Only workspace owners and super-admins can manage SSO.
+   * The caller needs the Manage single sign-on permission and a recent sign-in.
    */
   403: SsoForbiddenError;
   /**
@@ -12627,7 +16372,7 @@ export type GetV1SsoMetadataErrors = {
    */
   401: SsoUnauthorizedError;
   /**
-   * Only workspace owners and admins can read SSO metadata.
+   * The caller needs the View single sign-on permission.
    */
   403: SsoForbiddenError;
   /**
@@ -12668,7 +16413,7 @@ export type PostV1SsoRequestDomainVerificationErrors = {
    */
   402: EnterprisePlanRequiredError;
   /**
-   * Only workspace owners and super-admins can manage SSO.
+   * The caller needs the Manage single sign-on permission and a recent sign-in.
    */
   403: SsoForbiddenError;
   /**
@@ -12711,7 +16456,7 @@ export type PostV1SsoVerifyDomainErrors = {
    */
   402: EnterprisePlanRequiredError;
   /**
-   * Only workspace owners and super-admins can manage SSO.
+   * The caller needs the Manage single sign-on permission and a recent sign-in.
    */
   403: SsoForbiddenError;
   /**
@@ -12735,6 +16480,10 @@ export type PostV1InvitationsData = {
   body: {
     email: string;
     role: string;
+    /**
+     * Team to join when the invitation is accepted. Requires Manage teams and every permission the team grants. Omit to preserve a refreshed invitation's team; null clears it.
+     */
+    teamId?: string | null;
   };
   path?: never;
   query?: never;
@@ -12755,7 +16504,7 @@ export type PostV1InvitationsErrors = {
    */
   402: InvitePaymentRequiredError;
   /**
-   * Only workspace owners and admins can create invitations. Admins can only invite members.
+   * The caller needs the Invite people permission and a recent sign-in. Inviting with a role other than member also needs Change member roles, and with Permissions on inviting an admin needs every Admin permission; reusing an invitation with Admin team access needs Manage Admin teams.
    */
   403: ForbiddenError;
   /**
@@ -12809,7 +16558,7 @@ export type PostV1InvitationsByInvitationIdCancelErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can cancel invitations.
+   * The caller needs the Invite people permission and a recent sign-in; invitations with Admin team access also need Manage Admin teams.
    */
   403: ForbiddenError;
   /**
@@ -12835,6 +16584,54 @@ export type PostV1InvitationsByInvitationIdCancelResponses = {
 export type PostV1InvitationsByInvitationIdCancelResponse =
   PostV1InvitationsByInvitationIdCancelResponses[keyof PostV1InvitationsByInvitationIdCancelResponses];
 
+export type GetV1InvitationsByInvitationIdLinkData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'inv_' prefix and a 26-character base32 suffix.
+     */
+    invitationId: string;
+  };
+  query?: never;
+  url: "/v1/invitations/{invitationId}/link";
+};
+
+export type GetV1InvitationsByInvitationIdLinkErrors = {
+  /**
+   * The invitation link path parameters were invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in to read invitation links.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the permissions required to resend this invitation and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The invitation or organization could not be found.
+   */
+  404: NotFoundError;
+  /**
+   * The invitation is no longer pending or has expired; resend it to issue a new link.
+   */
+  409: InvitationNotPendingError;
+};
+
+export type GetV1InvitationsByInvitationIdLinkError =
+  GetV1InvitationsByInvitationIdLinkErrors[keyof GetV1InvitationsByInvitationIdLinkErrors];
+
+export type GetV1InvitationsByInvitationIdLinkResponses = {
+  /**
+   * Invitation link returned successfully.
+   */
+  200: InvitationLinkResponse;
+};
+
+export type GetV1InvitationsByInvitationIdLinkResponse =
+  GetV1InvitationsByInvitationIdLinkResponses[keyof GetV1InvitationsByInvitationIdLinkResponses];
+
 export type PostV1OrgsByOrganizationIdInstallLinksData = {
   body: CreateInstallLinkRequest;
   path: {
@@ -12850,21 +16647,13 @@ export type PostV1OrgsByOrganizationIdInstallLinksErrors = {
    */
   400: InvalidRequestError;
   /**
-   * The caller must be signed in to create install links.
+   * The caller must be signed in to get the install page.
    */
   401: UnauthorizedError;
-  /**
-   * The organization needs the installLinks capability enabled, and only workspace owners and admins can rotate existing links.
-   */
-  403: ForbiddenError | CapabilityDisabledError;
   /**
    * The organization could not be found.
    */
   404: NotFoundError;
-  /**
-   * The member has created too many install links.
-   */
-  429: RateLimitedError;
 };
 
 export type PostV1OrgsByOrganizationIdInstallLinksError =
@@ -12872,7 +16661,7 @@ export type PostV1OrgsByOrganizationIdInstallLinksError =
 
 export type PostV1OrgsByOrganizationIdInstallLinksResponses = {
   /**
-   * Install link created successfully.
+   * Install page resolved successfully.
    */
   200: CreateInstallLinkResponse;
 };
@@ -12952,23 +16741,13 @@ export type GetV1MeInstallByPlatformResponse =
 export type GetV1InstallConfigData = {
   body?: never;
   path?: never;
-  query: {
-    token: string;
-  };
+  query?: never;
   url: "/v1/install-config";
 };
 
 export type GetV1InstallConfigErrors = {
   /**
-   * The install-link token was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The install link was missing, expired, or revoked.
-   */
-  404: InstallLinkNotFoundError;
-  /**
-   * Too many install-link attempts.
+   * Too many install configuration requests.
    */
   429: RateLimitedError;
 };
@@ -12979,177 +16758,19 @@ export type GetV1InstallConfigResponses = {
   /**
    * Install configuration resolved successfully.
    */
-  200: InstallExperienceConfig;
+  200: AuthenticatedInstallConfig;
 };
 
 export type GetV1InstallConfigResponse = GetV1InstallConfigResponses[keyof GetV1InstallConfigResponses];
-
-export type PostV1InstallConnectStatusData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/status";
-};
-
-export type PostV1InstallConnectStatusErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectStatusError = PostV1InstallConnectStatusErrors[keyof PostV1InstallConnectStatusErrors];
-
-export type PostV1InstallConnectStatusResponses = {
-  /**
-   * Desktop connection status resolved successfully.
-   */
-  200: DesktopConnectGrantStatusResponse;
-};
-
-export type PostV1InstallConnectStatusResponse =
-  PostV1InstallConnectStatusResponses[keyof PostV1InstallConnectStatusResponses];
-
-export type PostV1InstallConnectPreviewData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/preview";
-};
-
-export type PostV1InstallConnectPreviewErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code was already consumed.
-   */
-  409: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectPreviewError =
-  PostV1InstallConnectPreviewErrors[keyof PostV1InstallConnectPreviewErrors];
-
-export type PostV1InstallConnectPreviewResponses = {
-  /**
-   * Desktop connection resolved successfully.
-   */
-  200: DesktopConnectGrantResponse;
-};
-
-export type PostV1InstallConnectPreviewResponse =
-  PostV1InstallConnectPreviewResponses[keyof PostV1InstallConnectPreviewResponses];
-
-export type PostV1InstallConnectExchangeData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/exchange";
-};
-
-export type PostV1InstallConnectExchangeErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code was already consumed.
-   */
-  409: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectExchangeError =
-  PostV1InstallConnectExchangeErrors[keyof PostV1InstallConnectExchangeErrors];
-
-export type PostV1InstallConnectExchangeResponses = {
-  /**
-   * Desktop connection resolved successfully.
-   */
-  200: DesktopConnectGrantResponse;
-};
-
-export type PostV1InstallConnectExchangeResponse =
-  PostV1InstallConnectExchangeResponses[keyof PostV1InstallConnectExchangeResponses];
 
 export type GetV1InstallByPlatformData = {
   body?: never;
   path: {
     platform: string;
   };
-  query: {
-    token: string;
-  };
+  query?: never;
   url: "/v1/install/{platform}";
 };
-
-export type GetV1InstallByPlatformErrors = {
-  /**
-   * The install-link token or platform was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The install link was missing, expired, or revoked.
-   */
-  404: InstallLinkNotFoundError;
-  /**
-   * Too many installer download attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type GetV1InstallByPlatformError = GetV1InstallByPlatformErrors[keyof GetV1InstallByPlatformErrors];
-
-export type GetV1InstallByPlatformResponses = {
-  /**
-   * Mounted desktop artifact returned successfully.
-   */
-  200: string;
-};
-
-export type GetV1InstallByPlatformResponse = GetV1InstallByPlatformResponses[keyof GetV1InstallByPlatformResponses];
 
 export type DeleteV1LlmProvidersByKeyByExternalKeyData = {
   body?: never;
@@ -13765,7 +17386,7 @@ export type GetV1LlmProvidersByLlmProviderIdMemberCredentialsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can list member credentials.
+   * The caller lacks the Manage people's provider keys permission.
    */
   403: ForbiddenError;
   /**
@@ -13827,7 +17448,7 @@ export type PutV1LlmProvidersByLlmProviderIdMemberCredentialsByOrgMembershipIdEr
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can provision member credentials.
+   * The caller lacks the Manage people's provider keys permission.
    */
   403: ForbiddenError;
   /**
@@ -13879,7 +17500,7 @@ export type PostV1LlmProvidersByLlmProviderIdMemberCredentialsByOrgMembershipIdB
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can block member credentials.
+   * The caller lacks the Manage people's provider keys permission.
    */
   403: ForbiddenError;
   /**
@@ -13953,6 +17574,88 @@ export type DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses = {
 export type DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponse =
   DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses[keyof DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses];
 
+export type GetV1InferenceProvidersInventoryRevisionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference-providers/inventory/revision";
+};
+
+export type GetV1InferenceProvidersInventoryRevisionErrors = {
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization not found or liveProviderSync disabled.
+   */
+  404: NotFoundError;
+  /**
+   * Inventory unavailable; reconnect with backoff.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryRevisionError =
+  GetV1InferenceProvidersInventoryRevisionErrors[keyof GetV1InferenceProvidersInventoryRevisionErrors];
+
+export type GetV1InferenceProvidersInventoryRevisionResponses = {
+  /**
+   * Current inventory revision.
+   */
+  200: {
+    revision: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryRevisionResponse =
+  GetV1InferenceProvidersInventoryRevisionResponses[keyof GetV1InferenceProvidersInventoryRevisionResponses];
+
+export type GetV1InferenceProvidersInventoryEventsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference-providers/inventory/events";
+};
+
+export type GetV1InferenceProvidersInventoryEventsErrors = {
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization not found or liveProviderSync disabled.
+   */
+  404: NotFoundError;
+  /**
+   * At most four inventory streams per member per replica.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * Inventory unavailable; reconnect with backoff.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryEventsError =
+  GetV1InferenceProvidersInventoryEventsErrors[keyof GetV1InferenceProvidersInventoryEventsErrors];
+
+export type GetV1InferenceProvidersInventoryEventsResponses = {
+  /**
+   * Inventory revision event stream.
+   */
+  200: string;
+};
+
+export type GetV1InferenceProvidersInventoryEventsResponse =
+  GetV1InferenceProvidersInventoryEventsResponses[keyof GetV1InferenceProvidersInventoryEventsResponses];
+
 export type GetV1InferenceProvidersUsageData = {
   body?: never;
   path?: never;
@@ -13975,7 +17678,7 @@ export type GetV1InferenceProvidersUsageErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Owner/admin permission required or Gateway management disabled
+   * View Gateway usage permission required or Gateway management disabled
    */
   403:
     | ForbiddenError
@@ -14111,6 +17814,7 @@ export type GetV1GatewayUsageLimitPoliciesResponses = {
       hardLimit: boolean;
       allowRequestReset: boolean;
       revision: number;
+      providerId?: string | null;
       limits: Array<{
         timeframe: "day" | "week" | "month";
         costLimitMicroUsd: number;
@@ -14132,6 +17836,7 @@ export type GetV1GatewayUsageLimitPoliciesResponse =
 export type PostV1GatewayUsageLimitPoliciesData = {
   body: {
     name: string;
+    providerId?: string | null;
     hardLimit?: boolean;
     allowRequestReset?: boolean;
     limits: Array<{
@@ -14202,6 +17907,7 @@ export type PostV1GatewayUsageLimitPoliciesResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -14222,6 +17928,7 @@ export type PostV1GatewayUsageLimitPoliciesResponse =
 export type PatchV1GatewayUsageLimitPoliciesByPolicyIdData = {
   body: {
     name: string;
+    providerId?: string | null;
     hardLimit?: boolean;
     allowRequestReset?: boolean;
     limits: Array<{
@@ -14295,6 +18002,7 @@ export type PatchV1GatewayUsageLimitPoliciesByPolicyIdResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -14381,6 +18089,7 @@ export type PostV1GatewayUsageLimitPoliciesByPolicyIdArchiveResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -14467,6 +18176,7 @@ export type PostV1GatewayUsageLimitPoliciesByPolicyIdRestoreResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -14634,6 +18344,7 @@ export type PostV1GatewayUsageLimitPoliciesByPolicyIdAssignmentsResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -14719,6 +18430,7 @@ export type DeleteV1GatewayUsageLimitPoliciesByPolicyIdAssignmentsByAssignmentId
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -14924,6 +18636,51 @@ export type GetV1GatewayUsageLimitsMeResponses = {
       allowRequestReset: boolean;
       canRequestReset: boolean;
       resetRequestStatus: "pending" | "approved" | "denied" | "expired" | null;
+      providerId?: string | null;
+    }>;
+    providers?: Array<{
+      providerId: string;
+      providerName: string;
+      state: "within_limit" | "over_limit" | "blocked";
+      buckets: Array<{
+        id: string;
+        timeframe: "day" | "week" | "month";
+        policyId: string;
+        policyName: string;
+        policyRevision?: number;
+        provenance?: Array<
+          | {
+              kind: "organization";
+              assignmentId: string;
+              memberId: null;
+              teamId: null;
+            }
+          | {
+              kind: "direct";
+              assignmentId: string;
+              memberId: string;
+              teamId: null;
+            }
+          | {
+              kind: "team";
+              assignmentId: string;
+              memberId: null;
+              teamId: string;
+              teamName: string;
+            }
+        >;
+        baseAllowanceMicroUsd: number;
+        extensionMicroUsd: number;
+        allowanceMicroUsd: number;
+        usedMicroUsd: number;
+        remainingMicroUsd: number;
+        resetAt: string;
+        hardLimit: boolean;
+        allowRequestReset: boolean;
+        canRequestReset: boolean;
+        resetRequestStatus: "pending" | "approved" | "denied" | "expired" | null;
+        providerId?: string | null;
+      }>;
     }>;
   };
 };
@@ -15049,6 +18806,51 @@ export type GetV1GatewayUsageLimitsMembersByMemberIdResponses = {
       allowRequestReset: boolean;
       canRequestReset: boolean;
       resetRequestStatus: "pending" | "approved" | "denied" | "expired" | null;
+      providerId?: string | null;
+    }>;
+    providers?: Array<{
+      providerId: string;
+      providerName: string;
+      state: "within_limit" | "over_limit" | "blocked";
+      buckets: Array<{
+        id: string;
+        timeframe: "day" | "week" | "month";
+        policyId: string;
+        policyName: string;
+        policyRevision?: number;
+        provenance?: Array<
+          | {
+              kind: "organization";
+              assignmentId: string;
+              memberId: null;
+              teamId: null;
+            }
+          | {
+              kind: "direct";
+              assignmentId: string;
+              memberId: string;
+              teamId: null;
+            }
+          | {
+              kind: "team";
+              assignmentId: string;
+              memberId: null;
+              teamId: string;
+              teamName: string;
+            }
+        >;
+        baseAllowanceMicroUsd: number;
+        extensionMicroUsd: number;
+        allowanceMicroUsd: number;
+        usedMicroUsd: number;
+        remainingMicroUsd: number;
+        resetAt: string;
+        hardLimit: boolean;
+        allowRequestReset: boolean;
+        canRequestReset: boolean;
+        resetRequestStatus: "pending" | "approved" | "denied" | "expired" | null;
+        providerId?: string | null;
+      }>;
     }>;
   };
 };
@@ -15128,6 +18930,8 @@ export type GetV1GatewayUsageLimitResetRequestsResponses = {
       bucketId: string;
       timeframe: "day" | "week" | "month";
       policyName: string;
+      providerId?: string | null;
+      providerName?: string | null;
       reason: string;
       status: "pending" | "approved" | "denied" | "expired";
       createdAt: string;
@@ -15219,6 +19023,8 @@ export type PostV1GatewayUsageLimitResetRequestsResponses = {
     bucketId: string;
     timeframe: "day" | "week" | "month";
     policyName: string;
+    providerId?: string | null;
+    providerName?: string | null;
     reason: string;
     status: "pending" | "approved" | "denied" | "expired";
     createdAt: string;
@@ -15306,6 +19112,8 @@ export type GetV1GatewayUsageLimitResetRequestsMeResponses = {
       bucketId: string;
       timeframe: "day" | "week" | "month";
       policyName: string;
+      providerId?: string | null;
+      providerName?: string | null;
       reason: string;
       status: "pending" | "approved" | "denied" | "expired";
       createdAt: string;
@@ -15398,6 +19206,8 @@ export type PostV1GatewayUsageLimitResetRequestsByIdApproveResponses = {
     bucketId: string;
     timeframe: "day" | "week" | "month";
     policyName: string;
+    providerId?: string | null;
+    providerName?: string | null;
     reason: string;
     status: "pending" | "approved" | "denied" | "expired";
     createdAt: string;
@@ -15484,6 +19294,8 @@ export type PostV1GatewayUsageLimitResetRequestsByIdDenyResponses = {
     bucketId: string;
     timeframe: "day" | "week" | "month";
     policyName: string;
+    providerId?: string | null;
+    providerName?: string | null;
     reason: string;
     status: "pending" | "approved" | "denied" | "expired";
     createdAt: string;
@@ -15768,11 +19580,12 @@ export type GetV1InferenceProvidersMemberConnectionsError =
 
 export type GetV1InferenceProvidersMemberConnectionsResponses = {
   /**
-   * List the caller's member Google connections
+   * List the caller's member sign-in connections
    */
   200: {
     connections: Array<{
       providerId: string;
+      signInMethod?: "google" | "aws_sso" | "microsoft";
       credentialSetId: string;
       providerName: string;
       name: string;
@@ -15866,7 +19679,7 @@ export type PostV1InferenceProvidersData = {
     status?: "active" | "disabled";
     credentialMode?: "org" | "member";
     credential?: {
-      kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure";
+      kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure" | "aws_sso";
       secret: string;
     };
     apiKeys?: {
@@ -15874,6 +19687,19 @@ export type PostV1InferenceProvidersData = {
     };
     oauthClientId?: string;
     oauthClientSecret?: string;
+    /**
+     * Microsoft Foundry member sets: the Entra ID directory (tenant) ID. Empty string clears.
+     */
+    oauthTenantId?: string;
+    /**
+     * Amazon Bedrock member sets: IAM Identity Center access portal URL, its region, the AWS account ID and the permission set name members get. null clears.
+     */
+    awsSso?: {
+      startUrl: string;
+      region: string;
+      accountId: string;
+      roleName: string;
+    } | null;
     allMembers?: boolean;
     memberIds?: Array<string>;
     teamIds?: Array<string>;
@@ -15931,6 +19757,37 @@ export type PostV1InferenceProvidersResponses = {
    */
   201: {
     inferenceProvider: GatewayProviderDetails;
+    credentialPrompt?: {
+      schemaVersion: "1";
+      kind: "credential_prompt";
+      target:
+        | {
+            type: "mcp_connection_key";
+            connectionId: string;
+          }
+        | {
+            type: "plugin_connection_key";
+            pluginId: string;
+            configObjectId: string;
+            serverName: string;
+            connectionId: string;
+          }
+        | {
+            type: "gateway_provider_key";
+            inferenceProviderId: string;
+            credentialSetId: string;
+          }
+        | {
+            type: "gateway_provider_credential";
+            inferenceProviderId: string;
+            credentialSetId: string;
+            credentialKind: "aws_keys" | "gcp_service_account" | "api_key_map";
+            envNames?: Array<string>;
+          };
+      name: string;
+      destination: string | null;
+    };
+    nextStep?: string;
   };
 };
 
@@ -16081,7 +19938,7 @@ export type PatchV1InferenceProvidersByInferenceProviderIdData = {
     status?: "active" | "disabled";
     credentialMode?: "org" | "member";
     credential?: {
-      kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure";
+      kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure" | "aws_sso";
       secret: string;
     };
     apiKeys?: {
@@ -16089,6 +19946,19 @@ export type PatchV1InferenceProvidersByInferenceProviderIdData = {
     };
     oauthClientId?: string;
     oauthClientSecret?: string;
+    /**
+     * Microsoft Foundry member sets: the Entra ID directory (tenant) ID. Empty string clears.
+     */
+    oauthTenantId?: string;
+    /**
+     * Amazon Bedrock member sets: IAM Identity Center access portal URL, its region, the AWS account ID and the permission set name members get. null clears.
+     */
+    awsSso?: {
+      startUrl: string;
+      region: string;
+      accountId: string;
+      roleName: string;
+    } | null;
     allMembers?: boolean;
     memberIds?: Array<string>;
     teamIds?: Array<string>;
@@ -16255,6 +20125,10 @@ export type GetV1InferenceProvidersByInferenceProviderIdConnectResponses = {
         credentialSetId: string;
         credentialSetName: string;
       }>;
+      /**
+       * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+       */
+      modelAssignmentsComplete: boolean;
       authorizationRequests: Array<{
         /**
          * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -16732,6 +20606,9 @@ export type GetV1InferenceProvidersByInferenceProviderIdCredentialSetsResponses 
       id: string;
       name: string;
       createdAt?: string;
+      /**
+       * Who created the set. Omitted unless the caller holds Manage Gateway providers.
+       */
       createdBy?: {
         /**
          * Den TypeID with 'om_' prefix and a 26-character base32 suffix.
@@ -16746,6 +20623,13 @@ export type GetV1InferenceProvidersByInferenceProviderIdCredentialSetsResponses 
       credentialStatus: "ready" | "member_auth_required" | "org_credential_missing";
       oauthClientId?: string | null;
       hasOauthClientSecret?: boolean;
+      oauthTenantId?: string | null;
+      awsSso?: {
+        startUrl: string;
+        region: string;
+        accountId: string;
+        roleName: string;
+      } | null;
     }>;
   };
 };
@@ -16758,7 +20642,7 @@ export type PostV1InferenceProvidersByInferenceProviderIdCredentialSetsData = {
     name: string;
     credentialMode: "org" | "member";
     credential?: {
-      kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure";
+      kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure" | "aws_sso";
       secret: string;
     };
     apiKeys?: {
@@ -16766,6 +20650,19 @@ export type PostV1InferenceProvidersByInferenceProviderIdCredentialSetsData = {
     };
     oauthClientId?: string;
     oauthClientSecret?: string;
+    /**
+     * Microsoft Foundry member sets: the Entra ID directory (tenant) ID. Empty string clears.
+     */
+    oauthTenantId?: string;
+    /**
+     * Amazon Bedrock member sets: IAM Identity Center access portal URL, its region, the AWS account ID and the permission set name members get. null clears.
+     */
+    awsSso?: {
+      startUrl: string;
+      region: string;
+      accountId: string;
+      roleName: string;
+    } | null;
     status?: "active" | "disabled";
   };
   path: {
@@ -16829,6 +20726,9 @@ export type PostV1InferenceProvidersByInferenceProviderIdCredentialSetsResponses
       id: string;
       name: string;
       createdAt?: string;
+      /**
+       * Who created the set. Omitted unless the caller holds Manage Gateway providers.
+       */
       createdBy?: {
         /**
          * Den TypeID with 'om_' prefix and a 26-character base32 suffix.
@@ -16843,6 +20743,13 @@ export type PostV1InferenceProvidersByInferenceProviderIdCredentialSetsResponses
       credentialStatus: "ready" | "member_auth_required" | "org_credential_missing";
       oauthClientId?: string | null;
       hasOauthClientSecret?: boolean;
+      oauthTenantId?: string | null;
+      awsSso?: {
+        startUrl: string;
+        region: string;
+        accountId: string;
+        roleName: string;
+      } | null;
     };
   };
 };
@@ -16920,7 +20827,7 @@ export type PatchV1InferenceProvidersByInferenceProviderIdCredentialSetsByCreden
     name?: string;
     credentialMode?: "org" | "member";
     credential?: {
-      kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure";
+      kind: "api_key" | "api_key_map" | "aws_keys" | "gcp_service_account" | "oauth_google" | "oauth_azure" | "aws_sso";
       secret: string;
     };
     apiKeys?: {
@@ -16928,6 +20835,19 @@ export type PatchV1InferenceProvidersByInferenceProviderIdCredentialSetsByCreden
     };
     oauthClientId?: string;
     oauthClientSecret?: string;
+    /**
+     * Microsoft Foundry member sets: the Entra ID directory (tenant) ID. Empty string clears.
+     */
+    oauthTenantId?: string;
+    /**
+     * Amazon Bedrock member sets: IAM Identity Center access portal URL, its region, the AWS account ID and the permission set name members get. null clears.
+     */
+    awsSso?: {
+      startUrl: string;
+      region: string;
+      accountId: string;
+      roleName: string;
+    } | null;
     status?: "active" | "disabled";
   };
   path: {
@@ -16995,6 +20915,9 @@ export type PatchV1InferenceProvidersByInferenceProviderIdCredentialSetsByCreden
       id: string;
       name: string;
       createdAt?: string;
+      /**
+       * Who created the set. Omitted unless the caller holds Manage Gateway providers.
+       */
       createdBy?: {
         /**
          * Den TypeID with 'om_' prefix and a 26-character base32 suffix.
@@ -17009,6 +20932,13 @@ export type PatchV1InferenceProvidersByInferenceProviderIdCredentialSetsByCreden
       credentialStatus: "ready" | "member_auth_required" | "org_credential_missing";
       oauthClientId?: string | null;
       hasOauthClientSecret?: boolean;
+      oauthTenantId?: string | null;
+      awsSso?: {
+        startUrl: string;
+        region: string;
+        accountId: string;
+        roleName: string;
+      } | null;
     };
   };
 };
@@ -17545,7 +21475,7 @@ export type GetV1InferenceProvidersByInferenceProviderIdOauthStartError =
 
 export type GetV1InferenceProvidersByInferenceProviderIdOauthStartResponses = {
   /**
-   * Begin Google sign-in for a member inference credential
+   * Begin sign-in for a member inference credential
    */
   200: {
     authUrl: string;
@@ -17603,14 +21533,14 @@ export type GetV1InferenceProvidersOauthBrowserStatusError =
 
 export type GetV1InferenceProvidersOauthBrowserStatusResponses = {
   /**
-   * Check browser readiness for member Google sign-in
+   * Check browser readiness for member sign-in
    */
   200: {
     status: "sign_in_required" | "account_mismatch" | "ready";
     /**
-     * Present when ready. google: continue with browser-start. litellm_key: submit the member's LiteLLM key to browser-litellm-key. litellm_issued: OpenWork creates the key; issue reports why it has not yet, and browser-litellm-check retries.
+     * Present when ready. google and microsoft: continue with browser-start. aws_sso: start AWS device sign-in with browser-aws-start, then poll browser-aws-poll. litellm_key: submit the member's LiteLLM key to browser-litellm-key. litellm_issued: OpenWork creates the key; issue reports why it has not yet, and browser-litellm-check retries.
      */
-    method?: "google" | "litellm_key" | "litellm_issued";
+    method?: "google" | "aws_sso" | "microsoft" | "litellm_key" | "litellm_issued";
     providerName?: string;
     issue?: {
       status: string;
@@ -17673,7 +21603,7 @@ export type GetV1InferenceProvidersOauthBrowserStartError =
 
 export type GetV1InferenceProvidersOauthBrowserStartResponses = {
   /**
-   * Continue member Google sign-in in a signed-in browser
+   * Continue member Google or Microsoft sign-in in a signed-in browser
    */
   200: {
     authUrl: string;
@@ -17713,6 +21643,133 @@ export type GetV1InferenceProvidersOauthCallbackResponses = {
 
 export type GetV1InferenceProvidersOauthCallbackResponse =
   GetV1InferenceProvidersOauthCallbackResponses[keyof GetV1InferenceProvidersOauthCallbackResponses];
+
+export type PostV1InferenceProvidersOauthBrowserAwsStartData = {
+  body: {
+    attempt: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/inference-providers/oauth/browser-aws-start";
+};
+
+export type PostV1InferenceProvidersOauthBrowserAwsStartErrors = {
+  /**
+   * Invalid request or provider configuration.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message?: string;
+      };
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Access denied or Gateway management disabled.
+   */
+  403:
+    | ForbiddenError
+    | {
+        error: "gateway_not_enabled";
+        message: string;
+      };
+  /**
+   * Resource not found.
+   */
+  404: NotFoundError;
+  /**
+   * Selection or resource conflict.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type PostV1InferenceProvidersOauthBrowserAwsStartError =
+  PostV1InferenceProvidersOauthBrowserAwsStartErrors[keyof PostV1InferenceProvidersOauthBrowserAwsStartErrors];
+
+export type PostV1InferenceProvidersOauthBrowserAwsStartResponses = {
+  /**
+   * Start member AWS sign-in from a signed-in browser
+   */
+  200: {
+    attempt: string;
+    verificationUri: string;
+    verificationUriComplete: string;
+    userCode: string;
+    interval: number;
+    expiresIn: number;
+  };
+};
+
+export type PostV1InferenceProvidersOauthBrowserAwsStartResponse =
+  PostV1InferenceProvidersOauthBrowserAwsStartResponses[keyof PostV1InferenceProvidersOauthBrowserAwsStartResponses];
+
+export type PostV1InferenceProvidersOauthBrowserAwsPollData = {
+  body: {
+    attempt: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/inference-providers/oauth/browser-aws-poll";
+};
+
+export type PostV1InferenceProvidersOauthBrowserAwsPollErrors = {
+  /**
+   * Invalid request or provider configuration.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message?: string;
+      };
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Access denied or Gateway management disabled.
+   */
+  403:
+    | ForbiddenError
+    | {
+        error: "gateway_not_enabled";
+        message: string;
+      };
+  /**
+   * Resource not found.
+   */
+  404: NotFoundError;
+  /**
+   * Selection or resource conflict.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type PostV1InferenceProvidersOauthBrowserAwsPollError =
+  PostV1InferenceProvidersOauthBrowserAwsPollErrors[keyof PostV1InferenceProvidersOauthBrowserAwsPollErrors];
+
+export type PostV1InferenceProvidersOauthBrowserAwsPollResponses = {
+  /**
+   * Check a member AWS sign-in from a signed-in browser
+   */
+  200: {
+    status: "pending" | "connected";
+    retryAfter?: number;
+    accountName?: string | null;
+  };
+};
+
+export type PostV1InferenceProvidersOauthBrowserAwsPollResponse =
+  PostV1InferenceProvidersOauthBrowserAwsPollResponses[keyof PostV1InferenceProvidersOauthBrowserAwsPollResponses];
 
 export type DeleteV1InferenceProvidersByInferenceProviderIdOauthData = {
   body?: never;
@@ -17772,7 +21829,7 @@ export type DeleteV1InferenceProvidersByInferenceProviderIdOauthError =
 
 export type DeleteV1InferenceProvidersByInferenceProviderIdOauthResponses = {
   /**
-   * Disconnect the caller's Google credential for an inference provider
+   * Disconnect the caller's member sign-in for an inference provider
    */
   204: void;
 };
@@ -18353,7 +22410,7 @@ export type PostV1MembersByMemberIdRoleErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and super-admins can update member roles.
+   * The caller needs the Change member roles permission and a recent sign-in. With Permissions on, making someone an admin also needs every Admin permission, only the owner or an admin can change an admin's role, and nobody but the owner can change their own role.
    */
   403: ForbiddenError;
   /**
@@ -18441,7 +22498,7 @@ export type DeleteV1MembersByMemberIdErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can remove members.
+   * The caller needs the Remove members permission and a recent sign-in. Removing a member of an Admin team also needs Manage Admin teams, and with Permissions on only the owner or an admin can remove an admin.
    */
   403: ForbiddenError;
   /**
@@ -18462,6 +22519,483 @@ export type DeleteV1MembersByMemberIdResponses = {
 export type DeleteV1MembersByMemberIdResponse =
   DeleteV1MembersByMemberIdResponses[keyof DeleteV1MembersByMemberIdResponses];
 
+export type GetV1PermissionsCatalogData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/permissions/catalog";
+};
+
+export type GetV1PermissionsCatalogErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The organization was not found.
+   */
+  404: PermissionsNotFoundError;
+};
+
+export type GetV1PermissionsCatalogError = GetV1PermissionsCatalogErrors[keyof GetV1PermissionsCatalogErrors];
+
+export type GetV1PermissionsCatalogResponses = {
+  /**
+   * Permission catalog returned successfully.
+   */
+  200: PermissionCatalog;
+};
+
+export type GetV1PermissionsCatalogResponse = GetV1PermissionsCatalogResponses[keyof GetV1PermissionsCatalogResponses];
+
+export type GetV1PermissionsSetsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/permissions/sets";
+};
+
+export type GetV1PermissionsSetsErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.view.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The organization was not found, or Permissions is turned off.
+   */
+  404: PermissionsNotFoundError;
+};
+
+export type GetV1PermissionsSetsError = GetV1PermissionsSetsErrors[keyof GetV1PermissionsSetsErrors];
+
+export type GetV1PermissionsSetsResponses = {
+  /**
+   * Permission sets returned successfully.
+   */
+  200: PermissionSetList;
+};
+
+export type GetV1PermissionsSetsResponse = GetV1PermissionsSetsResponses[keyof GetV1PermissionsSetsResponses];
+
+export type PostV1PermissionsSetsData = {
+  body: CreatePermissionSetBody;
+  path?: never;
+  query?: never;
+  url: "/v1/permissions/sets";
+};
+
+export type PostV1PermissionsSetsErrors = {
+  /**
+   * The body was invalid or named an unknown or repeated permission.
+   */
+  400: InvalidRequestError | PermissionEditError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage, needs a recent sign-in, tried to turn on a permission they don't have, or tried to change Admin permissions without being the owner or an admin.
+   */
+  403: ForbiddenError | PermissionDeniedError | PermissionEditError;
+  /**
+   * The organization or team was not found, or Permissions is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The team already has an active permission set.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type PostV1PermissionsSetsError = PostV1PermissionsSetsErrors[keyof PostV1PermissionsSetsErrors];
+
+export type PostV1PermissionsSetsResponses = {
+  /**
+   * Team permission set created.
+   */
+  201: PermissionSetResponse;
+};
+
+export type PostV1PermissionsSetsResponse = PostV1PermissionsSetsResponses[keyof PostV1PermissionsSetsResponses];
+
+export type DeleteV1PermissionsSetsByPermissionSetIdData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: never;
+  url: "/v1/permissions/sets/{permissionSetId}";
+};
+
+export type DeleteV1PermissionsSetsByPermissionSetIdErrors = {
+  /**
+   * The id was invalid, or the set is Member or Admin permissions.
+   */
+  400: InvalidRequestError | DefaultPermissionSetError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage or needs a recent sign-in.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The permission set or organization was not found, or Permissions is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The permission set is already archived.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type DeleteV1PermissionsSetsByPermissionSetIdError =
+  DeleteV1PermissionsSetsByPermissionSetIdErrors[keyof DeleteV1PermissionsSetsByPermissionSetIdErrors];
+
+export type DeleteV1PermissionsSetsByPermissionSetIdResponses = {
+  /**
+   * The team permission set was archived.
+   */
+  204: void;
+};
+
+export type DeleteV1PermissionsSetsByPermissionSetIdResponse =
+  DeleteV1PermissionsSetsByPermissionSetIdResponses[keyof DeleteV1PermissionsSetsByPermissionSetIdResponses];
+
+export type GetV1PermissionsSetsByPermissionSetIdData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: never;
+  url: "/v1/permissions/sets/{permissionSetId}";
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdErrors = {
+  /**
+   * The permission set id was invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.view.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The permission set or organization was not found, or Permissions is turned off.
+   */
+  404: PermissionsNotFoundError;
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdError =
+  GetV1PermissionsSetsByPermissionSetIdErrors[keyof GetV1PermissionsSetsByPermissionSetIdErrors];
+
+export type GetV1PermissionsSetsByPermissionSetIdResponses = {
+  /**
+   * Permission set returned successfully.
+   */
+  200: PermissionSetResponse;
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdResponse =
+  GetV1PermissionsSetsByPermissionSetIdResponses[keyof GetV1PermissionsSetsByPermissionSetIdResponses];
+
+export type PatchV1PermissionsSetsByPermissionSetIdData = {
+  body: RenamePermissionSetBody;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: never;
+  url: "/v1/permissions/sets/{permissionSetId}";
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdErrors = {
+  /**
+   * The body or id was invalid, or the set is Member or Admin permissions.
+   */
+  400: InvalidRequestError | DefaultPermissionSetError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage or needs a recent sign-in.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The permission set or organization was not found, or Permissions or Shared roles is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The permission set is archived.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdError =
+  PatchV1PermissionsSetsByPermissionSetIdErrors[keyof PatchV1PermissionsSetsByPermissionSetIdErrors];
+
+export type PatchV1PermissionsSetsByPermissionSetIdResponses = {
+  /**
+   * Role renamed; its current state is returned.
+   */
+  200: PermissionSetResponse;
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdResponse =
+  PatchV1PermissionsSetsByPermissionSetIdResponses[keyof PatchV1PermissionsSetsByPermissionSetIdResponses];
+
+export type PutV1TeamsByTeamIdPermissionSetData = {
+  body: TeamPermissionSetBody;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/teams/{teamId}/permission-set";
+};
+
+export type PutV1TeamsByTeamIdPermissionSetErrors = {
+  /**
+   * The body or id was invalid, or the set is Member or Admin permissions.
+   */
+  400: InvalidRequestError | DefaultPermissionSetError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage, needs a recent sign-in, tried to turn on a permission they don't have, or tried to change Admin permissions without being the owner or an admin.
+   */
+  403: ForbiddenError | PermissionDeniedError | PermissionEditError;
+  /**
+   * The team, permission set or organization was not found, or Permissions or Shared roles is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The permission set is archived.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type PutV1TeamsByTeamIdPermissionSetError =
+  PutV1TeamsByTeamIdPermissionSetErrors[keyof PutV1TeamsByTeamIdPermissionSetErrors];
+
+export type PutV1TeamsByTeamIdPermissionSetResponses = {
+  /**
+   * The team's custom role was set; the role's current state is returned, or null when the team has none.
+   */
+  200: TeamPermissionSetResponse;
+};
+
+export type PutV1TeamsByTeamIdPermissionSetResponse =
+  PutV1TeamsByTeamIdPermissionSetResponses[keyof PutV1TeamsByTeamIdPermissionSetResponses];
+
+export type PutV1PermissionsSetsByPermissionSetIdPermissionsData = {
+  body: UpdatePermissionSetPermissionsBody;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: never;
+  url: "/v1/permissions/sets/{permissionSetId}/permissions";
+};
+
+export type PutV1PermissionsSetsByPermissionSetIdPermissionsErrors = {
+  /**
+   * The body was invalid, named an unknown or repeated permission, or tried to turn off a locked permission.
+   */
+  400: InvalidRequestError | PermissionEditError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage, needs a recent sign-in, tried to turn on a permission they don't have, or tried to change Admin permissions without being the owner or an admin.
+   */
+  403: ForbiddenError | PermissionDeniedError | PermissionEditError;
+  /**
+   * The permission set or organization was not found, or Permissions is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The permission set is archived.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type PutV1PermissionsSetsByPermissionSetIdPermissionsError =
+  PutV1PermissionsSetsByPermissionSetIdPermissionsErrors[keyof PutV1PermissionsSetsByPermissionSetIdPermissionsErrors];
+
+export type PutV1PermissionsSetsByPermissionSetIdPermissionsResponses = {
+  /**
+   * Permissions updated; the set's current state is returned.
+   */
+  200: PermissionSetResponse;
+};
+
+export type PutV1PermissionsSetsByPermissionSetIdPermissionsResponse =
+  PutV1PermissionsSetsByPermissionSetIdPermissionsResponses[keyof PutV1PermissionsSetsByPermissionSetIdPermissionsResponses];
+
+export type GetV1PermissionsSetsByPermissionSetIdHistoryData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: {
+    /**
+     * Opaque cursor returned as nextCursor by the previous page. Omit for the first page.
+     */
+    cursor?: string;
+    /**
+     * Rows per page, at most 200. Defaults to 50.
+     */
+    limit?: number;
+  };
+  url: "/v1/permissions/sets/{permissionSetId}/history";
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdHistoryErrors = {
+  /**
+   * The permission set id, cursor or limit was invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.view.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The permission set or organization was not found, or Permissions is turned off.
+   */
+  404: PermissionsNotFoundError;
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdHistoryError =
+  GetV1PermissionsSetsByPermissionSetIdHistoryErrors[keyof GetV1PermissionsSetsByPermissionSetIdHistoryErrors];
+
+export type GetV1PermissionsSetsByPermissionSetIdHistoryResponses = {
+  /**
+   * History page returned successfully.
+   */
+  200: PermissionHistoryPage;
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdHistoryResponse =
+  GetV1PermissionsSetsByPermissionSetIdHistoryResponses[keyof GetV1PermissionsSetsByPermissionSetIdHistoryResponses];
+
+export type GetV1PermissionsKeysByPermissionKeyData = {
+  body?: never;
+  path: {
+    permissionKey: string;
+  };
+  query?: never;
+  url: "/v1/permissions/keys/{permissionKey}";
+};
+
+export type GetV1PermissionsKeysByPermissionKeyErrors = {
+  /**
+   * The permission key was invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.view.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The permission or organization was not found, or Permissions is turned off.
+   */
+  404: PermissionsNotFoundError;
+};
+
+export type GetV1PermissionsKeysByPermissionKeyError =
+  GetV1PermissionsKeysByPermissionKeyErrors[keyof GetV1PermissionsKeysByPermissionKeyErrors];
+
+export type GetV1PermissionsKeysByPermissionKeyResponses = {
+  /**
+   * Permission status returned successfully.
+   */
+  200: PermissionKeyStatus;
+};
+
+export type GetV1PermissionsKeysByPermissionKeyResponse =
+  GetV1PermissionsKeysByPermissionKeyResponses[keyof GetV1PermissionsKeysByPermissionKeyResponses];
+
+export type GetV1MembersByMemberIdPermissionsData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'om_' prefix and a 26-character base32 suffix.
+     */
+    memberId: string;
+  };
+  query?: never;
+  url: "/v1/members/{memberId}/permissions";
+};
+
+export type GetV1MembersByMemberIdPermissionsErrors = {
+  /**
+   * The member id was invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller is reading another member's permissions without permissions.view.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The member or organization was not found, or Permissions is turned off.
+   */
+  404: PermissionsNotFoundError;
+};
+
+export type GetV1MembersByMemberIdPermissionsError =
+  GetV1MembersByMemberIdPermissionsErrors[keyof GetV1MembersByMemberIdPermissionsErrors];
+
+export type GetV1MembersByMemberIdPermissionsResponses = {
+  /**
+   * Effective permissions returned successfully.
+   */
+  200: MemberPermissions;
+};
+
+export type GetV1MembersByMemberIdPermissionsResponse =
+  GetV1MembersByMemberIdPermissionsResponses[keyof GetV1MembersByMemberIdPermissionsResponses];
+
 export type GetV1OauthProvidersByProviderIdClientData = {
   body?: never;
   path: {
@@ -18477,7 +23011,7 @@ export type GetV1OauthProvidersByProviderIdClientErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can view an OAuth client configuration.
+   * The caller lacks the View OAuth apps permission.
    */
   403: ForbiddenError;
   /**
@@ -18523,7 +23057,7 @@ export type PostV1OauthProvidersByProviderIdClientErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can configure an OAuth client.
+   * The caller lacks the Manage OAuth apps permission.
    */
   403: ForbiddenError;
   /**
@@ -18544,6 +23078,43 @@ export type PostV1OauthProvidersByProviderIdClientResponses = {
 
 export type PostV1OauthProvidersByProviderIdClientResponse =
   PostV1OauthProvidersByProviderIdClientResponses[keyof PostV1OauthProvidersByProviderIdClientResponses];
+
+export type GetV1OauthProvidersByProviderIdApiCheckData = {
+  body?: never;
+  path: {
+    providerId: string;
+  };
+  query?: never;
+  url: "/v1/oauth-providers/{providerId}/api-check";
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OAuth apps permission.
+   */
+  403: ForbiddenError;
+  /**
+   * Unknown providerId, or not a Google Workspace connector.
+   */
+  404: UnknownOAuthProviderError;
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckError =
+  GetV1OauthProvidersByProviderIdApiCheckErrors[keyof GetV1OauthProvidersByProviderIdApiCheckErrors];
+
+export type GetV1OauthProvidersByProviderIdApiCheckResponses = {
+  /**
+   * Each needed Google API and whether it is turned on.
+   */
+  200: OAuthProviderApiCheck;
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckResponse =
+  GetV1OauthProvidersByProviderIdApiCheckResponses[keyof GetV1OauthProvidersByProviderIdApiCheckResponses];
 
 export type GetV1OauthProvidersByProviderIdConnectStartData = {
   body?: never;
@@ -18746,6 +23317,1061 @@ export type PostV1OauthProvidersByProviderIdDisconnectResponses = {
 
 export type PostV1OauthProvidersByProviderIdDisconnectResponse =
   PostV1OauthProvidersByProviderIdDisconnectResponses[keyof PostV1OauthProvidersByProviderIdDisconnectResponses];
+
+export type CreateGoogleDriveUploadSessionData = {
+  body: {
+    /**
+     * File basename; no file bytes or local paths. Ignored when replacing a file.
+     */
+    name: string;
+    /**
+     * Exact file size in bytes, up to Google's 5 TiB limit.
+     */
+    size: number;
+    mimeType?: string;
+    folderId?: string;
+    /**
+     * Replace this existing file's content instead of creating a file. It keeps its ID, link, sharing and comments; the previous version stays in Drive's version history for 30 days.
+     */
+    fileId?: string;
+    /**
+     * Required with fileId: the revision your copy was downloaded from. Refused with drive_conflict when Drive changed since; download the newer version and reapply the edits, or save a new file.
+     */
+    baseRevision?: string;
+    /**
+     * New files only: save the uploaded Office file as this native Google Docs, Sheets or Slides type.
+     */
+    convertTo?:
+      | "application/vnd.google-apps.spreadsheet"
+      | "application/vnd.google-apps.document"
+      | "application/vnd.google-apps.presentation";
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/capabilities/google-workspace/drive-upload-sessions";
+};
+
+export type CreateGoogleDriveUploadSessionErrors = {
+  /**
+   * Invalid upload metadata, or a Google Docs, Sheets or Slides file cannot be replaced by an upload.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive write access, or the file changed in Drive since baseRevision (drive_conflict) or is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+    currentRevision?: string | null;
+    modifiedTime?: string | null;
+  };
+  /**
+   * Google did not confirm upload preparation.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type CreateGoogleDriveUploadSessionError =
+  CreateGoogleDriveUploadSessionErrors[keyof CreateGoogleDriveUploadSessionErrors];
+
+export type CreateGoogleDriveUploadSessionResponses = {
+  /**
+   * Secret upload session; file not yet uploaded.
+   */
+  200: GoogleDriveUploadSessionResponse;
+};
+
+export type CreateGoogleDriveUploadSessionResponse =
+  CreateGoogleDriveUploadSessionResponses[keyof CreateGoogleDriveUploadSessionResponses];
+
+export type PrepareHostGoogleDriveUploadSessionData = {
+  body: {
+    /**
+     * File basename; no file bytes or local paths. Ignored when replacing a file.
+     */
+    name: string;
+    /**
+     * Exact file size in bytes, up to Google's 5 TiB limit.
+     */
+    size: number;
+    mimeType?: string;
+    folderId?: string;
+    /**
+     * Replace this existing file's content instead of creating a file. It keeps its ID, link, sharing and comments; the previous version stays in Drive's version history for 30 days.
+     */
+    fileId?: string;
+    /**
+     * Required with fileId: the revision your copy was downloaded from. Refused with drive_conflict when Drive changed since; download the newer version and reapply the edits, or save a new file.
+     */
+    baseRevision?: string;
+    /**
+     * New files only: save the uploaded Office file as this native Google Docs, Sheets or Slides type.
+     */
+    convertTo?:
+      | "application/vnd.google-apps.spreadsheet"
+      | "application/vnd.google-apps.document"
+      | "application/vnd.google-apps.presentation";
+    connectionId?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/direct-uploads/google-workspace/drive-upload-sessions";
+};
+
+export type PrepareHostGoogleDriveUploadSessionErrors = {
+  /**
+   * Invalid upload metadata, or a Google Docs, Sheets or Slides file cannot be replaced by an upload.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive write access, or the file changed in Drive since baseRevision (drive_conflict) or is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+    currentRevision?: string | null;
+    modifiedTime?: string | null;
+  };
+  /**
+   * Google did not confirm upload preparation.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type PrepareHostGoogleDriveUploadSessionError =
+  PrepareHostGoogleDriveUploadSessionErrors[keyof PrepareHostGoogleDriveUploadSessionErrors];
+
+export type PrepareHostGoogleDriveUploadSessionResponses = {
+  /**
+   * Secret upload session for host transport.
+   */
+  200: GoogleDriveUploadSessionResponse;
+};
+
+export type PrepareHostGoogleDriveUploadSessionResponse =
+  PrepareHostGoogleDriveUploadSessionResponses[keyof PrepareHostGoogleDriveUploadSessionResponses];
+
+export type DescribeHostGoogleDriveDownloadData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+    connectionId?: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}";
+};
+
+export type DescribeHostGoogleDriveDownloadErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DescribeHostGoogleDriveDownloadError =
+  DescribeHostGoogleDriveDownloadErrors[keyof DescribeHostGoogleDriveDownloadErrors];
+
+export type DescribeHostGoogleDriveDownloadResponses = {
+  /**
+   * Pull plan; no file content.
+   */
+  200: GoogleDriveDownloadInfo;
+};
+
+export type DescribeHostGoogleDriveDownloadResponse =
+  DescribeHostGoogleDriveDownloadResponses[keyof DescribeHostGoogleDriveDownloadResponses];
+
+export type DownloadHostGoogleDriveFileData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+    connectionId?: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}/content";
+};
+
+export type DownloadHostGoogleDriveFileErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DownloadHostGoogleDriveFileError =
+  DownloadHostGoogleDriveFileErrors[keyof DownloadHostGoogleDriveFileErrors];
+
+export type DownloadHostGoogleDriveFileResponses = {
+  /**
+   * File bytes.
+   */
+  200: Blob | File;
+  /**
+   * Requested byte range.
+   */
+  206: Blob | File;
+};
+
+export type DownloadHostGoogleDriveFileResponse =
+  DownloadHostGoogleDriveFileResponses[keyof DownloadHostGoogleDriveFileResponses];
+
+export type CreateGoogleDriveDownloadLinkData = {
+  body: {
+    fileId: string;
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/capabilities/google-workspace/drive-download-links";
+};
+
+export type CreateGoogleDriveDownloadLinkErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type CreateGoogleDriveDownloadLinkError =
+  CreateGoogleDriveDownloadLinkErrors[keyof CreateGoogleDriveDownloadLinkErrors];
+
+export type CreateGoogleDriveDownloadLinkResponses = {
+  /**
+   * Short-lived bearer download URL, as JSON and as an MCP resource link, with the file's revision; no file content.
+   */
+  200: GoogleDriveDownloadLink;
+};
+
+export type CreateGoogleDriveDownloadLinkResponse =
+  CreateGoogleDriveDownloadLinkResponses[keyof CreateGoogleDriveDownloadLinkResponses];
+
+export type DownloadGoogleDriveFileByLinkData = {
+  body?: never;
+  path?: never;
+  query: {
+    token: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-link";
+};
+
+export type DownloadGoogleDriveFileByLinkErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Unknown or expired link.
+   */
+  404: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DownloadGoogleDriveFileByLinkError =
+  DownloadGoogleDriveFileByLinkErrors[keyof DownloadGoogleDriveFileByLinkErrors];
+
+export type DownloadGoogleDriveFileByLinkResponses = {
+  /**
+   * File bytes.
+   */
+  200: Blob | File;
+};
+
+export type DownloadGoogleDriveFileByLinkResponse =
+  DownloadGoogleDriveFileByLinkResponses[keyof DownloadGoogleDriveFileByLinkResponses];
+
+export type GetGoogleDriveDocumentMetadataData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/metadata";
+};
+
+export type GetGoogleDriveDocumentMetadataErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetGoogleDriveDocumentMetadataError =
+  GetGoogleDriveDocumentMetadataErrors[keyof GetGoogleDriveDocumentMetadataErrors];
+
+export type GetGoogleDriveDocumentMetadataResponses = {
+  /**
+   * Document result.
+   */
+  200: {
+    id: string;
+    name: string;
+    mimeType: string;
+    modifiedTime: string | null;
+    size: number | null;
+    openUrl: string | null;
+  };
+};
+
+export type GetGoogleDriveDocumentMetadataResponse =
+  GetGoogleDriveDocumentMetadataResponses[keyof GetGoogleDriveDocumentMetadataResponses];
+
+export type OpenGoogleDriveDocumentEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    sheetId?: string;
+    startRow?: number;
+    connectionId?: string;
+  };
+  url: "/v1/documents/google-drive/files/{fileId}/editor";
+};
+
+export type OpenGoogleDriveDocumentEditorErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type OpenGoogleDriveDocumentEditorError =
+  OpenGoogleDriveDocumentEditorErrors[keyof OpenGoogleDriveDocumentEditorErrors];
+
+export type OpenGoogleDriveDocumentEditorResponses = {
+  /**
+   * Document result.
+   */
+  200:
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "spreadsheet";
+        source: "google" | "xlsx";
+        sheets: Array<{
+          id: string;
+          name: string;
+          rows: number;
+          columns: number;
+        }>;
+        activeSheetId: string;
+        startRow: number;
+        endRow: number;
+        cells: Array<{
+          row: number;
+          column: number;
+          text: string;
+          formula?: string;
+        }>;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "document";
+        source: "google" | "docx";
+        sections: Array<{
+          id: string;
+          name: string;
+          paragraphs: Array<{
+            id: string;
+            heading?: boolean;
+            runs: Array<{
+              id: string;
+              text: string;
+              bold?: boolean;
+              italic?: boolean;
+              underline?: boolean;
+            }>;
+          }>;
+        }>;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "text";
+        text: string;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "preview";
+        mimeType: string;
+      };
+};
+
+export type OpenGoogleDriveDocumentEditorResponse =
+  OpenGoogleDriveDocumentEditorResponses[keyof OpenGoogleDriveDocumentEditorResponses];
+
+export type SaveGoogleDriveDocumentEditsData = {
+  body:
+    | {
+        kind: "spreadsheet";
+        connectionId: string;
+        revision: string;
+        sheetId: string;
+        changes: Array<{
+          row: number;
+          column: number;
+          value: string;
+          formula?: boolean;
+        }>;
+      }
+    | {
+        kind: "document";
+        connectionId: string;
+        revision: string;
+        changes: Array<{
+          sectionId: string;
+          runId: string;
+          value: string;
+        }>;
+      }
+    | {
+        kind: "text";
+        connectionId: string;
+        revision: string;
+        text: string;
+      };
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/editor";
+};
+
+export type SaveGoogleDriveDocumentEditsErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type SaveGoogleDriveDocumentEditsError =
+  SaveGoogleDriveDocumentEditsErrors[keyof SaveGoogleDriveDocumentEditsErrors];
+
+export type SaveGoogleDriveDocumentEditsResponses = {
+  /**
+   * Document result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type SaveGoogleDriveDocumentEditsResponse =
+  SaveGoogleDriveDocumentEditsResponses[keyof SaveGoogleDriveDocumentEditsResponses];
+
+export type ReadGoogleDriveDocumentContentData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query: {
+    connectionId: string;
+  };
+  url: "/v1/documents/google-drive/files/{fileId}/content";
+};
+
+export type ReadGoogleDriveDocumentContentErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type ReadGoogleDriveDocumentContentError =
+  ReadGoogleDriveDocumentContentErrors[keyof ReadGoogleDriveDocumentContentErrors];
+
+export type ReadGoogleDriveDocumentContentResponses = {
+  /**
+   * Document result.
+   */
+  200: unknown;
+};
+
+export type OpenGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office";
+};
+
+export type OpenGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type OpenGoogleDriveOfficeEditorError =
+  OpenGoogleDriveOfficeEditorErrors[keyof OpenGoogleDriveOfficeEditorErrors];
+
+export type OpenGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    id: string;
+    serverUrl: string;
+    editorUrl: string;
+    accessToken: string;
+    expiresAt: string;
+    saveAsCopy: boolean;
+    canEdit: boolean;
+    fileType: "docx" | "xlsx" | "pptx" | "odt" | "ods" | "odp";
+  };
+};
+
+export type OpenGoogleDriveOfficeEditorResponse =
+  OpenGoogleDriveOfficeEditorResponses[keyof OpenGoogleDriveOfficeEditorResponses];
+
+export type GetGoogleDriveOfficeEditorStatusData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}";
+};
+
+export type GetGoogleDriveOfficeEditorStatusErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetGoogleDriveOfficeEditorStatusError =
+  GetGoogleDriveOfficeEditorStatusErrors[keyof GetGoogleDriveOfficeEditorStatusErrors];
+
+export type GetGoogleDriveOfficeEditorStatusResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    expiresAt: string;
+    draftVersion: number;
+    saveRequestId?: string;
+    savedFileId?: string;
+  };
+};
+
+export type GetGoogleDriveOfficeEditorStatusResponse =
+  GetGoogleDriveOfficeEditorStatusResponses[keyof GetGoogleDriveOfficeEditorStatusResponses];
+
+export type SaveGoogleDriveOfficeEditorData = {
+  body: {
+    draftVersion: number;
+  };
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/save";
+};
+
+export type SaveGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type SaveGoogleDriveOfficeEditorError =
+  SaveGoogleDriveOfficeEditorErrors[keyof SaveGoogleDriveOfficeEditorErrors];
+
+export type SaveGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    fileId: string;
+  };
+};
+
+export type SaveGoogleDriveOfficeEditorResponse =
+  SaveGoogleDriveOfficeEditorResponses[keyof SaveGoogleDriveOfficeEditorResponses];
+
+export type CloseGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/close";
+};
+
+export type CloseGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type CloseGoogleDriveOfficeEditorError =
+  CloseGoogleDriveOfficeEditorErrors[keyof CloseGoogleDriveOfficeEditorErrors];
+
+export type CloseGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type CloseGoogleDriveOfficeEditorResponse =
+  CloseGoogleDriveOfficeEditorResponses[keyof CloseGoogleDriveOfficeEditorResponses];
+
+export type GetOfficeFileInfoData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}";
+};
+
+export type GetOfficeFileInfoErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetOfficeFileInfoError = GetOfficeFileInfoErrors[keyof GetOfficeFileInfoErrors];
+
+export type GetOfficeFileInfoResponses = {
+  /**
+   * Office editor result.
+   */
+  200: unknown;
+};
+
+export type LockOfficeFileData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}";
+};
+
+export type LockOfficeFileErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type LockOfficeFileError = LockOfficeFileErrors[keyof LockOfficeFileErrors];
+
+export type LockOfficeFileResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    ok: boolean;
+  };
+};
+
+export type LockOfficeFileResponse = LockOfficeFileResponses[keyof LockOfficeFileResponses];
+
+export type GetOfficeFileContentsData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}/contents";
+};
+
+export type GetOfficeFileContentsErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetOfficeFileContentsError = GetOfficeFileContentsErrors[keyof GetOfficeFileContentsErrors];
+
+export type GetOfficeFileContentsResponses = {
+  /**
+   * Office editor result.
+   */
+  200: unknown;
+};
+
+export type PutOfficeFileContentsData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}/contents";
+};
+
+export type PutOfficeFileContentsErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type PutOfficeFileContentsError = PutOfficeFileContentsErrors[keyof PutOfficeFileContentsErrors];
+
+export type PutOfficeFileContentsResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    LastModifiedTime: string;
+  };
+};
+
+export type PutOfficeFileContentsResponse = PutOfficeFileContentsResponses[keyof PutOfficeFileContentsResponses];
 
 export type SendGmailDraftData = {
   body: {
@@ -20457,6 +26083,263 @@ export type UpdateGoogleDriveFileMetadataResponses = {
 export type UpdateGoogleDriveFileMetadataResponse =
   UpdateGoogleDriveFileMetadataResponses[keyof UpdateGoogleDriveFileMetadataResponses];
 
+export type GetGoogleDocumentOutlineData = {
+  body?: never;
+  path: {
+    documentId: string;
+  };
+  query?: never;
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/outline";
+};
+
+export type GetGoogleDocumentOutlineErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type GetGoogleDocumentOutlineError = GetGoogleDocumentOutlineErrors[keyof GetGoogleDocumentOutlineErrors];
+
+export type GetGoogleDocumentOutlineResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    title: string;
+    revisionId: string | null;
+    bodyTextOnly: true;
+    suggestionsOmitted: boolean;
+    tabs: Array<{
+      tabId: string;
+      title: string;
+      parentTabId: string | null;
+      headings: Array<{
+        startIndex: number;
+        text: string;
+        style: string;
+      }>;
+    }>;
+    headingsTruncated: boolean;
+  };
+};
+
+export type GetGoogleDocumentOutlineResponse =
+  GetGoogleDocumentOutlineResponses[keyof GetGoogleDocumentOutlineResponses];
+
+export type ReadGoogleDocumentTextData = {
+  body?: never;
+  path: {
+    documentId: string;
+  };
+  query: {
+    /**
+     * A tab ID returned by getGoogleDocumentOutline, including child tabs.
+     */
+    tabId: string;
+    /**
+     * Google UTF-16 offset. For another page, use nextStartIndex with the same revisionId and query.
+     */
+    startIndex?: number;
+    /**
+     * Maximum total UTF-16 text characters returned to the assistant.
+     */
+    maxCharacters?: number;
+    /**
+     * Optional literal, case-insensitive search within body paragraphs and tables in this tab. Returns matching excerpts, not the whole document.
+     */
+    query?: string;
+    /**
+     * Pass the revision from the previous page to stop if the saved document changed. Null on read-only accounts; those reads cannot guarantee stable pagination.
+     */
+    revisionId?: string;
+  };
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/text";
+};
+
+export type ReadGoogleDocumentTextErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ReadGoogleDocumentTextError = ReadGoogleDocumentTextErrors[keyof ReadGoogleDocumentTextErrors];
+
+export type ReadGoogleDocumentTextResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    title: string;
+    revisionId: string | null;
+    bodyTextOnly: true;
+    suggestionsOmitted: boolean;
+    tabId: string;
+    passages: Array<{
+      startIndex: number;
+      endIndex: number;
+      text: string;
+    }>;
+    nextStartIndex: number | null;
+  };
+};
+
+export type ReadGoogleDocumentTextResponse = ReadGoogleDocumentTextResponses[keyof ReadGoogleDocumentTextResponses];
+
+export type ReplaceGoogleDocumentTextData = {
+  body: {
+    tabId: string;
+    /**
+     * Required revisionId from a fresh outline or text read by this same connected account. A stale revision is never merged automatically.
+     */
+    revisionId: string;
+    /**
+     * UTF-16 offset of the exact passage being changed; add its offset within the returned excerpt.
+     */
+    startIndex: number;
+    /**
+     * Exact, case-sensitive saved text at startIndex, inside one paragraph. Cannot cross table cells, embedded objects, or paragraph boundaries.
+     */
+    expectedText: string;
+    /**
+     * User-requested replacement. Empty string deletes the matched passage. This edits the native Google Doc, not an unsaved local draft; require the user's explicit request before calling.
+     */
+    replacement: string;
+  };
+  path: {
+    documentId: string;
+  };
+  query?: never;
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/replace-text";
+};
+
+export type ReplaceGoogleDocumentTextErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ReplaceGoogleDocumentTextError = ReplaceGoogleDocumentTextErrors[keyof ReplaceGoogleDocumentTextErrors];
+
+export type ReplaceGoogleDocumentTextResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    tabId: string;
+    revisionId: string;
+    replacedCharacters: number;
+    insertedCharacters: number;
+  };
+};
+
+export type ReplaceGoogleDocumentTextResponse =
+  ReplaceGoogleDocumentTextResponses[keyof ReplaceGoogleDocumentTextResponses];
+
 export type PostV1DirectUploadsGoogleWorkspaceDriveFilesData = {
   body?: never;
   path?: never;
@@ -20803,6 +26686,8 @@ export type GetV1CapabilitiesGoogleWorkspaceDriveFilesData = {
      */
     maxResults?: number;
     pageToken?: string;
+    orderBy?: "folder,name_natural" | "recency desc" | "modifiedTime desc";
+    filesOnly?: "true" | "false";
     /**
      * Only files modified after this RFC3339 timestamp; follow nextPageToken to enumerate all matching files.
      */
@@ -21830,7 +27715,7 @@ export type PostV1McpConnectionsByConnectionIdOauthIssuerReviewErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can review OAuth issuers.
+   * The caller needs the Manage connections permission, and a recent interactive sign-in (not an API key) to confirm an issuer.
    */
   403: ForbiddenError;
   /**
@@ -21982,6 +27867,13 @@ export type PostV1McpConnectionsData = {
           clientSecret?: string;
           tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
         };
+        /**
+         * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+         */
+        manualOAuthEndpoints?: {
+          authorizationEndpoint: string;
+          tokenEndpoint: string;
+        } | null;
         authorizationServerIssuer?: string | null;
         requestedScopes?: Array<string>;
         access?: ExternalMcpConnectionAccessInput;
@@ -22104,6 +27996,56 @@ export type PutV1McpConnectionsByConnectionIdToolPolicyResponses = {
 
 export type PutV1McpConnectionsByConnectionIdToolPolicyResponse =
   PutV1McpConnectionsByConnectionIdToolPolicyResponses[keyof PutV1McpConnectionsByConnectionIdToolPolicyResponses];
+
+export type PostV1McpConnectionsByConnectionIdCheckData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'emc_' prefix and a 26-character base32 suffix.
+     */
+    connectionId: string;
+  };
+  query?: never;
+  url: "/v1/mcp-connections/{connectionId}/check";
+};
+
+export type PostV1McpConnectionsByConnectionIdCheckErrors = {
+  /**
+   * This connection cannot be checked.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Connection management permission required.
+   */
+  403: ForbiddenError;
+  /**
+   * Unknown connection.
+   */
+  404: ExternalMcpConnectionNotFoundError;
+  /**
+   * Sign in or finish setup before checking.
+   */
+  409: ExternalMcpConnectionNotReadyError;
+};
+
+export type PostV1McpConnectionsByConnectionIdCheckError =
+  PostV1McpConnectionsByConnectionIdCheckErrors[keyof PostV1McpConnectionsByConnectionIdCheckErrors];
+
+export type PostV1McpConnectionsByConnectionIdCheckResponses = {
+  /**
+   * Recorded readiness check.
+   */
+  200: {
+    readiness: ExternalMcpConnectionReadiness;
+  };
+};
+
+export type PostV1McpConnectionsByConnectionIdCheckResponse =
+  PostV1McpConnectionsByConnectionIdCheckResponses[keyof PostV1McpConnectionsByConnectionIdCheckResponses];
 
 export type GetV1McpConnectionsByConnectionIdToolsData = {
   body?: never;
@@ -22275,7 +28217,7 @@ export type DeleteV1McpConnectionsByKeyByExternalKeyErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners, super-admins, or the connection creator can remove MCP connections.
+   * Only the workspace owner (or anyone with the Remove any connection permission) or the connection creator can remove MCP connections.
    */
   403: ForbiddenError;
 };
@@ -22369,7 +28311,7 @@ export type DeleteV1McpConnectionsByConnectionIdErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners, super-admins, or the connection creator can remove MCP connections.
+   * Only the workspace owner (or anyone with the Remove any connection permission) or the connection creator can remove MCP connections.
    */
   403: ForbiddenError;
   /**
@@ -22446,6 +28388,13 @@ export type PutV1McpConnectionsByConnectionIdData = {
       clientSecret?: string;
       tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
     };
+    /**
+     * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+     */
+    manualOAuthEndpoints?: {
+      authorizationEndpoint: string;
+      tokenEndpoint: string;
+    } | null;
     authorizationServerIssuer?: string | null;
     requestedScopes?: Array<string>;
     access: ExternalMcpConnectionAccessInput;
@@ -22470,7 +28419,7 @@ export type PutV1McpConnectionsByConnectionIdErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners, super-admins, or the connection creator can edit MCP connections.
+   * Only the workspace owner (or anyone with the Edit any connection permission) or the connection creator can edit MCP connections, and only people who can share with everyone can make a connection org-wide.
    */
   403: ForbiddenError;
   /**
@@ -24071,6 +30020,40 @@ export type GetV1PluginsByPluginIdResolvedResponses = {
 
 export type GetV1PluginsByPluginIdResolvedResponse =
   GetV1PluginsByPluginIdResolvedResponses[keyof GetV1PluginsByPluginIdResolvedResponses];
+
+export type GetV1ResolvedPluginsData = {
+  body?: never;
+  path?: never;
+  query: {
+    /**
+     * Comma-separated plugin ids, at most 100.
+     */
+    pluginIds: string;
+  };
+  url: "/v1/resolved-plugins";
+};
+
+export type GetV1ResolvedPluginsErrors = {
+  /**
+   * The plugin ids were invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in to view resolved plugins.
+   */
+  401: UnauthorizedError;
+};
+
+export type GetV1ResolvedPluginsError = GetV1ResolvedPluginsErrors[keyof GetV1ResolvedPluginsErrors];
+
+export type GetV1ResolvedPluginsResponses = {
+  /**
+   * Resolved plugins returned successfully.
+   */
+  200: PluginArchResolvedPluginsResponse;
+};
+
+export type GetV1ResolvedPluginsResponse = GetV1ResolvedPluginsResponses[keyof GetV1ResolvedPluginsResponses];
 
 export type PostV1PluginsByPluginIdMcpConnectionsData = {
   body: {
@@ -26903,137 +32886,6 @@ export type PostV1ConnectorsGithubValidateTargetResponses = {
 export type PostV1ConnectorsGithubValidateTargetResponse =
   PostV1ConnectorsGithubValidateTargetResponses[keyof PostV1ConnectorsGithubValidateTargetResponses];
 
-export type PostV1RolesData = {
-  body: {
-    roleName: string;
-    permission: {
-      [key: string]: Array<string>;
-    };
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/roles";
-};
-
-export type PostV1RolesErrors = {
-  /**
-   * The role creation request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in to create organization roles.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and super-admins can create custom roles.
-   */
-  403: ForbiddenError;
-  /**
-   * The organization could not be found.
-   */
-  404: NotFoundError;
-};
-
-export type PostV1RolesError = PostV1RolesErrors[keyof PostV1RolesErrors];
-
-export type PostV1RolesResponses = {
-  /**
-   * Organization role created successfully.
-   */
-  201: SuccessResponse;
-};
-
-export type PostV1RolesResponse = PostV1RolesResponses[keyof PostV1RolesResponses];
-
-export type DeleteV1RolesByRoleIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'orl_' prefix and a 26-character base32 suffix.
-     */
-    roleId: string;
-  };
-  query?: never;
-  url: "/v1/roles/{roleId}";
-};
-
-export type DeleteV1RolesByRoleIdErrors = {
-  /**
-   * The role deletion request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in to delete organization roles.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and super-admins can delete custom roles.
-   */
-  403: ForbiddenError;
-  /**
-   * The role or organization could not be found.
-   */
-  404: NotFoundError;
-};
-
-export type DeleteV1RolesByRoleIdError = DeleteV1RolesByRoleIdErrors[keyof DeleteV1RolesByRoleIdErrors];
-
-export type DeleteV1RolesByRoleIdResponses = {
-  /**
-   * Organization role deleted successfully.
-   */
-  204: void;
-};
-
-export type DeleteV1RolesByRoleIdResponse = DeleteV1RolesByRoleIdResponses[keyof DeleteV1RolesByRoleIdResponses];
-
-export type PatchV1RolesByRoleIdData = {
-  body: {
-    roleName?: string;
-    permission?: {
-      [key: string]: Array<string>;
-    };
-  };
-  path: {
-    /**
-     * Den TypeID with 'orl_' prefix and a 26-character base32 suffix.
-     */
-    roleId: string;
-  };
-  query?: never;
-  url: "/v1/roles/{roleId}";
-};
-
-export type PatchV1RolesByRoleIdErrors = {
-  /**
-   * The role update request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in to update organization roles.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and super-admins can update custom roles.
-   */
-  403: ForbiddenError;
-  /**
-   * The role or organization could not be found.
-   */
-  404: NotFoundError;
-};
-
-export type PatchV1RolesByRoleIdError = PatchV1RolesByRoleIdErrors[keyof PatchV1RolesByRoleIdErrors];
-
-export type PatchV1RolesByRoleIdResponses = {
-  /**
-   * Organization role updated successfully.
-   */
-  200: SuccessResponse;
-};
-
-export type PatchV1RolesByRoleIdResponse = PatchV1RolesByRoleIdResponses[keyof PatchV1RolesByRoleIdResponses];
-
 export type GetV1ResourcesMarketplaceCapabilitiesData = {
   body?: never;
   path?: never;
@@ -27215,7 +33067,7 @@ export type DeleteV1TeamsByTeamIdErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can delete teams.
+   * The caller needs the Manage teams permission and a recent sign-in; deleting an Admin team also needs Manage Admin teams, and with Permissions on only the owner or an admin can delete one.
    */
   403: ForbiddenError;
   /**
@@ -27291,7 +33143,7 @@ export type PatchV1TeamsByTeamIdErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can update teams.
+   * The caller needs the Manage teams permission and a recent sign-in. Admin teams also need Manage Admin teams, and with Permissions on, adding people needs every permission the team grants, and only the owner or an admin can make a team an Admin team, turn one off, or add people to or remove people from one.
    */
   403: ForbiddenError;
   /**
@@ -27332,7 +33184,7 @@ export type PostV1TeamsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can create teams.
+   * The caller needs the Manage teams permission and a recent sign-in; making an Admin team also needs Manage Admin teams, and with Permissions on only the owner or an admin can make one.
    */
   403: ForbiddenError;
   /**
@@ -27365,7 +33217,7 @@ export type GetV1OrgWebOriginsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and admins can view approved web origins.
+   * The caller needs the View approved web origins permission.
    */
   403: ForbiddenError;
   /**
@@ -27402,7 +33254,7 @@ export type PostV1OrgWebOriginsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and super-admins with a recent sign-in can approve web origins.
+   * The caller needs the Manage approved web origins permission and a recent sign-in.
    */
   403: ForbiddenError;
   /**
@@ -27448,7 +33300,7 @@ export type DeleteV1OrgWebOriginsByWebOriginIdErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Only workspace owners and super-admins with a recent sign-in can remove approved web origins.
+   * The caller needs the Manage approved web origins permission and a recent sign-in.
    */
   403: ForbiddenError;
   /**
@@ -27469,6 +33321,296 @@ export type DeleteV1OrgWebOriginsByWebOriginIdResponses = {
 
 export type DeleteV1OrgWebOriginsByWebOriginIdResponse =
   DeleteV1OrgWebOriginsByWebOriginIdResponses[keyof DeleteV1OrgWebOriginsByWebOriginIdResponses];
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelData = {
+  body: {
+    [key: string]: never;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/org/workbot-settings/test-default-model";
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelErrors = {
+  /**
+   * Only an empty request body is accepted.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * A genuine recent user sign-in and Manage OpenWork Models are required.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization was not found, or Workbot is off.
+   */
+  404: {
+    error: "feature_disabled";
+    feature: string;
+  };
+  /**
+   * The durable diagnostic request limit was reached.
+   */
+  429: {
+    error: "rate_limited";
+    retryAfterSeconds: number;
+  };
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelError =
+  PostV1OrgWorkbotSettingsTestDefaultModelErrors[keyof PostV1OrgWorkbotSettingsTestDefaultModelErrors];
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelResponses = {
+  /**
+   * Synthetic completion result; catalog availability alone never means answered.
+   */
+  200: WorkbotModelTest;
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelResponse =
+  PostV1OrgWorkbotSettingsTestDefaultModelResponses[keyof PostV1OrgWorkbotSettingsTestDefaultModelResponses];
+
+export type GetV1OrgWorkbotSettingsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/workbot-settings";
+};
+
+export type GetV1OrgWorkbotSettingsErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks both View OpenWork Models settings and Manage OpenWork Models.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization was not found, or Workbot is off.
+   */
+  404: {
+    error: "feature_disabled";
+    feature: string;
+  };
+};
+
+export type GetV1OrgWorkbotSettingsError = GetV1OrgWorkbotSettingsErrors[keyof GetV1OrgWorkbotSettingsErrors];
+
+export type GetV1OrgWorkbotSettingsResponses = {
+  /**
+   * Workbot settings returned.
+   */
+  200: WorkbotSettings;
+};
+
+export type GetV1OrgWorkbotSettingsResponse = GetV1OrgWorkbotSettingsResponses[keyof GetV1OrgWorkbotSettingsResponses];
+
+export type PutV1OrgWorkbotSettingsData = {
+  body: WorkbotSettingsInput;
+  path?: never;
+  query?: never;
+  url: "/v1/org/workbot-settings";
+};
+
+export type PutV1OrgWorkbotSettingsErrors = {
+  /**
+   * The model is not one the runner serves, or the request was invalid.
+   */
+  400: WorkbotUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization was not found, or Workbot is off.
+   */
+  404: {
+    error: "feature_disabled";
+    feature: string;
+  };
+  /**
+   * The headless runner could not be reached to check the model.
+   */
+  503: WorkbotRunnerUnavailableError;
+};
+
+export type PutV1OrgWorkbotSettingsError = PutV1OrgWorkbotSettingsErrors[keyof PutV1OrgWorkbotSettingsErrors];
+
+export type PutV1OrgWorkbotSettingsResponses = {
+  /**
+   * Workbot settings saved.
+   */
+  200: WorkbotSettings;
+};
+
+export type PutV1OrgWorkbotSettingsResponse = PutV1OrgWorkbotSettingsResponses[keyof PutV1OrgWorkbotSettingsResponses];
+
+export type GetV1OrgDefaultModelData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model";
+};
+
+export type GetV1OrgDefaultModelErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OpenWork Models settings permission.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgDefaultModelError = GetV1OrgDefaultModelErrors[keyof GetV1OrgDefaultModelErrors];
+
+export type GetV1OrgDefaultModelResponses = {
+  /**
+   * Default models returned.
+   */
+  200: DefaultModelSettings;
+};
+
+export type GetV1OrgDefaultModelResponse = GetV1OrgDefaultModelResponses[keyof GetV1OrgDefaultModelResponses];
+
+export type GetV1OrgDefaultModelOptionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model/options";
+};
+
+export type GetV1OrgDefaultModelOptionsErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OpenWork Models settings permission.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgDefaultModelOptionsError =
+  GetV1OrgDefaultModelOptionsErrors[keyof GetV1OrgDefaultModelOptionsErrors];
+
+export type GetV1OrgDefaultModelOptionsResponses = {
+  /**
+   * Models returned.
+   */
+  200: DefaultModelOptions;
+};
+
+export type GetV1OrgDefaultModelOptionsResponse =
+  GetV1OrgDefaultModelOptionsResponses[keyof GetV1OrgDefaultModelOptionsResponses];
+
+export type PutV1OrgDefaultModelEveryoneData = {
+  body: DefaultModelWrite;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model/everyone";
+};
+
+export type PutV1OrgDefaultModelEveryoneErrors = {
+  /**
+   * The model is not one the organization has, or the request was invalid.
+   */
+  400: DefaultModelUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+  /**
+   * The model's provider could not be read to check the model.
+   */
+  503: DefaultModelSourceUnavailableError;
+};
+
+export type PutV1OrgDefaultModelEveryoneError =
+  PutV1OrgDefaultModelEveryoneErrors[keyof PutV1OrgDefaultModelEveryoneErrors];
+
+export type PutV1OrgDefaultModelEveryoneResponses = {
+  /**
+   * Default models saved.
+   */
+  200: DefaultModelSettings;
+};
+
+export type PutV1OrgDefaultModelEveryoneResponse =
+  PutV1OrgDefaultModelEveryoneResponses[keyof PutV1OrgDefaultModelEveryoneResponses];
+
+export type PutV1OrgDefaultModelTeamsByTeamIdData = {
+  body: DefaultModelWrite;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/org/default-model/teams/{teamId}";
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdErrors = {
+  /**
+   * The model is not one the organization has, or the request was invalid.
+   */
+  400: DefaultModelUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+  /**
+   * The model's provider could not be read to check the model.
+   */
+  503: DefaultModelSourceUnavailableError;
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdError =
+  PutV1OrgDefaultModelTeamsByTeamIdErrors[keyof PutV1OrgDefaultModelTeamsByTeamIdErrors];
+
+export type PutV1OrgDefaultModelTeamsByTeamIdResponses = {
+  /**
+   * Default models saved.
+   */
+  200: DefaultModelSettings;
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdResponse =
+  PutV1OrgDefaultModelTeamsByTeamIdResponses[keyof PutV1OrgDefaultModelTeamsByTeamIdResponses];
 
 export type GetV1McpConnectionsByConnectionIdSlackAssistantData = {
   body?: never;
@@ -27495,7 +33637,7 @@ export type GetV1McpConnectionsByConnectionIdSlackAssistantErrors = {
           | "setup_required"
           | "browser_session_required"
           | "slack_assistant_not_enabled"
-          | "openwork_web_access_required";
+          | "slack_runner_unavailable";
         message?: string;
       };
   /**
@@ -27503,7 +33645,7 @@ export type GetV1McpConnectionsByConnectionIdSlackAssistantErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Admin access, recent verification, or Slack eligibility required.
+   * Permission, recent verification, or Slack eligibility required.
    */
   403:
     | ForbiddenError
@@ -27514,7 +33656,7 @@ export type GetV1McpConnectionsByConnectionIdSlackAssistantErrors = {
           | "setup_required"
           | "browser_session_required"
           | "slack_assistant_not_enabled"
-          | "openwork_web_access_required";
+          | "slack_runner_unavailable";
         message?: string;
       };
   /**
@@ -27540,16 +33682,23 @@ export type GetV1McpConnectionsByConnectionIdSlackAssistantResponses = {
     rolloutEnabled: boolean;
     hasSigningSecret: boolean;
     eligible: boolean;
-    webAccess: boolean;
+    /**
+     * Whether this deployment has the headless runner Slack replies run on. Without it the assistant can't be enabled.
+     */
+    runnerAvailable: boolean;
     channelIds: Array<string>;
     shadowMode: boolean;
     dailyLimit: number;
     /**
-     * Model chosen for headless runs, or null for the runner default.
+     * Model chosen for Slack runs, or null for the runner default.
      */
     model: string | null;
     /**
-     * The headless runner's default model, when this workspace uses it.
+     * The organization's default model (Manage › Workbot) is used instead of a model chosen here; `model` is that model.
+     */
+    modelManagedByOrganization?: boolean;
+    /**
+     * The headless runner's default model, when the runner is available.
      */
     defaultModel: string | null;
     /**
@@ -27557,7 +33706,7 @@ export type GetV1McpConnectionsByConnectionIdSlackAssistantResponses = {
      */
     progressUpdates: boolean;
     /**
-     * Models the headless runner can use; empty when the workspace doesn't use the headless runner.
+     * Models the headless runner can use; empty when the runner is unavailable.
      */
     models: Array<{
       id: string;
@@ -27625,7 +33774,7 @@ export type PutV1McpConnectionsByConnectionIdSlackAssistantErrors = {
           | "setup_required"
           | "browser_session_required"
           | "slack_assistant_not_enabled"
-          | "openwork_web_access_required";
+          | "slack_runner_unavailable";
         message?: string;
       };
   /**
@@ -27633,7 +33782,7 @@ export type PutV1McpConnectionsByConnectionIdSlackAssistantErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Admin access, recent verification, or Slack eligibility required.
+   * Permission, recent verification, or Slack eligibility required.
    */
   403:
     | ForbiddenError
@@ -27644,7 +33793,7 @@ export type PutV1McpConnectionsByConnectionIdSlackAssistantErrors = {
           | "setup_required"
           | "browser_session_required"
           | "slack_assistant_not_enabled"
-          | "openwork_web_access_required";
+          | "slack_runner_unavailable";
         message?: string;
       };
   /**
@@ -27697,7 +33846,7 @@ export type PostV1McpConnectionsByConnectionIdSlackAssistantInstallErrors = {
           | "setup_required"
           | "browser_session_required"
           | "slack_assistant_not_enabled"
-          | "openwork_web_access_required";
+          | "slack_runner_unavailable";
         message?: string;
       };
   /**
@@ -27705,7 +33854,7 @@ export type PostV1McpConnectionsByConnectionIdSlackAssistantInstallErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Admin access, recent verification, or Slack eligibility required.
+   * Permission, recent verification, or Slack eligibility required.
    */
   403:
     | ForbiddenError
@@ -27716,7 +33865,7 @@ export type PostV1McpConnectionsByConnectionIdSlackAssistantInstallErrors = {
           | "setup_required"
           | "browser_session_required"
           | "slack_assistant_not_enabled"
-          | "openwork_web_access_required";
+          | "slack_runner_unavailable";
         message?: string;
       };
   /**
@@ -27753,7 +33902,7 @@ export type GetV1IntegrationsSlackOauthCallbackErrors = {
    */
   400: string;
   /**
-   * The installing member no longer has admin access.
+   * The installing member no longer has the Manage connections permission.
    */
   403: string;
   /**
@@ -27928,6 +34077,55 @@ export type PostV1IntegrationsSlackByConnectionIdInteractionsResponses = {
 export type PostV1IntegrationsSlackByConnectionIdInteractionsResponse =
   PostV1IntegrationsSlackByConnectionIdInteractionsResponses[keyof PostV1IntegrationsSlackByConnectionIdInteractionsResponses];
 
+export type RecordWorkbotTelemetryData = {
+  body:
+    | {
+        event: "signed_in";
+        id: string;
+        timestamp?: number;
+      }
+    | {
+        event: "accepted";
+        sessionId: string;
+        messageId: string;
+        timestamp: number;
+        model: string;
+        attachmentCount: number;
+        hasContext: boolean;
+      }
+    | {
+        event: "completed" | "failed" | "aborted";
+        sessionId: string;
+        messageId: string;
+        timestamp: number;
+        attempt: number;
+        model: string;
+        modelSource?: "response" | "configured";
+        errorCode: string | null;
+      };
+  path?: never;
+  query?: never;
+  url: "/v1/workbot/telemetry";
+};
+
+export type RecordWorkbotTelemetryErrors = {
+  /**
+   * Service or member credentials are invalid.
+   */
+  401: UnauthorizedError;
+};
+
+export type RecordWorkbotTelemetryError = RecordWorkbotTelemetryErrors[keyof RecordWorkbotTelemetryErrors];
+
+export type RecordWorkbotTelemetryResponses = {
+  /**
+   * Accepted, including best-effort storage failures.
+   */
+  204: void;
+};
+
+export type RecordWorkbotTelemetryResponse = RecordWorkbotTelemetryResponses[keyof RecordWorkbotTelemetryResponses];
+
 export type GetWorkbotSessionData = {
   body?: never;
   path?: never;
@@ -27984,19 +34182,80 @@ export type ListWorkbotConnectionsResponses = {
     connections: Array<{
       id: string;
       name: string;
-      app: "gmail" | "slack" | "microsoft";
+      app: "gmail" | "googleCalendar" | "slack" | "microsoft";
       ready: boolean;
       connectUrl: string | null;
+      nativeProviderKey?: string | null;
+      connectMode?: "inline" | "external" | "admin";
     }>;
   };
 };
 
 export type ListWorkbotConnectionsResponse = ListWorkbotConnectionsResponses[keyof ListWorkbotConnectionsResponses];
 
+export type StartWorkbotConnectionData = {
+  body: {
+    returnPath: string;
+    requestId: string;
+  };
+  path: {
+    connectionId: string;
+  };
+  query?: never;
+  url: "/v1/workbot/connections/{connectionId}/connect/start";
+};
+
+export type StartWorkbotConnectionErrors = {
+  /**
+   * Invalid connection or return path.
+   */
+  400: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * The token or membership is no longer valid.
+   */
+  401: UnauthorizedError;
+  /**
+   * The grant or connection permission is missing.
+   */
+  403: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * The feature or connection is unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type StartWorkbotConnectionError = StartWorkbotConnectionErrors[keyof StartWorkbotConnectionErrors];
+
+export type StartWorkbotConnectionResponses = {
+  /**
+   * Provider consent URL and its callback origin.
+   */
+  200: {
+    authorizeUrl: string | null;
+    status?: string;
+    callbackOrigin: string;
+  };
+};
+
+export type StartWorkbotConnectionResponse = StartWorkbotConnectionResponses[keyof StartWorkbotConnectionResponses];
+
 export type CreateWorkbotRunTokenData = {
   body: {
     ttlMs?: number;
     readOnly?: boolean;
+    sessionId?: string;
+    messageId?: string;
+    model?: string;
+    modelAccessRequired?: boolean;
   };
   path?: never;
   query?: never;
@@ -28377,3 +34636,150 @@ export type GetMcpAdminWellKnownOauthProtectedResourceResponses = {
 
 export type GetMcpAdminWellKnownOauthProtectedResourceResponse =
   GetMcpAdminWellKnownOauthProtectedResourceResponses[keyof GetMcpAdminWellKnownOauthProtectedResourceResponses];
+
+export type PostV1TelemetryIngestData = {
+  body: {
+    events: Array<{
+      type: string;
+      timestamp: string;
+      source?: string;
+      sessionId?: string;
+      durationMs?: number;
+      success?: boolean;
+      dimensions?: Array<{
+        type: string;
+        value?: string;
+        label: string;
+        metadata?: {
+          [key: string]: unknown;
+        };
+      }>;
+    }>;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/telemetry/ingest";
+};
+
+export type PostV1TelemetryIngestErrors = {
+  /**
+   * Invalid event payload.
+   */
+  400: InvalidRequestError;
+  /**
+   * Caller must be signed in.
+   */
+  401: UnauthorizedError;
+};
+
+export type PostV1TelemetryIngestError = PostV1TelemetryIngestErrors[keyof PostV1TelemetryIngestErrors];
+
+export type PostV1TelemetryIngestResponses = {
+  /**
+   * Events accepted.
+   */
+  204: void;
+};
+
+export type PostV1TelemetryIngestResponse = PostV1TelemetryIngestResponses[keyof PostV1TelemetryIngestResponses];
+
+export type GetV1TelemetryDimensionsData = {
+  body?: never;
+  path?: never;
+  query: {
+    type: string;
+  };
+  url: "/v1/telemetry/dimensions";
+};
+
+export type GetV1TelemetryDimensionsErrors = {
+  /**
+   * Invalid dimension query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * Usage analytics requires an Enterprise plan.
+   */
+  402: EnterprisePlanRequiredError;
+};
+
+export type GetV1TelemetryDimensionsError = GetV1TelemetryDimensionsErrors[keyof GetV1TelemetryDimensionsErrors];
+
+export type GetV1TelemetryDimensionsResponses = {
+  /**
+   * Telemetry dimensions returned.
+   */
+  200: TelemetryDimensionListResponse;
+};
+
+export type GetV1TelemetryDimensionsResponse =
+  GetV1TelemetryDimensionsResponses[keyof GetV1TelemetryDimensionsResponses];
+
+export type GetV1TelemetryAdoptionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/telemetry/adoption";
+};
+
+export type GetV1TelemetryAdoptionErrors = {
+  /**
+   * Caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * Usage analytics requires an Enterprise plan.
+   */
+  402: EnterprisePlanRequiredError;
+};
+
+export type GetV1TelemetryAdoptionError = GetV1TelemetryAdoptionErrors[keyof GetV1TelemetryAdoptionErrors];
+
+export type GetV1TelemetryAdoptionResponses = {
+  /**
+   * Adoption metrics returned.
+   */
+  200: TelemetryAdoptionResponse;
+};
+
+export type GetV1TelemetryAdoptionResponse = GetV1TelemetryAdoptionResponses[keyof GetV1TelemetryAdoptionResponses];
+
+export type GetV1TelemetryAnalyticsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    dimensionType?: string;
+    dimensionValue?: string;
+  };
+  url: "/v1/telemetry/analytics";
+};
+
+export type GetV1TelemetryAnalyticsErrors = {
+  /**
+   * Invalid analytics query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * Usage analytics requires an Enterprise plan.
+   */
+  402: EnterprisePlanRequiredError;
+};
+
+export type GetV1TelemetryAnalyticsError = GetV1TelemetryAnalyticsErrors[keyof GetV1TelemetryAnalyticsErrors];
+
+export type GetV1TelemetryAnalyticsResponses = {
+  /**
+   * Analytics returned.
+   */
+  200: TelemetryAnalyticsResponse;
+};
+
+export type GetV1TelemetryAnalyticsResponse = GetV1TelemetryAnalyticsResponses[keyof GetV1TelemetryAnalyticsResponses];

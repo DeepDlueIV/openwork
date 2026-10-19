@@ -7,6 +7,8 @@ import {
   ArrowRight,
   Globe,
   Loader2,
+  MessagesSquare,
+  ShieldOff,
   Plus,
   RotateCw,
   X,
@@ -28,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ArtifactIcon } from "../artifacts/artifact-icon";
 import { AppArtifact } from "../../apps/app-artifact";
 import { ArtifactPanel } from "../artifacts/artifact-panel";
+import { RemoteThreadPanel } from "../remote-threads/remote-thread-panel";
 import {
   type BrowserPanelTab,
   usePanelTabStore,
@@ -40,12 +43,11 @@ import type { OpenTarget } from "../artifacts/open-target";
 import { useSidePanelTabs } from "./use-side-panel-tabs";
 import { handlePanelEscape, PanelEmpty } from "./panel-empty";
 import {
-  computeBounds,
   getElectronBrowser,
   getNativeMenuPoint,
   hasNativeBrowserOccluder,
 } from "./utils";
-import { createBrowserBoundsSync } from "./browser-bounds-sync";
+import { computeBrowserBounds, createBrowserBoundsSync } from "./browser-bounds-sync";
 
 type SidePanelProps = {
   sessionId: string;
@@ -146,7 +148,7 @@ function SidePanelTab({ tab, active, onSelect, onClose }: SidePanelTabProps) {
             ) : (
               <Globe />
             )
-          ) : (tab.type === "app" || tab.type === "mcp-app") ? <Blocks /> : (
+          ) : (tab.type === "app" || tab.type === "mcp-app") ? <Blocks /> : tab.type === "remote-thread" ? <MessagesSquare /> : (
             <ArtifactIcon type={tab.preview} />
           )}
           <span className="min-w-0 flex-1 truncate text-left">{tab.label}</span>
@@ -176,6 +178,7 @@ function BrowserPanelContent({
   const suspended = tab.status === "suspended";
   const busy = tab.status === "suspending" || tab.status === "restoring";
   const pageFailure = tab.loadError?.code === "page_load_failed" ? tab.loadError : null;
+  const blockedSite = tab.loadError?.code === "blocked_by_organization" ? tab.loadError : null;
   const [urlInput, setUrlInput] = React.useState(tab.url);
   const urlFocusedRef = React.useRef(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -261,7 +264,7 @@ function BrowserPanelContent({
 
     const syncBounds = () => {
       if (!ready || disposed) return;
-      boundsSync.sync(computeBounds(content), window.devicePixelRatio, hasNativeBrowserOccluder());
+      boundsSync.sync(computeBrowserBounds(content), window.devicePixelRatio, hasNativeBrowserOccluder());
     };
 
     const invalidateBounds = () => {
@@ -458,7 +461,7 @@ function BrowserPanelContent({
           <X />
         </Button>
       </div>
-      {tab.loadError && !pageFailure ? (
+      {tab.loadError && !pageFailure && !blockedSite ? (
         <div data-browser-shortcut-tab={tab.id} role="alert" className="shrink-0 border-b border-border bg-muted px-3 py-2 text-xs">
           {tab.loadError.message}
         </div>
@@ -466,7 +469,9 @@ function BrowserPanelContent({
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {isAvailable ? (
           <div ref={contentRef} data-browser-shortcut-tab={tab.id} className="h-full overflow-hidden">
-            {pageFailure && !suspended ? (
+            {blockedSite && !suspended ? (
+              <BlockedSitePage url={blockedSite.url} message={blockedSite.message} errorDescription={blockedSite.errorDescription} />
+            ) : pageFailure && !suspended ? (
               <div className="flex h-full items-center justify-center p-6" data-testid="browser-page-load-error">
                 <TaskRecovery
                   compact
@@ -484,17 +489,6 @@ function BrowserPanelContent({
             ) : null}
           </div>
         ) : null}
-        {tab.browserApproval ? (
-          <div className="absolute inset-0 z-10 flex flex-col justify-center gap-3 overflow-y-auto bg-background p-5 text-sm" role="region" aria-label="Browser permission request">
-            <h3 className="font-semibold">{tab.browserApproval.title}</h3>
-            <p className="font-medium">{tab.browserApproval.message}</p>
-            <p className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-muted-foreground">{tab.browserApproval.detail}</p>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => { if (tab.browserApproval) void window.__OPENWORK_ELECTRON__?.browser?.approve?.(tab.id, tab.browserApproval.id, true); }}>{tab.browserApproval.approveLabel ?? "Allow once"}</Button>
-              <Button size="sm" variant="outline" onClick={() => { if (tab.browserApproval) void window.__OPENWORK_ELECTRON__?.browser?.approve?.(tab.id, tab.browserApproval.id, false); }}>Deny</Button>
-            </div>
-          </div>
-        ) : null}
       </div>
     </>
   );
@@ -503,10 +497,9 @@ function BrowserPanelContent({
 const browserOperationLabels: Record<string, string> = {
   observe: "Reading this page", site_tools: "Finding website tools", site_tool: "Using a website tool",
   navigate: "Opening a page", click: "Clicking a control", fill: "Entering text", key: "Using the keyboard", scroll: "Scrolling",
-  "Browser control": "Allow control for this thread", website_blocked: "This website is blocked", browser_disabled: "Browser control is disabled",
-  stale_observation: "A fresh page view is needed", stale_tool: "Website tools have changed", user_denied: "The action was declined",
-  needs_attention: "Review this page", sign_in_required: "Sign in directly in this browser", timeout: "Check the page before continuing",
-  result_withheld: "Website result was kept private",
+  website_blocked: "This website is blocked", browser_disabled: "Browser control is disabled",
+  stale_observation: "A fresh page view is needed", stale_tool: "Website tools have changed",
+  needs_attention: "Review this page", sign_in_required: "Sign in directly in this browser",
 };
 
 export function SidePanel({
@@ -767,6 +760,8 @@ export function SidePanel({
           <BrowserPanelContent sessionId={sessionId} tab={activeTab} onClose={onClose} />
         ) : activeTab?.type === "mcp-app" ? (
           <BuiltMcpAppPanel key={activeTab.id} tab={activeTab} onClose={onClose} />
+        ) : activeTab?.type === "remote-thread" ? (
+          <div className="min-h-0 flex-1 overflow-hidden"><RemoteThreadPanel key={activeTab.id} tab={activeTab} /></div>
         ) : activeTab?.type === "app" ? (
           <div className="min-h-0 flex-1 overflow-hidden"><AppArtifact key={activeTab.id} appId={activeTab.appId} revisionId={activeTab.revisionId} receiptId={activeTab.receiptId} onClose={onClose} /></div>
         ) : activeTab?.type === "artifact" ? (
@@ -783,5 +778,29 @@ export function SidePanel({
         ) : null}
       </div>
     </TooltipProvider>
+  );
+}
+
+function siteHost(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}
+
+/** A site the organization's website rules block, shown like a browser's own blocked-site page. */
+function BlockedSitePage({ url, message, errorDescription }: { url: string; message: string; errorDescription: string }) {
+  return (
+    <div className="flex h-full items-center justify-center p-6" data-testid="browser-blocked-site" role="alert">
+      <div className="flex max-w-sm flex-col items-start gap-3">
+        <ShieldOff className="size-8 text-muted-foreground" aria-hidden="true" strokeWidth={1.5} />
+        <h2 className="text-lg font-medium text-foreground">
+          <span className="break-all">{siteHost(url)}</span> is blocked
+        </h2>
+        <p className="text-sm text-muted-foreground">{message}</p>
+        <p className="font-mono text-xs text-muted-foreground">{errorDescription}</p>
+      </div>
+    </div>
   );
 }

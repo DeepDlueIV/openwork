@@ -3,7 +3,8 @@
 //
 //   pnpm features:sync    regenerate the Helm chart's feature block, values
 //                         schema and README table from
-//                         packages/features/src/registry.ts
+//                         packages/features/src/registry.ts, then regenerate
+//                         the Den API contract/SDK (requires local MySQL)
 //   pnpm features:check   fail if those files are stale, if the chart renders
 //                         different DEN_FEATURE_* names than den-api reads, if
 //                         a Dockerfile misses a workspace package its service
@@ -18,6 +19,7 @@ import { fileURLToPath } from "node:url"
 import {
   FEATURES,
   FEATURE_KEYS,
+  RETIRED_FEATURE_KEYS,
   featureAvailableOn,
   featureLockEnvName,
 } from "../packages/features/src/index.ts"
@@ -85,11 +87,19 @@ function renderSchema() {
           features: {
             type: "object",
             additionalProperties: false,
-            properties: Object.fromEntries(helmKeys.map((key) => [key, {
-              // --set turns "true" into a boolean, so accept both spellings.
-              enum: ["", "true", "false", true, false],
-              description: `${FEATURES[key].label}: ${FEATURES[key].description} Renders ${featureLockEnvName(key)}.`,
-            }])),
+            properties: Object.fromEntries([
+              ...helmKeys.map((key) => [key, {
+                // --set turns "true" into a boolean, so accept both spellings.
+                enum: ["", "true", "false", true, false],
+                description: `${FEATURES[key].label}: ${FEATURES[key].description} Renders ${featureLockEnvName(key)}.`,
+              }]),
+              // Retired keys stay accepted so an upgrade with an old values file
+              // still installs; den-api ignores their variables with a warning.
+              ...RETIRED_FEATURE_KEYS.map((key) => [key, {
+                enum: ["", "true", "false", true, false],
+                description: "Retired: no longer a feature switch. Ignored.",
+              }]),
+            ]),
           },
         },
       },
@@ -245,3 +255,8 @@ if (problems.length > 0) {
   process.exit(1)
 }
 console.log(check ? "[features] Registry, Helm chart and guard rules are in sync." : "[features] Helm chart files regenerated.")
+if (!check) {
+  // Feature keys also appear in Den's response schemas and the generated SDK.
+  console.log("[features] Regenerating the Den API contract and SDK.")
+  execFileSync(process.execPath, [path.join(root, "scripts/den-contract.mjs")], { cwd: root, stdio: "inherit" })
+}

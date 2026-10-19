@@ -54,6 +54,15 @@ export const automationModelSchema = z.object({
 })
 export type AutomationModel = z.infer<typeof automationModelSchema>
 
+export function automationModelAllowedByProvider(config: Record<string, unknown>, modelId: string): boolean {
+  const readList = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : []
+  const blacklist = readList(config.blacklist)
+  const whitelist = readList(config.whitelist)
+  return !blacklist.includes(modelId) && (!Array.isArray(config.whitelist) || whitelist.includes(modelId))
+}
+
 export const automationSavedScriptReferenceSchema = z.object({
   pluginId: idSchema,
   configObjectId: idSchema,
@@ -216,13 +225,19 @@ export const REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY = "remote_session_v1"
  * misread the request work item, so Den routes requests by this capability.
  */
 export const REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY = "remote_session_control_v1"
+/** An interactive session runner, never a scheduled Automation executor. */
+export const REMOTE_SESSION_ONLY_RUNNER_CAPABILITY = "remote_session_only_v1"
+/** Sticky, same-owner recovery backed by a local effects journal. */
+export const REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY = "remote_session_recovery_v1"
 export const AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER = "x-openwork-automation-model-attention" as const
 export const automationDesktopRunnerCapabilitySchema = z.enum([
   AUTOMATION_MODEL_ATTENTION_CAPABILITY,
   REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY,
   REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
+  REMOTE_SESSION_ONLY_RUNNER_CAPABILITY,
+  REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
 ])
-export const AUTOMATION_DESKTOP_RUNNER_CAPABILITY_LIMIT = 3
+export const AUTOMATION_DESKTOP_RUNNER_CAPABILITY_LIMIT = 5
 export type AutomationDesktopRunnerCapability = z.infer<typeof automationDesktopRunnerCapabilitySchema>
 
 export const automationDesktopRunnerRegistrationSchema = z.object({
@@ -308,9 +323,12 @@ export const automationRunnerWorkItemSchema = z.union([
 ])
 /** Runs a desktop may claim per work poll; a runner skips the ones pinned elsewhere. */
 export const AUTOMATION_RUNNER_WORK_RUN_LIMIT = 20
+export const runnerEnginePolicySchema = z.object({ upgrade: z.boolean() })
 export const automationRunnerWorkResponseSchema = z.object({
   // Up to the run limit plus five remote-session commands and five remote-session requests.
   items: z.array(automationRunnerWorkItemSchema).max(AUTOMATION_RUNNER_WORK_RUN_LIMIT + 10),
+  /** Live org policy is returned even when inventory has not changed. */
+  enginePolicy: runnerEnginePolicySchema.optional(),
 })
 export type AutomationRunnerWorkResponse = z.infer<typeof automationRunnerWorkResponseSchema>
 
@@ -359,6 +377,8 @@ export type DesktopRunnerInventory = z.infer<typeof desktopRunnerInventorySchema
 export const desktopRunnerInventoryResponseSchema = z.object({
   ok: z.literal(true),
   updatedAt: timestampSchema,
+  /** Effective live policy; old clients ignore this additive response field. */
+  enginePolicy: runnerEnginePolicySchema.optional(),
 })
 
 export const remoteSessionCommandAssignmentSchema = z.object({
@@ -439,6 +459,69 @@ export type RemoteSessionCommandSessionReport = z.infer<typeof remoteSessionComm
 export const remoteSessionCommandSessionReportResponseSchema = z.object({ ok: z.literal(true) })
 
 /**
+ * `remote-session:status`: one compact, batched status for the remote sessions
+ * a caller follows, whatever runs them. A Cloud session is named by its
+ * sessionId, a desktop or registered client's by its commandId. A caller
+ * passes back each thread's version; an unchanged thread then returns only
+ * its ref and version, and waitMs holds the call until one changes.
+ */
+export const REMOTE_SESSION_STATUS_THREADS_MAX = 10
+export const REMOTE_SESSION_STATUS_WAIT_MAX_MS = 20_000
+export const REMOTE_SESSION_STATUS_PREVIEW_MAX_LENGTH = 280
+export const remoteSessionStatusThreadInputSchema = z.object({
+  commandId: idSchema.optional(),
+  sessionId: z.string().trim().min(1).max(240).optional(),
+  /** The version this caller last received for the thread. */
+  version: z.string().trim().min(1).max(64).optional(),
+}).refine((thread) => (thread.commandId === undefined) !== (thread.sessionId === undefined), {
+  message: "Pass exactly one of commandId or sessionId.",
+})
+export const remoteSessionStatusRequestSchema = z.object({
+  threads: z.array(remoteSessionStatusThreadInputSchema).min(1).max(REMOTE_SESSION_STATUS_THREADS_MAX),
+  /** Hold the call until a thread changes, up to this long. 0 or absent answers at once. */
+  waitMs: z.number().int().min(0).max(REMOTE_SESSION_STATUS_WAIT_MAX_MS).optional(),
+})
+export type RemoteSessionStatusRequest = z.infer<typeof remoteSessionStatusRequestSchema>
+/** starting: not yet picked up by its computer. idle: finished its turn. */
+export const remoteSessionThreadStateSchema = z.enum(["starting", "running", "waiting", "idle", "error"])
+export type RemoteSessionThreadState = z.infer<typeof remoteSessionThreadStateSchema>
+export const remoteSessionThreadStatusSchema = z.object({
+  /** The commandId or sessionId the caller asked about. */
+  ref: z.string().max(240),
+  changed: z.literal(true),
+  version: z.string().max(64),
+  target: z.enum(["cloud", "desktop"]),
+  state: remoteSessionThreadStateSchema,
+  waitingFor: remoteSessionWaitingForSchema.nullable(),
+  title: z.string().max(240).nullable(),
+  computerId: z.string().max(160).nullable(),
+  /** The computer's own name, e.g. "Mac mini"; null for Cloud or an unknown computer. */
+  computerLabel: z.string().max(240).nullable(),
+  sessionId: z.string().max(240).nullable(),
+  workspaceId: z.string().max(240).nullable(),
+  messageCount: z.number().int().min(0).nullable(),
+  /** The start of the final answer once the thread is idle; read the session for all of it. */
+  preview: z.string().max(REMOTE_SESSION_STATUS_PREVIEW_MAX_LENGTH).nullable(),
+  error: remoteSessionCommandErrorSchema.nullable(),
+  /** When this state was last confirmed. */
+  observedAt: timestampSchema.nullable(),
+})
+export type RemoteSessionThreadStatus = z.infer<typeof remoteSessionThreadStatusSchema>
+export const remoteSessionThreadUnchangedSchema = z.object({
+  ref: z.string().max(240),
+  changed: z.literal(false),
+  version: z.string().max(64),
+  /** The thread could not be checked just now; keep the last known state. */
+  stale: z.boolean().optional(),
+})
+export const remoteSessionStatusResultSchema = z.object({
+  threads: z.array(z.discriminatedUnion("changed", [remoteSessionThreadStatusSchema, remoteSessionThreadUnchangedSchema])),
+  /** Suggested wait before the next status call; null once every thread has settled. */
+  retryAfterMs: z.number().int().min(0).nullable(),
+})
+export type RemoteSessionStatusResult = z.infer<typeof remoteSessionStatusResultSchema>
+
+/**
  * Den -> desktop request/response channel for a delivered remote session:
  * read its transcript, send a follow-up, or stop it. Only the runner that
  * delivered the session receives the request.
@@ -509,6 +592,8 @@ export const remoteSessionTranscriptMessageSchema = z.object({
 })
 export type RemoteSessionTranscriptMessage = z.infer<typeof remoteSessionTranscriptMessageSchema>
 export const remoteSessionReadResultSchema = z.object({
+  /** Whether the engine returned full history or only its current context. */
+  historyScope: z.enum(["full", "context"]).optional(),
   title: z.string().max(240).nullable(),
   status: remoteSessionStatusSchema,
   waitingFor: remoteSessionWaitingForSchema.nullable(),
@@ -757,6 +842,30 @@ export const automationListSchema = z.object({
   nextCursor: z.string().nullable(),
 }).meta({ ref: "AutomationList" })
 export type AutomationList = z.infer<typeof automationListSchema>
+
+/** Most days one calendar range read may cover (a month view plus padding). */
+export const AUTOMATION_RUN_RANGE_MAX_DAYS = 45
+
+export const automationRunRangeQuerySchema = z.object({
+  from: z.coerce.number().int().nonnegative().describe("Inclusive lower bound, epoch milliseconds."),
+  to: z.coerce.number().int().positive().describe("Exclusive upper bound, epoch milliseconds."),
+  cursor: z.string().trim().min(1).max(160).optional().describe("nextCursor from the previous page."),
+  limit: z.coerce.number().int().min(1).max(500).optional().describe("Maximum runs to scan for this page (default 200)."),
+}).refine((value) => value.to > value.from, { message: "to must be after from", path: ["to"] })
+  .refine((value) => value.to - value.from <= AUTOMATION_RUN_RANGE_MAX_DAYS * 24 * 60 * 60 * 1_000, {
+    message: `The range may cover at most ${AUTOMATION_RUN_RANGE_MAX_DAYS} days`, path: ["to"],
+  })
+export type AutomationRunRangeQuery = z.infer<typeof automationRunRangeQuerySchema>
+
+/**
+ * Runs of every Automation the caller owns, placed by scheduledFor (else
+ * startedAt, else createdAt). A non-null `nextCursor` means more may exist.
+ */
+export const automationRunRangeSchema = z.object({
+  items: z.array(automationRunSchema),
+  nextCursor: z.string().nullable(),
+}).meta({ ref: "AutomationRunRange" })
+export type AutomationRunRange = z.infer<typeof automationRunRangeSchema>
 
 export const automationDetailSchema = z.object({
   automation: automationSchema,

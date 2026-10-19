@@ -3,8 +3,13 @@
 # ---------------------------------------------------------------------------
 
 variable "openwork_version" {
-  description = "Published OpenWork release, for example \"0.18.54\". Used as the tag for both images unless den_api_image / den_web_image are set."
+  description = "Release label. 0.18.57 and 0.18.58 have built-in digest pins; other releases require den_api_image and den_web_image digest overrides."
   type        = string
+
+  validation {
+    condition     = contains(["0.18.57", "0.18.58"], var.openwork_version) || (var.den_api_image != "" && var.den_web_image != "")
+    error_message = "For versions other than 0.18.57/0.18.58, supply both den_api_image and den_web_image pinned by @sha256 digest."
+  }
 }
 
 variable "vpc_id" {
@@ -111,7 +116,7 @@ variable "tags" {
 }
 
 variable "den_api_image" {
-  description = "Full den-api image reference. Empty uses ghcr.io/different-ai/openwork-den-api:<openwork_version>. Set this to an ECR mirror if tasks cannot reach ghcr.io."
+  description = "Full den-api image pinned with @sha256 digest (including ECR mirrors). Empty uses the built-in digest for 0.18.57/0.18.58."
   type        = string
   default     = ""
 }
@@ -123,7 +128,7 @@ variable "den_gateway_image" {
 }
 
 variable "den_web_image" {
-  description = "Full den-web image reference. Empty uses ghcr.io/different-ai/openwork-den-web:<openwork_version>."
+  description = "Full den-web image pinned with @sha256 digest. Empty uses the built-in digest for 0.18.57/0.18.58."
   type        = string
   default     = ""
 }
@@ -136,6 +141,17 @@ variable "ecs_cluster_arn" {
   validation {
     condition     = var.ecs_cluster_arn == "" || can(regex("^arn:aws[a-z-]*:ecs:[a-z0-9-]+:[0-9]{12}:cluster/.+$", var.ecs_cluster_arn))
     error_message = "ecs_cluster_arn must be a full ECS cluster ARN (arn:aws:ecs:<region>:<account>:cluster/<name>) or empty."
+  }
+}
+
+variable "service_name_prefix" {
+  description = "Prefix for the ECS service names (den-api, den-web, ...). ECS service names must be unique in a cluster, so set it (for example \"openwork-\") when sharing ecs_cluster_arn with other services or another OpenWork deployment. Changing it on an existing deployment replaces the services."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([A-Za-z][A-Za-z0-9_-]{0,31})?$", var.service_name_prefix))
+    error_message = "service_name_prefix must be empty or up to 32 letters, digits, hyphens or underscores, starting with a letter."
   }
 }
 
@@ -211,7 +227,7 @@ variable "org_slug" {
 }
 
 variable "initial_admin_bootstrap_code" {
-  description = "One-time /setup code. Empty generates one (see the bootstrap_code output)."
+  description = "Legacy compatibility /setup code. Empty generates one only with write_only_secrets = false. Write-only mode uses secret_values_wo.bootstrap_code and never exports this legacy input."
   type        = string
   default     = ""
   sensitive   = true
@@ -307,10 +323,13 @@ variable "headless_runner" {
     OpenAI-compatible endpoint; key in headless_model_api_key) and reaches tools
     through Den's /mcp/agent. Runs as one task with its SQLite database on EFS
     (one mount target per service subnet, so service_subnet_ids must be in
-    different availability zones).
+    different availability zones). Set external_url to use an already deployed
+    celld/S3 fleet instead; this module then creates no Node runner or EFS.
+    Configure that fleet's model, computer and file storage separately.
   EOT
   type = object({
     enabled        = optional(bool, false)
+    external_url   = optional(string, "")
     model_protocol = optional(string, "anthropic")
     model_base_url = optional(string, "https://api.anthropic.com/v1")
     model          = optional(string, "")
@@ -320,9 +339,24 @@ variable "headless_runner" {
   default = {}
 
   validation {
-    condition     = contains(["anthropic", "openai"], var.headless_runner.model_protocol)
-    error_message = "headless_runner.model_protocol must be anthropic or openai."
+    condition     = contains(["anthropic", "openai", "openai-responses"], var.headless_runner.model_protocol)
+    error_message = "headless_runner.model_protocol must be anthropic, openai or openai-responses."
   }
+
+  validation {
+    condition = var.headless_runner.external_url == "" || can(regex(
+      "^(https://[A-Za-z0-9.-]+|http://[A-Za-z0-9-]+)(:[0-9]+)?$",
+      var.headless_runner.external_url
+    ))
+    error_message = "headless_runner.external_url must be an HTTPS origin, or an HTTP origin with a single-label private hostname, without a path or trailing slash."
+  }
+}
+
+variable "headless_runner_token" {
+  description = "Existing fleet's HEADLESS_API_TOKEN (at least 32 characters), required with headless_runner.external_url. Stored in Secrets Manager; only den-api and Workbot receive it. Ignored for the managed Node runner."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "headless_computer" {
@@ -364,12 +398,18 @@ variable "headless_runner_image" {
 variable "workbot" {
   description = "Workbot: a chat app at domain_name (default chat.<domain_name>) whose turns run on the headless runner. Requires headless_runner.enabled."
   type = object({
-    enabled     = optional(bool, false)
-    domain_name = optional(string, "")
-    cpu         = optional(number, 256)
-    memory      = optional(number, 512)
+    enabled       = optional(bool, false)
+    domain_name   = optional(string, "")
+    cpu           = optional(number, 256)
+    memory        = optional(number, 512)
+    desired_count = optional(number, 1)
   })
   default = {}
+
+  validation {
+    condition     = var.workbot.desired_count >= 1 && floor(var.workbot.desired_count) == var.workbot.desired_count
+    error_message = "workbot.desired_count must be a positive integer."
+  }
 }
 
 variable "workbot_image" {
@@ -385,7 +425,7 @@ variable "workbot_listener_rule_priority" {
 }
 
 variable "slack_assistant_enabled" {
-  description = "Turn on the Slack assistant (members mention OpenWork in Slack and get replies in the thread). Replies run on the headless runner when it is enabled, otherwise on OpenWork Web. You still create the Slack app in Den's connector settings."
+  description = "Turn on the Slack assistant (members mention OpenWork in Slack and get replies in the thread). Replies run on the headless runner, so enable it too. You still create the Slack app in Den's connector settings."
   type        = bool
   default     = false
 }
@@ -464,10 +504,10 @@ variable "database" {
     max_allocated_storage = optional(number, 100)
     multi_az              = optional(bool, false)
     backup_retention_days = optional(number, 7)
-    deletion_protection   = optional(bool, true)
+    deletion_protection   = optional(bool) # deprecated alias for top-level deletion_protection
     skip_final_snapshot   = optional(bool, false)
     apply_immediately     = optional(bool, false)
-    tls_query             = optional(string, "sslaccept=accept")
+    tls_query             = optional(string, "sslaccept=strict")
   })
   default = {}
 }
@@ -489,7 +529,7 @@ variable "redis_node_type" {
 # ---------------------------------------------------------------------------
 
 variable "den_api" {
-  description = "den-api task size and count. Keep desired_count = 1 until you have confirmed migrations: each task runs them on start."
+  description = "API-only task size and count. A dedicated migration task gates rollout regardless of replica count."
   type = object({
     cpu           = optional(number, 1024)
     memory        = optional(number, 2048)

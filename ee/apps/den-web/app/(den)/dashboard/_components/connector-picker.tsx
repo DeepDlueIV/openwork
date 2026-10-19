@@ -138,25 +138,23 @@ export function ConnectorPicker({ entries, loading, addHref, customHref, mode, c
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <FilterInput
           value={query}
           onChange={setQuery}
-          size="md"
-          className="flex-1"
-          placeholder={admin ? "Filter by name, or paste an MCP URL" : "Filter by name"}
+          size="sm"
+          className="w-[200px] max-w-full"
+          placeholder="Filter by name"
           onEnter={pasted ? addPasted : undefined}
         />
-        {!admin ? (
-          <DenButton variant="secondary" size="sm" icon={Plus} className="h-9" onClick={() => onCustomNameChange("")}>
-            Add another MCP
-          </DenButton>
-        ) : null}
+        <DenButton variant="secondary" size="sm" icon={Plus} onClick={() => onCustomNameChange("")}>
+          Add another MCP
+        </DenButton>
       </div>
       {customName !== null ? (
         <AddMcpForm
           key={customName}
-          title={admin ? "Add any MCP" : "Add another MCP"}
+          title="Add another MCP"
           initialName={customName}
           onCancel={() => onCustomNameChange(null)}
           onContinue={(input) => router.push(customHref(input))}
@@ -196,7 +194,7 @@ export function ConnectorPicker({ entries, loading, addHref, customHref, mode, c
             <DenButton size="md" icon={Plus} className="mt-3.5" data-testid="connector-picker-no-match-add" onClick={() => urlInput
               ? router.push(customHref({ name: "", url: needle.startsWith("http") ? query.trim() : `https://${query.trim()}` }))
               : onCustomNameChange(query.trim())}>
-              {urlInput ? "Add this MCP" : admin ? "Add any MCP" : "Add another MCP"}
+              {urlInput ? "Add this MCP" : "Add another MCP"}
             </DenButton>
           </div>
         ) : null}

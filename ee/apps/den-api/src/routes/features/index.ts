@@ -1,9 +1,8 @@
-import { readFeatureRollouts } from "@openwork-ee/den-db/organization-features"
 import { FEATURE_KEYS, featureAvailableOn, resolveFeature } from "@openwork/features"
 import type { Env, Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
-import { db } from "../../db.js"
+import { cache } from "../../cache.js"
 import { env } from "../../env.js"
 import { publicRoute } from "../../middleware/index.js"
 import { jsonResponse } from "../../openapi.js"
@@ -35,7 +34,7 @@ export function registerFeatureRoutes<T extends Env>(app: Hono<T>) {
     publicRoute,
     async (c) => {
       c.header("Cache-Control", "public, max-age=60, stale-if-error=86400")
-      const rollouts = await readFeatureRollouts(db)
+      const rollouts = await cache.features.rollouts()
       const features: Record<string, boolean> = {}
       for (const key of FEATURE_KEYS) {
         if (!featureAvailableOn(key, env.features.deployment)) continue

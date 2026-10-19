@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { OfflineRecoveryNotice } from "@/components/chat/offline-recovery-notice";
 import { openMemberApiKeyDialog } from "../../connections/member-api-key-dialog";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { UIMessage } from "ai";
@@ -11,7 +12,7 @@ import { Button } from "@/components/ui/button";
 
 import { captureAnalyticsEvent } from "@/app/lib/analytics";
 import { abortSession } from "@/app/lib/opencode-session";
-import { hasTerminalSessionReply, interruptSessionTurn, sessionHasPendingSubmission, sessionNeedsStop, sessionWorkHeld, submitAfterInterruption, submitImmediateSessionTurn, subscribeSessionInterruption } from "@/app/lib/opencode-interruption";
+import { createSessionInterruptionClient, hasTerminalSessionReply, interruptSessionTurn, sessionHasPendingSubmission, sessionNeedsStop, sessionWorkHeld, submitAfterInterruption, submitImmediateSessionTurn, subscribeSessionInterruption } from "@/app/lib/opencode-interruption";
 import { createClient, createPromptMessageID, isPromptAdmissionUnknown, promptAdmissionFailure, readPromptAdmission, unwrap } from "@/app/lib/opencode";
 import { createClientV2, isOpencodeV2BaseUrl, v2AcknowledgementText } from "@/app/lib/opencode-v2-adapter";
 import * as opencodeSessionNative from "@/app/lib/opencode-session-native";
@@ -67,7 +68,7 @@ import { decodeComposerMentionValue, encodeComposerMentionValue, type ComposerMe
 import { openDesktopUrl } from "@/app/lib/desktop";
 import { parseSlashCommandInvocation } from "./composer/slash-command";
 import { COMPOSER_DRAFT_TOKEN_RE, composerPillText, parseComposerPillToken } from "./composer/composer-pills";
-import { createPastedTextChip, resolvePastedTextPlaceholders } from "./composer/pasted-text";
+import { createPastedTextChip, insertDraftToken, resolvePastedTextPlaceholders } from "./composer/pasted-text";
 import {
   canAdmitNextQueuedItem,
   claimQueuedSend,
@@ -100,7 +101,7 @@ import { modelRefKey } from "../models/model-collections-store";
 import { useLocal } from "@/react-app/kernel/local-provider";
 import { useGatewayUsage, useGatewayUsageErrorHandled } from "../../cloud/use-gateway-usage";
 import { GatewayUsageApprovalNotice, GatewayUsageNotice } from "../../cloud/gateway-usage-panel";
-import { gatewayUsageNoticeState, gatewayUsageRefreshKey, isGatewayUsageModel } from "../../cloud/gateway-usage-state";
+import { gatewayUsageCanSwitchProvider, gatewayUsageForProvider, gatewayUsageNoticeState, gatewayUsageRefreshKey, isGatewayUsageModel } from "../../cloud/gateway-usage-state";
 import { resolveAttachmentFileMetadata } from "@/react-app/domains/session/sync/attachment-file-part";
 import { deriveSessionRenderModel } from "@/react-app/domains/session/sync/transition-controller";
 import { clearQueuedSendContext, setQueuedSendContext } from "@/react-app/domains/session/sync/queued-send-context";
@@ -155,6 +156,8 @@ import { MERMAID_LIMITS } from "@/components/markdown/mermaid";
 import {
   isChatMcpReconnectScopeCurrent,
   isCurrentChatConnectionDecision,
+  isLatestTurnToolCall,
+  CHAT_CONNECTION_CONTINUE_PROMPT,
   nativeChatConnectionDecision,
   composerQuestionForConnectionDecision,
   type ChatConnectionDecisionBinding,
@@ -608,6 +611,7 @@ export type SessionSurfaceProps = {
   modelPickerOpen: boolean;
   modelUnavailable?: boolean;
   modelUnavailableMessage?: string | null;
+  modelRecoveryScope?: string;
   /**
    * Resolves availability for one provider/model identity against the active
    * workspace's settled catalogs. Each surface validates its OWN effective
@@ -620,6 +624,8 @@ export type SessionSurfaceProps = {
   /** providerID → modelID → provider model, for per-session variant options. */
   providerCatalog?: ProviderCatalog;
   gatewayProviderIds?: ReadonlySet<string>;
+  /** OpenCode provider id → organization Gateway provider id, to pick the usage limit that governs the model. */
+  gatewayCloudProviderIds?: ReadonlyMap<string, string>;
   gatewayUsageProviderScope?: number | null;
   /** Den/import includes OpenWork Models for this org member (not just local sync). */
   openWorkModelsEntitled?: boolean;
@@ -968,6 +974,11 @@ function hiddenMessageCount(snapshot: OpenworkSessionHistory, revertMessageId: s
   return index < 0 ? snapshot.messages.length : snapshot.messages.length - index;
 }
 
+/** The server's reason when v2 cannot open a v1 chat that has not been copied yet. */
+function uncopiedChatReason(error: unknown): string | undefined {
+  return error instanceof Error && "code" in error && error.code === "engine_chat_not_copied" ? error.message : undefined;
+}
+
 export function SessionSurface(props: SessionSurfaceProps) {
   const local = useLocal();
   const { config: shellConfig } = useShellConfig();
@@ -1261,6 +1272,10 @@ export function SessionSurface(props: SessionSurfaceProps) {
       ? createClientV2(props.opencodeBaseUrl, props.workspaceRoot || undefined, { token: props.openworkToken })
       : createClient(props.opencodeBaseUrl, props.workspaceRoot.trim() || undefined, { token: props.openworkToken, mode: "openwork" }),
     [props.opencodeBaseUrl, props.openworkToken, props.workspaceRoot],
+  );
+  const interruptionClient = useMemo(
+    () => createSessionInterruptionClient(props.opencodeBaseUrl, opencodeClient, props.workspaceRoot, props.openworkToken),
+    [opencodeClient, props.opencodeBaseUrl, props.openworkToken, props.workspaceRoot],
   );
 
   const transcriptQueryKey = useMemo(
@@ -1620,13 +1635,20 @@ export function SessionSurface(props: SessionSurfaceProps) {
     latestMessageId: latestUsageMessage?.id,
     errorKey: JSON.stringify([error?.message ?? null, error?.presentation?.gatewayUsage ?? null, latestUsageEvidence]),
   }), liveStatus.type === "idle", props.gatewayUsageProviderScope ?? null);
-  const gatewayNotice = gatewayUsageNoticeState({ gatewaySelected: gatewayUsage.active, status: gatewayUsage.data });
+  // A provider limit for the selected model's provider replaces the default limits.
+  const gatewayCloudProviderId = props.gatewayCloudProviderIds?.get(sessionModel.selectedModel.providerID) ?? null;
+  const gatewayScope = useMemo(
+    () => gatewayUsage.data ? gatewayUsageForProvider(gatewayUsage.data, gatewayCloudProviderId) : null,
+    [gatewayUsage.data, gatewayCloudProviderId],
+  );
+  const gatewayCanSwitchProvider = gatewayUsageCanSwitchProvider(gatewayUsage.data, gatewayCloudProviderId, props.gatewayCloudProviderIds?.values());
+  const gatewayNotice = gatewayUsageNoticeState({ gatewaySelected: gatewayUsage.active, status: gatewayScope?.status });
   const hideGatewayError = useGatewayUsageErrorHandled({
-    scopeKey: gatewayUsage.scopeKey, sessionOwner, gatewaySelected: gatewayUsage.active, status: gatewayUsage.data,
+    scopeKey: gatewayUsage.scopeKey, sessionOwner, gatewaySelected: gatewayUsage.active, status: gatewayScope?.status,
     errorKey: usageError?.message.id ?? null, evidence: latestUsageEvidence, rateLimited: usageError?.presentation.kind === "rate-limited",
   });
   const hideDirectGatewayError = useGatewayUsageErrorHandled({
-    scopeKey: gatewayUsage.scopeKey, sessionOwner, gatewaySelected: gatewayUsage.active, status: gatewayUsage.data,
+    scopeKey: gatewayUsage.scopeKey, sessionOwner, gatewaySelected: gatewayUsage.active, status: gatewayScope?.status,
     errorKey: error?.message ?? null, evidence: error?.presentation?.gatewayUsage ?? null, rateLimited: error?.presentation?.kind === "rate-limited",
   });
   const visibleMessages = useMemo(() => {
@@ -1935,7 +1957,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
         return;
       }
       try {
-        const response = await props.client.resolveArtifacts(props.workspaceId, openTargets);
+        const response = await props.client.resolveArtifacts(props.workspaceId, openTargets, { sessionId: props.sessionId });
         if (!cancelled) {
           const nextTargets = response.items as OpenTarget[];
           updateVerifiedOpenTargets(nextTargets);
@@ -2176,7 +2198,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       // bounded newest read; never wait on the uncapped read.
       const sendMessages = await openingHistory.readSendHistory({ revealLatest: true });
       if (getQueuedSendGeneration(props.sessionId) !== generation) throw new Error("Send cancelled by Stop.");
-      const result = await submitImmediateSessionTurn<CloudMcpSubmissionResult>(props.opencodeBaseUrl, opencodeClient, props.sessionId,
+      const result = await submitImmediateSessionTurn<CloudMcpSubmissionResult>(props.opencodeBaseUrl, interruptionClient, props.sessionId,
         sendMessages, async () => {
           if (getQueuedSendGeneration(props.sessionId) !== generation) {
             return { outcome: "cancelled", reason: "context_changed" };
@@ -2242,7 +2264,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       pendingSendsRef.current.delete(submissionId);
       setPendingSendSessions([...pendingSendsRef.current.values()]);
     }
-  }, [archived, archiveStateKnown, opencodeClient, openingHistory.readSendHistory, props.onSendDraft, props.opencodeBaseUrl, props.selectedAgent, props.sessionId, props.workspaceId, props.workspaceRoot, removeQueuedDraftFromStore, renderedMessages.length, sessionOwner, setError, props.client, props.openWorkModelsSyncing, sessionModel.selectedModel, rejectedOwner, localRejectedRuntime, baseRenderedMessages]);
+  }, [archived, archiveStateKnown, interruptionClient, openingHistory.readSendHistory, props.onSendDraft, props.opencodeBaseUrl, props.selectedAgent, props.sessionId, props.workspaceId, props.workspaceRoot, removeQueuedDraftFromStore, renderedMessages.length, sessionOwner, setError, props.client, props.openWorkModelsSyncing, sessionModel.selectedModel, rejectedOwner, localRejectedRuntime, baseRenderedMessages]);
 
   const clearComposer = useCallback(() => {
     clearPersistedDraft();
@@ -2472,11 +2494,8 @@ export function SessionSurface(props: SessionSurfaceProps) {
   // directory-scoped client as the turn's own Stop, so the abort reaches the
   // engine and project that actually run the child (#2014).
   const handleStopSubagentSession = useCallback(async (childSessionId: string) => {
-    const stopClient = isOpencodeV2BaseUrl(props.opencodeBaseUrl) ? opencodeClient
-      : createClient(props.opencodeBaseUrl, props.workspaceRoot.trim() || undefined,
-        { token: props.openworkToken, mode: "openwork" }, { desktopTransport: "main" });
-    await abortSession(stopClient, childSessionId, props.workspaceRoot.trim() || undefined);
-  }, [opencodeClient, props.opencodeBaseUrl, props.openworkToken, props.workspaceRoot]);
+    await abortSession(interruptionClient, childSessionId, props.workspaceRoot.trim() || undefined);
+  }, [interruptionClient, props.workspaceRoot]);
 
   const handleAbort = useCallback(async () => {
     if (pendingStopsRef.current.has(sessionOwner)) return;
@@ -2515,9 +2534,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       // passes the workspace root), so the abort must target the same scope —
       // without it the server resolves the default project, finds no live run,
       // and answers `200: false` while the stream keeps going (#2014).
-      const stopClient = isOpencodeV2BaseUrl(props.opencodeBaseUrl) ? opencodeClient
-        : createClient(props.opencodeBaseUrl, props.workspaceRoot.trim() || undefined,
-          { token: props.openworkToken, mode: "openwork" }, { desktopTransport: "main" });
+      const stopClient = createSessionInterruptionClient(props.opencodeBaseUrl, opencodeClient, props.workspaceRoot, props.openworkToken);
       await interruptSessionTurn(props.opencodeBaseUrl, stopClient, props.sessionId,
         props.workspaceRoot.trim() || undefined, {
           admissionUnknown: phase.kind === "admission_unknown",
@@ -2728,7 +2745,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
     props.onDraftChange(nextDraft);
   }, [attachments, buildDraft, draft, hydratedDraftScopeKey, persistDraft, persistedDraftKey, props.onDraftChange, props.sessionId]);
 
-  const handleAttachFiles = useCallback((files: File[]) => {
+  const handleAttachFiles = useCallback((files: File[], draftOffset?: number) => {
     if (!props.attachmentsEnabled) {
       toast.warning(props.attachmentsDisabledReason ?? "Attachments are unavailable.");
       return;
@@ -2756,7 +2773,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
     // pattern as pasted-text chips), so they sit in the text flow.
     setComposerDraft(
       props.sessionId,
-      `${draft}${next.map((attachment) => `[attachment ${attachment.id}]`).join("")}`,
+      insertDraftToken(draft, next.map((attachment) => `[attachment ${attachment.id}]`).join(""), draftOffset),
     );
   }, [
     attachments,
@@ -2792,10 +2809,10 @@ export function SessionSurface(props: SessionSurfaceProps) {
     setComposerMentions(props.sessionId, { ...mentions, [value]: kind });
   }, [draft, mentions, sessionAgent.setAgent, props.sessionId, setComposerDraft, setComposerMentions]);
 
-  const handlePasteText = useCallback((text: string) => {
+  const handlePasteText = useCallback((text: string, draftOffset?: number) => {
     const pasted = createPastedTextChip(text);
     setComposerPasteParts(props.sessionId, [...pasteParts, pasted]);
-    setComposerDraft(props.sessionId, `${draft}[pasted text ${pasted.label}]`);
+    setComposerDraft(props.sessionId, insertDraftToken(draft, `[pasted text ${pasted.label}]`, draftOffset));
   }, [draft, pasteParts, props.sessionId, setComposerDraft, setComposerPasteParts]);
 
   const handleExpandPastedText = useCallback((id: string) => {
@@ -3226,6 +3243,14 @@ export function SessionSurface(props: SessionSurfaceProps) {
     };
   }, [props.sessionId, sessionOwner, props.activeQuestion, props.respondQuestion, baseRenderedMessages, props.isControlTarget, props.draftScope, archived, archiveStateKnown, archiveHeld]);
   const composerQuestion = composerQuestionForConnectionDecision(props.activeQuestion, nativeConnectionRequest);
+  // A turn that ended on a Connect card picks up once its sign-in lands, as if the person said so.
+  const continueAfterConnectionRef = useRef({ status, messages: baseRenderedMessages, asking: Boolean(props.activeQuestion) });
+  continueAfterConnectionRef.current = { status, messages: baseRenderedMessages, asking: Boolean(props.activeQuestion) };
+  const continueAfterConnection = useCallback((toolCallId: string, prompt?: string) => {
+    const context = continueAfterConnectionRef.current;
+    if (context.status !== "ready" || context.asking || !isLatestTurnToolCall(context.messages, toolCallId)) return;
+    void handleResumeInterrupted(prompt ?? CHAT_CONNECTION_CONTINUE_PROMPT);
+  }, [handleResumeInterrupted]);
 
   const handleRevertToUserMessage = useCallback((messageId: string) => {
     if (archived || !archiveStateKnown || sessionWorkHeld(props.opencodeBaseUrl, props.sessionId)) return;
@@ -3375,6 +3400,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       className="flex h-full min-h-0 flex-col"
     >
       <SessionHistoryStatus key={sessionOwner} complete={hasFullHistory && !openingHistory.openingError} pending={pendingSessionLoad}
+         failedReason={uncopiedChatReason(openingHistory.openingError) ?? uncopiedChatReason(snapshotQuery.error)}
          loading={openingHistory.openingLoading || snapshotQuery.isFetching && openingHistory.partial || openingHistory.pages.loading}
          failed={Boolean(openingHistory.openingError) || snapshotQuery.isError && !snapshotQuery.isFetching || openingHistory.pages.failed}
          onRetry={() => openingHistory.openingError ? openingHistory.retryOpening()
@@ -3491,6 +3517,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
                       onMcpReconnect={handleMcpReconnect}
                       onMcpReopenAuthorization={handleMcpReopenAuthorization}
                       getConnectionDecision={getConnectionDecision}
+                      continueAfterConnection={archived ? undefined : continueAfterConnection}
                       connectionQuestionToolCallId={nativeConnectionRequest?.questionToolCallId ?? null}
                     >
                       <MessageList
@@ -3535,8 +3562,10 @@ export function SessionSurface(props: SessionSurfaceProps) {
       </div>
 
       <div ref={composerShellRef} className="shrink-0 px-0 pb-2 pt-2 max-lg:pb-0">
+        <OfflineRecoveryNotice active={props.isControlTarget && isOpencodeV2BaseUrl(props.opencodeBaseUrl)} />
         <GatewayUsageApprovalNotice />
-        {gatewayNotice && gatewayUsage.data ? <GatewayUsageNotice key={`${gatewayUsage.scopeKey}:${sessionOwner}`} state={gatewayNotice} status={gatewayUsage.data} stale={gatewayUsage.query.isError} /> : null}
+        {gatewayNotice && gatewayScope ? <GatewayUsageNotice key={`${gatewayUsage.scopeKey}:${sessionOwner}:${gatewayCloudProviderId ?? ""}`} state={gatewayNotice} status={gatewayScope.status} stale={gatewayUsage.query.isError}
+          providerName={gatewayScope.providerName} canSwitchProvider={gatewayCanSwitchProvider} /> : null}
         {(props.providerConnectedCount ?? 0) === 0 ? (
           <button
             type="button"
@@ -3616,6 +3645,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
         ]}
         modelUnavailable={sessionModelUnavailable}
         modelUnavailableMessage={sessionModelUnavailable ? props.modelUnavailableMessage : null}
+        modelRecoveryScope={props.modelRecoveryScope}
         organizationModelsEmpty={props.organizationModelsEmpty}
         statusLabel={statusLabel(liveStatus, chatStreaming)}
         modelPickerOpen={modelPickerOpen}

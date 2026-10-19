@@ -86,10 +86,10 @@ function policyAttribution(policy: ExternalMcpToolPolicyView): string {
 
 function testableConnection(
   connection: ExternalMcpConnection,
-  isAdmin: boolean,
+  canManageConnections: boolean,
   needsAdminSetup: boolean,
 ): boolean {
-  return isAdmin
+  return canManageConnections
     && !isNativeProviderConnectionId(connection.id, connection.nativeProviderKey)
     && (connection.credentialMode === "shared" ? connection.connected : connection.connectedForMe)
     && connection.needsReconnect !== true
@@ -105,17 +105,17 @@ export function ToolTesterScreen() {
   const access = getOrgAccessFlags(
     orgContext?.currentMember.role ?? "member",
     orgContext?.currentMember.isOwner ?? false,
-    orgContext?.roles,
+    orgContext?.currentMember.permissions,
   );
   const connectionsQuery = useMcpConnections("manageable");
   const presetsQuery = useMcpConnectionPresets();
   const testableConnections = useMemo(() => (
     (connectionsQuery.data ?? []).filter((connection) => testableConnection(
       connection,
-      access.isAdmin,
+      access.canManageConnections,
       marketplaceConnectionNeedsAdminSetup(connection, presetsQuery.data ?? []),
     ))
-  ), [access.isAdmin, connectionsQuery.data, presetsQuery.data]);
+  ), [access.canManageConnections, connectionsQuery.data, presetsQuery.data]);
   const [selectedConnectionId, setSelectedConnectionId] = useState(requestedConnectionId ?? "");
   const [selectedToolName, setSelectedToolName] = useState("");
   const [toolSearch, setToolSearch] = useState("");
@@ -405,7 +405,6 @@ export function ToolTesterScreen() {
     <DashboardPageTemplate
       icon={Wrench}
       title="Tool Tester"
-      colors={["#CFFAFE", "#155E75", "#0E7490", "#67E8F9"]}
       description="Run any tool your connections expose, inspect the request on the wire, and control which tools your organization can use. Runs execute with your credential and are never written to OpenWork logs."
     >
       {connectionsQuery.error ? (

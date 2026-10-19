@@ -12,7 +12,10 @@ import { DenCombobox } from "../../_components/ui/combobox";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenTable } from "../../_components/ui/table";
 import { getAiGatewayLimitRoute, getAiGatewayLimitsRoute, getAiGatewayPersonRoute, getNewAiGatewayLimitRoute, type DenOrgMember, type DenOrgTeam } from "../../_lib/den-org";
+import { useGatewayAccessProviders } from "./gateway-subject-access-data";
 import { describeWho } from "./gateway-limit-editor-screen";
+import { providerLimitLabel } from "./provider-limit-scope";
+export { providerLimitLabel } from "./provider-limit-scope";
 import { formatLimitMoney, timeframeLabels, timeframePeriods, useGatewayLimitsMutation, useGatewayMembers, useGatewayPolicies, type GatewayUsageMember } from "./gateway-usage-limits-data";
 
 type Directory = { teams: DenOrgTeam[]; members: DenOrgMember[] };
@@ -215,7 +218,7 @@ function DeletedLimitNote({ orgId, orgSlug, policy }: { orgId: string; orgSlug: 
   return (
     <div role="status" className="flex flex-wrap items-center gap-2 text-[13px] text-gray-700" data-testid="gateway-limit-deleted">
       <span className="h-1.5 w-1.5 rounded-full bg-gray-400" aria-hidden="true" />
-      <span>Deleted {policy.name}. It no longer applies to anyone.</span>
+      <span>Removed {policy.name}. It no longer applies to anyone.</span>
       <DenButton variant="ghost" size="sm" className="h-auto px-1 py-0 text-[13px] underline underline-offset-4" loading={mutation.isPending}
         data-testid="gateway-limit-undo"
         onClick={() => mutation.mutate({ type: "restore", policy: { id: policy.id, revision: policy.revision } }, { onSuccess: () => router.replace(getAiGatewayLimitsRoute(orgSlug)) })}>
@@ -236,11 +239,45 @@ function PersonLookup({ orgId, orgSlug }: { orgId: string; orgSlug: OrgSlug }) {
   );
 }
 
+/** One spend limit: who it applies to, its provider, amounts, what happens at the limit, and Edit. */
+export function GatewayLimitRow({ policy, orgSlug, teams, members, providers, canEdit = true }: {
+  policy: GatewayUsageLimitPolicy;
+  orgSlug: OrgSlug;
+  providers: { id: string; name: string }[] | undefined;
+  canEdit?: boolean;
+} & Directory) {
+  const who = policyWho(policy, teams, members);
+  return (
+    <li className="flex items-center gap-3 px-4 py-3" data-testid="gateway-limit-row" data-policy-id={policy.id}>
+      <LimitIcon policy={policy} />
+      <span className="flex min-w-0 flex-[1.2] flex-col">
+        <span className="truncate text-[13px] font-medium text-gray-900">{policy.name}</span>
+        <span className="truncate text-[12px] text-gray-500">{!who ? "Not applied to anyone yet" : who === policy.name ? targetKind(policy) : who}</span>
+      </span>
+      {(
+        <span className="flex w-36 shrink-0 flex-col" data-testid="gateway-limit-provider-label">
+          <span className="text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers)}</span>
+
+        </span>
+      )}
+      <span className="min-w-0 flex-1 text-[13px] tabular-nums text-gray-700">{describeLimitAmounts(policy)} each</span>
+      <span className="w-28 shrink-0 text-[12px] text-gray-600">{policy.hardLimit ? "Pauses them" : "Only warns"}</span>
+      {canEdit ? <Link href={getAiGatewayLimitRoute(orgSlug, policy.id)} aria-label={`Edit ${policy.name}`} data-testid="gateway-limit-edit" className={buttonVariants({ variant: "secondary", size: "sm" })}>Edit</Link> : null}
+    </li>
+  );
+}
+
 export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members }: { orgId: string; orgSlug: OrgSlug } & Directory) {
   const policies = useGatewayPolicies(orgId);
   const searchParams = useSearchParams();
   const deletedId = searchParams?.get("deleted") ?? null;
-  const active = policies.data?.policies.filter((policy) => !policy.archivedAt) ?? [];
+  // Default limits first, then each provider's limits together.
+  const active = (policies.data?.policies.filter((policy) => !policy.archivedAt) ?? [])
+    .map((policy, index) => ({ policy, index }))
+    .sort((a, b) => (a.policy.providerId ?? "").localeCompare(b.policy.providerId ?? "") || a.index - b.index)
+    .map(({ policy }) => policy);
+
+  const providers = useGatewayAccessProviders(orgId, true);
   const deleted = deletedId ? policies.data?.policies.find((policy) => policy.id === deletedId) : undefined;
   return (
     <section aria-labelledby="gateway-usage-limits-heading" className="flex flex-col gap-5" data-testid="gateway-limits">
@@ -264,21 +301,9 @@ export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members }: { 
             <Link href={getNewAiGatewayLimitRoute(orgSlug)} className={buttonVariants({ variant: "primary", size: "sm" })} data-testid="gateway-limit-new">New limit</Link>
           </div>
           <ul className="divide-y divide-gray-100 overflow-hidden rounded-[12px] border border-gray-100 bg-white" aria-label="Spend limits">
-            {active.map((policy) => {
-              const who = policyWho(policy, teams, members);
-              return (
-                <li key={policy.id} className="flex items-center gap-3 px-4 py-3" data-testid="gateway-limit-row" data-policy-id={policy.id}>
-                  <LimitIcon policy={policy} />
-                  <span className="flex min-w-0 flex-[1.2] flex-col">
-                    <span className="truncate text-[13px] font-medium text-gray-900">{policy.name}</span>
-                    <span className="truncate text-[12px] text-gray-500">{!who ? "Not applied to anyone yet" : who === policy.name ? targetKind(policy) : who}</span>
-                  </span>
-                  <span className="min-w-0 flex-1 text-[13px] tabular-nums text-gray-700">{describeLimitAmounts(policy)} each</span>
-                  <span className="w-28 shrink-0 text-[12px] text-gray-600">{policy.hardLimit ? "Pauses them" : "Only warns"}</span>
-                  <Link href={getAiGatewayLimitRoute(orgSlug, policy.id)} aria-label={`Edit ${policy.name}`} data-testid="gateway-limit-edit" className={buttonVariants({ variant: "secondary", size: "sm" })}>Edit</Link>
-                </li>
-              );
-            })}
+            {active.map((policy) => (
+              <GatewayLimitRow key={policy.id} policy={policy} orgSlug={orgSlug} teams={teams} members={members} providers={providers.data} />
+            ))}
           </ul>
           <PersonLookup orgId={orgId} orgSlug={orgSlug} />
         </>

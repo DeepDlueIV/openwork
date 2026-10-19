@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { z } from "zod"
-import type { Tokens } from "./store.js"
+import { headlessModelAccessSchema } from "@openwork-ee/headless-protocol"
+import type { Tokens } from "./sealed.js"
 
 /**
  * Workbot signs people in with Den, as Den's first-party OAuth client `openwork-workbot` (no consent screen, one
@@ -25,7 +26,28 @@ export const denSessionSchema = z.object({
   organization: z.object({ id: z.string(), name: z.string(), brandAppName: z.string().nullable() }),
   memberId: z.string(),
   enabled: z.boolean(),
+  firstRun: z.boolean().optional(),
+  canEnableWorkbot: z.boolean().optional(),
   canSchedule: z.boolean(),
+  /** Workbot's Calendar tab is on (while Workbot is on). Older Dens omit it: off. */
+  calendar: z.boolean().optional(),
+  documents: z.boolean().default(false),
+  workspaceAssistant: z.boolean().default(false),
+  guidedNavigation: z.boolean().default(false),
+  teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
+  /** Side chats are on for this person. A Den from before side chats doesn't say: off. */
+  sideChats: z.boolean().default(false),
+  /** The organization's default model for Workbot's turns. Null, or a Den from before it, means the runner's default. */
+  model: z.string().nullable().default(null),
+  verifyModel: z.boolean().default(false),
+  /** Den validates the exact gateway alias and mints model access for each turn. Older Dens stay on runner credentials. */
+  gatewayModels: z.boolean().default(false),
+})
+
+const runTokenSchema = z.object({
+  token: z.string(),
+  resumeGrant: z.string().optional(),
+  modelAccess: headlessModelAccessSchema.optional(),
 })
 export type DenSession = z.infer<typeof denSessionSchema>
 
@@ -47,7 +69,7 @@ async function getJson(url: string) {
   return response.json()
 }
 
-export function createDen(options: { apiUrl: string; publicUrl: string }) {
+export function createDen(options: { apiUrl: string; publicUrl: string; serviceToken?: string }) {
   const redirectUri = `${options.publicUrl}/auth/callback`
   let discovered: Promise<Discovery> | null = null
 
@@ -102,7 +124,7 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
     }
   }
 
-  const authorized = async (method: "GET" | "POST", path: string, accessToken: string, body?: unknown) => {
+  const authorized = async (method: "GET" | "POST" | "PATCH", path: string, accessToken: string, body?: unknown) => {
     const response = await fetch(`${options.apiUrl}${path}`, {
       method,
       headers: { authorization: `Bearer ${accessToken}`, accept: "application/json", ...(body ? { "content-type": "application/json" } : {}) },
@@ -117,7 +139,7 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
   return {
     discover,
     /** Where to send the browser to sign in; Den returns it to /auth/callback with a code. */
-    async authorizeUrl(input: { state: string; verifier: string }) {
+    async authorizeUrl(input: { state: string; verifier: string; chooseWorkspace?: boolean }) {
       const { authorizationEndpoint, resource } = await discover()
       const url = new URL(authorizationEndpoint)
       url.search = new URLSearchParams({
@@ -128,9 +150,26 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
         state: input.state,
         code_challenge: pkceChallenge(input.verifier),
         code_challenge_method: "S256",
+        // Explicit workspace changes must not silently reuse the active workspace's existing grant.
+        ...(input.chooseWorkspace ? { prompt: "consent" } : {}),
         resource,
       }).toString()
       return url.toString()
+    },
+    /** Successful cookie write, not merely a session read. Never awaited by sign-in. */
+    async recordSignIn(accessToken: string, id: string) {
+      if (!options.serviceToken) return
+      try {
+        const response = await fetch(`${options.apiUrl}/v1/workbot/telemetry`, {
+          method: "POST", redirect: "error",
+          headers: { authorization: `Bearer ${accessToken}`, "x-openwork-workbot-service": options.serviceToken, "content-type": "application/json" },
+          body: JSON.stringify({ event: "signed_in", id, timestamp: Date.now() }), signal: AbortSignal.timeout(2_000),
+        })
+        if (!response.ok) console.warn("[workbot] telemetry_delivery_failed", { status: response.status })
+      } catch {
+        // Analytics is never a sign-in dependency; do not log credentials or response bodies.
+        console.warn("[workbot] telemetry_delivery_failed")
+      }
     },
     exchangeCode: (code: string, verifier: string) =>
       tokenRequest({ grant_type: "authorization_code", code, redirect_uri: redirectUri, code_verifier: verifier }),
@@ -152,11 +191,26 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
       if (status !== 200 || !parsed.success) throw new Error(`den_session_${status}`)
       return parsed.data
     },
-    async runToken(accessToken: string, input: { readOnly?: boolean } = {}): Promise<string> {
-      const { status, payload } = await authorized("POST", "/v1/workbot/run-token", accessToken, input)
-      const parsed = z.object({ token: z.string() }).safeParse(payload)
+    /**
+     * A token for one turn. With the turn's runner `sessionId` and `messageId`, Den also returns a resume grant where
+     * turns keep going on their own (`headlessDurableTurns`); older Dens ignore both and never return one.
+     */
+    async runToken(
+      accessToken: string,
+      input: { readOnly?: boolean; sessionId?: string; messageId?: string; model?: string; gatewayModels?: boolean; modelAccessRequired?: boolean } = {},
+    ): Promise<z.infer<typeof runTokenSchema>> {
+      const body = {
+        ...(input.readOnly !== undefined ? { readOnly: input.readOnly } : {}),
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.messageId ? { messageId: input.messageId } : {}),
+        ...((input.gatewayModels || input.modelAccessRequired) && input.model ? { model: input.model } : {}),
+        ...(input.modelAccessRequired ? { modelAccessRequired: true } : {}),
+      }
+      const { status, payload } = await authorized("POST", "/v1/workbot/run-token", accessToken, body)
+      const parsed = runTokenSchema.safeParse(payload)
+      // Never include the response body or validation issues: they may contain model credentials.
       if (status !== 200 || !parsed.success) throw new Error(`den_run_token_${status}`)
-      return parsed.data.token
+      return parsed.data
     },
     /** The Gmail, Slack and Microsoft 365 connections the person's admins set up, and whether each is ready for them. */
     async connections(accessToken: string) {
@@ -164,6 +218,25 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
       const parsed = workbotConnectionsSchema.safeParse(payload)
       if (status !== 200 || !parsed.success) throw new Error(`den_connections_${status}`)
       return parsed.data.connections
+    },
+    async connect(accessToken: string, connectionId: string, body: unknown) {
+      return authorized("POST", `/v1/workbot/connections/${encodeURIComponent(connectionId)}/connect/start`, accessToken, body)
+    },
+    /**
+     * One request Workbot's Calendar makes for the person (their Automations, runs and calendar meetings), through
+     * Den's allowlisted `/v1/workbot/calendar/*`. Den's status and body come back as they are.
+     */
+    async calendar(accessToken: string, input: { method: "GET" | "POST" | "PATCH"; path: string; body?: unknown }) {
+      return authorized(input.method, `/v1/workbot/calendar${input.path}`, accessToken, input.body)
+    },
+    /** Documents reads and explicit editor actions; Den enforces the feature and exact route allowlist. */
+    async documents(accessToken: string, path: string, method: "GET" | "POST" = "GET", body?: unknown) {
+      return authorized(method, `/v1/workbot/documents${path}`, accessToken, body)
+    },
+    async documentContent(accessToken: string, path: string) {
+      const response = await fetch(`${options.apiUrl}/v1/workbot/documents${path}`, { headers: { authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS) })
+      if (response.status === 401) throw new DenSignedOutError()
+      return response
     },
     /** Den's web app, from its sign-in issuer, for links back to OpenWork and app logos. */
     async webUrl() {
@@ -176,9 +249,11 @@ const workbotConnectionsSchema = z.object({
   connections: z.array(z.object({
     id: z.string(),
     name: z.string(),
-    app: z.enum(["gmail", "slack", "microsoft"]),
+    app: z.enum(["gmail", "googleCalendar", "slack", "microsoft"]),
     ready: z.boolean(),
     connectUrl: z.string().nullable(),
+    nativeProviderKey: z.string().nullable().optional(),
+    connectMode: z.enum(["inline", "external", "admin"]).optional(),
   })),
 })
 

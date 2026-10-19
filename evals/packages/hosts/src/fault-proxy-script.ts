@@ -164,8 +164,11 @@ const server = createServer((incoming, response) => {
     if (rule?.kind === "status") {
       const body = JSON.stringify(rule.body ?? { error: "Injected HTTP " + rule.statusCode });
       requests.push({ method: incoming.method ?? "GET", path, status: rule.statusCode, faulted: true, at: Date.now() });
+      // Den requests from the app in a browser carry credentials, so a
+      // wildcard origin is refused; answer the caller's origin as Den does.
+      const origin = incoming.headers.origin;
       response.writeHead(rule.statusCode, {
-        "access-control-allow-origin": "*",
+        ...(origin ? { "access-control-allow-origin": origin, "access-control-allow-credentials": "true", vary: "Origin" } : { "access-control-allow-origin": "*" }),
         "content-length": Buffer.byteLength(body),
         "content-type": "application/json",
       });

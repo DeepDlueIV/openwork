@@ -70,7 +70,7 @@ type SignInState =
 export type ConnectorSetupMode = "admin" | "member";
 
 /** The fields step two needs from an admin before anyone can sign in. */
-export type OAuthAppInput = { clientId: string; clientSecret: string };
+export type OAuthAppInput = { clientId: string; clientSecret: string; manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string } };
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -132,7 +132,7 @@ export function useConnectorSetup({ target, initialConnectionId, onConnectionCre
   }, []);
   useEffect(() => stopPolling, [stopPolling]);
 
-  const createForMe = useCallback(async (auth: Pick<CreateMcpConnectionInput, "authType"> & Partial<Pick<CreateMcpConnectionInput, "apiKey" | "apiKeyAuthScheme" | "credentialMode" | "oauthClient">>) => {
+  const createForMe = useCallback(async (auth: Pick<CreateMcpConnectionInput, "authType"> & Partial<Pick<CreateMcpConnectionInput, "apiKey" | "apiKeyAuthScheme" | "credentialMode" | "oauthClient" | "manualOAuthEndpoints">>) => {
     if (!target || !orgContext) throw new Error("Your organization is still loading. Try again in a moment.");
     const created = await createConnection.mutateAsync({
       name: target.name,
@@ -146,6 +146,7 @@ export function useConnectorSetup({ target, initialConnectionId, onConnectionCre
       ...apiKeyAuthSchemeInput(auth.authType, auth.apiKeyAuthScheme ?? DEFAULT_API_KEY_AUTH_SCHEME),
       ...(auth.oauthClient ? { oauthClient: auth.oauthClient } : {}),
       ...(auth.authType === "oauth" ? oauthRequestFields(discovery) : {}),
+      ...(auth.manualOAuthEndpoints ? { manualOAuthEndpoints: auth.manualOAuthEndpoints } : {}),
       access: { orgWide: false, memberIds: [orgContext.currentMember.id], teamIds: [] },
     });
     setConnectionId(created.id);
@@ -203,14 +204,14 @@ export function useConnectorSetup({ target, initialConnectionId, onConnectionCre
       setSaveError("Paste the client ID first.");
       return;
     }
-    if (!clientSecret && oauthClientSecretRequired(discovery)) {
+    if (!input.manualOAuthEndpoints && !clientSecret && oauthClientSecretRequired(discovery)) {
       setSaveError(`${target?.name ?? "This server"} needs the client secret too.`);
       return;
     }
     setSaving(true);
     setSaveError(null);
     try {
-      await createForMe({ authType: "oauth", oauthClient: { clientId, ...(clientSecret ? { clientSecret } : {}) } });
+      await createForMe({ authType: "oauth", oauthClient: { clientId, ...(clientSecret ? { clientSecret } : {}) }, ...(input.manualOAuthEndpoints ? { manualOAuthEndpoints: input.manualOAuthEndpoints } : {}) });
     } catch (error) {
       setSaveError(errorMessage(error, "The OAuth app did not save."));
     } finally {
@@ -375,6 +376,7 @@ export function useConnectorSetup({ target, initialConnectionId, onConnectionCre
     method,
     /** Step two is waiting on a key or OAuth app from this viewer. */
     needsInput: needsAdminInput && mode === "admin" && !connection,
+    discovery,
     secretRequired: oauthClientSecretRequired(discovery),
     saving,
     saveError,

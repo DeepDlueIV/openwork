@@ -92,7 +92,6 @@ export default function StripeCheckingPage() {
       icon={CreditCard}
       title="Confirming subscription"
       description="Finishing your checkout and refreshing workspace access."
-      colors={["#F5F3FF", "#312E81", "#635BFF", "#C4B5FD"]}
     >
       <section className="flex min-h-72 flex-col items-center justify-center gap-4 rounded-2xl border border-violet-100 bg-white p-12 text-center shadow-[0_8px_30px_-20px_rgba(49,46,129,0.45)]">
         {failed ? (

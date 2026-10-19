@@ -48,6 +48,60 @@ that team requirement must be removed for clearance to merge PRs. Then any
 approval from someone with write access counts too. The model can be steered by
 text in the diff it reviews, so clearance is a judgment call, not a guarantee.
 
+## Size limits
+
+`warden.toml` and `.warden/contributor.toml` review up to 400 files and
+60,000 changed lines per PR (`[defaults.scan]`); the Warden jobs allow 60
+minutes. Warden lists files beyond those limits as skipped but doesn't fail
+the review for them, so the reporter does: a PR with any file skipped over a
+limit is incomplete, never clear, and its `warden-clear` check and comment say
+to split it. Findings from the part that was reviewed are still posted,
+marked as incomplete, so authors can act on them.
+
+## Review cost and generated files
+
+The effective standard policy is the repository-root `warden.toml`, not
+`.warden/warden.toml`. Its coalescing target is 12,000 characters instead of
+Warden 0.43.0's 8,000. Nearby hunks still need to be within 30 lines to merge;
+large hunks are still split. This amortizes repeated prompts and extraction
+calls without removing any eligible diff lines. Models, verification,
+findings thresholds, both skills and scan limits are unchanged. The separate
+contributor screen policy is unchanged too.
+
+Do not add blanket ignores for Drizzle metadata, generated SDK code or
+OpenAPI. The contract lane regenerates OpenAPI and SDK from source, but an
+OpenAPI-only PR currently selects the docs lane and does not run that check.
+Drizzle's historical snapshots and journal have no equivalent deterministic
+regeneration check. Schema declarations, migration SQL, routes and generators
+must remain reviewed, as must confidentiality. Existing Warden built-in
+ignores (including generated markers) and size-limit skips are not new
+exclusions; size-limit skips continue to make clearance incomplete.
+
+An offline sample of the 30 first-parent commits ending at `50f4d06b8` has
+46,342 changed lines; 29,789 (64.3%) are those generated paths. Applying the
+pinned CLI's actual filters and scan limits gives 787 → 757 initial analysis
+chunks per skill (3.8% fewer), with identical skips and eligible diff lines.
+Only one eligible generated-file chunk remains in this sample: most generated
+volume already hits size limits or built-in ignores, so raw diff proportions
+would greatly overstate possible savings. This is a call-count proxy, not a
+claim about billed tokens, total model calls or wall-clock duration.
+
+To reproduce without credentials or model calls, install
+`@sentry/warden@0.43.0` with `pnpm add --ignore-scripts` in a separate scratch
+package (not this workspace), then point at that package's installation:
+
+```sh
+export WARDEN_PACKAGE_ROOT=/path/to/scratch/node_modules/@sentry/warden
+node --test .warden/tests/chunking.test.mjs
+node .warden/scripts/measure-chunks.mjs 50f4d06b8
+node --test .github/scripts/warden-report.test.mjs
+```
+
+The offline tests use Warden's own config loader and chunker. The measurement
+asserts unchanged skips, files and diff-line order across the whole sample.
+The existing CI reporter tests also guard against newly added exclusions,
+missing skills or changed scan coverage; neither command calls a model.
+
 ## Local review
 
 With the model credentials configured, run the pinned CLI:
@@ -63,8 +117,49 @@ credentials, partial analysis, and model errors are incomplete reviews.
 
 ## Rollout
 
-Warden runs on every same-repository PR, including drafts. Forks cannot use
-the model secret and are skipped.
+Warden runs on every same-repository PR, including drafts. `warden.yml` skips
+forks: the action only analyzes `pull_request` events, which get no secrets
+from forks.
+
+Fork PRs are reviewed by `.github/workflows/contributor-warden.yml` instead,
+which runs the pinned Warden CLI from dev against the fork's commits written
+to disk as data (symlinks, LFS and filters off; this repository's `.warden/`
+and `warden.toml` replace the PR's copies). It only runs after a maintainer
+comments `/test`, so opening PRs cannot spend model budget. It first runs the
+`contributor-screen` skill (`.warden/contributor.toml`): hidden behavior,
+obfuscation and supply-chain risk. When that is clear, or the maintainer
+comments `/test` again, it runs the two standard skills. Neither result
+approves the PR; they feed the `contributor-pr-required` status.
+
+Text in a fork's diff can steer the model, and the agent's `Read` tool
+accepts any path, including `/proc/self/environ`. So for forks, Warden runs
+in a sandbox (`.github/scripts/contributor-warden-sandbox.sh`):
+
+- **No key to steal.** The Warden container gets a placeholder key. Pi's
+  `models.json` sends every OpenAI call to a proxy container, which alone
+  holds `WARDEN_CONTRIBUTOR_OPENAI_API_KEY` (a separate, spend-limited key).
+- **No way out.** The Warden container is on an internal Docker network
+  that reaches only the proxy. The proxy forwards only `POST /v1/responses`
+  for the configured models, refuses hosted tools (web search, MCP, code
+  interpreter, file search) and server-side state, and stops after a request
+  budget (`.github/scripts/warden-model-proxy.mjs`).
+- **Nothing else to read or change.** Read-only PR files and git objects,
+  read-only root filesystem, non-root, no Linux capabilities, no host
+  directories.
+- **Checked every run.** Before Warden starts, a check inside the container
+  fails the run if a real key, the internet, host files or writable PR files
+  are visible.
+
+Steering the model itself is resisted in two ways, neither of which is
+complete on its own. Every skill that runs on forks starts with an
+"Untrusted input" section in its system prompt: the diff, commit messages,
+comments and files are data, and text aimed at the reviewer is reported as a
+finding. Separately, the deterministic screen holds any PR whose added lines
+or commit messages try to address an AI reviewer, imitate prompt tags, or ask
+for no findings, without asking a model. A steered model can still lie about
+the code, so held items always need a person and Warden never approves a
+fork PR. Only OpenAI models work in the sandbox; pointing
+`WARDEN_MODEL` at another provider makes fork reviews incomplete.
 
 The workflow reads policy, skills, and the reporter from the PR's immutable
 base; proposed policy changes take effect after merging. PR code is inspected,

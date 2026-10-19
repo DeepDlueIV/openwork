@@ -25,6 +25,7 @@
     "@opentelemetry/sdk-node": "0.220.0",
     "@opentelemetry/sdk-trace-base": "2.9.0",
     "@opentelemetry/semantic-conventions": "1.42.0",
+    "@openwork-ee/telemetry-contracts": "workspace:*",
     "@openwork-ee/utils": "workspace:*",
     "@openwork/features": "workspace:*",
     "@openwork/types": "workspace:*",
@@ -34,10 +35,11 @@
     "@tanstack/react-query": "^5.96.2",
     "cmdk": "^1.1.1",
     "lucide-react": "^0.577.0",
-    "next": "16.3.6",
+    "next": "16.3.8",
     "posthog-js": "1.430.2",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "recharts": "3.10.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {

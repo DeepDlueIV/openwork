@@ -65,10 +65,6 @@ data:
   DEN_AUTOMATIONS_RUNTIME_ENABLED: {{ .Values.config.public.automationsRuntimeEnabled | quote }}
   DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: {{ .Values.config.public.generatedArtifactViewsEnabled | quote }}
   DEN_APP_MCP_SERVERS_ENABLED: {{ .Values.config.public.appMcpServersEnabled | quote }}
-  DEN_CONNECT_LINK_MODE: {{ .Values.config.public.connectLinkMode | quote }}
-  {{ if .Values.config.public.connectLinkKeyId }}
-  DEN_CONNECT_LINK_KEY_ID: {{ .Values.config.public.connectLinkKeyId | quote }}
-  {{ end }}
   {{ if .Values.config.public.corsOrigins }}
   CORS_ORIGINS: {{ .Values.config.public.corsOrigins | quote }}
   DEN_CORS_ORIGINS: {{ .Values.config.public.corsOrigins | quote }}

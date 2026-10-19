@@ -7,11 +7,11 @@ import { allowFreeInferenceOffer, getInferenceStatus, setInferenceEnabled, getMe
 import { INFERENCE_ACCESS_REASONS, freeInferenceProviderSummarySchema, withFreeInferenceDefaultPinned, freeInferenceDefaultPinned } from "@openwork/types/den/inference"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { env } from "../../env.js"
+import { requireFeature } from "../../features.js"
 import { organizationHasActiveInferenceSubscription } from "../../stripe-billing.js"
-import { jsonValidator, orgRoleRoute, orgMemberRoute } from "../../middleware/index.js"
-import { forbiddenSchema, invalidRequestSchema, jsonResponse, unauthorizedSchema } from "../../openapi.js"
+import { jsonValidator, orgMemberRoute, orgPermissionRoute } from "../../middleware/index.js"
+import { forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, unauthorizedSchema } from "../../openapi.js"
 import type { OrgRouteVariables } from "./shared.js"
-import { ensureOrganizationAdmin, ensureOrganizationAdminRole, orgAccessFailureStatus } from "./shared.js"
 
 const inferenceSettingsSchema = z.object({
   enabled: z.boolean(),
@@ -60,27 +60,34 @@ const freeAccessSchema = z.object({
 const freeCredentialSchema = z.object({ credential: z.object({ apiKey: z.string(), baseURL: z.string(), statusURL: z.string(), modelID: z.string() }) })
 
 export function registerOrgInferenceRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
+  // The analytics dashboard has its own gate; Models settings and inference
+  // access remain available when the dashboard is hidden.
+  app.get("/v1/inference/analytics/usage", describeRoute({
+    tags: ["Inference"], summary: "Read Models analytics usage limits",
+    description: "Returns Models usage limits for the analytics dashboard. Requires View OpenWork Models settings and the Models analytics surface feature.",
+    responses: { 200: jsonResponse("Models usage limits.", inferenceStatusResponseSchema),
+      404: jsonResponse("Models analytics surface is disabled.", notFoundSchema) },
+  }), orgPermissionRoute("inference.view"), requireFeature("modelsAnalyticsUi"), async (c) => {
+    const orgId = c.get("organizationContext").organization.id
+    return c.json({ inference: { ...await getInferenceStatus(orgId), subscribed: await organizationHasActiveInferenceSubscription(orgId) } })
+  })
   app.get("/v1/inference/free/provider", describeRoute({ tags: ["Inference"], summary: "Get organization Free provider summary",
-    description: "Admins only. Returns the organization's Auto pin policy, joined-member allowance counts and recorded free usage attributed to this organization. Allowances are person-wide; usage totals exclude other organizations, anonymous devices and paid inference. No individual balances or identities are returned.",
+    description: "Requires the View OpenWork Models settings permission. Returns the organization's Auto pin policy, joined-member allowance counts and recorded free usage attributed to this organization. Allowances are person-wide; usage totals exclude other organizations, anonymous devices and paid inference. No individual balances or identities are returned.",
     responses: { 200: jsonResponse("Free provider summary returned.", z.object({ provider: freeInferenceProviderSummarySchema })),
-      401: jsonResponse("Authentication required.", unauthorizedSchema), 403: jsonResponse("Workspace admin permission required.", forbiddenSchema),
+      401: jsonResponse("Authentication required.", unauthorizedSchema), 403: jsonResponse("The caller lacks the View OpenWork Models settings permission.", forbiddenSchema),
       503: jsonResponse("Free provider summary unavailable.", z.object({ error: z.string() })) },
-  }), orgMemberRoute(), async (c) => {
-    const permission = ensureOrganizationAdminRole(c, "Only workspace owners and admins can read organization allowance summaries.")
-    if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response))
+  }), orgPermissionRoute("inference.view"), async (c) => {
     c.header("Cache-Control", "no-store")
     try { return c.json({ provider: await getFreeInferenceProviderSummary(c.get("organizationContext").organization.id) }) }
     catch { return c.json({ error: "free_provider_summary_unavailable" }, 503) }
   })
   app.patch("/v1/inference/free/pins", describeRoute({ tags: ["Inference"], summary: "Set the organization Auto pin",
-    description: "A fresh owner/admin session may change only defaultPinned. Unpinning changes picker curation, not free model availability or personal pins. The atomic metadata update preserves DPA, offerAllowed and all unrelated organization configuration.",
+    description: "Requires the Manage OpenWork Models permission and a recent sign-in. Changes only defaultPinned. Unpinning changes picker curation, not free model availability or personal pins. The atomic metadata update preserves DPA, offerAllowed and all unrelated organization configuration.",
     responses: { 200: jsonResponse("Auto pin saved.", z.object({ defaultPinned: z.boolean() })),
       400: jsonResponse("Provide only defaultPinned.", invalidRequestSchema), 401: jsonResponse("Authentication required.", unauthorizedSchema),
-      403: jsonResponse("Fresh workspace admin permission required.", forbiddenSchema),
+      403: jsonResponse("The caller lacks the Manage OpenWork Models permission or needs to sign in again.", forbiddenSchema),
       503: jsonResponse("Organization policy unavailable.", managedModelsPolicyErrorSchema) },
-  }), orgMemberRoute(), jsonValidator(z.strictObject({ defaultPinned: z.boolean() })), async (c) => {
-    const permission = ensureOrganizationAdmin(c, "Only workspace owners and admins can change the Auto pin.")
-    if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response))
+  }), orgPermissionRoute("inference.manage"), jsonValidator(z.strictObject({ defaultPinned: z.boolean() })), async (c) => {
     c.header("Cache-Control", "no-store")
     const { defaultPinned } = c.req.valid("json")
     try {
@@ -140,10 +147,10 @@ export function registerOrgInferenceRoutes<T extends { Variables: OrgRouteVariab
       responses: {
         200: jsonResponse("Inference settings returned successfully.", inferenceStatusResponseSchema),
         401: jsonResponse("The caller must be signed in to read inference settings.", unauthorizedSchema),
-        403: jsonResponse("Only workspace owners and admins can read inference settings.", forbiddenSchema),
+        403: jsonResponse("The caller lacks the View OpenWork Models settings permission.", forbiddenSchema),
       },
     }),
-    orgRoleRoute(["admin"]),
+    orgPermissionRoute("inference.view"),
     async (c) => {
       const payload = c.get("organizationContext")
       return c.json({
@@ -169,14 +176,9 @@ export function registerOrgInferenceRoutes<T extends { Variables: OrgRouteVariab
         503: jsonResponse("Managed Models policy is unavailable.", managedModelsPolicyErrorSchema),
       },
     }),
-    orgRoleRoute(["admin"]),
+    orgPermissionRoute("inference.manage"),
     jsonValidator(inferenceSettingsSchema),
     async (c) => {
-      const permission = ensureOrganizationAdmin(c, "Only workspace owners and admins can update inference settings.")
-      if (!permission.ok) {
-        return c.json(permission.response, orgAccessFailureStatus(permission.response))
-      }
-
       const payload = c.get("organizationContext")
       const input = c.req.valid("json")
 

@@ -197,35 +197,19 @@ Scope note: these are `mcp:read`-class operations; nothing on this path writes; 
 
 ---
 
-## 7. Org kill switch
+## 7. Availability
 
-Marketplace capability search/execute uses the same effective Connect rail check
-as External MCP connections: the `mcpConnections` feature, read with
-`getOrganizationFeatures(organizationId)` from `ee/apps/den-api/src/features.ts`
-and declared in `packages/features/src/registry.ts`.
-
-Connect is default-on, so local dev, self-hosted, evals, and hosted production
-get the feature immediately unless a platform admin turns it off for an
-organization in /admin (stored in the `organization_feature` table), or an
-operator locks it with `config.features.mcpConnections` / `DEN_FEATURE_MCP_CONNECTIONS`.
-
-Check the kill switch in both paths: disabled orgs get an empty marketplace
-merge; execute returns `unknown_capability`. Opted-out is byte-identical to
-nonexistence.
+Marketplace capability search/execute is available in every organization, like
+External MCP connections; the former `mcpConnections` org switch is retired.
 
 ### Additive invariants
 
 1. Desktop users without the cloud connection: this code is unreachable; zero change.
-2. Cloud-connected users in opted-out orgs: byte-identical search results and execute behavior.
-3. Tool surface unchanged: still exactly `search_capabilities` + `execute_capability`.
-4. The desktop install flow was later removed (#2857 stopped desktop installs; the local GitHub import and the install route followed). `apps/server/src/cloud-plugins.ts` now only lists and removes local copies made by older builds.
-5. The rich `/mcp` endpoint and `/mcp/admin` are untouched. External connections also merged only into `/mcp/agent`.
-6. No schema changes, no migrations, no new tables in Phase 1; everything derives from existing plugin-arch tables in `ee/packages/den-db/src/schema/sharables/plugin-arch.ts`.
-7. No prompt changes and no tool-description changes in Phase 1; results are self-describing via `summary`, `status`, and `hint`.
-
-Kill switch uses the same layer as connections: turn the `mcpConnections`
-feature off for the organization in /admin (or with the `den_set_org_capability`
-admin tool).
+2. Tool surface unchanged: still exactly `search_capabilities` + `execute_capability`.
+3. The desktop install flow was later removed (#2857 stopped desktop installs; the local GitHub import and the install route followed). `apps/server/src/cloud-plugins.ts` now only lists and removes local copies made by older builds.
+4. The rich `/mcp` endpoint and `/mcp/admin` are untouched. External connections also merged only into `/mcp/agent`.
+5. No schema changes, no migrations, no new tables in Phase 1; everything derives from existing plugin-arch tables in `ee/packages/den-db/src/schema/sharables/plugin-arch.ts`.
+6. No prompt changes and no tool-description changes in Phase 1; results are self-describing via `summary`, `status`, and `hint`.
 
 ---
 
@@ -233,7 +217,7 @@ admin tool).
 
 ### Phase 1: this document's scope, Den-only, additive
 
-Build the marketplace search source, the execute branch for all classes with honest statuses, the org kill switch, tests, and eval flow. There are zero desktop changes; member-facing Connect rail behavior is default-on unless an org explicitly opts out.
+Build the marketplace search source, the execute branch for all classes with honest statuses, tests, and eval flow. There are zero desktop changes; member-facing Connect rail behavior is on for every organization.
 
 Deliverables:
 
@@ -330,7 +314,7 @@ Unit tests in `ee/apps/den-api/test/marketplace-capabilities.test.ts`:
 
 Existing contract must keep passing untouched: `evals/flows/mcp-search-capabilities.flow.mjs` asserts exactly two tools.
 
-New eval flow `evals/flows/marketplace-capabilities.flow.mjs`: seed marketplace + plugin + skill config object via the plugin-system API → real chat turn → assert `search_capabilities` returns the `plugin:` match → `execute_capability` returns the skill content → the answer reflects the skill's instructions; control frame proves an opted-out org sees no `plugin:` matches.
+New eval flow `evals/flows/marketplace-capabilities.flow.mjs`: seed marketplace + plugin + skill config object via the plugin-system API → real chat turn → assert `search_capabilities` returns the `plugin:` match → `execute_capability` returns the skill content → the answer reflects the skill's instructions.
 
 Test evidence follows `AGENTS.md`: `evals/results/test-runs/<test-run-id>/test-run.json` exists, and every claim is backed by observable assertion evidence or a validated screenshot.
 

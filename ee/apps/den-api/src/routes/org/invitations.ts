@@ -1,5 +1,5 @@
 import { and, desc, eq, isNull } from "@openwork-ee/den-db/drizzle"
-import { AuthUserTable, InvitationTable, MemberTable, OrganizationTable } from "@openwork-ee/den-db/schema"
+import { AuthUserTable, InvitationTable, MemberTable, OrganizationTable, TeamTable, TeamMemberTable } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
@@ -8,23 +8,42 @@ import { ORGANIZATION_AUDIT_ACTIONS } from "../../audit-events.js"
 import { invitationCanceledEvent, invitationSavedEvent } from "../../audit/domain/invitations.js"
 import { appendDomainChanges, finishLegacyAuditAction } from "../../audit/domain/legacy.js"
 import { addAuditRequestResource, auditChangeCapture } from "../../audit/request-capture.js"
+import { getScimManagedTeamIds } from "../../scim-groups.js"
 import { db } from "../../db.js"
 import { invitationBillingUrl } from "../../agent-links.js"
 import { invitationHasAdminTeam, withOrganizationTeamMutation } from "../../organization-team-roles.js"
-import { jsonValidator, orgRoleRoute, paramValidator } from "../../middleware/index.js"
+import { jsonValidator, orgPermissionRoute, paramValidator } from "../../middleware/index.js"
 import { denTypeIdSchema, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, successSchema, unauthorizedSchema } from "../../openapi.js"
 import { appLogger } from "../../observability/logger.js"
 import { runPostOrganizationMemberChangeHooks } from "../../organization-member-hooks.js"
-import { validateInvitationRoleAssignment, type OrganizationRolePermission } from "../../organization-access.js"
+import { ORGANIZATION_ADMIN_ROLE, ORGANIZATION_MEMBER_ROLE, ORGANIZATION_OWNER_ROLE } from "../../organization-role-hierarchy.js"
 import { isEmailAllowedForOrganization, listAssignableRoles, removeOrganizationMember } from "../../orgs.js"
+import type { PermissionDatabase } from "@openwork-ee/den-db/permissions"
+import { resolveTeamActorInTransaction, teamGrantDecisionInTransaction, teamGrantsForbiddenResponse, roleAssignmentDeniedHeaders, roleAssignmentDeniedResponse, roleAssignmentDenial, roleAssignmentDenialInTransaction, type RoleAssignmentDenial } from "../../permissions/team-grants.js"
+import { resolvePermissionsForMember } from "../../permissions/resolve.js"
 import { getOrganizationSeatAddEligibility } from "../../stripe-billing.js"
 import { DenEmailSendError, sendEmail } from "../../utils/email/send-email.js"
 import type { OrgRouteVariables } from "./shared.js"
-import { buildInvitationLink, createInvitationId, createInvitationToken, ensureInviteManager, ensureOrganizationSuperAdmin, idParamSchema, normalizeRoleName, orgAccessFailureStatus } from "./shared.js"
+import {
+  buildInvitationLink,
+  createInvitationId,
+  createInvitationToken,
+  idParamSchema,
+  memberPermissionsForRequest,
+  normalizeRoleName,
+  orgAccessFailureStatus,
+  permissionDeniedResponse,
+  permissionFailureHeaders,
+  requirePermission,
+  splitRoles,
+  type PermissionCheckFailure,
+  type PermissionRouteContext,
+} from "./shared.js"
 
 const inviteMemberSchema = z.object({
   email: z.string().email(),
   role: z.string().trim().min(1).max(64),
+  teamId: denTypeIdSchema("team").nullable().optional().describe("Team to join when the invitation is accepted. Requires Manage teams and every permission the team grants. Omit to preserve a refreshed invitation's team; null clears it."),
 })
 const logger = appLogger.child({ component: "invitations" })
 
@@ -35,6 +54,12 @@ const invitationResponseSchema = z.object({
   expiresAt: z.string().datetime(),
   inviteToken: z.string(),
 }).meta({ ref: "InvitationResponse" })
+
+const invitationLinkResponseSchema = z.object({
+  invitationId: denTypeIdSchema("invitation"),
+  inviteLink: z.string().url(),
+  expiresAt: z.string().datetime(),
+}).meta({ ref: "InvitationLinkResponse" })
 
 const invitationEmailFailedSchema = z.object({
   error: z.literal("invitation_email_failed"),
@@ -70,21 +95,102 @@ type InvitationId = typeof InvitationTable.$inferSelect.id
 
 const orgInvitationParamsSchema = idParamSchema("invitationId", "invitation")
 
-export function validateInvitationRefreshRole(input: {
-  existingRole: string
-  availableRoles: ReadonlySet<string>
-  currentMember: {
-    isOwner: boolean
-    role: string
+type InvitationRoleValidation =
+  | { ok: true; role: string }
+  | { ok: false; error: "invalid_role" | "forbidden"; message: string }
+  | { ok: false; error: "permission"; response: PermissionCheckFailure }
+  | { ok: false; error: "role_assignment"; denial: RoleAssignmentDenial }
+
+/**
+ * Whether the caller may invite someone as an admin (role-assignment rules). With the root
+ * database it is the quick pre-transaction check, read once per request. With the invitation's
+ * write transaction it decides again through it: the caller's permissions are re-resolved and the
+ * Admin default set is re-read under share locks, so a concurrent Admin permissions edit
+ * serializes with the write (roleAssignmentDenialInTransaction).
+ */
+type AdminInvitationCheck = (database: PermissionDatabase) => Promise<RoleAssignmentDenial | null | "organization_not_found">
+
+function adminInvitationCheck(c: PermissionRouteContext): AdminInvitationCheck {
+  let preTransaction: Promise<RoleAssignmentDenial | null | "organization_not_found"> | null = null
+  return async (database) => {
+    const payload = c.get("organizationContext")
+    if (!payload) return "organization_not_found"
+    if (database !== db) {
+      return roleAssignmentDenialInTransaction({
+        tx: database,
+        organizationId: payload.organization.id,
+        callerMemberId: payload.currentMember.id,
+        target: null,
+        nextRole: ORGANIZATION_ADMIN_ROLE,
+      })
+    }
+    preTransaction ??= (async () => {
+      const caller = await memberPermissionsForRequest(c)
+      if (!caller) return "organization_not_found"
+      return roleAssignmentDenial({
+        organizationId: payload.organization.id,
+        caller,
+        callerMemberId: payload.currentMember.id,
+        target: null,
+        nextRole: ORGANIZATION_ADMIN_ROLE,
+        database,
+      })
+    })()
+    return preTransaction
   }
-  roles: readonly OrganizationRolePermission[]
-}) {
-  return validateInvitationRoleAssignment({
-    role: normalizeRoleName(input.existingRole),
-    availableRoles: input.availableRoles,
-    currentMember: input.currentMember,
-    roles: input.roles,
-  })
+}
+
+const BUILT_IN_INVITATION_ROLES: ReadonlySet<string> = new Set([ORGANIZATION_MEMBER_ROLE, ORGANIZATION_ADMIN_ROLE])
+
+/**
+ * Which role an invitation may carry. The route marker already requires
+ * `invitations.manage`; any role other than `member` also needs
+ * `members.update`, and with Permissions on an admin invitation needs every
+ * Admin default permission (src/permissions/role-assignment.ts). Only Member
+ * and Admin can be assigned. `database` is the open transaction, if any:
+ * inside it `members.update` is re-checked against the caller's permissions
+ * resolved through it, and the admin rule is decided through it too
+ * (adminInvitationCheck), so a permission change committed after the route
+ * check is seen before the invitation is written.
+ */
+async function validateInvitationRole(c: PermissionRouteContext, input: {
+  role: string
+  availableRoles: ReadonlySet<string>
+  adminCheck: AdminInvitationCheck
+  database: PermissionDatabase
+}): Promise<InvitationRoleValidation> {
+  const requestedRoles = splitRoles(input.role || ORGANIZATION_MEMBER_ROLE)
+    .map((role) => normalizeRoleName(role))
+    .filter(Boolean)
+  const roleValue = requestedRoles[0] ? requestedRoles.join(",") : ORGANIZATION_MEMBER_ROLE
+
+  if (requestedRoles.includes(ORGANIZATION_OWNER_ROLE)) {
+    return { ok: false, error: "forbidden", message: "Owner can only be assigned by the Den ownership transfer API." }
+  }
+  if (roleValue === ORGANIZATION_MEMBER_ROLE) {
+    return { ok: true, role: ORGANIZATION_MEMBER_ROLE }
+  }
+
+  const permission = await requirePermission(c, "members.update")
+  if (!permission.ok) return { ok: false, error: "permission", response: permission.response }
+  if (input.database !== db) {
+    const payload = c.get("organizationContext")
+    if (!payload) return { ok: false, error: "permission", response: { error: "organization_not_found" } }
+    const held = await resolvePermissionsForMember({ organizationId: payload.organization.id, memberId: payload.currentMember.id, database: input.database })
+    if (!held.has("members.update")) return { ok: false, error: "permission", response: permissionDeniedResponse("members.update") }
+  }
+
+  if (requestedRoles.some((role) => !input.availableRoles.has(role) || !BUILT_IN_INVITATION_ROLES.has(role))) {
+    return { ok: false, error: "invalid_role", message: "Choose Member or Admin." }
+  }
+
+  if (requestedRoles.includes(ORGANIZATION_ADMIN_ROLE)) {
+    const denial = await input.adminCheck(input.database)
+    if (denial === "organization_not_found") return { ok: false, error: "permission", response: { error: "organization_not_found" } }
+    if (denial) return { ok: false, error: "role_assignment", denial }
+  }
+
+  return { ok: true, role: roleValue }
 }
 
 export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
@@ -100,20 +206,15 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
         400: jsonResponse("The invitation request body or path parameters were invalid.", invalidRequestSchema),
         401: jsonResponse("The caller must be signed in to invite organization members.", unauthorizedSchema),
         402: jsonResponse("A seat subscription is required before inviting more members. The body includes billingUrl, where an owner starts seat billing.", invitePaymentRequiredSchema),
-        403: jsonResponse("Only workspace owners and admins can create invitations. Admins can only invite members.", forbiddenSchema),
+        403: jsonResponse("The caller needs the Invite people permission and a recent sign-in. Inviting with a role other than member also needs Change member roles, and with Permissions on inviting an admin needs every Admin permission; reusing an invitation with Admin team access needs Manage Admin teams.", forbiddenSchema),
         404: jsonResponse("The organization could not be found.", notFoundSchema),
         409: jsonResponse("The email address is outside this workspace's allowed domains.", inviteEmailDomainNotAllowedSchema),
         502: jsonResponse("The invitation was saved but the email provider rejected or failed to deliver it. Retry by submitting the same email again.", invitationEmailFailedSchema),
       },
     }),
-    orgRoleRoute(["admin"]),
+    orgPermissionRoute("invitations.manage"),
     jsonValidator(inviteMemberSchema),
     async (c) => {
-    const permission = ensureInviteManager(c)
-    if (!permission.ok) {
-      return c.json(permission.response, orgAccessFailureStatus(permission.response))
-    }
-
     const payload = c.get("organizationContext")
     const user = c.get("user")
     const input = c.req.valid("json")
@@ -134,13 +235,20 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
 
     const availableRoles = await listAssignableRoles(payload.organization.id)
     const role = normalizeRoleName(input.role)
-    const assignableRole = validateInvitationRoleAssignment({
+    const adminCheck = adminInvitationCheck(c)
+    const assignableRole = await validateInvitationRole(c, {
       role,
       availableRoles,
-      currentMember: payload.currentMember,
-      roles: payload.roles,
+      adminCheck,
+      database: db,
     })
     if (!assignableRole.ok) {
+      if (assignableRole.error === "permission") {
+        return c.json(assignableRole.response, orgAccessFailureStatus(assignableRole.response), permissionFailureHeaders(assignableRole.response))
+      }
+      if (assignableRole.error === "role_assignment") {
+        return c.json(roleAssignmentDeniedResponse(assignableRole.denial), 403, roleAssignmentDeniedHeaders(assignableRole.denial))
+      }
       if (assignableRole.error === "invalid_role") {
         return c.json({ error: assignableRole.error, message: assignableRole.message }, 400)
       }
@@ -155,6 +263,14 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
         .from(OrganizationTable)
         .where(eq(OrganizationTable.id, payload.organization.id))
         .for("update")
+
+      // The route checked Invite people before the transaction; re-check it against the inviter's
+      // permissions resolved through the transaction, so a revocation committed since is seen
+      // before anything is written (new and refreshed invitations alike).
+      const inviter = await resolvePermissionsForMember({ organizationId: payload.organization.id, memberId: payload.currentMember.id, database: tx })
+      if (!inviter.has("invitations.manage")) {
+        return { status: "role_error" as const, validation: { ok: false as const, error: "permission" as const, response: permissionDeniedResponse("invitations.manage") } }
+      }
 
       const existingInvitationRows = await tx
         .select()
@@ -182,14 +298,17 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
 
       if (existingInvitation) {
         if (await invitationHasAdminTeam(tx, existingInvitation)) {
-          const permission = ensureOrganizationSuperAdmin(c, "Only workspace owners and super-admins can manage invitations with Admin team access.")
+          const permission = await requirePermission(c, "teams.manage_admin")
           if (!permission.ok) return { status: "team_forbidden" as const, response: permission.response }
+          // Re-checked against the inviter resolved through this transaction (above), so a revocation
+          // committed after the request's permissions were read is seen before the refresh is written.
+          if (!inviter.has("teams.manage_admin")) return { status: "team_forbidden" as const, response: permissionDeniedResponse("teams.manage_admin") }
         }
-        const refreshRole = validateInvitationRefreshRole({
-          existingRole: existingInvitation.role,
+        const refreshRole = await validateInvitationRole(c, {
+          role: normalizeRoleName(existingInvitation.role),
           availableRoles,
-          currentMember: payload.currentMember,
-          roles: payload.roles,
+          adminCheck,
+          database: tx,
         })
         if (!refreshRole.ok) {
           return { status: "role_error" as const, validation: refreshRole }
@@ -198,6 +317,28 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
         const seatEligibility = await getOrganizationSeatAddEligibility(payload.organization.id)
         if (!seatEligibility.allowed) {
           return { status: "payment_required" as const, seatEligibility }
+        }
+      }
+
+      // The role was allowed before the transaction; validate it again through the transaction
+      // (members.update and, for admin, the role-assignment rule) so a permission or Admin
+      // permissions change committed since is seen before the invitation is written.
+      const writeRole = await validateInvitationRole(c, { role: assignedRole, availableRoles, adminCheck, database: tx })
+      if (!writeRole.ok) return { status: "role_error" as const, validation: writeRole }
+
+      // Validate the complete grant before saving or sending the invitation. Omitted
+      // teamId preserves a pending invitation's team when it is resent.
+      const teamId = input.teamId === undefined ? existingInvitation?.teamId ?? null : input.teamId
+      if (existingInvitation?.teamId && existingInvitation.teamId !== teamId && (await getScimManagedTeamIds(payload.organization.id, tx)).has(existingInvitation.teamId)) return { status: "invalid_team" as const }
+      if (teamId || (existingInvitation?.teamId && input.teamId !== undefined)) {
+        const actor = await resolveTeamActorInTransaction(tx, payload.organization.id, payload.currentMember.id)
+        if (!actor.has("teams.manage")) return { status: "team_forbidden" as const, response: permissionDeniedResponse("teams.manage") }
+        if (teamId) {
+          const [team] = await tx.select().from(TeamTable).where(and(eq(TeamTable.id, teamId), eq(TeamTable.organizationId, payload.organization.id))).for("share")
+          if (!team || (await getScimManagedTeamIds(payload.organization.id, tx)).has(teamId)) return { status: "invalid_team" as const }
+          if (team.grantsOrganizationAdmin && !actor.has("teams.manage_admin")) return { status: "team_forbidden" as const, response: permissionDeniedResponse("teams.manage_admin") }
+          const grant = await teamGrantDecisionInTransaction({ tx, organizationId: payload.organization.id, actor, teamId, grantsOrganizationAdmin: team.grantsOrganizationAdmin })
+          if (!grant.ok) return { status: "team_forbidden" as const, response: grant.reason === "permission_missing" ? teamGrantsForbiddenResponse(grant.requiredPermission) : permissionDeniedResponse("teams.manage_admin") }
         }
       }
 
@@ -213,7 +354,7 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
       if (existingInvitation) {
         await tx
           .update(InvitationTable)
-          .set({ role: assignedRole, inviterId: normalizeDenTypeId("user", user.id), orgMemberId: payload.currentMember.id, inviteToken, expiresAt })
+          .set({ teamId, role: assignedRole, inviterId: normalizeDenTypeId("user", user.id), orgMemberId: payload.currentMember.id, inviteToken, expiresAt })
           .where(and(eq(InvitationTable.id, existingInvitation.id), eq(InvitationTable.status, "pending")))
 
         const invitedMemberRows = await tx
@@ -247,6 +388,7 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
           id: invitationId,
           organizationId: payload.organization.id,
           email,
+          teamId,
           role: assignedRole,
           status: "pending",
           inviterId: normalizeDenTypeId("user", user.id),
@@ -269,14 +411,26 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
         invitationOrgMemberId = memberId
       }
 
+      // Preserve the existing pending-member experience, atomically with the
+      // invitation instead of a second browser request after the email is sent.
+      if (invitationOrgMemberId) {
+        if (existingInvitation?.teamId && existingInvitation.teamId !== teamId) {
+          await tx.delete(TeamMemberTable).where(and(eq(TeamMemberTable.teamId, existingInvitation.teamId), eq(TeamMemberTable.orgMembershipId, invitationOrgMemberId)))
+        }
+        if (teamId) {
+          const [membership] = await tx.select({ id: TeamMemberTable.id }).from(TeamMemberTable).where(and(eq(TeamMemberTable.teamId, teamId), eq(TeamMemberTable.orgMembershipId, invitationOrgMemberId))).limit(1)
+          if (!membership) await tx.insert(TeamMemberTable).values({ id: createDenTypeId("teamMember"), teamId, orgMembershipId: invitationOrgMemberId })
+        }
+      }
+
       // Organization row is already locked FOR UPDATE above; append last.
       const inviterId = normalizeDenTypeId("user", user.id)
       const auditEventIds = await appendDomainChanges(tx, capture, [invitationSavedEvent({
         organizationId: payload.organization.id,
         before: existingInvitation,
         after: existingInvitation
-          ? { ...existingInvitation, role: assignedRole, inviterId, orgMemberId: payload.currentMember.id, expiresAt }
-          : { id: invitationId, email, role: assignedRole, status: "pending", teamId: null, inviterId, orgMemberId: payload.currentMember.id, expiresAt },
+          ? { ...existingInvitation, teamId, role: assignedRole, inviterId, orgMemberId: payload.currentMember.id, expiresAt }
+          : { id: invitationId, email, role: assignedRole, status: "pending", teamId, inviterId, orgMemberId: payload.currentMember.id, expiresAt },
         placeholderMemberId: invitationOrgMemberId,
       })])
 
@@ -292,6 +446,8 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
       }
     })
 
+    if (invitationWrite.status === "invalid_team") return c.json({ error: "invalid_request", message: "Choose a team in this organization that is not managed by your identity provider." }, 400)
+
     if (invitationWrite.status === "member_exists") {
       return c.json({
         error: "member_exists",
@@ -299,10 +455,16 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
       }, 409)
     }
     if (invitationWrite.status === "team_forbidden") {
-      return c.json(invitationWrite.response, 403)
+      return c.json(invitationWrite.response, orgAccessFailureStatus(invitationWrite.response), permissionFailureHeaders(invitationWrite.response))
     }
     if (invitationWrite.status === "role_error") {
       const validation = invitationWrite.validation
+      if (validation.error === "permission") {
+        return c.json(validation.response, orgAccessFailureStatus(validation.response), permissionFailureHeaders(validation.response))
+      }
+      if (validation.error === "role_assignment") {
+        return c.json(roleAssignmentDeniedResponse(validation.denial), 403, roleAssignmentDeniedHeaders(validation.denial))
+      }
       if (validation.error === "invalid_role") {
         return c.json({ error: validation.error, message: validation.message }, 400)
       }
@@ -406,19 +568,14 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
         200: jsonResponse("Invitation cancelled successfully.", successSchema),
         400: jsonResponse("The invitation cancellation path parameters were invalid.", invalidRequestSchema),
         401: jsonResponse("The caller must be signed in to cancel invitations.", unauthorizedSchema),
-        403: jsonResponse("Only workspace owners and admins can cancel invitations.", forbiddenSchema),
+        403: jsonResponse("The caller needs the Invite people permission and a recent sign-in; invitations with Admin team access also need Manage Admin teams.", forbiddenSchema),
         404: jsonResponse("The invitation or organization could not be found.", notFoundSchema),
         409: jsonResponse("The invitation is no longer pending and cannot be canceled.", invitationNotPendingSchema),
       },
     }),
-    orgRoleRoute(["admin"]),
+    orgPermissionRoute("invitations.manage"),
     paramValidator(orgInvitationParamsSchema),
     async (c) => {
-    const permission = ensureInviteManager(c)
-    if (!permission.ok) {
-      return c.json(permission.response, orgAccessFailureStatus(permission.response))
-    }
-
     const payload = c.get("organizationContext")
     const params = c.req.valid("param")
     let invitationId: InvitationId
@@ -452,9 +609,15 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
       if (invitation.status !== "pending") {
         return { status: "not_pending" as const, invitation }
       }
+      // The route checked Invite people (and, below, Manage Admin teams) against the request's
+      // permissions; re-check them against the caller resolved through this transaction before the
+      // invitation is canceled or its placeholder member removed.
+      const canceler = await resolvePermissionsForMember({ organizationId: payload.organization.id, memberId: payload.currentMember.id, database: tx })
+      if (!canceler.has("invitations.manage")) return { status: "team_forbidden" as const, response: permissionDeniedResponse("invitations.manage") }
       if (await invitationHasAdminTeam(tx, invitation)) {
-        const permission = ensureOrganizationSuperAdmin(c, "Only workspace owners and super-admins can cancel invitations with Admin team access.")
+        const permission = await requirePermission(c, "teams.manage_admin")
         if (!permission.ok) return { status: "team_forbidden" as const, response: permission.response }
+        if (!canceler.has("teams.manage_admin")) return { status: "team_forbidden" as const, response: permissionDeniedResponse("teams.manage_admin") }
       }
 
       const invitedMemberRows = await tx
@@ -484,7 +647,7 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
       return c.json({ error: "invitation_not_found" }, 404)
     }
     if (cancellation.status === "team_forbidden") {
-      return c.json(cancellation.response, 403)
+      return c.json(cancellation.response, orgAccessFailureStatus(cancellation.response), permissionFailureHeaders(cancellation.response))
     }
 
     if (cancellation.status === "not_pending") {
@@ -501,9 +664,11 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
         organizationId: payload.organization.id,
         memberId: invitedMember.id,
         removedByOrgMemberId: payload.currentMember.id,
+        // Re-checked in the removal's own transaction too.
+        requiredPermission: "invitations.manage",
       })
       if (!removed.ok && removed.error !== "member_not_found") {
-        return c.json({ error: removed.error, message: removed.message }, 400)
+        return c.json({ error: removed.error, message: removed.message }, removed.error === "forbidden" ? 403 : 400)
       }
     }
 
@@ -521,6 +686,115 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
     }, cancellation.auditEventIds)
 
     return c.json({ success: true })
+    },
+  )
+
+  app.get(
+    "/v1/invitations/:invitationId/link",
+    describeRoute({
+      tags: ["Invitations"],
+      summary: "Get organization invitation link",
+      description: "Returns the join link of a pending invitation so it can be shared directly. The link contains a bearer join token, so it needs the same permissions as resending the invitation: Invite people, Change member roles for a non-member role, and Manage Admin teams when the invitation carries Admin team access.",
+      responses: {
+        200: jsonResponse("Invitation link returned successfully.", invitationLinkResponseSchema),
+        400: jsonResponse("The invitation link path parameters were invalid.", invalidRequestSchema),
+        401: jsonResponse("The caller must be signed in to read invitation links.", unauthorizedSchema),
+        403: jsonResponse("The caller needs the permissions required to resend this invitation and a recent sign-in.", forbiddenSchema),
+        404: jsonResponse("The invitation or organization could not be found.", notFoundSchema),
+        409: jsonResponse("The invitation is no longer pending or has expired; resend it to issue a new link.", invitationNotPendingSchema),
+      },
+    }),
+    orgPermissionRoute("invitations.manage"),
+    paramValidator(orgInvitationParamsSchema),
+    async (c) => {
+    const payload = c.get("organizationContext")
+    const params = c.req.valid("param")
+    let invitationId: InvitationId
+    try {
+      invitationId = normalizeDenTypeId("invitation", params.invitationId)
+    } catch {
+      return c.json({ error: "invitation_not_found" }, 404)
+    }
+
+    const availableRoles = await listAssignableRoles(payload.organization.id)
+    const adminCheck = adminInvitationCheck(c)
+    // Read, authorize and disclose under the organization row lock that team mutations take
+    // FOR UPDATE (withOrganizationTeamMutation): a concurrent Admin-team grant to this
+    // invitation either commits first and is seen here, or waits until the link is decided.
+    const disclosure = await db.transaction(async (tx) => {
+      await tx.select({ id: OrganizationTable.id }).from(OrganizationTable)
+        .where(eq(OrganizationTable.id, payload.organization.id)).for("share")
+
+      const invitationRows = await tx
+        .select({
+          id: InvitationTable.id,
+          organizationId: InvitationTable.organizationId,
+          teamId: InvitationTable.teamId,
+          role: InvitationTable.role,
+          status: InvitationTable.status,
+          expiresAt: InvitationTable.expiresAt,
+          inviteToken: InvitationTable.inviteToken,
+        })
+        .from(InvitationTable)
+        .where(and(eq(InvitationTable.id, invitationId), eq(InvitationTable.organizationId, payload.organization.id)))
+        .limit(1)
+      const invitation = invitationRows[0] ?? null
+      if (!invitation) return { status: "not_found" as const }
+
+      // Resending returns the token to the caller, so reading the link needs exactly what a
+      // resend needs, re-checked against the caller's permissions resolved through this lock.
+      const caller = await resolvePermissionsForMember({ organizationId: payload.organization.id, memberId: payload.currentMember.id, database: tx })
+      if (!caller.has("invitations.manage")) {
+        return { status: "permission" as const, invitation, response: permissionDeniedResponse("invitations.manage") }
+      }
+      if (await invitationHasAdminTeam(tx, invitation)) {
+        const permission = await requirePermission(c, "teams.manage_admin")
+        if (!permission.ok) return { status: "permission" as const, invitation, response: permission.response }
+        if (!caller.has("teams.manage_admin")) {
+          return { status: "permission" as const, invitation, response: permissionDeniedResponse("teams.manage_admin") }
+        }
+      }
+      const roleCheck = await validateInvitationRole(c, { role: normalizeRoleName(invitation.role), availableRoles, adminCheck, database: tx })
+      if (!roleCheck.ok) return { status: "role_error" as const, invitation, validation: roleCheck }
+
+      const expired = invitation.expiresAt <= new Date()
+      if (invitation.status !== "pending" || expired || !invitation.inviteToken) {
+        return { status: "not_pending" as const, invitation, reportedStatus: invitation.status === "pending" && expired ? "expired" : invitation.status }
+      }
+      return { status: "ok" as const, invitation, inviteToken: invitation.inviteToken }
+    })
+
+    if (disclosure.status === "not_found") {
+      return c.json({ error: "invitation_not_found" }, 404)
+    }
+    addAuditRequestResource(c, { type: "invitation", id: disclosure.invitation.id })
+    if (disclosure.status === "permission") {
+      return c.json(disclosure.response, orgAccessFailureStatus(disclosure.response), permissionFailureHeaders(disclosure.response))
+    }
+    if (disclosure.status === "role_error") {
+      const validation = disclosure.validation
+      if (validation.error === "permission") {
+        return c.json(validation.response, orgAccessFailureStatus(validation.response), permissionFailureHeaders(validation.response))
+      }
+      if (validation.error === "role_assignment") {
+        return c.json(roleAssignmentDeniedResponse(validation.denial), 403, roleAssignmentDeniedHeaders(validation.denial))
+      }
+      return c.json({ error: "forbidden", message: validation.message }, 403)
+    }
+    if (disclosure.status === "not_pending") {
+      return c.json({
+        error: "invitation_not_pending",
+        message: "This invitation can no longer be used. Resend it to create a new link.",
+        status: disclosure.reportedStatus,
+      }, 409)
+    }
+
+    c.header("Cache-Control", "private, no-store")
+    return c.json({
+      invitationId: disclosure.invitation.id,
+      inviteLink: buildInvitationLink(disclosure.inviteToken),
+      expiresAt: disclosure.invitation.expiresAt.toISOString(),
+    })
     },
   )
 }

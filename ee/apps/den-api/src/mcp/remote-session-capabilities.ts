@@ -1,4 +1,5 @@
-import { createHeadlessThreadClient, toTranscript, type AgentSessionClient, type HeadlessThreadModel } from "@openwork/headless-threads"
+import { createHash } from "node:crypto"
+import { createHeadlessThreadClient, toTranscript, type AgentSessionClient, type HeadlessThreadClient, type HeadlessThreadModel } from "@openwork/headless-threads"
 import { and, eq, isNull } from "@openwork-ee/den-db/drizzle"
 import { MemberTable } from "@openwork-ee/den-db/schema/org"
 import { createDenTypeId, normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
@@ -7,7 +8,10 @@ import { desktopRunnerConnected } from "@openwork/automations"
 import {
   REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
   REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY,
+  REMOTE_SESSION_STATUS_THREADS_MAX,
+  REMOTE_SESSION_STATUS_WAIT_MAX_MS,
   REMOTE_SESSION_TRANSCRIPT_PAGE_MAX,
+  remoteSessionStatusRequestSchema,
   type RemoteSessionRequestInput,
   desktopRunnerInventorySchema,
   type DesktopRunnerInventory,
@@ -42,6 +46,7 @@ import {
 import { cloudRuntimeAvailable } from "../workers/cloud-runtime.js"
 import { resolveCloudRuntimeAccess, type CloudWorkerAccess } from "../workers/worker-access.js"
 import { fetchPreviewNoRedirect, previewFetch } from "../workers/preview-fetch.js"
+import { readRemoteSessionStatus, type RemoteSessionStatusSources } from "./remote-session-status.js"
 import { scoreText, tokenize, type CapabilityMatch } from "./search.js"
 
 /**
@@ -51,7 +56,7 @@ import { scoreText, tokenize, type CapabilityMatch } from "./search.js"
  */
 
 export const REMOTE_SESSION_CAPABILITY_PREFIX = "remote-session:"
-export const REMOTE_SESSION_ACTIONS = ["create", "send", "read", "stop", "list", "targets"] as const
+export const REMOTE_SESSION_ACTIONS = ["create", "send", "read", "stop", "list", "targets", "status"] as const
 export type RemoteSessionAction = (typeof REMOTE_SESSION_ACTIONS)[number]
 
 export function remoteSessionCapabilityName(action: RemoteSessionAction): string {
@@ -71,18 +76,22 @@ const modelSchema = z.object({
 })
 
 const createBodySchema = z.object({
-  target: z.enum(["cloud", "desktop"]).optional(),
+  target: z.enum(["cloud", "desktop", "registered"]).optional(),
   title: z.string().trim().min(1).max(120).optional(),
+  idempotencyKey: z.string().trim().min(1).max(160).optional(),
   prompt: z.string().min(1).max(100_000).optional(),
   model: modelSchema.optional(),
   computerId: z.string().trim().min(1).max(160).optional(),
   workspaceId: z.string().trim().min(1).max(240).optional(),
 }).superRefine((body, context) => {
-  if (body.target !== "desktop" && (body.computerId !== undefined || body.workspaceId !== undefined)) {
+  if (body.idempotencyKey !== undefined && body.target !== "desktop" && body.target !== "registered") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["idempotencyKey"], message: "Idempotent admission currently applies only to desktop or registered client targets." })
+  }
+  if (body.target !== "desktop" && body.target !== "registered" && (body.computerId !== undefined || body.workspaceId !== undefined)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: [body.computerId !== undefined ? "computerId" : "workspaceId"],
-      message: "computerId and workspaceId apply only to target \"desktop\".",
+      message: "computerId and workspaceId apply only to a desktop or registered client target.",
     })
   }
 })
@@ -126,9 +135,12 @@ const readBodySchema = z.object({
   }
 })
 
+/** The same arguments as the capabilities, for the member routes that call them. */
+export { readBodySchema as remoteSessionReadBodySchema, sendBodySchema as remoteSessionSendBodySchema, stopBodySchema as remoteSessionStopBodySchema }
+
 const LIST_DEFAULT_LIMIT = 20
 const listBodySchema = z.object({
-  target: z.literal("desktop"),
+  target: z.enum(["desktop", "registered"]),
   workspaceId: z.string().trim().min(1).max(240).optional(),
   limit: z.number().int().min(1).max(50).optional(),
 })
@@ -140,6 +152,7 @@ const BODY_SCHEMAS: Record<RemoteSessionAction, z.ZodTypeAny> = {
   stop: stopBodySchema,
   list: listBodySchema,
   targets: targetsBodySchema,
+  status: remoteSessionStatusRequestSchema,
 }
 
 type RemoteSessionDefinition = {
@@ -163,7 +176,7 @@ const REMOTE_SESSION_DEFINITIONS: RemoteSessionDefinition[] = [
   {
     action: "targets",
     summary:
-      "List where remote-session:create can run for you: your OpenWork desktops (computerId, label, online) with their workspaces (workspaceId, name, active, engine, defaultModel), and whether your OpenWork Web cloud is available. Call this first when the task needs a specific computer, workspace or model. Pass includeModels true to also list each workspace's models.",
+      "List your remote session targets: connected OpenWork desktops and opted-in OpenCode clients, with computerId, label, online, workspaces, and models; also reports Cloud availability. Call this before choosing a computer, workspace or model. Use target registered with a computerId to offload to a client without requiring OpenWork Web. Pass includeModels true to list models.",
     searchExtraTokens:
       "remote session targets list computers desktops machines laptops devices workspaces projects folders models providers where which choose pick select available online cloud",
     argumentsSchema: {
@@ -190,18 +203,19 @@ const REMOTE_SESSION_DEFINITIONS: RemoteSessionDefinition[] = [
   {
     action: "create",
     summary:
-      "Start a remote session: a native OpenWork chat on your OpenWork Web instance (runs in the cloud, visible in the browser). Automatically sets up your workspace on first use; on cloud_runtime_provisioning, wait retryAfterMs before retrying with the same arguments. Give it the task to run as prompt. target \"desktop\" runs it on your connected OpenWork desktop instead; to choose which computer, workspace or model, call remote-session:targets first and pass computerId and workspaceId from it.",
+      "Offload a task to a native session. Cloud (default) runs on your OpenWork Web instance; on cloud_runtime_provisioning wait retryAfterMs before retrying. target registered runs on an opted-in OpenWork or OpenCode client; call targets first and pass its computerId and optional workspaceId/model. target desktop preserves the existing desktop flow. Give the complete task as prompt. Registered/desktop creates return a durable commandId: poll read for delivery, progress, approval needs, and the final answer. Do not retry a create with an unknown outcome blindly.",
     searchExtraTokens:
-      "remote session sessions chat thread cloud web instance browser openwork desktop create start new open run do task work delegate hand off handoff background continue workspace",
+      "remote session sessions chat thread cloud web instance browser openwork opencode plugin harness registered client create start new open run task delegate offload handoff background workspace",
     argumentsSchema: {
       type: "object",
       properties: {
-        target: { type: "string", enum: ["cloud", "desktop"], description: "Where the session runs. Defaults to \"cloud\" (your OpenWork Web instance)." },
+        target: { type: "string", enum: ["cloud", "desktop", "registered"], description: "Where the session runs. Defaults to cloud (OpenWork Web). registered runs on an opted-in OpenWork or OpenCode client; choose its computerId from targets." },
         title: { type: "string", maxLength: 120, description: "Session title shown in OpenWork." },
+        idempotencyKey: { type: "string", maxLength: 160, description: "Desktop/registered targets: reuse this key with the same arguments when retrying a create after a dropped response. Cloud does not support this key." },
         prompt: { type: "string", description: "Optional first prompt. When present the session starts working immediately." },
         model: MODEL_ARGUMENT_SCHEMA,
-        computerId: { type: "string", description: "target \"desktop\" only: the computerId from remote-session:targets. Omit to let any of your connected desktops take it." },
-        workspaceId: { type: "string", description: "target \"desktop\" only: the workspaceId from remote-session:targets. Omit to use the desktop's active workspace." },
+        computerId: { type: "string", description: "Desktop or registered targets: the computerId from remote-session:targets. Omit to let any of your connected desktops take it." },
+        workspaceId: { type: "string", description: "Desktop or registered targets: the workspaceId from remote-session:targets. Omit to use the desktop's active workspace." },
       },
     },
   },
@@ -245,6 +259,31 @@ const REMOTE_SESSION_DEFINITIONS: RemoteSessionDefinition[] = [
     },
   },
   {
+    action: "status",
+    summary:
+      `Follow remote sessions cheaply: one call returns the compact status (state starting, running, waiting, idle or error; waitingFor; computer; a short preview of the answer) of up to ${REMOTE_SESSION_STATUS_THREADS_MAX} sessions, by commandId for desktop or registered targets and by sessionId for Cloud. Pass back each version you received: an unchanged session returns only its ref and version. Pass waitMs (up to ${REMOTE_SESSION_STATUS_WAIT_MAX_MS}) to wait in one call until one changes instead of polling; it returns at once when every session has settled. Use remote-session:read for the transcript or the full answer.`,
+    searchExtraTokens: "remote session sessions status progress poll wait follow watch check done finished waiting question permission batch several many",
+    argumentsSchema: {
+      type: "object",
+      properties: {
+        threads: {
+          type: "array",
+          maxItems: REMOTE_SESSION_STATUS_THREADS_MAX,
+          items: {
+            type: "object",
+            properties: {
+              commandId: { type: "string", description: "Desktop or registered targets: the commandId from remote-session:create." },
+              sessionId: { type: "string", description: "Cloud: the sessionId from remote-session:create." },
+              version: { type: "string", description: "The version from your previous status of this session." },
+            },
+          },
+        },
+        waitMs: { type: "number", description: `Wait up to this long (max ${REMOTE_SESSION_STATUS_WAIT_MAX_MS}) for a change. Defaults to 0.` },
+      },
+      required: ["threads"],
+    },
+  },
+  {
     action: "list",
     summary:
       "List the sessions you started on your desktop with remote-session:create target \"desktop\", newest first, with title, sessionId, workspaceId, status, and updatedAt. Use a sessionId with remote-session:read, send, or stop.",
@@ -252,7 +291,7 @@ const REMOTE_SESSION_DEFINITIONS: RemoteSessionDefinition[] = [
     argumentsSchema: {
       type: "object",
       properties: {
-        target: { type: "string", enum: ["desktop"] },
+        target: { type: "string", enum: ["desktop", "registered"] },
         workspaceId: { type: "string", description: "Only sessions in this desktop workspace." },
         limit: { type: "number", description: "Defaults to 20, max 50." },
       },
@@ -263,12 +302,13 @@ const REMOTE_SESSION_DEFINITIONS: RemoteSessionDefinition[] = [
 
 export type RemoteSessionCapabilityMatch = CapabilityMatch & { kind: "remote_session" }
 
-export function searchRemoteSessionCapabilities(query: string, limit = 5): RemoteSessionCapabilityMatch[] {
+export function searchRemoteSessionCapabilities(query: string, limit = 5, options: { status?: boolean } = {}): RemoteSessionCapabilityMatch[] {
   const queryTokens = tokenize(query)
   if (queryTokens.length === 0) return []
 
   const matches: RemoteSessionCapabilityMatch[] = []
   for (const definition of REMOTE_SESSION_DEFINITIONS) {
+    if (definition.action === "status" && !options.status) continue
     const name = remoteSessionCapabilityName(definition.action)
     const score = scoreText(
       tokenize(`remote session ${definition.action}`),
@@ -315,7 +355,9 @@ export type RemoteSessionRuntimeResult =
       retryAfterMs?: number
     }
 
-export type RemoteSessionThreadClient = Pick<AgentSessionClient, "createThread" | "sendTurn" | "getThreadSnapshot"> & Partial<Pick<AgentSessionClient, "abortThread">>
+export type RemoteSessionThreadClient = Pick<AgentSessionClient, "createThread" | "sendTurn" | "getThreadSnapshot">
+  & Partial<Pick<AgentSessionClient, "abortThread">>
+  & Partial<Pick<HeadlessThreadClient, "getThreadWaitingFor">>
 
 /** One of the member's desktops that can take remote sessions, with its latest inventory. */
 export type RemoteSessionDesktopRecord = {
@@ -324,6 +366,8 @@ export type RemoteSessionDesktopRecord = {
   appVersion: string
   lastSeenAt: number
   inventory: DesktopRunnerInventory | null
+  /** Negotiated durable offload protocol; not an Automation eligibility signal. */
+  registered?: boolean
 }
 
 export type RemoteSessionDesktopTargets = {
@@ -333,7 +377,8 @@ export type RemoteSessionDesktopTargets = {
 
 export type RemoteSessionExecuteDeps = {
   getOpenWorkWebAccess: OpenWorkWebRuntimeAccessResolver
-  resolveRuntime: (scope: { organizationId: DenTypeId<"organization">; userId: string; provisionIfMissing?: boolean }) => Promise<RemoteSessionRuntimeResult>
+  /** readyBudgetMs bounds how long a starting runtime is awaited; 0 checks once. */
+  resolveRuntime: (scope: { organizationId: DenTypeId<"organization">; userId: string; provisionIfMissing?: boolean; readyBudgetMs?: number }) => Promise<RemoteSessionRuntimeResult>
   createClient: (runtime: RemoteSessionRuntime) => RemoteSessionThreadClient
   commandStore: RemoteSessionCommandStore
   desktopPresence: (scope: {
@@ -346,7 +391,7 @@ export type RemoteSessionExecuteDeps = {
     organizationId: string
     ownerMemberId: string
     runnerId: string
-  }) => Promise<{ connected: boolean; controlCapable: boolean }>
+  }) => Promise<{ connected: boolean; controlCapable: boolean; registered?: boolean }>
   /** How long a desktop request is awaited before returning its requestId. */
   requestWait?: { timeoutMs: number; pollMs: number }
   /**
@@ -401,12 +446,6 @@ function cloudRemoteSessionsAvailable(): boolean {
   return cloudHostingAvailable({ orgMode: env.orgMode, openworkWebEnabled: env.openworkWebEnabled }) && cloudRuntimeAvailable()
 }
 
-export function remoteSessionCapabilitiesEnabled(
-  _organizationMetadata?: Record<string, unknown> | string | null | undefined,
-): boolean {
-  return env.automations.runtimeEnabled || cloudRemoteSessionsAvailable()
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
@@ -455,13 +494,13 @@ export async function resolveRemoteSessionWorkspace(
 }
 
 async function defaultResolveRuntime(
-  scope: { organizationId: DenTypeId<"organization">; userId: string; provisionIfMissing?: boolean },
+  scope: { organizationId: DenTypeId<"organization">; userId: string; provisionIfMissing?: boolean; readyBudgetMs?: number },
 ): Promise<RemoteSessionRuntimeResult> {
   if (!cloudRemoteSessionsAvailable()) {
     return { ok: false, error: "cloud_not_available", message: CLOUD_NOT_AVAILABLE_MESSAGE, retryable: false }
   }
 
-  const deadline = Date.now() + READY_BUDGET_MS
+  const deadline = Date.now() + (scope.readyBudgetMs ?? READY_BUDGET_MS)
   for (;;) {
     const access = await resolveCloudRuntimeAccess({
       organizationId: scope.organizationId,
@@ -576,6 +615,7 @@ async function defaultDesktopTargets(scope: {
       const inventory = row.inventory ? desktopRunnerInventorySchema.safeParse(row.inventory) : null
       return {
         computerId: row.id,
+        registered: row.capabilities.includes("remote_session_recovery_v1"),
         platform: row.platform,
         appVersion: row.appVersion,
         lastSeenAt: row.lastSeenAt.getTime(),
@@ -603,12 +643,13 @@ async function defaultDesktopRunner(scope: {
   organizationId: string
   ownerMemberId: string
   runnerId: string
-}): Promise<{ connected: boolean; controlCapable: boolean }> {
+}): Promise<{ connected: boolean; controlCapable: boolean; registered?: boolean }> {
   const runner = await automationRepository.desktopRunnerById(scope)
   if (!runner) return { connected: false, controlCapable: false }
   return {
     connected: desktopRunnerConnected({ lastSeenAt: runner.lastSeenAt, now: Date.now() }),
     controlCapable: runner.capabilities.includes(REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY),
+    registered: runner.capabilities.includes("remote_session_recovery_v1"),
   }
 }
 
@@ -644,7 +685,7 @@ function targetsPayload(
   return {
     computers: targets.computers.map((computer) => ({
       computerId: computer.computerId,
-      kind: "desktop",
+      kind: computer.registered ? "registered" : "desktop",
       label: computer.inventory?.computer.label ?? PLATFORM_LABELS[computer.platform],
       platform: computer.platform,
       appVersion: computer.inventory?.computer.appVersion ?? computer.appVersion,
@@ -690,14 +731,14 @@ export function resolveDesktopTarget(
       return { ok: false, error: "unknown_computer", message: `No computer "${body.computerId}" can take remote sessions for your account. ${TARGETS_HINT}` }
     }
     if (!desktopOnline(computer, now)) {
-      return { ok: false, error: "computer_offline", message: "That computer is not connected. Open the OpenWork desktop app on it, or choose another computer." }
+      return { ok: false, error: "computer_offline", message: "That computer is not connected. Start its OpenWork or opted-in OpenCode client, or choose another computer." }
     }
   } else if (body.workspaceId !== undefined) {
     const having = computers.filter((candidate) => candidate.inventory?.workspaces
       .some((workspace) => workspace.workspaceId === body.workspaceId))
     computer = having.find((candidate) => desktopOnline(candidate, now))
     if (!computer && having.length > 0) {
-      return { ok: false, error: "computer_offline", message: "The computer with that workspace is not connected. Open the OpenWork desktop app on it, or choose another workspace." }
+      return { ok: false, error: "computer_offline", message: "The computer with that workspace is not connected. Start its OpenWork or opted-in OpenCode client, or choose another workspace." }
     }
   }
   if (!computer) {
@@ -812,7 +853,7 @@ function desktopRequestResult(request: RemoteSessionRequest): RemoteSessionToolR
       action: request.action,
       error: error.code,
       message: error.message,
-      retryable: error.code !== "unknown_session" && error.code !== "invalid_cursor",
+      retryable: !["unknown_session", "unknown_receipt", "invalid_cursor", "cursor_unavailable", "message_conflict", "session_conflict", "ambiguous_creation", "ambiguous_send"].includes(error.code),
     })
   }
   const outcome = request.outcome
@@ -849,7 +890,6 @@ async function findDesktopSession(
   body: unknown,
   deps: RemoteSessionExecuteDeps,
 ): Promise<RemoteSessionDesktopSession | null> {
-  if (!env.automations.runtimeEnabled) return null
   const location = bodySessionLocation(body)
   if (!location) return null
   return deps.commandStore.findDesktopSession({
@@ -913,7 +953,7 @@ async function executeDesktopSessionAction(
       target: "desktop",
       sessionId: session.sessionId,
       error: "desktop_offline",
-      message: "The desktop that runs this session is not connected. Open OpenWork on that computer and try again.",
+      message: "The client that runs this session is not connected. Start OpenWork or the opted-in OpenCode client on that computer and try again.",
       retryable: true,
     })
   }
@@ -955,6 +995,47 @@ export type RemoteSessionExecuteInput = {
   body: unknown
   /** Set when the call is made with a headless-run token Den minted (for example for a Slack run). */
   headlessRunTokenId?: string | null
+  /** Ends a waiting status call when the caller goes away. */
+  signal?: AbortSignal
+}
+
+/** The desktop took the command but its local OpenWork server or engine did not answer. */
+const DESKTOP_RUNTIME_UNREACHABLE_CODE = "openwork_unreachable"
+const desktopRuntimeUnreachableFields = {
+  retryable: false,
+  note: "OpenWork is not running on that desktop, so the task did not start. Tell the person to make sure OpenWork is running there; do not create the same task again until they say it is.",
+}
+
+/** After a desktop reported OpenWork unreachable, new desktop tasks for it fail at once for this long instead of queueing. */
+const DESKTOP_UNREACHABLE_HOLD_MS = 2 * 60_000
+
+/**
+ * The owner's latest settled command failed because OpenWork was not running on the desktop, and nothing has
+ * delivered since: queueing again would fail the same way. A delivered command (or its progress) clears it.
+ */
+async function recentDesktopUnreachable(
+  deps: RemoteSessionExecuteDeps,
+  input: RemoteSessionExecuteInput,
+  ownerMemberId: string,
+  computerId: string | null,
+): Promise<RemoteSessionToolResult | null> {
+  const latest = await deps.commandStore.latestSettled({
+    organizationId: input.organizationId,
+    ownerMemberId,
+    since: Date.now() - DESKTOP_UNREACHABLE_HOLD_MS,
+  })
+  if (latest?.status !== "failed" || latest.error?.code !== DESKTOP_RUNTIME_UNREACHABLE_CODE) return null
+  if (computerId && latest.claimedByRunnerId && automationRunnerRowId({
+    organizationId: latest.organizationId,
+    ownerMemberId: latest.ownerMemberId,
+    runnerId: latest.claimedByRunnerId,
+  }) !== computerId) return null
+  return errorResult({
+    target: "desktop",
+    error: DESKTOP_RUNTIME_UNREACHABLE_CODE,
+    message: "Can't reach OpenWork on your desktop. Make sure OpenWork is running.",
+    ...desktopRuntimeUnreachableFields,
+  })
 }
 
 /** Added to a desktop create that a Slack run made: Den posts the outcome there, so the run should not wait. */
@@ -984,9 +1065,31 @@ async function linkToOriginatingRun(
   }
 }
 
-export async function executeRemoteSessionCapability(
+/** Status reads scoped to the caller: their commands, their computers, their Cloud. */
+function remoteSessionStatusSources(input: RemoteSessionExecuteInput, deps: RemoteSessionExecuteDeps): RemoteSessionStatusSources {
+  const scope = { organizationId: input.organizationId, userId: input.userId }
+  return {
+    commands: (commandIds) => deps.commandStore.getMany({ commandIds, organizationId: input.organizationId, createdByUserId: input.userId }),
+    async computerLabels() {
+      const targets = await (deps.desktopTargets ?? defaultDesktopTargets)(scope)
+      return new Map(targets.computers.map((computer) => [computer.computerId, computer.inventory?.computer.label ?? PLATFORM_LABELS[computer.platform]]))
+    },
+    async cloud() {
+      if (!(deps.cloudAvailable ?? cloudRemoteSessionsAvailable)()) return { error: { code: "cloud_not_available", message: CLOUD_NOT_AVAILABLE_MESSAGE } }
+      if (!(await deps.getOpenWorkWebAccess(input.organizationId)).hasAccess) {
+        return { error: { code: OPENWORK_WEB_ACCESS_REQUIRED_CODE, message: OPENWORK_WEB_ACCESS_REQUIRED_MESSAGE } }
+      }
+      // A status read never waits for a waking workspace: the caller asks again.
+      const runtime = await deps.resolveRuntime({ ...scope, readyBudgetMs: 0 })
+      if (runtime.ok) return { client: deps.createClient(runtime.runtime) }
+      return runtime.retryable ? null : { error: { code: runtime.error, message: runtime.message } }
+    },
+  }
+}
+
+async function executeRemoteSession(
   input: RemoteSessionExecuteInput,
-  deps: RemoteSessionExecuteDeps = DEFAULT_REMOTE_SESSION_DEPS,
+  deps: RemoteSessionExecuteDeps,
 ): Promise<RemoteSessionToolResult> {
   if ((input.action === "create" || input.action === "send" || input.action === "stop") && !input.hasWriteScope) {
     return errorResult({
@@ -1009,6 +1112,11 @@ export async function executeRemoteSessionCapability(
     })
   }
 
+  if (input.action === "status") {
+    const body = remoteSessionStatusRequestSchema.parse(parsedBody.data)
+    return jsonResult(await readRemoteSessionStatus(body, remoteSessionStatusSources(input, deps), { signal: input.signal }))
+  }
+
   if (input.action === "list") {
     const body = listBodySchema.parse(parsedBody.data)
     const sessions = await deps.commandStore.listDesktopSessions({
@@ -1018,7 +1126,7 @@ export async function executeRemoteSessionCapability(
       limit: body.limit ?? LIST_DEFAULT_LIMIT,
     })
     return jsonResult({
-      target: "desktop",
+      target: body.target,
       sessions: sessions.map((session) => ({
         sessionId: session.sessionId,
         workspaceId: session.workspaceId,
@@ -1067,16 +1175,34 @@ export async function executeRemoteSessionCapability(
         error: command.error,
         expiresAt: command.expiresAt,
         session: command.session,
+        ...(command.status === "failed" && command.error?.code === DESKTOP_RUNTIME_UNREACHABLE_CODE ? desktopRuntimeUnreachableFields : {}),
       })
     }
   }
 
-  // Entitlement precedes every execution branch. Queuing a remote session for a
-  // connected desktop is remote control of that machine, so it is gated like
-  // Cloud execution; only the status read of an already queued command above
-  // stays available without Web access.
-  const webAccess = await deps.getOpenWorkWebAccess(input.organizationId)
-  if (!webAccess.hasAccess) {
+  // Registered clients are an OpenWork offload surface, not an entitlement to
+  // a Cloud worker. Keep Cloud and legacy desktop access rules unchanged.
+  const registeredCreate = input.action === "create" && createBodySchema.parse(parsedBody.data).target === "registered"
+  if (input.action === "read" || input.action === "send" || input.action === "stop") {
+    const session = await findDesktopSession(input, parsedBody.data, deps)
+    if (session) {
+      const runner = await deps.desktopRunner({ organizationId: input.organizationId, ownerMemberId: session.ownerMemberId, runnerId: session.runnerId })
+      if (runner.registered) {
+        return executeDesktopSessionAction(input, parsedBody.data, session, deps)
+      }
+    }
+  }
+  const webAccess = registeredCreate ? { hasAccess: false } : await deps.getOpenWorkWebAccess(input.organizationId)
+  if (input.action === "targets") {
+    const body = targetsBodySchema.parse(parsedBody.data)
+    const targets = await (deps.desktopTargets ?? defaultDesktopTargets)({ organizationId: input.organizationId, userId: input.userId })
+    return jsonResult(targetsPayload(targets, {
+      includeModels: body.includeModels === true,
+      cloudAvailable: webAccess.hasAccess && (deps.cloudAvailable ?? cloudRemoteSessionsAvailable)(),
+      now: Date.now(),
+    }))
+  }
+  if (!registeredCreate && !webAccess.hasAccess) {
     return errorResult({
       error: OPENWORK_WEB_ACCESS_REQUIRED_CODE,
       message: OPENWORK_WEB_ACCESS_REQUIRED_MESSAGE,
@@ -1089,32 +1215,32 @@ export async function executeRemoteSessionCapability(
     if (desktopSession) return executeDesktopSessionAction(input, parsedBody.data, desktopSession, deps)
   }
 
-  if (input.action === "targets") {
-    const body = targetsBodySchema.parse(parsedBody.data)
-    const targets = env.automations.runtimeEnabled
-      ? await (deps.desktopTargets ?? defaultDesktopTargets)({ organizationId: input.organizationId, userId: input.userId })
-      : { ownerMemberId: null, computers: [] }
-    return jsonResult(targetsPayload(targets, {
-      includeModels: body.includeModels === true,
-      cloudAvailable: (deps.cloudAvailable ?? cloudRemoteSessionsAvailable)(),
-      now: Date.now(),
-    }))
-  }
-
   if (input.action === "create") {
     const body = createBodySchema.parse(parsedBody.data)
-    if (body.target === "desktop" && (body.computerId !== undefined || body.workspaceId !== undefined)) {
-      const targets = env.automations.runtimeEnabled
-        ? await (deps.desktopTargets ?? defaultDesktopTargets)({ organizationId: input.organizationId, userId: input.userId })
-        : { ownerMemberId: null, computers: [] }
-      if (!targets.ownerMemberId || targets.computers.length === 0) {
+    if (body.target === "registered" || (body.target === "desktop" && (body.computerId !== undefined || body.workspaceId !== undefined))) {
+      const targets = await (deps.desktopTargets ?? defaultDesktopTargets)({ organizationId: input.organizationId, userId: input.userId })
+      // Registered admission has separate access rules. Never let that alias
+      // select a legacy desktop that still requires Web access.
+      const computers = body.target === "registered"
+        ? targets.computers.filter((computer) => computer.registered === true)
+        : targets.computers
+      if (!targets.ownerMemberId || computers.length === 0) {
         return errorResult({
           error: "desktop_offline",
           message: "No desktop is connected for your account. Open the OpenWork desktop app and try again.",
         })
       }
-      const resolved = resolveDesktopTarget(body, targets.computers, Date.now())
+      const online = computers.filter((computer) => desktopOnline(computer, Date.now()))
+      if (body.target === "registered" && !body.computerId && !body.workspaceId && online.length !== 1) {
+        return errorResult({ error: online.length === 0 ? "computer_offline" : "ambiguous_computer", message: "Choose a computerId from remote-session:targets before offloading this task.", retryable: online.length === 0 })
+      }
+      const selection = body.target === "registered" && !body.computerId && !body.workspaceId
+        ? { ...body, computerId: online[0]?.computerId }
+        : body
+      const resolved = resolveDesktopTarget(selection, computers, Date.now())
       if (!resolved.ok) return errorResult({ error: resolved.error, message: resolved.message, retryable: false })
+      const unreachable = await recentDesktopUnreachable(deps, input, targets.ownerMemberId, resolved.computerId)
+      if (unreachable) return unreachable
       const command = await deps.commandStore.enqueue({
         organizationId: input.organizationId,
         ownerMemberId: targets.ownerMemberId,
@@ -1123,7 +1249,9 @@ export async function executeRemoteSessionCapability(
         ...(body.prompt === undefined ? {} : { prompt: body.prompt }),
         ...(body.model === undefined ? {} : { model: body.model }),
         ttlMs: DEFAULT_TTL_MS,
-        idempotencyKey: createDenTypeId("remoteSessionCommand"),
+        idempotencyKey: body.idempotencyKey
+          ? `remote_${createHash("sha256").update(`${input.organizationId}\0${input.userId}\0${body.idempotencyKey}`).digest("hex")}`
+          : createDenTypeId("remoteSessionCommand"),
         targetComputerId: resolved.computerId,
         ...(resolved.workspaceId === null ? {} : { targetWorkspaceId: resolved.workspaceId }),
       })
@@ -1131,7 +1259,7 @@ export async function executeRemoteSessionCapability(
       // its thread, so the run can end instead of waiting for the desktop.
       const postsToThread = await linkToOriginatingRun(deps, input, command.id, body.prompt !== undefined)
       return jsonResult({
-        target: "desktop",
+        target: body.target,
         state: "queued",
         commandId: command.id,
         computerId: resolved.computerId,
@@ -1150,6 +1278,8 @@ export async function executeRemoteSessionCapability(
           message: "No desktop is connected for your account. Open the OpenWork desktop app and try again.",
         })
       }
+      const unreachable = await recentDesktopUnreachable(deps, input, presence.ownerMemberId, null)
+      if (unreachable) return unreachable
       const command = await deps.commandStore.enqueue({
         organizationId: input.organizationId,
         ownerMemberId: presence.ownerMemberId,
@@ -1158,7 +1288,9 @@ export async function executeRemoteSessionCapability(
         ...(body.prompt === undefined ? {} : { prompt: body.prompt }),
         ...(body.model === undefined ? {} : { model: body.model }),
         ttlMs: DEFAULT_TTL_MS,
-        idempotencyKey: createDenTypeId("remoteSessionCommand"),
+        idempotencyKey: body.idempotencyKey
+          ? `remote_${createHash("sha256").update(`${input.organizationId}\0${input.userId}\0${body.idempotencyKey}`).digest("hex")}`
+          : createDenTypeId("remoteSessionCommand"),
       })
       const postsToThread = await linkToOriginatingRun(deps, input, command.id, body.prompt !== undefined)
       return jsonResult({
@@ -1277,5 +1409,19 @@ export async function executeRemoteSessionCapability(
     })
   } catch (error) {
     return threadErrorResult("read", body.sessionId, error)
+  }
+}
+
+export async function executeRemoteSessionCapability(
+  input: RemoteSessionExecuteInput,
+  deps: RemoteSessionExecuteDeps = DEFAULT_REMOTE_SESSION_DEPS,
+): Promise<RemoteSessionToolResult> {
+  try {
+    return await executeRemoteSession(input, deps)
+  } catch (error) {
+    if (error instanceof Error && error.message === "remote_session_idempotency_conflict") {
+      return errorResult({ error: "remote_session_idempotency_conflict", message: "This create key already belongs to a different task. Inspect the existing command or use a new key for genuinely new work.", retryable: false })
+    }
+    throw error
   }
 }

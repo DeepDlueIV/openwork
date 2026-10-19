@@ -9,6 +9,18 @@ ignorePaths = ["**/node_modules/**", "**/pnpm-lock.yaml", "**/dist/**", "**/*.mi
 
 [defaults.scan]
 maxFileLines = 5000
+# Warden's defaults (150 files, 10,000 changed lines) left big PRs half
+# reviewed, and a partial review never clears. PRs beyond these still come
+# back incomplete: split them.
+maxFiles = 400
+maxChangedLines = 60000
+
+# Keep every eligible diff line, but amortize prompts and extraction across
+# slightly larger chunks. No generated-file exclusions: see .warden/README.md.
+[defaults.chunking.coalesce]
+enabled = true
+maxGapLines = 30
+maxChunkSize = 12000
 
 [defaults.agent]
 model = "openai/gpt-6-luna"

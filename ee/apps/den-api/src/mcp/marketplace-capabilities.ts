@@ -12,6 +12,7 @@ import {
   PluginTable,
 } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
+import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
 import { isAuthoredMcpAppVersion, MCP_APP_LAUNCH_TOOL_NAME, mcpAppServerPath } from "@openwork/types/mcp-app"
 import {
   listExternalMcpConnections,
@@ -28,7 +29,10 @@ import {
 import { EXTERNAL_MCP_PRESETS } from "../capability-sources/external-mcp-presets.js"
 import { getConnectedAccount, getOrgOAuthClient } from "../capability-sources/oauth-credentials.js"
 import { db } from "../db.js"
-import { organizationBuildsMcpApps } from "../mcp-app-rollout.js"
+import { latestConfigObjectVersions } from "../config-object-versions.js"
+import { requestRead } from "../request-reads.js"
+import { env } from "../env.js"
+import { recordSkillUse } from "../capability-usage.js"
 import { resolvePluginArchGrantRole } from "../routes/org/plugin-system/access.js"
 import { openworkOrganizationConnectionsUrl, openworkYourConnectionsUrl } from "./connection-navigation.js"
 import { parseCodemodeScriptPayload, type CodemodeScriptInputIssue } from "./codemode-script-object.js"
@@ -41,7 +45,9 @@ import { scoreText, tokenize } from "./search.js"
 import type { McpMemberIdentity } from "./external-capabilities.js"
 import type { CapabilityMatch } from "./search.js"
 
-const MARKETPLACE_CAPABILITY_PREFIX = "plugin:"
+import { buildMarketplaceCapabilityName, MARKETPLACE_CAPABILITY_PREFIX } from "./marketplace-capability-name.js"
+
+export { buildMarketplaceCapabilityName } from "./marketplace-capability-name.js"
 const PROVENANCE_SUFFIX = "in your organization's library."
 const AGENT_SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -196,6 +202,8 @@ export type MarketplaceCapabilityExecuteResult =
       providerCallAttempted: false
       missing: Array<{ capabilityName: string; scriptPath: string }>
       receiptId?: string | null
+      connectionStatus?: Record<string, unknown>
+      connectionCard?: Record<string, unknown>
     }
   | {
       ok: false
@@ -273,10 +281,6 @@ type MarketplacePluginMcpRequirement = {
   requiredAuthType: PluginMcpAuthType | null
   serverName: string
   url: string
-}
-
-export function buildMarketplaceCapabilityName(pluginId: string, configObjectId: string): string {
-  return `${MARKETPLACE_CAPABILITY_PREFIX}${pluginId}:${configObjectId}`
 }
 
 export function parseMarketplaceCapabilityName(name: string): { configObjectId: string; pluginId: string } | null {
@@ -404,7 +408,8 @@ async function getActiveMember(organizationId: OrganizationId, member: McpMember
   return rows[0] ?? null
 }
 
-async function listActiveMarketplaceRows(organizationId: OrganizationId): Promise<MarketplaceCapabilityRow[]> {
+/** With configObjectId, the same rows for that one config object only. */
+async function listActiveMarketplaceRows(organizationId: OrganizationId, configObjectId?: ConfigObjectId): Promise<MarketplaceCapabilityRow[]> {
   const rows = await db
     .select({
       configObject: ConfigObjectTable,
@@ -429,6 +434,7 @@ async function listActiveMarketplaceRows(organizationId: OrganizationId): Promis
       eq(MarketplaceTable.id, MarketplacePluginTable.marketplaceId),
     )
     .where(and(
+      ...(configObjectId ? [eq(ConfigObjectTable.id, configObjectId)] : []),
       eq(ConfigObjectTable.organizationId, organizationId),
       eq(ConfigObjectTable.status, "active"),
       isNull(ConfigObjectTable.deletedAt),
@@ -447,7 +453,7 @@ async function listActiveMarketplaceRows(organizationId: OrganizationId): Promis
   return rows
 }
 
-async function listGrantOnlyRows(organizationId: OrganizationId): Promise<MarketplaceCapabilityRow[]> {
+async function listGrantOnlyRows(organizationId: OrganizationId, configObjectId?: ConfigObjectId): Promise<MarketplaceCapabilityRow[]> {
   const rows = await db
     .select({
       configObject: ConfigObjectTable,
@@ -463,6 +469,7 @@ async function listGrantOnlyRows(organizationId: OrganizationId): Promise<Market
       eq(PluginTable.id, PluginConfigObjectTable.pluginId),
     )
     .where(and(
+      ...(configObjectId ? [eq(ConfigObjectTable.id, configObjectId)] : []),
       eq(ConfigObjectTable.organizationId, organizationId),
       eq(ConfigObjectTable.status, "active"),
       isNull(ConfigObjectTable.deletedAt),
@@ -493,10 +500,16 @@ async function listGrantOnlyRows(organizationId: OrganizationId): Promise<Market
   return rows.map((row) => ({ ...row, marketplace: null }))
 }
 
+/** Read once per request (search, skills and Apps all list them); each caller gets its own array. */
 async function listActiveCapabilityRows(organizationId: OrganizationId): Promise<MarketplaceCapabilityRow[]> {
-  const marketplaceRows = await listActiveMarketplaceRows(organizationId)
-  const grantOnlyRows = await listGrantOnlyRows(organizationId)
-  return [...marketplaceRows, ...grantOnlyRows]
+  const rows = await requestRead(`active-capability-rows:${organizationId}`, async () => {
+    const [marketplaceRows, grantOnlyRows] = await Promise.all([
+      listActiveMarketplaceRows(organizationId),
+      listGrantOnlyRows(organizationId),
+    ])
+    return [...marketplaceRows, ...grantOnlyRows]
+  })
+  return [...rows]
 }
 
 async function listActiveMarketplaceRowsForCapability(input: {
@@ -653,18 +666,12 @@ async function filterVisibleRows(input: {
   organizationId: OrganizationId
   rows: MarketplaceCapabilityRow[]
 }): Promise<MarketplaceCapabilityRow[]> {
-  const configObjectGrantRows = await listConfigObjectGrants(
-    input.organizationId,
-    unique(input.rows.map((row) => row.configObject.id)),
-  )
-  const pluginGrantRows = await listPluginGrants(
-    input.organizationId,
-    unique(input.rows.map((row) => row.plugin.id)),
-  )
-  const marketplaceGrantRows = await listMarketplaceGrants(
-    input.organizationId,
-    unique(input.rows.flatMap((row) => row.marketplace ? [row.marketplace.id] : [])),
-  )
+  // Independent reads, so they run together.
+  const [configObjectGrantRows, pluginGrantRows, marketplaceGrantRows] = await Promise.all([
+    listConfigObjectGrants(input.organizationId, unique(input.rows.map((row) => row.configObject.id))),
+    listPluginGrants(input.organizationId, unique(input.rows.map((row) => row.plugin.id))),
+    listMarketplaceGrants(input.organizationId, unique(input.rows.flatMap((row) => row.marketplace ? [row.marketplace.id] : []))),
+  ])
   const configObjectGrants = groupGrants(configObjectGrantRows)
   const pluginGrants = groupGrants(pluginGrantRows)
   const marketplaceGrants = groupGrants(marketplaceGrantRows)
@@ -683,19 +690,52 @@ async function filterVisibleRows(input: {
 }
 
 export async function listAccessibleMarketplaceCapabilityReferences(input: {
-  enabled?: boolean
   member: McpMemberIdentity | null
   organizationId: string
 }): Promise<AccessibleMarketplaceCapabilityReference[]> {
-  if (input.enabled === false || !input.member) return []
+  if (!input.member) return []
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   if (!(await getActiveMember(organizationId, input.member))) return []
 
-  const rows = await filterVisibleRows({
+  return accessibleReferences(await filterVisibleRows({
     organizationId,
     member: input.member,
     rows: await listActiveCapabilityRows(organizationId),
-  })
+  }))
+}
+
+/**
+ * The same references for one config object, such as one App: the same rows
+ * and visibility rules as the full list, read for that object only, so a
+ * request about one App does not scan the whole organization's library.
+ */
+export async function listAccessibleMarketplaceCapabilityReferencesFor(input: {
+  member: McpMemberIdentity | null
+  organizationId: string
+  configObjectId: string
+}): Promise<AccessibleMarketplaceCapabilityReference[]> {
+  if (!input.member) return []
+  const organizationId = normalizeDenTypeId("organization", input.organizationId)
+  let configObjectId: ConfigObjectId
+  try {
+    configObjectId = normalizeDenTypeId("configObject", input.configObjectId)
+  } catch {
+    return []
+  }
+  const [member, marketplaceRows, grantOnlyRows] = await Promise.all([
+    getActiveMember(organizationId, input.member),
+    listActiveMarketplaceRows(organizationId, configObjectId),
+    listGrantOnlyRows(organizationId, configObjectId),
+  ])
+  if (!member) return []
+  return accessibleReferences(await filterVisibleRows({
+    organizationId,
+    member: input.member,
+    rows: [...marketplaceRows, ...grantOnlyRows],
+  }))
+}
+
+function accessibleReferences(rows: MarketplaceCapabilityRow[]): AccessibleMarketplaceCapabilityReference[] {
   const references = new Map<string, AccessibleMarketplaceCapabilityReference>()
   for (const row of rows) {
     const marketplaceId = row.marketplace ? row.marketplace.id : null
@@ -722,11 +762,10 @@ export async function listAccessibleMarketplaceCapabilityReferences(input: {
 }
 
 export async function listAccessibleMarketplaceSkillDescriptors(input: {
-  enabled?: boolean
   member: McpMemberIdentity | null
   organizationId: string
 }): Promise<RemoteSkillDescriptor[]> {
-  if (input.enabled === false || !input.member) return []
+  if (!input.member) return []
 
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   const memberRow = await getActiveMember(organizationId, input.member)
@@ -761,6 +800,69 @@ export async function listAccessibleMarketplaceSkillDescriptors(input: {
 
   return [...descriptors.values()]
     .sort((a, b) => a.name.localeCompare(b.name) || a.capability.localeCompare(b.capability))
+}
+
+/** Authorized SKILL.md source per marketplace capability, or why it is withheld. */
+export type MarketplaceSkillSource =
+  | { content: string; provenance: string }
+  | { blocked: { status: string; message: string; action: unknown } }
+
+/**
+ * The authorized source of every marketplace skill the member may use, read in
+ * a few batched queries with the same visibility and connection-readiness rules
+ * as executing each skill. Never records Library usage: this answers "what would
+ * this skill load" for a catalog, not a member using it. Capabilities whose
+ * content has not synced are absent.
+ */
+export async function listAccessibleMarketplaceSkillSources(input: {
+  member: McpMemberIdentity | null
+  organizationId: string
+}): Promise<Map<string, MarketplaceSkillSource>> {
+  const sources = new Map<string, MarketplaceSkillSource>()
+  if (!input.member) return sources
+  const organizationId = normalizeDenTypeId("organization", input.organizationId)
+  if (!await getActiveMember(organizationId, input.member)) return sources
+
+  const rows = await filterVisibleRows({
+    organizationId,
+    member: input.member,
+    rows: (await listActiveCapabilityRows(organizationId))
+      .filter((row) => row.configObject.objectType === "skill"),
+  })
+  const byCapability = new Map<string, MarketplaceCapabilityRow>()
+  for (const row of rows) {
+    const capability = buildMarketplaceCapabilityName(row.plugin.id, row.configObject.id)
+    if (!byCapability.has(capability)) byCapability.set(capability, row)
+  }
+  if (byCapability.size === 0) return sources
+
+  const unique = [...byCapability.values()]
+  const [versions, requirements] = await Promise.all([
+    latestConfigObjectVersions(unique.map((row) => row.configObject.id), organizationId),
+    marketplacePluginMcpRequirementStatuses({
+      mode: "execution",
+      organizationId,
+      member: input.member,
+      pluginIds: [...new Set(unique.map((row) => row.plugin.id))],
+    }),
+  ])
+  for (const [capability, row] of byCapability) {
+    const version = versions.get(row.configObject.id)
+    if (!version) continue
+    const blocking = firstBlockingRequirement(requirements.get(row.plugin.id) ?? [])
+    if (blocking) {
+      sources.set(capability, {
+        blocked: {
+          status: blocking.state,
+          message: requirementHint({ capabilityName: row.configObject.title, requirement: blocking }),
+          action: blocking.action,
+        },
+      })
+      continue
+    }
+    sources.set(capability, { content: version.rawSourceText ?? "", provenance: provenance(row.plugin.name) })
+  }
+  return sources
 }
 
 async function latestVersion(configObjectId: ConfigObjectId, organizationId: OrganizationId) {
@@ -1283,20 +1385,7 @@ function groupReadinessObjects(rows: MarketplaceReadinessConfigObject[]) {
 }
 
 async function latestVersionsForReadiness(organizationId: OrganizationId, configObjectIds: ConfigObjectId[]) {
-  if (configObjectIds.length === 0) return new Map<string, ConfigObjectVersionRow>()
-  const rows = await db
-    .select()
-    .from(ConfigObjectVersionTable)
-    .where(and(
-      eq(ConfigObjectVersionTable.organizationId, organizationId),
-      inArray(ConfigObjectVersionTable.configObjectId, configObjectIds),
-    ))
-    .orderBy(desc(ConfigObjectVersionTable.createdAt), desc(ConfigObjectVersionTable.id))
-  const versions = new Map<string, ConfigObjectVersionRow>()
-  for (const row of rows) {
-    if (!versions.has(row.configObjectId)) versions.set(row.configObjectId, row)
-  }
-  return versions
+  return latestConfigObjectVersions(configObjectIds, organizationId)
 }
 
 export async function resolveMarketplacePluginCloudReadiness(input: {
@@ -1453,14 +1542,13 @@ function commandArguments(body: unknown): string {
 }
 
 export async function searchMarketplaceCapabilities(input: {
-  enabled?: boolean
   limit?: number
   member: McpMemberIdentity | null
   objectTypes?: MarketplaceCapabilityObjectType[]
   organizationId: string
   query: string
 }): Promise<MarketplaceCapabilityMatch[]> {
-  if (input.enabled === false || !input.member) return []
+  if (!input.member) return []
   const queryTokens = tokenize(input.query)
   if (queryTokens.length === 0) return []
 
@@ -1575,7 +1663,6 @@ export async function executeMarketplaceCapability(input: {
   configObjectId: string
   configObjectVersionId?: string
   automationRunId?: DenTypeId<"automationRun">
-  enabled?: boolean
   member: McpMemberIdentity | null
   organizationId: string
   pluginId: string
@@ -1584,13 +1671,17 @@ export async function executeMarketplaceCapability(input: {
   liveRuntime?: { timeZone?: string }
   /** MCP callers record the run as workflow.execute; route and Automation callers omit it. */
   auditWorkflowExecution?: MarketplaceWorkflowAudit
+  /** Callers that serve a skill to someone name what started the use so it counts in Library usage; others omit it. */
+  usageSource?: CapabilityUsageSource
+  /** Names the connection to fix when a required capability is missing. */
+  describeUnavailable?: (missing: readonly { capabilityName: string }[]) => Promise<{
+    connectionStatus: Record<string, unknown>
+    connectionCard: Record<string, unknown>
+  } | null>
 }): Promise<MarketplaceCapabilityExecuteResult> {
   const liveRuntime = input.liveRuntime === undefined ? undefined : artifactRunInputSchema.safeParse(input.liveRuntime)
   if (liveRuntime && (!liveRuntime.success || input.body !== undefined)) {
     return { ok: false, error: "invalid_capability_arguments", message: "Live runs accept only timeZone, never caller input.", issues: [], sameArgumentsRetryable: false, retry: { action: "correct_arguments", searchRequired: false } }
-  }
-  if (input.enabled === false) {
-    return { ok: false, error: "unknown_capability", message: "No such capability." }
   }
   if (!input.member) {
     return { ok: false, error: "forbidden", message: "No active org membership for this token." }
@@ -1640,9 +1731,9 @@ export async function executeMarketplaceCapability(input: {
       result: {
         ...basePayload(row),
         status: "unsupported",
-        hint: await organizationBuildsMcpApps(input.organizationId)
+        hint: env.appMcpServersEnabled
           ? `This App is its own MCP server at ${mcpAppServerPath(row.configObject.id)}; its ${MCP_APP_LAUNCH_TOOL_NAME} tool opens it. Code Mode and generic Plugin execution do not open Apps or return their source. Editors can use read_app to edit it. No App was opened.`
-          : "Apps built in OpenWork are turned off for this organization, so this App cannot be opened or edited here. No App was opened.",
+          : "Apps built in OpenWork are turned off on this server, so this App cannot be opened or edited here. No App was opened.",
       },
     }
   }
@@ -1692,7 +1783,10 @@ export async function executeMarketplaceCapability(input: {
         receiptId: execution.receiptId ?? null,
       }
     }
-    if (!execution.ok && execution.error === "capability_unavailable") return execution
+    if (!execution.ok && execution.error === "capability_unavailable") {
+      const connection = await input.describeUnavailable?.(execution.missing).catch(() => null)
+      return connection ? { ...execution, ...connection } : execution
+    }
     if (!execution.ok && execution.error === "script_failed") {
       return {
         ok: false,
@@ -1765,6 +1859,15 @@ export async function executeMarketplaceCapability(input: {
     || row.configObject.objectType === "custom"
     || row.configObject.objectType === "agent"
   ) {
+    if (input.usageSource && row.configObject.objectType === "skill") {
+      recordSkillUse({
+        organizationId,
+        orgMembershipId: input.member.orgMembershipId,
+        pluginId: row.plugin.id,
+        configObjectId: row.configObject.id,
+        source: input.usageSource,
+      })
+    }
     return {
       ok: true,
       result: {

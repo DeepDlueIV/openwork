@@ -1,5 +1,5 @@
 // Content slice: plugins, config objects, marketplaces, Workflows, artifact views,
-// dashboards, automations, automation runners, remote-session runner callbacks,
+// automations, automation runners, remote-session runner callbacks,
 // Workbot, resources, brand assets and the deprecated memory / skill-hub stubs.
 
 import { HIGH_VOLUME_EXCLUSIONS, type AuditRouteAttribution, type AuditRouteClass, type AuditRouteDeclaration, type AuditRouteMethod } from "./types.js"
@@ -13,7 +13,7 @@ function route(
   return { method, path, class: auditClass, action, kind, resource: { type, idParam }, attribution, ...extra }
 }
 
-/** orgMemberRoute / orgRoleRoute: organizationContext supplies the member actor. */
+/** orgMemberRoute / orgRoleRoute / orgPermissionRoute: organizationContext supplies the member actor. */
 function member(
   method: AuditRouteMethod, path: string, auditClass: AuditRouteClass, action: string, kind: string,
   type: string, idParam: string | null, extra: Extra = {},
@@ -55,6 +55,10 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   alias("ALL", "/v1/codemode-scripts", "workflow.alias.proxy", "One-release alias re-dispatched through app.fetch to /v1/workflows; the destination records."),
   alias("ALL", "/v1/codemode-scripts/*", "workflow.alias_subpath.proxy", "One-release alias re-dispatched through app.fetch to /v1/workflows/*; the destination records."),
   alias("ALL", "/v1/programs/*", "program.alias.proxy", "One-release alias re-dispatched through app.fetch to /v1/workflows/*; the destination records."),
+  alias("ALL", "/v1/codemode-runs", "workflow_run.alias.proxy", "Legacy alias re-dispatched through app.fetch to GET /v1/workflow-runs; the destination records."),
+
+  // Workflow run history (Organization Analytics)
+  member("GET", "/v1/workflow-runs", "tenant_read", "workflow_run.list", "workflow.run", "workflow_run", null, { notes: "Owners and admins; run receipts with tool call names, status and error text. No inputs or results." }),
 
   // Automations
   member("GET", "/v1/automations", "tenant_access", "automation.list", "automation.management", "automation", null, { notes: `Returns automation instructions. Read may persist needs_attention_reason (reconcileModelAttention). mcp/agent.ts also lists automations directly as a read-only resource index. ${MCP_NATIVE}` }),
@@ -67,6 +71,7 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/automations/:id/deactivate", "tenant_change", "automation.deactivate", "automation.management", "automation", "id", { notes: `Stops future runs; a run already in progress is not cancelled. ${MCP_NATIVE}` }),
   member("POST", "/v1/automations/:id/run", "tenant_job", "automation.run.start", "automation.run", "automation", "id", { jobOutcome: DESKTOP_RUN_OUTCOME, notes: `Returns 202; blocked runs are recorded as skipped receipts. The scheduler tick uses the same repository.claim without an HTTP route. ${MCP_NATIVE}` }),
   member("GET", "/v1/automations/:id/runs", "tenant_access", "automation.run.list", "automation.run", "automation", "id", { notes: `Returns run result summaries. ${MCP_NATIVE}` }),
+  member("GET", "/v1/automation-runs", "tenant_access", "automation.run.range_list", "automation.run", "automation", null, { notes: "Returns run result summaries across the caller's own Automations for a bounded time range (calendar views). First-party clients only; not an MCP tool." }),
   member("GET", "/v1/automation-runs/:id", "tenant_access", "automation_run.read", "automation.run", "automation_run", "id", { notes: `Returns run events, thread and results. ${MCP_NATIVE}` }),
   member("POST", "/v1/automation-runs/:id/cancel", "tenant_change", "automation_run.cancel", "automation.run", "automation_run", "id", { notes: `Records cancellationRequested and notifies the runner; the final cancelled status arrives through POST /v1/automation-runs/:id/complete or the cloud executor. ${MCP_NATIVE}` }),
   runner("POST", "/v1/automation-runs/:id/claim", "tenant_change", "automation_run.claim", "automation.run", "automation_run", "id", { notes: "Job outcome callback for automation.run.start; response carries automation instructions." }),
@@ -82,13 +87,25 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   runner("GET", "/v1/automation-runner/work", "tenant_signal", "automation_runner.work.poll", "automation.runner", "automation_runner", null, { notes: "Frequent poll; writes last_seen_at presence. Lists pending automation runs and remote-session commands/requests." }),
   runner("PUT", "/v1/automation-runner/inventory", "tenant_signal", "automation_runner.inventory.update", "automation.runner", "automation_runner", null, { notes: "High-frequency device inventory; read by MCP remote-session:targets." }),
 
+  // Independent session-runner aliases retain the same credential and actor
+  // attribution as released Automation runners; they never schedule work.
+  member("POST", "/v1/session-runners/token", "tenant_access", "automation_runner.token.issue", "automation.runner", "automation_runner", null, { notes: "Registers a remote-only session target and issues an audience-bound runner credential. Never snapshot the token. Blocked from MCP." }),
+  runner("GET", "/v1/session-runners/work", "tenant_signal", "automation_runner.work.poll", "automation.runner", "automation_runner", null, { notes: "Owner-scoped remote command/request discovery and sticky recovery; updates presence, never lists scheduled Automations." }),
+  runner("PUT", "/v1/session-runners/inventory", "tenant_signal", "automation_runner.inventory.update", "automation.runner", "automation_runner", null, { notes: "Reports the opted-in client's approved workspaces and models for remote-session:targets." }),
+
   // Remote-session runner callbacks
   runner("GET", "/v1/remote-session-requests/pending", "tenant_signal", "remote_session.request.pending.list", "remote_session.execution", "remote_session_request", null),
   runner("POST", "/v1/remote-session-commands/:id/claim", "tenant_change", "remote_session.command.claim", "remote_session.execution", "remote_session_command", "id", { notes: `${REMOTE_SESSION_JOB} Response carries the user prompt.` }),
   runner("POST", "/v1/remote-session-commands/:id/complete", "tenant_change", "remote_session.command.complete", "remote_session.execution", "remote_session_command", "id", { notes: REMOTE_SESSION_JOB }),
   runner("POST", "/v1/remote-session-commands/:id/session", "tenant_change", "remote_session.command.session.report", "remote_session.execution", "remote_session_command", "id", { notes: `${REMOTE_SESSION_JOB} Repeated progress reports store final text / last error (user content).` }),
   runner("POST", "/v1/remote-session-requests/:id/claim", "tenant_change", "remote_session.request.claim", "remote_session.execution", "remote_session_request", "id", { notes: `${REMOTE_SESSION_JOB} Response carries follow-up prompt input.` }),
-  runner("POST", "/v1/remote-session-requests/:id/complete", "tenant_change", "remote_session.request.complete", "remote_session.execution", "remote_session_request", "id", { notes: `${REMOTE_SESSION_JOB} A send also marks the command turn started (two UPDATEs, no transaction).` }),
+  runner("POST", "/v1/remote-session-requests/:id/complete", "tenant_change", "remote_session.request.complete", "remote_session.execution", "remote_session_request", "id", { notes: `${REMOTE_SESSION_JOB} A send atomically records its receipt and resets the command for the new turn; immutable retries never reset newer progress.` }),
+
+  // The member's own remote sessions from OpenWork's apps: the same executor as MCP remote-session:*.
+  member("POST", "/v1/remote-sessions/status", "tenant_signal", "remote_session.status.check", "remote_session.execution", "remote_session", null, { notes: "Frequent, bounded status check of at most ten of the member's own remote sessions (optional wait up to 20 s). Returns state and a short answer preview, no transcript." }),
+  member("POST", "/v1/remote-sessions/read", "tenant_access", "remote_session.transcript.read", "remote_session.execution", "remote_session", null, { notes: "Returns the member's own remote session transcript; a desktop session's page is answered by its runner through remote_session_request. Same executor as MCP remote-session:read." }),
+  member("POST", "/v1/remote-sessions/send", "tenant_job", "remote_session.follow_up.send", "remote_session.execution", "remote_session", null, { jobOutcome: "Desktop: runner callbacks POST /v1/remote-session-requests/:id/{claim,complete} and /v1/remote-session-commands/:id/session. Cloud: not_recorded: the turn runs on the member's OpenWork Web worker.", notes: "Same executor as MCP remote-session:send." }),
+  member("POST", "/v1/remote-sessions/stop", "tenant_job", "remote_session.run.stop", "remote_session.execution", "remote_session", null, { jobOutcome: "Desktop: runner callbacks POST /v1/remote-session-requests/:id/{claim,complete}. Cloud: not_recorded: the abort is synchronous on the member's OpenWork Web worker.", notes: "Same executor as MCP remote-session:stop." }),
 
   // Workflows and artifact views
   member("GET", "/v1/workflows", "tenant_read", "workflow.list", "workflow.management", "workflow", null, { notes: `Metadata, schemas and capability names only. ${MCP_NATIVE}` }),
@@ -135,6 +152,8 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("DELETE", "/v1/plugins/:pluginId/config-objects/:configObjectId", "tenant_change", "plugin.config_object.remove", "plugin.configuration", "plugin", "pluginId", { notes: `Duplicate route for the mutation behind DELETE /v1/config-objects/:configObjectId/plugins/:pluginId. ${MCP_NATIVE}` }),
   // Not audited: see HIGH_VOLUME_EXCLUSIONS in ./types.ts (ENG-683).
   highVolume("GET", "/v1/plugins/:pluginId/resolved", "plugin.resolved.read", "plugin.configuration", "plugin", "pluginId"),
+  highVolume("GET", "/v1/resolved-plugins", "plugin.resolved.batch_read", "plugin.configuration", "plugin", null),
+  highVolume("GET", "/v1/org/inventory-revision", "organization.inventory_revision.read", "organization.inventory", "organization", null),
   member("GET", "/v1/plugins/:pluginId/access", "tenant_read", "plugin.access_grant.list", "plugin.configuration", "plugin", "pluginId", { notes: MCP_NATIVE }),
   member("POST", "/v1/plugins/:pluginId/access", "tenant_change", "plugin.access_grant.create", "plugin.configuration", "plugin", "pluginId", { notes: MCP_NATIVE }),
   member("DELETE", "/v1/plugins/:pluginId/access/:grantId", "tenant_change", "plugin.access_grant.revoke", "plugin.configuration", "plugin_access_grant", "grantId", { notes: MCP_NATIVE }),
@@ -161,22 +180,32 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/marketplaces/:marketplaceId/access", "tenant_change", "marketplace.access_grant.create", "marketplace.configuration", "marketplace", "marketplaceId", { notes: MCP_NATIVE }),
   member("DELETE", "/v1/marketplaces/:marketplaceId/access/:grantId", "tenant_change", "marketplace.access_grant.revoke", "marketplace.configuration", "marketplace_access_grant", "grantId", { notes: MCP_NATIVE }),
 
-  // Dashboards (org admin, managed-dashboards capability)
-  member("GET", "/v1/dashboards", "tenant_read", "dashboard.list", "dashboard.configuration", "dashboard", null),
-  member("POST", "/v1/dashboards", "tenant_change", "dashboard.create", "dashboard.configuration", "dashboard", null),
-  member("GET", "/v1/dashboards/:dashboardId", "tenant_read", "dashboard.read", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("PATCH", "/v1/dashboards/:dashboardId", "tenant_change", "dashboard.update", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("DELETE", "/v1/dashboards/:dashboardId", "tenant_change", "dashboard.delete", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("GET", "/v1/dashboards/:dashboardId/access", "tenant_read", "dashboard.access_grant.list", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("POST", "/v1/dashboards/:dashboardId/access", "tenant_change", "dashboard.access_grant.create", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("DELETE", "/v1/dashboards/:dashboardId/access/:grantId", "tenant_change", "dashboard.access_grant.revoke", "dashboard.configuration", "dashboard_access_grant", "grantId"),
-
   // Resources, Workbot, brand assets
   member("GET", "/v1/resources", "tenant_read", "resource_snapshot.read", "resource.discovery", "resource_snapshot", null, { notes: "Desktop polling endpoint; ids and timestamps only." }),
   member("GET", "/v1/resources/marketplace-capabilities", "tenant_read", "marketplace_capability.list", "resource.discovery", "marketplace_capability", null),
+  route("POST", "/v1/workbot/telemetry", "tenant_signal", "workbot.telemetry.ingest", "telemetry.adoption", "telemetry_event", null, "handler", { notes: "Service credential plus verified MCP member token; bounded identifiers, counts and outcomes only. Best-effort telemetry, never message content." }),
   route("GET", "/v1/workbot/session", "tenant_read", "workbot.session.read", "workbot.execution", "workbot_session", null, "handler", { notes: "Handler verifies the MCP OAuth token (verifyMcpRequest) and active membership, then attributes the token's org and user." }),
+  route("POST", "/v1/workbot/connections/:connectionId/connect/start", "tenant_change", "workbot.connection.start", "workbot.execution", "mcp_connection", null, "handler", { notes: "Live OAuth write grant, active token-scoped membership, Workbot and inline-connect flags; delegates to existing connection starts with unchanged grants and permissions. Signed path-only return on the deployment Workbot origin." }),
   route("GET", "/v1/workbot/connections", "tenant_read", "workbot.connection.list", "workbot.execution", "mcp_connection", null, "handler", { notes: "Handler verifies the MCP OAuth token and active membership, returns 403 while the workbot feature is off, then lists the Gmail/Google Workspace, Slack and Microsoft 365 connections this member may use (id, name, readiness, Den connect URL; no secrets)." }),
-  route("POST", "/v1/workbot/run-token", "tenant_access", "workbot.run_token.issue", "workbot.execution", "oauth_access_token", null, "handler", { notes: "Handler verifies the MCP OAuth token, membership and workbot capability, then mints a ≤1h headless-run MCP token (credential issuance; plaintext returned once, never snapshot). mintHeadlessRunMcpToken is also called by the headless automation executor without an HTTP route." }),
+  route("GET", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.read", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token, membership and the workbot feature, then re-dispatches an allowlisted read (the member's Automations, runs, run receipts, native calendar events, and usable LLM providers trimmed to names and model IDs) through app.fetch with a signed internal principal; the destination route records." }),
+  route("POST", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.action", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token (write scope), membership and the workbot feature, then re-dispatches POST /v1/automations/:id/{activate|deactivate|run} or POST /v1/cloud-automations (create, body forwarded) through app.fetch as the member; the destination route records." }),
+  route("PATCH", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.schedule", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token (write scope), membership and the workbot feature, accepts a body limited to `name`, `schedule`, `instructions` and `model` (never where it runs), then re-dispatches PATCH /v1/automations/:id through app.fetch as the member; the destination route records." }),
+  route("GET", "/v1/workbot/documents/*", "proxy", "workbot.documents.read", "workbot.execution", "google_drive_file", null, "handler", { notes: "Verified MCP OAuth membership, read scope and both flags; allowlisted metadata/editor/content re-entry, destination records. No credentials in responses." }),
+  route("POST", "/v1/workbot/documents/*", "proxy", "workbot.documents.save", "workbot.execution", "google_drive_file", null, "handler", { notes: "Verified MCP OAuth membership, write scope and both flags; allowlisted editor/session actions only, strict destination schemas and connector policy." }),
+  member("POST", "/v1/documents/google-drive/files/:fileId/office", "tenant_access", "documents.office.open", "documents.editor", "google_drive_file", "fileId", { notes: "Export or download via pinned connection into an encrypted four-hour session; no Drive write." }),
+  member("GET", "/v1/documents/google-drive/files/:fileId/office/:sessionId", "tenant_access", "documents.office.status", "documents.editor", "google_drive_file", "fileId"),
+  member("POST", "/v1/documents/google-drive/files/:fileId/office/:sessionId/save", "tenant_external", "documents.office.save", "documents.editor", "google_drive_file", "fileId", { external: "Google Drive API", notes: "Explicit snapshot save, pinned connection, fresh grants/capability/revision; native Google files create an Office copy. Unconfirmed writes cannot retry." }),
+  member("POST", "/v1/documents/google-drive/files/:fileId/office/:sessionId/close", "tenant_change", "documents.office.close", "documents.editor", "google_drive_file", "fileId", { notes: "Removes this member's encrypted temporary session; no Drive write." }),
+  route("GET", "/v1/documents/wopi/files/:sessionId", "tenant_access", "documents.office.info", "documents.editor", "office_session", "sessionId", "org_context", { notes: "File-bound WOPI capability plus live membership, connector and feature checks; no Google credentials returned." }),
+  route("GET", "/v1/documents/wopi/files/:sessionId/contents", "tenant_access", "documents.office.content", "documents.editor", "office_session", "sessionId", "org_context", { notes: "Bounded temporary editor content, file-bound capability and live authorization." }),
+  route("POST", "/v1/documents/wopi/files/:sessionId/contents", "tenant_change", "documents.office.stage", "documents.editor", "office_session", "sessionId", "org_context", { notes: "Stages encrypted draft bytes after live write-grant and lock checks. Never writes Drive." }),
+  route("POST", "/v1/documents/wopi/files/:sessionId", "tenant_change", "documents.office.lock", "documents.editor", "office_session", "sessionId", "org_context", { notes: "File-scoped lock, refresh and unlock only. No provider writes." }),
+  member("GET", "/v1/documents/google-drive/files/:fileId/metadata", "tenant_access", "documents.google_drive.metadata", "documents.editor", "google_drive_file", "fileId", { notes: "Reads current authorized Drive metadata only; no file content." }),
+  member("GET", "/v1/documents/google-drive/files/:fileId/editor", "tenant_access", "documents.google_drive.open", "documents.editor", "google_drive_file", "fileId", { notes: "Reads bounded document content with pinned authorized connector; both Workbot features required. No content in audit evidence." }),
+  member("GET", "/v1/documents/google-drive/files/:fileId/content", "tenant_access", "documents.google_drive.preview", "documents.editor", "google_drive_file", "fileId", { notes: "Bounded PDF/image bytes, current pinned connection, no-store; both flags required." }),
+  member("POST", "/v1/documents/google-drive/files/:fileId/editor", "tenant_external", "documents.google_drive.save", "documents.editor", "google_drive_file", "fileId", { external: "Google Docs/Sheets/Drive API", notes: "Explicit targeted edits, live write permission, pinned connection and revision check. Native Docs also require revision writeControl. No content in audit evidence. Stored files/Sheets have a check-then-write concurrency window." }),
+  route("POST", "/v1/workbot/run-token", "tenant_access", "workbot.run_token.issue", "workbot.execution", "oauth_access_token", null, "handler", { notes: "Handler verifies the MCP OAuth token, membership and workbot capability, then mints a ≤1h headless-run MCP token (credential issuance; plaintext returned once, never snapshot). mintHeadlessRunMcpToken is also called by the headless automation executor without an HTTP route. With headlessDurableTurns on and sessionId/messageId given it also returns a resume grant (plaintext once; only its SHA-256 hash is stored)." }),
+  route("POST", "/v1/headless/resume-token", "tenant_access", "headless.resume_token.issue", "headless.execution", "oauth_access_token", null, "handler", { notes: "Headless runner callback (Internal, never MCP). Handler verifies DEN_HEADLESS_RUNNER_CALLBACK_TOKEN (constant time; 404 when unset, 401 otherwise) and looks the resume grant up by its SHA-256 hash; unknown grants answer 403 before attribution (request evidence only). Then attributes actor service headless-runner:<grantId> for the grant's organization and active member, checks revoked, expired, turn binding, membership, headlessDurableTurns and the per-grant rate limit, and mints a ≤1h headless-run MCP token (credential issuance; grant and token never logged or snapshot)." }),
   route("GET", "/v1/brand-assets/:organizationId/:kind/:version", "tenant_read", "brand_asset.download", "organization.branding", "brand_asset", "version", "handler", { notes: "Public capability URL: the HMAC signature binds organizationId, kind, version and extension, so the handler attributes the path organization only after verifyBrandAssetSignature; actor is the anonymous signed-URL holder. Public, immutable, CDN-cached logo (login pages, emails): read category, not access. Invalid signatures 404 before attribution (platform)." }),
 
   // Deprecated stubs (no tenant, no state)

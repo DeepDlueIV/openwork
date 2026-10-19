@@ -16,6 +16,14 @@ import {
 } from "@/react-app/domains/settings/library";
 import { ModelSelect } from "@/components/model-select";
 import { ImageLightbox } from "@/components/chat/image-lightbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { LexicalPromptEditor, syncAttachmentChipStatus, type ComposerAttachmentToken, type LexicalPromptEditorHandle } from "./editor";
 import { COMPUTER_MENTIONS } from "./computer-mentions";
 import type { ComposerMentionKind } from "./mention-encoding";
@@ -36,9 +44,12 @@ import {
 import { DevProfiler } from "@/react-app/shell/dev-profiler";
 import { encodeConnectorToken } from "./connector-token";
 import { ComposerPlusMenu, type ComposerPlusMenuPick } from "./composer-plus-menu";
+import { ComposerSuggestionMenu, composerSuggestionRowClass } from "./composer-suggestion-menu";
 import type { PlusMenuAgent, PlusMenuConnector, PlusMenuSection } from "./composer-plus-menu-model";
 import { connectionDiagnosticHistory, type ConnectionDiagnosticSource, type SendDiagnosticReason } from "@/app/lib/connection-diagnostic-history";
 import { composerDiagnosticBlockers } from "./composer-diagnostics";
+import { ModelRecoveryNote } from "./model-recovery-note";
+import { modelRecoveryChatKey, useModelRecoveryStore } from "../model-recovery-store";
 
 type MentionItem = {
   id: string;
@@ -69,6 +80,7 @@ type ComposerProps = {
   preparingReasons?: readonly SendDiagnosticReason[];
   modelUnavailable?: boolean;
   modelUnavailableMessage?: string | null;
+  modelRecoveryScope?: string;
   organizationModelsEmpty?: boolean;
   statusLabel: string;
   modelPickerOpen: boolean;
@@ -82,7 +94,8 @@ type ComposerProps = {
   onModelPickerOpenChange: (open: boolean) => void;
   onModelChange: (model: ModelRef, variant?: string | null) => void;
   attachments: ComposerAttachment[];
-  onAttachFiles: (files: File[]) => void;
+  /** `draftOffset` is the caret position in the draft; omitted, the chips are appended. */
+  onAttachFiles: (files: File[], draftOffset?: number) => void;
   onRemoveAttachment: (id: string) => void;
   attachmentsEnabled: boolean;
   /** True while the draft's attachments are being compressed/uploaded during a send; chips show a spinner overlay. */
@@ -111,7 +124,7 @@ type ComposerProps = {
   onInsertMention: (kind: ComposerMentionKind, value: string, draft?: string) => void;
   /** Sent-prompt history (oldest first) recalled with ArrowUp/ArrowDown (#2012). */
   inputHistory?: string[];
-  onPasteText: (text: string) => void;
+  onPasteText: (text: string, draftOffset?: number) => void;
   onUnsupportedFileLinks: (links: string[]) => void;
   pastedText: PastedTextChip[];
   onExpandPastedText: (id: string) => void;
@@ -127,6 +140,12 @@ type ComposerProps = {
 
 const FLUSH_PROMPT_EVENT = "openwork:flushPromptDraft";
 const FOCUS_PROMPT_EVENT = "openwork:focusPrompt";
+/**
+ * The composer the person last typed in. With a side window open, "focus the
+ * prompt" (after a palette pick, a dialog, a model change) returns to that one
+ * instead of whichever composer registered last.
+ */
+let lastFocusedComposerRoot: HTMLElement | null = null;
 const DEFAULT_AGENT_NAME = "openwork";
 
 function isNonDefaultAgent(agent: Agent) {
@@ -235,11 +254,10 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
   const [pluginsLoaded, setPluginsLoaded] = useState(Boolean(props.importedPlugins?.length));
   const [mcpLoaded, setMcpLoaded] = useState(Boolean(props.mcpServers?.length));
   const [mcpLoading, setMcpLoading] = useState(false);
-  const [agentMenuIndex, setAgentMenuIndex] = useState(0);
-  const agentItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [dropzoneActive, setDropzoneActive] = useState(false);
   const editorRef = useRef<LexicalPromptEditorHandle | null>(null);
-  const agentMenuRef = useRef<HTMLDivElement | null>(null);
+  // The `/` and `@` suggestion lists are anchored to the composer panel.
+  const panelRef = useRef<HTMLDivElement | null>(null);
   // IME composition guard: while an IME composition is active, we must not
   // treat Enter as a submit. Three signals keep this reliable across WebKit,
   // Chrome, and Safari: event.isComposing, event.keyCode === 229, and the
@@ -317,7 +335,14 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
   const handleEditorSubmit = useCallback((options: { queue: boolean }) => {
     const hasContent = props.draft.trim().length > 0 || props.attachments.length > 0;
     if (!hasContent) return;
-    if (props.submissionPreparing || props.stopping) return;
+    if (props.submissionPreparing) return;
+    // A new Enter after Stop is fresh work, not a follow-up to the interrupted
+    // turn. The immediate send path fences admission on the shared interruption
+    // promise; dropping Enter here silently leaves the person's draft unsent.
+    if (props.stopping) {
+      void props.onSend();
+      return;
+    }
     if (props.busy && !props.editing) {
       if (options.queue) void props.onSteer();
       else void props.onQueue();
@@ -390,15 +415,6 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
   useEffect(() => {
     listMcpRef.current = props.listMcp;
   }, [props.listMcp]);
-
-  useEffect(() => {
-    setAgentMenuIndex(0);
-  }, [agentMenuOpen]);
-
-  useEffect(() => {
-    const target = agentItemRefs.current[agentMenuIndex];
-    target?.scrollIntoView({ block: "nearest" });
-  }, [agentMenuIndex, agentMenuOpen]);
 
   useEffect(() => {
     commandsLoadVersionRef.current += 1;
@@ -542,20 +558,6 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
       clearTimeout(timer);
     };
   }, [plusMenuQuery, props.searchFiles, toolMenuOpen]);
-
-  useEffect(() => {
-    if (!agentMenuOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (agentMenuRef.current?.contains(target)) return;
-      setAgentMenuOpen(false);
-    };
-    window.addEventListener("mousedown", handlePointerDown);
-    return () => {
-      window.removeEventListener("mousedown", handlePointerDown);
-    };
-  }, [agentMenuOpen]);
 
   useEffect(() => {
     if (!toolMenuOpen) return;
@@ -1001,6 +1003,7 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
     const handleFocus = () => {
       const root = rootRef.current;
       if (!root) return;
+      if (lastFocusedComposerRoot?.isConnected && lastFocusedComposerRoot !== root) return;
       const editable = root.querySelector<HTMLElement>("[contenteditable='true']");
       editable?.focus({ preventScroll: window.matchMedia("(max-width: 1023px)").matches });
     };
@@ -1052,31 +1055,8 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
       }
       return;
     }
-    if (agentMenuOpen) {
-      const total = nonDefaultAgents.length + 1;
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setAgentMenuIndex((current) => (current + 1) % total);
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setAgentMenuIndex((current) => (current - 1 + total) % total);
-        return;
-      }
-      if (event.key === "Enter" || event.key === "Tab") {
-        event.preventDefault();
-        const selected = agentMenuIndex === 0 ? null : nonDefaultAgents[agentMenuIndex - 1]?.name ?? null;
-        props.onSelectAgent(selected);
-        setAgentMenuOpen(false);
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setAgentMenuOpen(false);
-        return;
-      }
-    }
+    // The agent menu handles its own keys.
+    if (agentMenuOpen) return;
 
     // The + menu renders in a portal, but its key events still bubble through this
     // React tree; the menu handles its own keys.
@@ -1169,7 +1149,7 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
     syncAttachmentChipStatus(root, props.attachmentsUploading ? "uploading" : "ready");
   }, [props.attachmentsUploading, props.attachments]);
 
-  const addAttachments = async (inputFiles: File[]) => {
+  const addAttachments = async (inputFiles: File[], draftOffset?: number) => {
     if (!inputFiles.length) return;
     if (!props.attachmentsEnabled) {
       toast.warning(props.attachmentsDisabledReason ?? t("composer.attachments_unavailable"));
@@ -1180,122 +1160,109 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
     // endpoint or provider) with their own errors instead of a composer rule.
     // Oversized images are compressed at send time (see image-compression.ts)
     // so the chip appears instantly instead of blocking on canvas work here.
-    props.onAttachFiles(inputFiles);
+    props.onAttachFiles(inputFiles, draftOffset);
   };
 
-  const panelRoundedClass =
-    mentionOpen || slashOpen
-      ? "rounded-t-[18px] border-t-transparent"
-      : "";
+  const renderSlashMenu = () => (
+    <ComposerSuggestionMenu open={activeMenu === "slash"} anchor={panelRef} onDismiss={() => setSlashOpen(false)}>
+      {slashFiltered.length > 0 ? (
+        <div role="listbox" aria-label={t("composer.plus_commands")} className="flex flex-col gap-0.5">
+          {slashFiltered.map((command, index) => (
+            <button
+              key={command.id}
+              ref={(element) => {
+                menuItemRefs.current[index] = element;
+              }}
+              type="button"
+              role="option"
+              aria-selected={index === menuIndex}
+              tabIndex={-1}
+              title={command.description || undefined}
+              className={composerSuggestionRowClass(index === menuIndex)}
+              // Move, not enter: rows sliding under a resting cursor (the list
+              // opening or scrolling) must not steal the keyboard highlight.
+              onMouseMove={() => setMenuIndex(index)}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                applyCommandSelection(command, { replaceSkillDraft: true });
+              }}
+              onClick={(event) => {
+                if (event.detail === 0) applyCommandSelection(command, { replaceSkillDraft: true });
+              }}
+            >
+              <Terminal size={14} className="mt-0.5 shrink-0 text-gray-9" />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center justify-between gap-3">
+                  <span className="truncate text-xs font-semibold">/{command.name}</span>
+                  {command.source && command.source !== "command" ? (
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${command.source === "skill" ? "bg-violet-3/40 text-violet-11" : "bg-cyan-3/40 text-cyan-11"}`}>
+                      {command.source === "skill" ? t("composer.skill_source") : t("composer.mcps_label")}
+                    </span>
+                  ) : null}
+                </span>
+                {command.description ? <span className="block truncate text-xs text-gray-10">{command.description}</span> : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div role="status" className="px-3 py-2 text-xs text-gray-10">
+          {(!commandsLoaded && commandsLoading) || skillsLoading ? t("composer.loading_commands") : t("composer.no_commands")}
+        </div>
+      )}
+    </ComposerSuggestionMenu>
+  );
 
-  const renderSlashMenu = () => {
-    if (!slashOpen) return null;
-    return (
-      <div className="absolute bottom-full left-[-1px] right-[-1px] z-30">
-          <div className="overflow-hidden rounded-t-[20px] border border-dls-border border-b-0 bg-dls-surface shadow-[var(--dls-shell-shadow)]">
-            <div
-              role="presentation"
-              className="max-h-64 overflow-y-auto p-2"
-              onMouseDown={(event) => event.preventDefault()}
+  const renderMentionMenu = () => (
+    <ComposerSuggestionMenu
+      open={activeMenu === "mention" && mentionFiltered.length > 0}
+      anchor={panelRef}
+      onDismiss={() => setMentionOpen(false)}
+    >
+      <div role="listbox" aria-label={t("composer.mentions_label")} className="flex flex-col gap-0.5">
+        {mentionFiltered.map((item, index) => (
+          <button
+            key={item.id}
+            ref={(element) => {
+              menuItemRefs.current[index] = element;
+            }}
+            type="button"
+            role="option"
+            aria-selected={index === menuIndex}
+            tabIndex={-1}
+            className={composerSuggestionRowClass(index === menuIndex)}
+            onMouseMove={() => setMenuIndex(index)}
+            onClick={() => {
+              applyMentionSelection(item);
+            }}
           >
-            {slashFiltered.length > 0 ? (
-              <div className="grid gap-1">
-                {slashFiltered.map((command, index) => (
-                  <button
-                    key={command.id}
-                    ref={(element) => {
-                      menuItemRefs.current[index] = element;
-                    }}
-                    type="button"
-                    className={`flex w-full items-start gap-3 rounded-[16px] px-3 py-2.5 text-left transition-colors hover:bg-gray-2/70 ${activeMenu === "slash" && slashFiltered[menuIndex]?.id === command.id ? "bg-gray-3 text-gray-12" : "text-gray-11"}`}
-                    onMouseEnter={() => setMenuIndex(index)}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      applyCommandSelection(command, { replaceSkillDraft: true });
-                    }}
-                    onClick={(event) => {
-                      if (event.detail === 0) applyCommandSelection(command, { replaceSkillDraft: true });
-                    }}
-                  >
-                    <Terminal size={14} className="mt-0.5 shrink-0 text-gray-9" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="truncate text-xs font-semibold">/{command.name}</div>
-                        {command.source && command.source !== "command" ? (
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${command.source === "skill" ? "bg-violet-3/40 text-violet-11" : "bg-cyan-3/40 text-cyan-11"}`}>
-                            {command.source === "skill" ? t("composer.skill_source") : t("composer.mcps_label")}
-                          </span>
-                        ) : null}
-                      </div>
-                      {command.description ? <div className="truncate text-xs text-gray-10">{command.description}</div> : null}
-                    </div>
-                  </button>
-                ))}
-              </div>
+            {item.kind === "computer" ? (
+              item.value === "cloud" ? <Cloud size={14} className="mt-0.5 shrink-0 text-gray-9" /> : <Monitor size={14} className="mt-0.5 shrink-0 text-gray-9" />
+            ) : item.kind === "agent" ? (
+              <Zap size={14} className="mt-0.5 shrink-0 text-gray-9" />
             ) : (
-              <div className="px-3 py-2 text-xs text-gray-10">
-                {(!commandsLoaded && commandsLoading) || skillsLoading ? t("composer.loading_commands") : t("composer.no_commands")}
-              </div>
+              <FileText size={14} className="mt-0.5 shrink-0 text-gray-9" />
             )}
-          </div>
-        </div>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-semibold">@{item.label}</span>
+              <span className="block truncate text-xs text-gray-10">
+                {item.description ? item.description : item.kind === "agent"
+                  ? t("composer.agent_label")
+                  : t("composer.file_kind")}
+              </span>
+            </span>
+          </button>
+        ))}
       </div>
-    );
-  };
-
-  const renderMentionMenu = () => {
-    if (!mentionOpen || mentionFiltered.length === 0) return null;
-    return (
-      <div className="absolute bottom-full left-[-1px] right-[-1px] z-30">
-          <div className="overflow-hidden rounded-t-[20px] border border-dls-border border-b-0 bg-dls-surface shadow-[var(--dls-shell-shadow)]">
-            <div
-              role="presentation"
-              className="max-h-64 overflow-y-auto p-2"
-              onMouseDown={(event) => event.preventDefault()}
-          >
-            <div className="grid gap-1">
-              {mentionFiltered.map((item, index) => (
-                <button
-                  key={item.id}
-                  ref={(element) => {
-                    menuItemRefs.current[index] = element;
-                  }}
-                  type="button"
-                  className={`flex w-full items-start gap-3 rounded-[16px] px-3 py-2.5 text-left transition-colors hover:bg-gray-2/70 ${activeMenu === "mention" && mentionFiltered[menuIndex]?.id === item.id ? "bg-gray-3 text-gray-12" : "text-gray-11"}`}
-                  onMouseEnter={() => setMenuIndex(index)}
-                  onClick={() => {
-                    applyMentionSelection(item);
-                  }}
-                >
-                  {item.kind === "computer" ? (
-                    item.value === "cloud" ? <Cloud size={14} className="mt-0.5 shrink-0 text-gray-9" /> : <Monitor size={14} className="mt-0.5 shrink-0 text-gray-9" />
-                  ) : item.kind === "agent" ? (
-                    <Zap size={14} className="mt-0.5 shrink-0 text-gray-9" />
-                  ) : (
-                    <FileText size={14} className="mt-0.5 shrink-0 text-gray-9" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-semibold">@{item.label}</div>
-                    <div className="truncate text-xs text-gray-10">
-                      {item.description ? item.description : item.kind === "agent"
-                        ? t("composer.agent_label")
-                        : t("composer.file_kind")}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+    </ComposerSuggestionMenu>
+  );
 
   return (
     <DevProfiler id="SessionComposer">
     <div
       ref={rootRef}
+      onFocusCapture={() => { lastFocusedComposerRoot = rootRef.current; }}
       className={props.flush ? `relative ${toolMenuOpen ? "z-50" : "z-20"}` : `sticky bottom-0 shrink-0 ${toolMenuOpen ? "z-50" : "z-20"} bg-gradient-to-t from-dls-surface via-dls-surface/95 to-transparent px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] max-lg:px-3 lg:px-8 ${props.compactTopSpacing ? "pt-0" : "pt-1"}`}
       style={{ contain: "layout style" }}
       onKeyDownCapture={handleKeyDownCapture}
@@ -1309,7 +1276,8 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
       <div className={props.flush ? "" : "max-w-[800px] mx-auto"}>
         {/* Main composer panel */}
         <div
-          className={`@container/composer relative overflow-visible rounded-[18px] border border-dls-border bg-dls-surface transition-all ${panelRoundedClass}`}
+          ref={panelRef}
+          className="@container/composer relative overflow-visible rounded-[18px] border border-dls-border bg-dls-surface transition-all"
         >
           {props.topAccessory ? <div className="relative z-10">{props.topAccessory}</div> : null}
 
@@ -1363,7 +1331,7 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
                 const files = Array.from(event.clipboardData?.files ?? []);
                 if (files.length) {
                   event.preventDefault();
-                  void addAttachments(files);
+                  void addAttachments(files, editorRef.current?.draftOffsetAtSelection() ?? undefined);
                   return;
                 }
 
@@ -1403,6 +1371,13 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
               }}
             />
 
+            <ModelRecoveryNote
+              scope={props.modelRecoveryScope}
+              sessionId={props.sessionId}
+              selectedModel={props.selectedModel}
+              onChange={() => props.onModelPickerOpenChange(true)}
+              onSwitchBack={(model) => props.onModelChange(model, null)}
+            />
             {/* Respond to the pane width, including desktop split views. */}
             {props.busy && !props.stopping && escapeArmed ? (
               <div data-composer-stop-confirmation role="status" className="mt-2 text-[12px] font-medium text-gray-10">
@@ -1460,66 +1435,29 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
                     agent is selected. Switching back to Default agent lives in
                     this menu and in the + tools menu. Selection configures
                     subsequent submissions without interrupting the running turn. */}
-                <div ref={agentMenuRef} className={showAgentPicker ? "relative min-w-0 max-w-full shrink-0 max-lg:max-w-[40%] max-lg:shrink" : "hidden"}>
-                  <button
-                    type="button"
-                    className="flex h-9 max-h-9 max-w-full items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-gray-10 transition-colors hover:bg-gray-3 hover:text-gray-12"
-                    onClick={() => setAgentMenuOpen((value) => !value)}
-                    aria-expanded={agentMenuOpen}
-                    title={t("composer.agent_label")}
-                  >
-                    <span className="max-w-[140px] truncate">{props.agentLabel}</span>
-                    <ChevronDown size={13} />
-                  </button>
-                  {agentMenuOpen ? (
-                    <div className="absolute left-0 bottom-full z-40 mb-2 w-64 overflow-hidden rounded-[18px] border border-dls-border bg-dls-surface shadow-[var(--dls-shell-shadow)]">
-                      <div className="border-b border-dls-border px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-10">
-                        {t("composer.agent_label")}
-                      </div>
-                      <div
-                        role="presentation"
-                        className="max-h-64 space-y-1 overflow-y-auto p-2"
-                        onMouseDown={(event) => event.preventDefault()}
-                      >
-                        <button
-                          ref={(element) => {
-                            agentItemRefs.current[0] = element;
-                          }}
-                          type="button"
-                          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${!props.selectedAgent || agentMenuIndex === 0 ? "bg-gray-2 text-gray-12" : "text-gray-11 hover:bg-gray-2/70"}`}
-                          onMouseEnter={() => setAgentMenuIndex(0)}
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            applyAgentSelection(null);
-                          }}
-                        >
-                          <span>{t("composer.default_agent")}</span>
-                          {!props.selectedAgent ? <Check size={14} className="text-gray-10" /> : null}
-                        </button>
-                        {nonDefaultAgents.map((agent, index) => {
-                          const active = props.selectedAgent === agent.name;
-                          return (
-                            <button
-                              key={agent.name}
-                              ref={(element) => {
-                                agentItemRefs.current[index + 1] = element;
-                              }}
-                              type="button"
-                              className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors ${active || agentMenuIndex === index + 1 ? "bg-gray-2 text-gray-12" : "text-gray-11 hover:bg-gray-2/70"}`}
-                              onMouseEnter={() => setAgentMenuIndex(index + 1)}
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                applyAgentSelection(agent.name);
-                              }}
-                            >
-                              <span className="truncate">{agent.name.charAt(0).toUpperCase() + agent.name.slice(1)}</span>
-                              {active ? <Check size={14} className="text-gray-10" /> : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
+                <div className={showAgentPicker ? "relative min-w-0 max-w-full shrink-0 max-lg:max-w-[40%] max-lg:shrink" : "hidden"}>
+                  <DropdownMenu open={agentMenuOpen} onOpenChange={setAgentMenuOpen}>
+                    <DropdownMenuTrigger
+                      className="flex h-9 max-h-9 max-w-full items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-gray-10 transition-colors hover:bg-gray-3 hover:text-gray-12"
+                      title={t("composer.agent_label")}
+                    >
+                      <span className="max-w-[140px] truncate">{props.agentLabel}</span>
+                      <ChevronDown size={13} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-64">
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel>{t("composer.agent_label")}</DropdownMenuLabel>
+                        {[null, ...nonDefaultAgents.map((agent) => agent.name)].map((name) => (
+                          <DropdownMenuItem key={name ?? ""} onClick={() => applyAgentSelection(name)}>
+                            <span className="min-w-0 flex-1 truncate">
+                              {name === null ? t("composer.default_agent") : name.charAt(0).toUpperCase() + name.slice(1)}
+                            </span>
+                            {props.selectedAgent === name ? <Check aria-hidden="true" /> : null}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 <ModelSelect
@@ -1528,7 +1466,10 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
                   hideValue={props.organizationModelsEmpty}
                   onOpenChange={props.onModelPickerOpenChange}
                   onChange={(model, variant) => {
-                    if (!props.steering) props.onModelChange(model, variant);
+                    if (!props.steering) {
+                      props.onModelChange(model, variant);
+                      if (props.modelRecoveryScope) useModelRecoveryStore.getState().clear(modelRecoveryChatKey(props.modelRecoveryScope, props.sessionId));
+                    }
                   }}
                   disabled={props.steering}
                   sessionId={props.sessionId}

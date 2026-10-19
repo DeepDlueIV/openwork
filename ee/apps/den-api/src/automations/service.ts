@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { AutomationClaimResult, AutomationListItem } from "@openwork/automations"
 import { AUTOMATION_MANUAL_CLAIM_WINDOW_MS, desktopRunnerConnected } from "@openwork/automations"
-import { AUTOMATION_RUNNER_WORK_RUN_LIMIT, isAutomationCloudDefaultModel } from "@openwork/types/automations"
+import { AUTOMATION_RUNNER_WORK_RUN_LIMIT, REMOTE_SESSION_ONLY_RUNNER_CAPABILITY, isAutomationCloudDefaultModel } from "@openwork/types/automations"
 import type {
   AutomationCloudTarget,
   AutomationDesktopRunnerCapability,
@@ -415,6 +415,7 @@ export class AutomationService {
       if (!access.ok && shouldApplyAutomationModelAccessFailure({
         model: current.revision.model,
         failure: access,
+        executionTarget: target,
         modelAttentionCapable: target === "cloud" || supportsModelAttention(scope),
       })) blocked = { code: access.code, message: access.message, occurredAt: Date.now() }
     }
@@ -459,6 +460,10 @@ export class AutomationService {
 
   listRuns(scope: OwnerScope, automationId: string, input: { cursor?: string; limit?: number }) {
     return automationRepository.listRuns({ ...scope, automationId, cursor: input.cursor, limit: input.limit ?? 50 })
+  }
+
+  listRunsInRange(scope: OwnerScope, input: { from: number; to: number; cursor?: string; limit?: number }) {
+    return automationRepository.listRunsInRange({ ...scope, from: input.from, to: input.to, cursor: input.cursor, limit: input.limit ?? 200 })
   }
 
   getRun(scope: OwnerScope, runId: string) {
@@ -526,6 +531,7 @@ export class AutomationService {
       if (!access.ok && shouldApplyAutomationModelAccessFailure({
         model: item.revision.model,
         failure: access,
+        executionTarget: item.revision.executionTarget ?? "desktop",
         // Scheduling must remain compatible until a capable desktop claims
         // the work or a capable management client reconciles the Automation.
         modelAttentionCapable: (item.revision.executionTarget ?? "desktop") === "cloud",
@@ -591,23 +597,24 @@ export class AutomationService {
     return { connected: desktopRunnerConnected({ lastSeenAt, now: Date.now() }), lastSeenAt }
   }
 
+  private async canRunScheduledAutomations(scope: DesktopRunnerScope) {
+    if (scope.capabilities?.includes(REMOTE_SESSION_ONLY_RUNNER_CAPABILITY)) return false
+    // A token issued before the registration changed must not restore scheduled
+    // execution to a session-only runner.
+    const registration = await automationRepository.desktopRunnerById(scope)
+    return !registration?.capabilities.includes(REMOTE_SESSION_ONLY_RUNNER_CAPABILITY)
+  }
+
+  /** The work route records the runner's presence before calling this. */
   async discoverDesktopRunnerWork(scope: DesktopRunnerScope) {
-    try {
-      await this.touchDesktopRunner(scope)
-    } catch (error) {
-      logger.warn("automation desktop runner touch failed", {
-        organization_id: scope.organizationId,
-        owner_member_id: scope.ownerMemberId,
-        runner_id: scope.runnerId,
-        error,
-      })
-    }
+    if (!await this.canRunScheduledAutomations(scope)) return []
     // Every desktop sees all of the owner's queued runs and skips the ones
     // pinned to a workspace it lacks, so the window must reach past them.
     return automationRepository.discoverDesktopWork({ ...scope, now: Date.now(), limit: AUTOMATION_RUNNER_WORK_RUN_LIMIT })
   }
 
   async claimDesktopRunner(scope: DesktopRunnerScope, runId: string) {
+    if (!await this.canRunScheduledAutomations(scope)) return null
     const claimed = await automationRepository.claimDesktop({
       organizationId: scope.organizationId,
       ownerMemberId: scope.ownerMemberId,
@@ -726,9 +733,9 @@ export class AutomationService {
   }
 
   /**
-   * New capable clients require current authority. Published clients may
-   * continue submitting the exact legacy Zen selection until they advertise
-   * support for the repairable attention state.
+   * Published Desktop admission remains compatible, including model-attention
+   * v1 clients. Cloud enforces provider filters here; updated Desktop runners
+   * check their effective workspace model catalog before creating a thread.
    */
   private async requireNewModel(scope: OwnerScope, model: ModelSelection, target: "desktop" | "cloud") {
     // The cloud default only means something where the runner picks the model.
@@ -742,6 +749,7 @@ export class AutomationService {
     if (!result.ok && shouldApplyAutomationModelAccessFailure({
       model,
       failure: result,
+      executionTarget: target,
       modelAttentionCapable: supportsModelAttention(scope),
     })) {
       const error = new Error(result.message)
@@ -764,6 +772,7 @@ export class AutomationService {
     if (access.ok || !shouldApplyAutomationModelAccessFailure({
       model: item.revision.model,
       failure: access,
+      executionTarget: item.revision.executionTarget ?? "desktop",
       modelAttentionCapable: (item.revision.executionTarget ?? "desktop") === "cloud"
         || supportsModelAttention(scope),
     })) return item

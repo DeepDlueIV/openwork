@@ -42,6 +42,16 @@ export const openworkPdfAttachmentsPluginPath = () => openworkPluginPath("openwo
 export const openworkTitleRecoveryPluginPath = () => openworkPluginPath("openwork-title-recovery");
 export const openworkGatewayQuotaPluginPath = () => openworkPluginPath("openwork-gateway-quota");
 export const openworkGatewayQuotaV2PluginPath = () => openworkPluginPath("openwork-gateway-quota-v2");
+export const openworkProviderSyncV2PluginPath = () => {
+  const path = openworkPluginPath("openwork-provider-sync-v2");
+  // The provider-only entry belongs to the shared plugin package. Bundle it
+  // alongside server plugins for packaged apps; load its source in Bun dev.
+  return path.endsWith(".ts")
+    ? join(dirname(fileURLToPath(import.meta.url)), "../../../packages/opencode-plugin/server.ts")
+    : path;
+};
 export const openworkContextV2PluginPath = () => openworkPluginPath("openwork-context-v2");
 export const openworkProviderFiltersV2PluginPath = () => openworkPluginPath("openwork-provider-filters-v2");
 export const openworkMcpResultsV2PluginPath = () => openworkPluginPath("openwork-mcp-results-v2");
+export const openworkMcpReadinessV2PluginPath = () => openworkPluginPath("openwork-mcp-readiness-v2");
+export const openworkAgentPermissionsV2PluginPath = () => openworkPluginPath("openwork-agent-permissions-v2");

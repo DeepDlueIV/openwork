@@ -53,46 +53,53 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
-  installLinks: {
-    label: "Install links",
-    description: "Workspace admins can create desktop install links for their organization.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: true,
-  },
-  mcpConnections: {
-    label: "OpenWork Connect",
-    description: "Members see the organization's connections, marketplace capabilities on the agent rail, and the desktop Connect tab.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: true,
-  },
-  dashboardActivity: {
-    label: "Dashboard activity",
-    description: "Organization admins see recent additions and skill updates on their dashboard instead of Quick add.",
+  cloudAgentGateway: {
+    label: "Cloud agents use the organization AI Gateway",
+    description: "Choose and run cloud-agent models through the organization's AI Gateway access instead of the runner's shared model credentials.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
-  modelsAnalytics: {
-    label: "OpenWork Models task analytics",
-    description: "Organization admins can opt in to task analytics for OpenWork Models.",
+  liveProviderSync: {
+    label: "Live provider sync",
+    description: "Keep desktop OpenCode v2 models up to date with the organization's AI Gateway in real time.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
-  auditLogs: {
-    label: "Audit logs",
-    description: "Organization admins can read and configure audit logs. Capture still needs an audit entitlement.",
+  offlineRecovery: {
+    label: "Connection failure presentation",
+    description: "Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
-  orgManagedDashboards: {
-    label: "Dashboards",
-    description: "Organization admins publish dashboards to members in Den and the desktop app.",
+  secureSecretFields: {
+    label: "Secure keys in chat",
+    description: "When an agent sets up a connection, plugin or AI Gateway provider that needs keys, people enter them in private fields in the chat and the agent continues once they are saved. Key fields across OpenWork and OpenWork Cloud can be shown while typing and show saved keys as Replace rows.",
     since: "2026-10",
     deployments: everywhere,
+    default: false,
+  },
+  modelsAnalyticsUi: {
+    label: "Models analytics",
+    description: "Organization admins can view Models & usage analytics and shared model usage limits. Deprecated 2026-10-14: UI hidden behind modelsAnalyticsUi (default off). Most likely delete within 4 weeks (by 2026-11-11) unless an org depends on it.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  taskAnalyticsUi: {
+    label: "Task analytics",
+    description: "Members with analytics access can view task activity and consumption, and admins can configure analytics integrations. Deprecated 2026-10-14: UI hidden behind taskAnalyticsUi (default off). Most likely delete within 4 weeks (by 2026-11-11) unless an org depends on it.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  managedDeployments: {
+    label: "Managed deployments",
+    description: "Organization admins install OpenWork in their own AWS account or Google Cloud project and see its health and updates in OpenWork, and agents connected to OpenWork can create and follow those deployments.",
+    since: "2026-10",
+    deployments: ["cloud"],
     default: false,
   },
   slackAssistant: {
@@ -102,37 +109,86 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
-  slackAssistantHeadless: {
-    label: "Slack Assistant: headless runtime",
-    description: "Answers Slack on the shared headless runner instead of each member's OpenWork Web computer. Needs the deployment's headless runner.",
+  workbotTeamLinks: {
+    label: "Workbot: team settings links",
+    description: "Members with team management access can open their organization's Workbot settings and app connections from Workbot.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
-  headlessAutomations: {
-    label: "Cloud Automations: headless runtime",
-    description: "Runs the organization's cloud Automations on the shared headless runner. Needs the deployment's headless runner and a plan that includes it.",
+  workbotFirstRun: {
+    label: "Workbot: first sign-in",
+    description: "People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
-  workbot: {
-    label: "Workbot",
-    description: "Members can use Workbot. Needs the deployment's Workbot app.",
+  workbotInlineConnect: {
+    label: "Workbot: connect accounts",
+    description: "Members connect their assigned apps directly from Workbot and return to the same view after consent.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
-  litellm: {
-    label: "AI Gateway: LiteLLM",
-    description: "Organization admins can connect their own LiteLLM proxy to AI Gateway, with one shared key, each person's own key, or keys OpenWork creates for each person.",
+  workbotDocuments: {
+    label: "Workbot Documents",
+    description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
-  platformAuditReads: {
-    label: "Platform audit: read-only requests",
-    description: "Platform administrators also get evidence of successful read-only platform requests (session reads, discovery documents). Applies to the whole deployment; organization overrides have no effect.",
+  workbotWorkspaceAssistant: {
+    label: "Workbot: workspace assistant",
+    description: "Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  workbotGuidedNavigation: {
+    label: "Workbot: show me in the workspace",
+    description: "Workbot offers to open the documents it mentions, and the conversation stays open beside the document. Needs the workspace assistant.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  automationCalendar: {
+    label: "Calendar: desktop app",
+    description: "Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  engineV2ForceUpgrade: {
+    label: "Upgrade everyone to OpenCode v2",
+    description: "Desktop and web instances copy chats with a backup and switch to OpenCode v2 automatically when idle, without asking for consent.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  engineV2Upgrade: {
+    label: "Desktop: upgrade prompt to OpenCode v2",
+    description: "Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  remoteSessionEvents: {
+    label: "Remote session events",
+    description: "MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  remoteSessionSubagents: {
+    label: "Desktop: tasks on other computers as sub-agents",
+    description: "A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  headlessDurableTurns: {
+    label: "Workbot: tasks keep going on their own",
+    description: "Workbot, Slack and Automations answers keep going after a restart, deploy or server failure, without waiting for someone to reopen the chat.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

@@ -19,7 +19,7 @@ function platform(method: AuditRouteMethod, path: string, action: string, kind: 
   return route(method, path, "platform", action, kind, type, idParam, notes)
 }
 
-/** Side-effect-free platform GET (pure metadata, docs, discovery or session read): successes need the platformAuditReads feature. */
+/** Side-effect-free platform GET (pure metadata, docs, discovery or session read). */
 function readOnly(path: string, action: string, kind: string, type: string, idParam: string | null, notes?: string): AuditRouteDeclaration {
   return { ...platform("GET", path, action, kind, type, idParam, notes), readOnly: true }
 }
@@ -96,6 +96,8 @@ export const platformAuditRoutes: readonly AuditRouteDeclaration[] = [
   readOnly("/v1/orgs/sso/singleton", "auth.sso_singleton.read", "platform.discovery", "deployment", null),
   readOnly("/v1/auth/bootstrap/status", "auth.bootstrap.status.read", "platform.discovery", "deployment", null),
   readOnly("/v1/features", "feature.deployment.list", "platform.discovery", "feature", null, "Public deployment-wide feature state (kill switch and operator locks, never organization overrides) for people without an organization; side-effect free."),
+  readOnly("/v1/install-config", "install_config.public.read", "install.distribution", "install_config", null, "Public deployment setup for desktop builds resolving pasted install links; any token is ignored and no organization is identified. Side-effect free."),
+  readOnly("/v1/install/:platform", "install_page.redirect", "install.distribution", "install_artifact", "platform", "Redirects older token download links to the normal install page; side-effect free."),
 
   // OAuth authorization server (better-auth endpoints registered by Den)
   handler("GET", "/api/auth/oauth2/authorize", "tenant_change", "oauth.authorize", "oauth.authorization", "oauth_client", "Den route forwarding to better-auth. When the signed-in user has an MCP consent organization (postLogin.consentReferenceId, the session's active organization) the request is attributed there after the endpoint ran (phase after, src/audit/better-auth.ts) once their active membership is verified; actor = user + memberId. Issuing the authorization code is request evidence only (never the code). No session, no MCP scope or a failed request: platform evidence. The request policy hook may update oauthClient.scopes on this GET."),
@@ -107,6 +109,13 @@ export const platformAuditRoutes: readonly AuditRouteDeclaration[] = [
   platform("GET", "/api/auth/scim/list-provider-connections", "scim_raw.provider_connection.list", "platform.auth", "scim_connection", null, "Blocked: always 401/403."),
   platform("GET", "/api/auth/scim/get-provider-connection", "scim_raw.provider_connection.read", "platform.auth", "scim_connection", null, "Blocked: always 401/403."),
   handler("POST", "/api/auth/scim/delete-provider-connection", "tenant_change", "scim_raw.provider_connection.delete", "platform.auth.raw_mutation", "scim_connection", `Den-shadowed raw better-auth route; use DELETE /v1/scim. ${RAW_REFUSED}`),
+
+  // Raw better-auth custom-role management. dynamicAccessControl is off, so better-auth no
+  // longer registers these endpoints; Den shadows them (routes/auth/raw-role-refusals.ts) so
+  // denied attempts stay in the tenant security audit (always 403).
+  handler("POST", "/api/auth/organization/create-role", "tenant_change", "auth.organization.role.create", "platform.auth.raw_mutation", "role", `Den-shadowed raw better-auth route; custom organization roles are not supported (permission sets are managed through /v1/permissions). ${RAW_REFUSED}`),
+  handler("POST", "/api/auth/organization/update-role", "tenant_change", "auth.organization.role.update", "platform.auth.raw_mutation", "role", `Den-shadowed raw better-auth route; custom organization roles are not supported (permission sets are managed through /v1/permissions). ${RAW_REFUSED}`),
+  handler("POST", "/api/auth/organization/delete-role", "tenant_change", "auth.organization.role.delete", "platform.auth.raw_mutation", "role", `Den-shadowed raw better-auth route; custom organization roles are not supported (permission sets are managed through /v1/permissions). ${RAW_REFUSED}`),
 
   // Auth helpers
   platform("GET", "/v1/auth/login-options", "auth.login_options.read", "platform.auth", "login_options", null, "Public, bot-protected; reveals account sign-in methods."),
@@ -136,8 +145,10 @@ export const platformAuditRoutes: readonly AuditRouteDeclaration[] = [
 
   // Global platform admin
   platform("GET", "/v1/admin/overview", "platform.overview.read", "platform.admin", "platform_report", null, ADMIN),
+  platform("GET", "/v1/admin/dashboard", "platform.dashboard.read", "platform.admin", "platform_report", null, ADMIN),
   platform("GET", "/v1/admin/metrics", "platform.metrics.read", "platform.admin", "platform_report", null, ADMIN),
   platform("GET", "/v1/admin/free-auto/usage", "platform.free_auto_usage.read", "platform.admin", "platform_report", null, ADMIN),
+  platform("GET", "/v1/admin/free-auto/conversions", "platform.free_auto_conversions.read", "platform.admin", "platform_report", null, ADMIN),
   platform("GET", "/v1/admin/organizations", "platform.organization.list", "platform.admin", "organization", null, ADMIN),
   platform("GET", "/v1/admin/users", "platform.user.list", "platform.admin", "user", null, ADMIN),
   platform("GET", "/v1/admin/users/:userId/inference-usage", "platform.user.inference_usage.read", "platform.admin", "user", "userId", ADMIN),

@@ -3,7 +3,7 @@ import { DESKTOP_POLICY_ENFORCEMENT_ENABLED } from "@openwork/types/den/desktop-
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import net from "node:net";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
   cp,
   mkdir,
@@ -56,6 +56,7 @@ import {
   createLinuxDesktopIntegration,
 } from "./linux-desktop-integration.mjs";
 import { automationRunnerDisabledReason, createComputerDescriber, createDesktopAutomationRunner, normalizeRunnerBaseUrl } from "./automation-runner.mjs";
+import { applyDesktopEngineForcePolicy } from "./engine-force-policy.mjs";
 import {
   desktopActivationRequired,
   enterprisePreactivationCommandAllowed,
@@ -466,6 +467,10 @@ function scheduleBlankSlateProfileCleanup() {
 }
 let brandIconApplySequence = 0;
 let brandIconRuntimeState = { applied: false, sourceUrl: null, reason: null };
+
+function websiteRulesInForcePath() {
+  return path.join(app.getPath("userData"), "agent-permissions-website-rules-in-force");
+}
 
 function brandIconCachePath() {
   return path.join(app.getPath("userData"), "brand-icon.png");
@@ -1101,6 +1106,30 @@ browserPanel = createBrowserPanel({
   remoteDebugPort,
   getWindow: () => mainWindow,
   onDeepLink: (urls) => queueDeepLinks(urls),
+  // Whether website rules were ever in force on this computer. Kept across
+  // restarts and sign-outs, so the browser opens no page before the first
+  // verified answer; computers that never had them see no change.
+  websiteRulesWereInForce: existsSync(websiteRulesInForcePath()),
+  onWebsiteRulesInForce: () => {
+    try {
+      writeFileSync(websiteRulesInForcePath(), "1", { mode: 0o600 });
+    } catch {
+      // Without the record the next start opens pages until rules arrive, as before.
+    }
+  },
+  // The member's website rules, read from the local OpenWork server (which
+  // verifies them with Den), never taken from the app window.
+  readWebsiteRules: async () => {
+    const server = await runtimeManager.openworkServerInfo();
+    if (!server.baseUrl || !(server.clientToken ?? server.ownerToken)) throw new Error("OpenWork server unavailable");
+    // loopback-fetch: the policy service is the locally managed OpenWork server.
+    const response = await fetch(`${server.baseUrl}/managed-policy/website-rules`, {
+      headers: { Authorization: `Bearer ${server.clientToken ?? server.ownerToken}` }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error("Website rules unavailable");
+    const payload = await response.json();
+    return Array.isArray(payload?.rules) ? payload.rules : [];
+  },
   checkPolicy: async (input) => {
     if (!DESKTOP_POLICY_ENFORCEMENT_ENABLED) return;
     let code = "policy_unavailable";
@@ -1269,6 +1298,23 @@ const runtimeManager = createRuntimeManager({
   app,
   desktopRoot: path.resolve(__dirname, ".."),
   listLocalWorkspacePaths: () => workspaceStore.listLocalWorkspacePaths(),
+  // This callback stays in Electron's main process. Engine tools and shell
+  // commands cannot approve a Drive write by replaying a token or HTTP reply.
+  driveFileApproval: async ({ action, path: filePath, name, fileId, webViewLink, mode }) => {
+    const win = await createMainWindow();
+    const saving = action === "push";
+    const label = saving ? (mode === "copy" ? "Save a copy" : "Save to Drive") : action === "pull" ? "Download from Drive" : "Discard local edits";
+    const identity = `Google Drive: ${name}\nFile ID: ${fileId}${webViewLink ? `\n${webViewLink}` : ""}`;
+    const { response } = await dialog.showMessageBox(win, {
+      type: "question",
+      message: action === "overwrite" ? `Replace the local copy of ${name}?` : `${label}: ${name}`,
+      detail: saving
+        ? `${identity}\n\n${filePath}\n\n${mode === "copy" ? "Creates a new file next to the original in Google Drive." : "Replaces the file in Google Drive. People with access to it will see your changes."}`
+        : `${identity}\n\n${filePath}\n\n${action === "pull" ? "Downloads this file from your connected account into the workspace." : "Discards the local edits and downloads the current Google Drive file."}`,
+      buttons: ["Cancel", label], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    return response === 1;
+  },
   anonymousInference: {
     // Signed-out Auto has no device identity: like OpenCode Zen, the gateway limits it by IP.
     desktop: {
@@ -1303,10 +1349,14 @@ const desktopAutomationRunner = createDesktopAutomationRunner({
   // v1 credentials predate token audiences. Keep them usable during the Den
   // rollout only for endpoints trusted before the renderer starts issuing IPC.
   legacyBaseUrls: legacyRunnerBaseUrls,
+  getJournalRoot: () => path.join(app.getPath("userData"), "session-runner"),
   getLocalRuntime: async () => {
     const server = await runtimeManager.openworkServerInfo();
     return { baseUrl: server.baseUrl, token: server.clientToken ?? server.ownerToken };
   },
+  onEnginePolicy: (policy) => applyDesktopEngineForcePolicy(policy, {
+    getServerInfo: () => runtimeManager.openworkServerInfo(),
+  }),
   // Remote-session callers choose a computer by this label, then a workspace and model.
   describeComputer: createComputerDescriber({
     platform: process.platform,
@@ -1484,14 +1534,24 @@ async function bootRuntimeForSelectedWorkspace() {
   return { ok: true, skipped: false, engine, openworkServer, workspaceId: bootWorkspace.id ?? null };
 }
 
-function ensureRuntimeBootstrap() {
-  if (!runtimeBootstrapPromise) {
-    runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    }));
-  }
+function startRuntimeBootstrap() {
+  runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+  }));
   return runtimeBootstrapPromise;
+}
+
+function ensureRuntimeBootstrap() {
+  const attempt = runtimeBootstrapPromise ?? startRuntimeBootstrap();
+  return attempt.then((result) => {
+    // A failed boot is reported once. The next request, such as Reload on the
+    // error screen, starts a fresh attempt instead of replaying this failure.
+    if (result?.ok === false && runtimeBootstrapPromise === attempt) {
+      runtimeBootstrapPromise = null;
+    }
+    return result;
+  });
 }
 
 function resolveOpencodeConfigPath(scope, projectDir) {
@@ -2503,10 +2563,21 @@ async function createMainWindow() {
     return { action: "deny" };
   });
 
+  // A link clicked in the inline PDF viewer reaches both handlers below for
+  // the same navigation (`did-start-navigation` first, then `will-navigate`),
+  // so open each blocked URL once instead of in two browser tabs.
+  let lastRoutedNavigation = null;
+  const routeBlockedNavigationOnce = (url) => {
+    const now = Date.now();
+    if (lastRoutedNavigation?.url === url && now - lastRoutedNavigation.at < 1000) return;
+    lastRoutedNavigation = { url, at: now };
+    browserPanel.routeBlockedMainWindowNavigation(url);
+  };
+
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (browserPanel.isMainWindowAllowedNavigation(url)) return;
     event.preventDefault();
-    browserPanel.routeBlockedMainWindowNavigation(url);
+    routeBlockedNavigationOnce(url);
   });
 
   // `will-navigate` does NOT fire for CDP `Page.navigate` (it behaves like
@@ -2518,12 +2589,17 @@ async function createMainWindow() {
   mainWindow.webContents.on("did-start-navigation", (_event, url, isInPlace, isMainFrame) => {
     if (!isMainFrame || isInPlace) return;
     if (browserPanel.isMainWindowAllowedNavigation(url)) return;
-    try {
-      mainWindow?.webContents.stop();
-    } catch {
-      // best effort — routing below still gives the user a way back
-    }
-    browserPanel.routeBlockedMainWindowNavigation(url);
+    // Stopping inside this event aborts the main process for navigations the
+    // PDF viewer starts (`chrome.tabs.update` on a link click), so cancel the
+    // load on the next tick instead.
+    setImmediate(() => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.stop();
+      } catch {
+        // best effort — routing below still gives the user a way back
+      }
+    });
+    routeBlockedNavigationOnce(url);
   });
 
   const startUrl = process.env.OPENWORK_ELECTRON_START_URL?.trim() || process.env.ELECTRON_START_URL?.trim();
@@ -2740,10 +2816,7 @@ or use: pnpm dev:worktree`);
       });
     }
     if (!desktopActivationRequired(DESKTOP_DISTRIBUTION, bootstrapConfig)) {
-      runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      }));
+      startRuntimeBootstrap();
     }
 
     queueDeepLinks(forwardedDeepLinks(process.argv));

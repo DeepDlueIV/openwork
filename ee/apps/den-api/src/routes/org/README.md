@@ -5,6 +5,7 @@ This folder owns organization-facing Den API routes.
 ## Files
 
 - `index.ts`: registers all org route groups
+- `activity.ts`: the admin dashboard Activity feed (`GET /v1/org/activity`), computed server-side
 - `core.ts`: org creation, invitation preview/accept, and org context
 - `invitations.ts`: invitation creation and cancellation
 - `members.ts`: member role updates and member removal
@@ -12,6 +13,7 @@ This folder owns organization-facing Den API routes.
 - `scim.ts`: active-organization SCIM connector metadata and token rotation
 - `templates.ts`: shared template CRUD
 - `web-origins.ts`: approved exact HTTPS web origins for sign-in handoff and Den API CORS
+- `workbot-settings.ts`: the organization default model for Workbot, the Slack assistant and cloud-default Automations
 - `shared.ts`: shared route-local helpers, param schemas, and guard helpers
 
 ## Active organization model
@@ -20,7 +22,7 @@ This folder owns organization-facing Den API routes.
 - New sessions should get an initial `activeOrganizationId` from Better Auth session creation hooks in `src/auth.ts`.
 - `GET /v1/org` returns the active organization from the current session, including a nested `organization.owner` object plus the current member and team context.
 - `POST /v1/org` creates a new organization and switches the session to it. `PATCH /v1/org` updates the active organization.
-- Active-org scoped resources should prefer top-level routes like `/v1/teams`, `/v1/roles`, `/v1/api-keys`, `/v1/llm-providers`, `/v1/scim`, and plugin-system `/v1/...` routes. They should not require `:orgId` or `:orgSlug` in the path.
+- Active-org scoped resources should prefer top-level routes like `/v1/teams`, `/v1/api-keys`, `/v1/llm-providers`, `/v1/scim`, and plugin-system `/v1/...` routes. They should not require `:orgId` or `:orgSlug` in the path.
 - Routes under `/v1/orgs/**` are reserved for cross-org flows that are not tied to the active workspace yet, such as invitation preview/accept.
 - If a client needs to change workspaces, it should call Better Auth set-active first, then use the active-org scoped `/v1/...` resource routes.
 

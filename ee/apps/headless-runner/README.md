@@ -23,10 +23,10 @@ headless-runner (one Node process, SQLite file)
 | Goal | How |
 |---|---|
 | **Works with the AI Gateway** | It speaks Anthropic Messages (`{base}/messages`, `x-api-key`) or OpenAI Chat Completions (`{base}/chat/completions`, `Authorization: Bearer`). Point it at a Gateway provider route (`/api/v1/providers/<ipr>`, `ow_gw_` key) or OpenWork Models (`/api/v1`, `ow_inf_` key). Model ids are Gateway aliases (`gwm_…`), and the Gateway still enforces access, limits and usage. |
-| **Cheap** | One process serves many sessions, and an idle session is just rows. Anthropic prompt caching sits on the system prompt and the newest message, so each agent step reuses the previous prefix. In the smoke test, 123k of 167k input tokens were cache reads. Tool output, file sizes and context are capped. A long turn drops its oldest large tool outputs in blocks, so the cached prefix survives most steps. |
+| **Cheap** | One process serves many sessions, and an idle session is just rows. Anthropic prompt caching sits on the system prompt, the ends of the two newest earlier turns and the newest message, so each agent step, and each new turn, reuses the previous prefix. In the smoke test, 123k of 167k input tokens were cache reads. Tool output, file sizes and context are capped. A long turn drops its oldest large tool outputs in blocks, so the cached prefix survives most steps. |
 | **Reliable** | Every step is written to SQLite (WAL) before the next one starts. Sends are idempotent on `messageId`. Follow-ups sent while a turn runs are queued per conversation and answered in order, each seeing the earlier answers; the caller never has to retry "busy". After a crash or restart, turns are marked `interrupted`; sending the same `messageId` again resumes them. A tool call whose result was never recorded is **not re-run**: it is recorded as an error so the model can check its effect instead of repeating a possible write. Model calls retry on 408/409/425/429/5xx with backoff. Turns have no time or step limit by default (both are optional settings); every model and tool call has its own timeout, and a step that repeats the previous one (same calls, same results) is treated as waiting: each repeat first waits longer (5, 10, 20, then 30 seconds), so checking back on a desktop, CI, or a job is cheap. When the same failure has come back `maxIdenticalFailures` times, or the same answer has kept coming back for `maxWaitingMs`, the model is told (in the system prompt, not the transcript) to stop and report what it was waiting for; a model that still repeats the step ends as `stuck_repeating`. Each caller sets both limits per session in `repeats` (defaults: 10 minutes, 3 failures). A turn using a caller's MCP token pauses itself between steps every 50 minutes (`interrupted`, `credentials_refresh`) so the caller can resume it with a fresh token; no tool call is cut off. There is a global concurrency limit. Each turn logs one line when it starts and one when it ends (status, error code, steps, tool calls, elapsed time, tokens), never content or credentials. |
-| **Safe** | No shell, no host filesystem, no child processes. Network access goes only to the two operator-configured URLs (https, or http on loopback). Callers can't redirect it. Model keys and MCP tokens are supplied per turn, held in memory only, and never written to disk or logs (a test checks this). File paths are normalized so they can't escape the session. A service bearer token (≥32 chars) guards every `/v1` route. `HEADLESS_MCP_TOOL_ALLOWLIST` can narrow the MCP tools. The default system prompt asks the model to read and draft, and to change data only when explicitly asked. |
-| **Simple** | About 1,900 lines of source, four runtime deps (`hono`, `@hono/node-server`, `@modelcontextprotocol/client`, `zod`), the workspace's `@openwork/workbook` for Office files, and `node:sqlite`. No agent framework, no provider SDKs. The build bundles the workspace package into `dist/server.js` with esbuild, so it runs on plain Node. |
+| **Safe** | No shell, no host filesystem, no child processes. Network access goes only to the operator-configured URLs: the model and MCP (https, or http on loopback), and Den for [self-resume](#self-resume). Callers can't redirect it. Model keys and MCP tokens are supplied per turn, held in memory only, and never written to disk or logs (a test checks this); a turn's resume grant is kept only encrypted. File paths are normalized so they can't escape the session. A service bearer token (≥32 chars) guards every `/v1` route. `HEADLESS_MCP_TOOL_ALLOWLIST` can narrow the MCP tools. The default system prompt asks the model to read and draft, and to change data only when explicitly asked. |
+| **Simple** | About 4,600 lines of source and five third-party runtime deps: `hono`, `@hono/node-server`, `@modelcontextprotocol/client` and `zod`, plus `aws4fetch` for S3 files. From the workspace: `@openwork/workbook` for Office files and `@openwork-ee/headless-computer` (loaded only when a computer is configured). SQLite is `node:sqlite`. No agent framework, no model provider SDKs. The build bundles `@openwork/workbook` and `aws4fetch` into `dist/server.js` with esbuild, so it runs on plain Node. |
 
 ## API
 
@@ -36,21 +36,28 @@ All `/v1` routes require `Authorization: Bearer $HEADLESS_API_TOKEN`.
 |---|---|---|---|
 | `GET` | `/health` | | `{ ok: true }` |
 | `GET` | `/v1/models` | | `{ defaultModel, models: [{ id, name }] }`: the models the Gateway route serves with the runner's key (cached 5 min), for pickers. Pass one as a turn's `model` |
-| `POST` | `/v1/sessions` | `{ title?, instructions?, repeats?: { maxWaitingMs?, maxIdenticalFailures? }, files?, computer?, reactions?, tasks? }` | session (`hs_…`). `files`, `computer`, `reactions` and `tasks` are off unless set to `true` (see [Isolation](#isolation)) |
-| `PUT` | `/v1/sessions/:id` | same body as `POST` | `201` session when created, `200` when updated; settings left out keep their value. The caller picks the id (`hs_` + 8–96 of `A-Za-z0-9_-`), so it can keep one durable conversation per person without storing the runner's id. Den's Workbot derives one per member |
-| `POST` | `/v1/sessions/:id/turns` | `{ messageId, prompt, model?, credentials: { modelApiKey?, mcpToken? } }` | `202 { state: accepted \| resumed \| already_present, turn }`. A message sent while another turn runs is accepted and answered next (`turn.status: queued`); only a runaway queue of 20+ returns `429 too_many_queued` |
-| `GET` | `/v1/sessions/:id` | `?messageId=&limit=&outputs=` | `{ session, status: idle \| busy, turns, messages, finalAssistantText }`. `outputs=none` returns each tool result's `outputLength` instead of its output, for callers that poll a long turn. `busy` means the conversation is answering; background tasks don't count. A task's turn has `kind: task`, `parent` (the turn that started it) and `title`; its report has `kind: report` and `parent` (the task) |
+| `POST` | `/v1/sessions` | `{ title?, instructions?, repeats?: { maxWaitingMs?, maxIdenticalFailures? }, files?, computer?, reactions?, tasks?, owner?, ref?, timeZone?, autoTitle?, memoryOf? }` | session (`hs_…`). `files`, `computer`, `reactions` and `tasks` are off unless set to `true` (see [Isolation](#isolation)). See [Several conversations per person](#several-conversations-per-person) for the rest |
+| `PUT` | `/v1/sessions/:id` | same body as `POST` | `201` session when created, `200` when updated; settings left out keep their value. The caller picks the id (`hs_` + 8–96 of `A-Za-z0-9_-`), so it can keep one durable conversation per person without storing the runner's id. Workbot derives one per member, and one per side chat |
+| `GET` | `/v1/sessions` | `?owner=&limit=` | `{ sessions: [{ id, ref, title, createdAt, updatedAt }] }`: one owner's conversations that have a message, most recently used first |
+| `POST` | `/v1/sessions/:id/turns` | `{ messageId, prompt, model?, attachments?, interrupt?, credentials: { modelApiKey?, mcpToken?, readOnly?, resumeGrant? } }` | `202 { state: accepted \| resumed \| already_present, turn }`. A message sent while another turn runs is accepted and answered next (`turn.status: queued`); only a runaway queue of 20+ returns `429 too_many_queued`. `attachments` are saved-file ids (`fl_…`); `prompt` may be empty when there are attachments, and an unknown id returns `400 unknown_file`. `interrupt: true` makes the answer in progress wrap up at its next safe point, keeping what it wrote (it ends `aborted` with error `superseded`), and answers this message next. `credentials.readOnly: true` leaves out the tools that change anything (writing, editing or deleting files, `save_file`, the computer, reactions, tasks) and runs the turn's tool calls at the same time. `credentials.resumeGrant` (`hrg_…`) lets the runner keep the turn going on its own (see [Self-resume](#self-resume)); ignored without it. `404 unknown_session` |
+| `DELETE` | `/v1/sessions/:id/turns/:messageId` | `?after=1` | `{ removed: [messageId] }`: removes the message and what it led to (its answer, tasks and reports); `after=1` also removes every later message, for editing a message. `409 turn_busy` while any of them is queued or running |
+| `GET` | `/v1/sessions/:id` | `?messageId=&limit=&outputs=&turns=&before=` | `{ session, status: idle \| busy, turns, messages, finalAssistantText }`. `outputs=none` returns each tool result's `outputLength` instead of its output, for callers that poll a long turn. Every read is bounded: without `messageId` it returns the newest `turns` turns (default 30, at most 200) before the `before` messageId, their messages and `hasEarlier`, so a long conversation reads as cheaply as a short one; with `messageId`, that turn's transcript and, in `turns`, the turn with the tasks it started and their reports. `limit` (default 100) caps the messages. `busy` means the conversation is answering; background tasks don't count. A task's turn has `kind: task`, `parent` (the turn that started it) and `title`; its report has `kind: report` and `parent` (the task) |
+| `GET` | `/v1/sessions/:id/events` | | Server-sent events: `ready` first, then messages whose JSON `type` is `changed { messageId, status? }` (re-read the session), `text { messageId, step, delta, reset? }` (model text as it is written) or `tool { messageId, step, tool }` (a tool call started). Nothing is stored or replayed; a reader that misses one re-reads the session. A comment every 15 s keeps proxies from closing it |
 | `POST` | `/v1/sessions/:id/abort` | `{ messageId? }` | `{ accepted }`. With a `messageId`, stops only that turn (running or queued); without one, stops the running turn and every follow-up queued behind it (background tasks keep going) |
 | `GET` | `/v1/sessions/:id/files` | | `{ files: [{ path, size, updatedAt }] }` |
 | `GET` | `/v1/sessions/:id/files/content` | `?path=` | file text |
-| `DELETE` | `/v1/sessions/:id` | | `204` (also deletes its saved files' bytes) |
+| `DELETE` | `/v1/sessions/:id` | | `204` (also deletes its saved files' bytes and its computer). `409 session_busy` while a turn is queued or running |
+| `GET` | `/v1/sessions/:id/export` | | Every row of the conversation as stored, to [move it to Node](#move-conversations-to-node). `409 session_busy` while a turn is queued or running |
+| `POST` | `/v1/sessions/:id/import` | an export | Node only (celld answers `405`). `201 { id, rows }`, or `409 session_exists`; `400` (nothing written) for another conversation's, a cut-off or a newer runner's export |
 | `GET` | `/v1/files/status` | | `{ enabled, kind, maxFileBytes, maxSessionBytes }` |
 | `POST` | `/v1/sessions/:id/saved-files` | `?name=`, raw body typed by `Content-Type` | `201` saved file (`fl_…`). Send its id in a turn's `attachments`. `403 files_not_enabled` for a session without `files: true`; `413 file_too_large` or `413 files_full` past the limits |
 | `GET` | `/v1/sessions/:id/saved-files` | | `{ files }`, newest first, `source: user \| agent` |
 | `GET` | `/v1/sessions/:id/saved-files/:fileId` | | the bytes, with `x-file-name` |
+| `GET` | `/v1/sessions/:id/saved-files/:fileId/preview` | | the page-image manifest, or `404 no_preview`. Without one, a session with a computer renders it first (see [Computer](#computer-optional)) |
+| `GET` | `/v1/sessions/:id/saved-files/:fileId/preview/:page` | | one page as PNG |
 | `DELETE` | `/v1/sessions/:id/saved-files/:fileId` | | `204` |
 
-Turn status is one of `queued`, `running`, `completed`, `failed`, `interrupted` or `aborted`. `failed` and `interrupted` can be resumed by re-sending the same `messageId` with fresh credentials; `aborted` cannot. The `error` field holds a stable code:
+Turn status is one of `queued`, `running`, `completed`, `failed`, `interrupted` or `aborted`. `failed` and `interrupted` can be resumed by re-sending the same `messageId` with fresh credentials; `aborted` cannot. Resuming continues the same turn (Workbot's "Try again" does this), so the conversation never gets a second copy of the message. A failed turn's `errorDetail` says what the model provider answered, with its request id, and the turn's `turn ended` log line carries it too; it is for support, never for the person. The `error` field holds a stable code:
 
 - `model_credentials_missing`
 - `mcp_unavailable`
@@ -60,6 +67,8 @@ Turn status is one of `queued`, `running`, `completed`, `failed`, `interrupted` 
 - `stuck_repeating`
 - `runner_restarted`
 - `credentials_refresh` (an `interrupted` turn waiting to be resumed with a fresh MCP token)
+
+`runner_restarted`, `runner_shutdown` and `credentials_refresh` turns that have a resume grant are resumed by the runner itself ([Self-resume](#self-resume)); re-sending still works and is harmless.
 
 Files that a tool returns (MCP `image` or `audio` content, or `resource` blobs), for example a file read from Slack, reach the model in the best form it can read:
 
@@ -84,7 +93,46 @@ The model sees these tools:
 
 ### Background tasks
 
-A session with `tasks: true` can hand longer work to a background task and keep talking. `start_task` admits a task turn (`<messageId>.t1`, `.t2`, …) that runs in its own lane, alongside the conversation: up to 3 per session at once and 5 unfinished, within the global limit. The task inherits the starting turn's credentials and model; it sees the session's instructions, memory and tools, plus its brief, but not the conversation, whose context in turn leaves tasks' work out. When a task completes or fails, the runner queues its report (`<taskId>.r`, `kind: report`) in the conversation; the model tells the person the result. A person's queued message goes before a report. The conversation's system prompt lists its recent tasks with their ids and states, so it can answer "how's it going?" or call `stop_task`. Abort a task by its `messageId`; a stopped task doesn't report. Like any turn, a task or report pauses for fresh credentials (`interrupted`, `credentials_refresh`), counted from when its starting turn's credentials were issued, and resumes when the caller re-sends its `messageId`.
+A session with `tasks: true` can hand longer work to a background task and keep talking. `start_task` admits a task turn (`<messageId>.t1`, `.t2`, …) that runs in its own lane, alongside the conversation: up to 3 per session at once and 5 unfinished, within the global limit. The task inherits the starting turn's credentials and model; it sees the session's instructions, memory and tools, plus its brief, but not the conversation, whose context in turn leaves tasks' work out. When a task completes or fails, the runner queues its report (`<taskId>.r`, `kind: report`) in the conversation; the model tells the person the result. A person's queued message goes before a report. The end of each request lists the conversation's recent tasks with their ids and states (at the end, so the cached part of the request stays the same while they change), so it can answer "how's it going?" or call `stop_task`. Abort a task by its `messageId`; a stopped task doesn't report. Like any turn, a task or report pauses for fresh credentials (`interrupted`, `credentials_refresh`), counted from when its starting turn's credentials were issued, and resumes when the caller re-sends its `messageId`.
+
+### Long conversations
+
+The model sees a conversation in whole turns (a message and everything that answered it), within `HEADLESS_CONTEXT_CHAR_BUDGET`. A turn is never split: a tool result never reaches the model without the call it answers, which Anthropic and OpenAI both refuse. Earlier turns are compacted (long tool outputs cut to their start, files replaced by a note). When the conversation outgrows the budget, its oldest turns are left out in one deep cut, down to 60% of the budget, and the session remembers where its context starts; it then grows again from there for many turns. Each request so starts the same way until the next cut, and is cached at the ends of the two newest earlier turns and of the newest message, so the provider's prompt cache keeps hitting from one turn to the next. Nothing that changes every turn is in the system prompt: each message from the person starts with when they sent it (in the session's `timeZone`), and background task state comes last. Before every request the transcript is checked once more (it starts with the person, every tool result follows its call, every call has its result, no message is empty); a repair is logged as `context repaired`. Files under `memory/` carry what matters past the cut.
+
+### Several conversations per person
+
+A caller with more than one conversation per person (Workbot's side chats) sets `owner` (its key for the person) and `ref` (its id for the conversation) on each, and lists them with `GET /v1/sessions?owner=`. `autoTitle: true` names a conversation after its first answer, in a few words from the model (or the person's first words when the model can't), while its title is empty; such a session starts with an empty title. `memoryOf` points at another of the person's conversations: this one reads and writes that one's `memory/`, so they remember together; its other files stay its own.
+
+## Self-resume
+
+Without it, a turn cut off by a restart, a deploy or a failover, or paused every 50 minutes for a fresh MCP token
+(`credentials_refresh`), waits `interrupted` until its caller re-sends it. With `HEADLESS_DEN_API_URL`,
+`HEADLESS_DEN_CALLBACK_TOKEN` and `HEADLESS_GRANT_KEY` set (all three, or the runner refuses to start), turns that
+Den sends with a **resume grant** (`credentials.resumeGrant`, minted per turn when `headlessDurableTurns` is on for
+the organization) keep going on their own:
+
+- **The grant is kept encrypted** on the turn (AES-256-GCM, keyed by `HEADLESS_GRANT_KEY`). It is never returned by
+  the API, logged, reported, or included in an [export](#move-conversations-to-node). A value that doesn't decrypt
+  (another key) counts as no grant. A turn's background tasks and their reports use the grant of the message that
+  started them.
+- **In-place refresh.** Where the turn would pause for `credentials_refresh`, it exchanges the grant with Den
+  (`POST $HEADLESS_DEN_API_URL/v1/headless/resume-token`, `Authorization: Bearer $HEADLESS_DEN_CALLBACK_TOKEN`) for a
+  fresh MCP token, reconnects, and goes on without ever being `interrupted`. If Den gives no token, it pauses as before.
+- **Resume after a restart.** Turns `interrupted` with `runner_restarted`, `runner_shutdown` or `credentials_refresh`
+  that have a grant are resumed the way a caller would: the same `messageId` with a fresh token. A tool call whose
+  result was never recorded is still not re-run. On Node this runs right after startup and then every minute; on
+  celld each cell sets a durable alarm whenever a turn is admitted or resumed, so after a crash the cell wakes on
+  another node, recovers its turns and resumes them with no request.
+- **Failures.** A busy or unreachable Den (429, 5xx, timeout) is retried per turn after 30 s, doubling up to 15
+  minutes, with jitter (and never before Den's `retryAfterMs`). A grant Den refuses for good (403: expired, revoked,
+  member left, feature off, or not this turn's) is forgotten, so the turn stays `interrupted` for its caller. A 401 or
+  404 means the runner's settings are wrong: self-resume stops until a restart and `resume_config_invalid` is
+  reported once. Reports carry codes and ids only (`resume_exchange_failed`, `resume_config_invalid`,
+  `resume_sweep_failed`, `resume_grant_unreadable`, `resume_grant_store_failed`).
+- A resumed turn uses the runner's `HEADLESS_MODEL_API_KEY`: a caller's own per-turn model key is never stored.
+
+Callers keep their re-send logic as a fallback; sends are idempotent. Deploy a runner that accepts `resumeGrant`
+before turning `headlessDurableTurns` on: older runners refuse the unknown field.
 
 ## Isolation
 
@@ -93,7 +141,7 @@ The runner is a private service with one caller (Den), which authorizes each per
 - **Opt-in per session.** Configuring files or a computer makes them *available*; a session only gets them when it is created (or updated) with `files: true` / `computer: true`. Slack replies and Automations don't ask, so they keep their exact behavior: no file tools, no computer, no uploads, and the preview route never starts a computer for them.
 - **Files belong to one session.** Every read, download, preview and delete looks a file up by session id *and* file id, and bytes are stored under `sessions/<sessionId>/<fileId>`. Deleting a session deletes its bytes and its computer.
 - **Limits.** `HEADLESS_FILES_MAX_BYTES` (100 MB) per file, enforced while the upload streams in (with or without `Content-Length`), and on `save_file` and computer outputs. `HEADLESS_FILES_MAX_SESSION_BYTES` (5 GB) per session in total. Past either, the upload gets `413`, and the model is told why so it can say so.
-- **Storage credentials.** Use a store or bucket for this runner alone, with credentials scoped to it. For Vercel Blob, the store's own read-write token is passed explicitly, so the SDK never uses other `BLOB_READ_WRITE_TOKEN` or OIDC credentials in the environment. Neither the storage credentials nor the Freestyle key ever enter a computer.
+- **Storage credentials.** Use a store or bucket for this runner alone, with credentials scoped to it. Neither the storage credentials nor the Freestyle key ever enter a computer.
 - **Computers.** One VM per session, created only when that session first runs a command; it holds no credentials and has outbound internet only.
 
 ## Computer (optional)
@@ -112,16 +160,42 @@ The runner is a private service with one caller (Den), which authorizes each per
 - **Image:** the snapshot is built from the package's install script: `pnpm --filter @openwork-ee/headless-computer snapshot:build`.
 - Every file under `memory/` in the scratch workspace is shown to the model at the start of each turn, so long-term memory survives older turns dropping out of context
 
+## Run on celld (no disk)
+
+The same runner also runs on celld, one SQLite cell per Workbot person or per Slack/Automation conversation, kept
+in an S3 bucket instead of a disk: [OWNER-CELLS.md](./OWNER-CELLS.md).
+
+## Move conversations to Node
+
+Every conversation can leave celld for a Node runner with nothing lost: export it, import it with the same id, and point
+Den and Workbot at the new URL. Every celld deploy proves this with its smoke conversation before it goes out.
+
+- **Same token, model and MCP settings** on the Node runner.
+- **Same bucket** (`HEADLESS_FILES=s3`): kept files' bytes stay there; the export carries only their keys.
+- **Same computer settings** (`HEADLESS_COMPUTER`, its key, snapshot, `HEADLESS_COMPUTER_SCOPE`): a conversation's computer
+  is found by a hash of its id, so it keeps its `/workspace`.
+
+Pause Slack, Automations and Workbot first (export refuses a conversation while a turn runs). Den knows every
+conversation (Slack threads, Automation runs' receipts, Workbot members); for each:
+
+```sh
+curl -sf -H "authorization: Bearer $FROM" ${OWNER:+-H "x-openwork-headless-owner: $OWNER"} "$FROM_URL/v1/sessions/$ID/export" |
+  curl -sf -X POST -H "authorization: Bearer $TO" --data-binary @- "$TO_URL/v1/sessions/$ID/import"
+```
+
+Nothing on celld changes, so pointing the URLs back is the rollback.
+
 ## Configuration
 
 | Variable | Default | |
 |---|---|---|
 | `HEADLESS_API_TOKEN` | required | Service token for callers, ≥32 chars |
-| `HEADLESS_MODEL_PROTOCOL` | required | `anthropic` or `openai` |
+| `HEADLESS_MODEL_PROTOCOL` | required | `anthropic`, `openai` (Chat Completions) or `openai-responses` (Responses API; for OpenAI models that only take tools there) |
 | `HEADLESS_MODEL_BASE_URL` | required | e.g. `https://gateway.openworklabs.com/api/v1/providers/ipr_…` |
 | `HEADLESS_MODEL` | required | Default model alias (`gwm_…`) |
 | `HEADLESS_MODEL_API_KEY` | unset | Fallback key for single-tenant use; callers normally send their own |
-| `HEADLESS_MCP_URL` | unset | e.g. `https://api.openworklabs.com/mcp/agent` |
+| `HEADLESS_MCP_URL` | unset | e.g. `https://api.openworklabs.com/mcp/agent`; never used as a telemetry destination |
+| `HEADLESS_WORKBOT_DEN_API_URL` | unset | Explicit trusted Den API origin for Workbot telemetry (both Node and cells). HTTPS; loopback HTTP for development only. No credentials/path/query/fragment; redirects refused. Unset disables runner admission/outcome telemetry. See [adoption deployment checks](../../../docs/workbot-adoption.md#deploy-before-the-rollout) |
 | `HEADLESS_MCP_TOOL_ALLOWLIST` | all | Comma-separated MCP tool names |
 | `HEADLESS_DB_PATH` | `./data/headless.sqlite` | Put it on a persistent volume |
 | `HEADLESS_PORT` | `8795` | |
@@ -130,13 +204,12 @@ The runner is a private service with one caller (Den), which authorizes each per
 | `HEADLESS_TURN_TIMEOUT_MS` | `0` | `0` means no limit. Otherwise at least `10000`, applied to each stretch between credential refreshes |
 | `HEADLESS_CREDENTIAL_REFRESH_MS` | `3000000` | A turn with an MCP token pauses between steps after this long so the caller resumes it with a fresh one. Keep it under the token lifetime (60 minutes for Den) |
 | `HEADLESS_MAX_OUTPUT_TOKENS` | `8192` | Output cap per model call: Anthropic `max_tokens`, OpenAI `max_completion_tokens` |
-| `HEADLESS_CONTEXT_CHAR_BUDGET` | `400000` | Older whole turns are dropped past this. A turn that outgrows it alone replaces its oldest large tool outputs with a short note, in blocks of eight |
+| `HEADLESS_CONTEXT_CHAR_BUDGET` | `400000` | Past this, the oldest whole turns are left out, down to 60% of it (see [Long conversations](#long-conversations)). A turn that outgrows it alone replaces its oldest large tool outputs with a short note, in blocks of eight |
 | `HEADLESS_SYSTEM_PROMPT` | built-in | |
-| `HEADLESS_FILES` | `off` | Saved files: `off`, `disk`, `s3`, or `vercel`. Only sessions created with `files: true` use them. Off means the file routes answer `files_not_configured` |
+| `HEADLESS_FILES` | `off` | Saved files: `off`, `disk`, or `s3`. Only sessions created with `files: true` use them. Off means the file routes answer `files_not_configured` |
 | `HEADLESS_FILES_MAX_BYTES` | `104857600` (100 MB) | Largest single kept file |
 | `HEADLESS_FILES_MAX_SESSION_BYTES` | `5368709120` (5 GB) | Most one session may keep in total |
 | `HEADLESS_FILES_DIR` | `files` next to `HEADLESS_DB_PATH` | For `disk`. Defaults to the database's volume so files survive deploys; disk is for development, use a store in production |
-| `HEADLESS_VERCEL_BLOB_TOKEN` | | For `vercel`: the read-write token of one **private** Vercel Blob store used only by this runner |
 | `HEADLESS_S3_ENDPOINT` | | For `s3`: any S3-compatible endpoint, e.g. `https://<account>.r2.cloudflarestorage.com`, `https://s3.us-east-1.amazonaws.com`, or a self-hosted MinIO/RustFS |
 | `HEADLESS_S3_REGION` | `auto` | `auto` for R2; the bucket's region for AWS |
 | `HEADLESS_S3_BUCKET`, `HEADLESS_S3_ACCESS_KEY_ID`, `HEADLESS_S3_SECRET_ACCESS_KEY` | | For `s3` |
@@ -146,11 +219,18 @@ The runner is a private service with one caller (Den), which authorizes each per
 | `HEADLESS_COMPUTER_SNAPSHOT` | built from the package | Snapshot id or slug new computers boot from |
 | `HEADLESS_COMPUTER_PAUSE_SECONDS` | `300` | Pause a computer this long after its last turn, unless a `background` job runs |
 | `HEADLESS_COMPUTER_KEEP_DAYS` | `14` | Freestyle deletes a computer unused this long |
+| `HEADLESS_SENTRY_DSN` | unset | Optional Sentry error reports (both hosts, posted over `fetch`): failed turns by error code, startup recovery errors and 500s. Codes, ids and counts only, never content or credentials. Unset sends nothing |
+| `HEADLESS_SENTRY_ENVIRONMENT`, `HEADLESS_SENTRY_RELEASE` | unset, `headless-runner@<HEADLESS_RUNNER_VERSION>` | Tags on those reports |
+| `HEADLESS_RUNNER_VERSION` | set by the image | Tagged `runnerVersion` on reports |
+| `HEADLESS_DEN_API_URL` | unset | Den's API for [self-resume](#self-resume), e.g. `https://api.openworklabs.com`. https (plain http only on loopback, since the runner sends its callback token and grants there and gets MCP tokens back). Set all three self-resume settings or none |
+| `HEADLESS_DEN_CALLBACK_TOKEN` | unset | ≥32 chars, the same value as den-api's `DEN_HEADLESS_RUNNER_CALLBACK_TOKEN` (not `HEADLESS_API_TOKEN`) |
+| `HEADLESS_GRANT_KEY` | unset | ≥32 chars, encrypts resume grants at rest. Changing it makes kept grants unreadable: those turns wait for their callers |
 
 ## Run
 
 ```sh
-pnpm --filter @openwork-ee/headless-runner test
+pnpm --filter @openwork-ee/headless-runner typecheck
+pnpm --filter @openwork-ee/headless-runner run "/^test:/"   # test:conversation, test:sql-store, test:self-resume, …
 pnpm --filter @openwork-ee/headless-runner build
 HEADLESS_API_TOKEN=… HEADLESS_MODEL_PROTOCOL=anthropic HEADLESS_MODEL_BASE_URL=… HEADLESS_MODEL=gwm_… \
   HEADLESS_MCP_URL=https://api.openworklabs.com/mcp/agent node ee/apps/headless-runner/dist/server.js
@@ -158,9 +238,15 @@ HEADLESS_API_TOKEN=… HEADLESS_MODEL_PROTOCOL=anthropic HEADLESS_MODEL_BASE_URL
 
 `pnpm --filter @openwork-ee/headless-runner smoke "<prompt>"` runs one real turn through the HTTP API with a throwaway database. Pass credentials as `SMOKE_MODEL_API_KEY` and `SMOKE_MCP_TOKEN`. It prints the status, token usage (including cached tokens), tools used, files written, elapsed time and RSS. It never prints credentials.
 
-## Deploy on Render
+## Deploy as a single Node process (Render or any Node host)
 
-Create a **private service** so it has no public URL; only den-api reaches it. Use Node 22.13 or later.
+This is the single-node deployment: one `node dist/server.js` process with its SQLite file on a persistent disk. It
+is what Docker (`packaging/docker/Dockerfile.headless-runner`) and the AWS Terraform module run. OpenWork's own
+production runner runs on celld instead (see [Run on celld](#run-on-celld-no-disk)). **A celld deployment must set
+`HEADLESS_FILES=s3` or `off`**: it refuses `disk` (`cells_require_s3_files`); see
+[OWNER-CELLS.md](./OWNER-CELLS.md).
+
+On Render, create a **private service** so it has no public URL; only den-api and Workbot reach it. Use Node 22.13 or later.
 
 | Setting | Value |
 |---|---|
@@ -169,23 +255,14 @@ Create a **private service** so it has no public URL; only den-api reaches it. U
 | Disk | Mount at `/var/data`, then set `HEADLESS_DB_PATH=/var/data/headless.sqlite` |
 | Instances | 1. A service with a disk runs as a single instance, and a deploy restarts in-flight turns, which Den resumes |
 | Env | `HEADLESS_API_TOKEN`, `HEADLESS_MODEL_PROTOCOL`, `HEADLESS_MODEL_BASE_URL`, `HEADLESS_MODEL`, `HEADLESS_MODEL_API_KEY`, `HEADLESS_MCP_URL` |
-| Files (optional) | `HEADLESS_FILES=vercel` and `HEADLESS_VERCEL_BLOB_TOKEN`. Keep the 1 GB disk for SQLite only |
+| Files (optional) | `HEADLESS_FILES=s3` with celld's bucket settings, so conversations moved from celld keep their files. Keep the disk for SQLite only |
 
-**Kept files in production** use a private Vercel Blob store in the `prologe` team, region `iad1` (next to the service's Virginia region):
-
-| Store | For | Token |
-|---|---|---|
-| `openwork-headless-files` | the Render runner | Infisical `prod`, `/headless-runner/HEADLESS_VERCEL_BLOB_TOKEN` |
-| `openwork-headless-files-dev` | local runs and tests | Infisical `dev`, `/headless-runner/HEADLESS_VERCEL_BLOB_TOKEN` |
-
-Both are connected only to the empty Vercel project `openwork-headless-runner` (no code, no deployments), which exists to hold their tokens: production to the production environment, dev to development. Each token reaches only its own store.
-
-On den-api, set `DEN_HEADLESS_RUNNER_URL` to the private service address (for example `http://headless-runner:8795`) and `DEN_HEADLESS_RUNNER_TOKEN` to the same value as `HEADLESS_API_TOKEN`. Then, per organization in `/admin`, turn on **Slack Assistant** and **Slack Assistant: headless runtime** for Slack, and **Cloud Automations: headless runtime** for scheduled cloud Automations.
+On den-api, set `DEN_HEADLESS_RUNNER_URL` to the private service address (for example `http://headless-runner:8795`) and `DEN_HEADLESS_RUNNER_TOKEN` to the same value as `HEADLESS_API_TOKEN`. With the runner set, scheduled cloud agent Automations run on it for organizations whose plan includes it (every organization when plan gating is off); there is no flag for it. For Slack, turn on **Slack Assistant** per organization in `/admin` and set up the Slack connector.
 
 ## Limits and next steps
 
 - **Single instance.** State is one SQLite file. Scale by sharding sessions across instances, each with its own volume.
-- **Credentials come from the caller.** For Slack, Den mints a short-lived, run-scoped MCP token (client `openwork-headless-run`, at most 60 minutes) for the linked member on every admitted run, and a fresh one each time it resumes a turn that paused for `credentials_refresh`. A run can last hours while no token outlives an hour, and a run nobody supervises loses its tools within the hour.
+- **Credentials come from the caller.** For Slack, Den mints a short-lived, run-scoped MCP token (client `openwork-headless-run`, at most 60 minutes) for the linked member on every admitted run, and a fresh one each time it resumes a turn that paused for `credentials_refresh`. A run can last hours while no token outlives an hour, and a run nobody supervises loses its tools within the hour, unless it was sent with a resume grant ([Self-resume](#self-resume)).
 - **Callers.** Slack replies and cloud agent Automations (`den-api/src/automations/headless-agent-executor.ts`) both use Den's one client, `den-api/src/headless-runner/client.ts`. Each Automation run is one turn in its own session; its session and message id are saved before the turn is sent, so a Den restart resumes the same turn.
 
 ## Computer providers

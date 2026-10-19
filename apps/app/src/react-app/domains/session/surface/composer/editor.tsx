@@ -13,6 +13,7 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getNearestNodeFromDOMNode,
+  $getNodeByKey,
   $getRoot,
   $getSelection,
   $nodesOfType,
@@ -32,6 +33,7 @@ import {
   type Spread,
   TextNode,
   type EditorConfig,
+  type LexicalNode,
   type NodeKey,
 } from "lexical";
 import type { InitialConfigType } from "@lexical/react/LexicalComposer.js";
@@ -79,7 +81,7 @@ type EditorProps = {
   onExpandAttachment?: (id: string) => void;
   onRemoveAttachment?: (id: string) => void;
   onPaste?: React.ClipboardEventHandler<HTMLDivElement>;
-  onPasteText?: (text: string) => void;
+  onPasteText?: (text: string, draftOffset?: number) => void;
   onDrop?: React.DragEventHandler<HTMLDivElement>;
   onDragOver?: React.DragEventHandler<HTMLDivElement>;
   onDragLeave?: React.DragEventHandler<HTMLDivElement>;
@@ -90,6 +92,8 @@ export type LexicalPromptEditorHandle = {
   insertMentionAtSelection: (kind: ComposerMentionKind, value: string) => string | null;
   insertConnectorAtSelection: (connectorName: string) => void;
   insertFileMentionAtSelection: (path: string) => string;
+  /** Caret position in the serialized draft, so pasted chips land where the user pasted. */
+  draftOffsetAtSelection: () => number | null;
 };
 
 type SerializedComposerMentionNode = Spread<
@@ -963,6 +967,56 @@ function serializePromptFromRoot(): string {
     .join("\n");
 }
 
+// Caret position as an offset into serializePromptFromRoot(): paragraphs join
+// with one "\n", and a caret inside a chip counts as after it.
+function $draftOffsetAtSelection(): number | null {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) return null;
+  const point = selection.isBackward() ? selection.focus : selection.anchor;
+  const node = point.getNode();
+  const paragraphs = $getRoot().getChildren();
+  const before = (nodes: LexicalNode[]) => nodes.reduce((sum, child) => sum + child.getTextContentSize(), 0);
+  if (node.is($getRoot())) return before(paragraphs.slice(0, point.offset)) + point.offset;
+  const paragraph = node.getTopLevelElement();
+  if (!paragraph) return null;
+  const index = paragraphs.findIndex((child) => child.is(paragraph));
+  let offset = before(paragraphs.slice(0, index)) + index;
+  if (node.is(paragraph) && $isElementNode(paragraph)) return offset + before(paragraph.getChildren().slice(0, point.offset));
+  offset += before(node.getPreviousSiblings());
+  if (!$isTextNode(node)) return offset;
+  return offset + (isComposerInlineTokenNode(node) && point.offset > 0 ? node.getTextContentSize() : point.offset);
+}
+
+// Inverse of $draftOffsetAtSelection for a freshly built prompt.
+function $selectDraftOffset(offset: number) {
+  let remaining = offset;
+  const paragraphs = $getRoot().getChildren();
+  for (const [index, paragraph] of paragraphs.entries()) {
+    const size = paragraph.getTextContentSize();
+    if (remaining > size && index < paragraphs.length - 1) {
+      remaining -= size + 1;
+      continue;
+    }
+    if (!$isElementNode(paragraph)) return false;
+    const children = paragraph.getChildren();
+    for (const [childIndex, child] of children.entries()) {
+      if (remaining <= 0) {
+        paragraph.select(childIndex, childIndex);
+        return true;
+      }
+      const childSize = child.getTextContentSize();
+      if (remaining < childSize && $isTextNode(child) && !isComposerInlineTokenNode(child)) {
+        child.select(remaining, remaining);
+        return true;
+      }
+      remaining -= childSize;
+    }
+    paragraph.select(children.length, children.length);
+    return true;
+  }
+  return false;
+}
+
 function SyncPlugin(props: {
   value: string;
   mentions: Record<string, ComposerMentionKind>;
@@ -981,7 +1035,7 @@ function SyncPlugin(props: {
     // NOTE: serializePromptFromRoot() calls $getRoot() which requires an
     // active editor state. Outside of editor.update()/editor.read() we
     // must wrap it in editor.getEditorState().read().
-    const currentText = editor.getEditorState().read(() => serializePromptFromRoot());
+    const [currentText, caretOffset] = editor.getEditorState().read(() => [serializePromptFromRoot(), $draftOffsetAtSelection()] as const);
     const forceRebuild = !props.value.trim() && currentText.trim() !== "";
     if (!forceRebuild && valueRef.current === props.value) return;
     valueRef.current = props.value;
@@ -997,6 +1051,10 @@ function SyncPlugin(props: {
       // changed the state between the read above and this callback.
       if (!forceRebuild && serializePromptFromRoot() === props.value) return;
       setPrompt(props.value, props.mentions, props.pastedText, props.attachments);
+      // A chip pasted mid-draft rebuilds the prompt: keep the caret before
+      // the same trailing text, i.e. right after the new chip.
+      const tail = caretOffset === null ? "" : currentText.slice(caretOffset);
+      if (!forceRebuild && tail && props.value.endsWith(tail) && $selectDraftOffset(props.value.length - tail.length)) return;
       // $getRoot().selectEnd() doesn't work when the last node is a
       // token (chip) — Lexical can't position a cursor inside a token,
       // so the selection collapses to position 0. Use element-level
@@ -1090,7 +1148,7 @@ function pastedTextWouldOverflowEditor(text: string, editorElement: HTMLElement 
   }
 }
 
-function PasteChipPlugin(props: { onPasteText?: (text: string) => void }) {
+function PasteChipPlugin(props: { onPasteText?: (text: string, draftOffset?: number) => void }) {
   const [editor] = useLexicalComposerContext();
   const onPasteTextRef = useRef(props.onPasteText);
 
@@ -1113,7 +1171,7 @@ function PasteChipPlugin(props: { onPasteText?: (text: string) => void }) {
         if (shouldCollapsePastedText(text, wouldOverflowComposer)) {
           if (!onPasteTextRef.current) return false;
           event.preventDefault();
-          onPasteTextRef.current(text);
+          onPasteTextRef.current(text, $draftOffsetAtSelection() ?? undefined);
           return true;
         }
         event.preventDefault();
@@ -1331,6 +1389,82 @@ function LineBoundaryKeysPlugin() {
   return null;
 }
 
+/** The point's node still exists, is in the document, and the offset is still inside it. */
+function $isLivePoint(point: { key: NodeKey; offset: number; type: "text" | "element" }): boolean {
+  const node = $getNodeByKey(point.key);
+  if (!node || !node.isAttached()) return false;
+  if (point.type === "text") return $isTextNode(node) && point.offset <= node.getTextContentSize();
+  return $isElementNode(node) && point.offset <= node.getChildrenSize();
+}
+
+function $isCaretAtPromptStart(selection = $getSelection()): boolean {
+  if (!$isRangeSelection(selection) || !selection.isCollapsed() || selection.anchor.offset !== 0) return false;
+  if (!$isLivePoint(selection.anchor)) return false;
+  const node = selection.anchor.getNode();
+  const first = $getRoot().getFirstDescendant();
+  return node.is($getRoot()) || node.is($getRoot().getFirstChild()) || Boolean(first && node.is(first));
+}
+
+// Coming back to the prompt from the command palette, a model picker or any
+// other dialog focuses the editor programmatically, and the browser then puts
+// the caret at the very start. Put it back where the person left it instead.
+// A click or tap still places the caret where it lands.
+function KeepCaretOnRefocusPlugin() {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    // The caret together with the text it was in: a caret is only put back
+    // into the same text, never after a send, clear or any other edit.
+    let saved: { selection: ReturnType<typeof $createRangeSelection>; text: string } | null = null;
+    let pointerFocus = false;
+    const unregisterUpdate = editor.registerUpdateListener(({ editorState }) => {
+      editorState.read(() => {
+        const selection = $getSelection();
+        const text = $getRoot().getTextContent();
+        if ($isRangeSelection(selection)) saved = { selection: selection.clone(), text };
+        else if (saved && saved.text !== text) saved = null;
+      });
+    });
+    const onPointerDown = () => { pointerFocus = true; };
+    const onBlur = () => { pointerFocus = false; };
+    const onFocus = () => {
+      const fromPointer = pointerFocus;
+      pointerFocus = false;
+      const restore = saved;
+      if (fromPointer || !restore) return;
+      // After the browser has applied its own caret, so ours wins.
+      requestAnimationFrame(() => {
+        if (document.activeElement !== editor.getRootElement()) return;
+        editor.update(() => {
+          // Only undo the browser's jump to the start, in unchanged text; a caret code placed on purpose stays.
+          if ($getRoot().getTextContent() !== restore.text) return;
+          if (!$isLivePoint(restore.selection.anchor) || !$isLivePoint(restore.selection.focus)) return;
+          if (!$isCaretAtPromptStart() || $isCaretAtPromptStart(restore.selection)) return;
+          $setSelection(restore.selection.clone());
+        });
+      });
+    };
+    const unregisterRoot = editor.registerRootListener((root, previous) => {
+      previous?.removeEventListener("pointerdown", onPointerDown, true);
+      previous?.removeEventListener("focus", onFocus);
+      previous?.removeEventListener("blur", onBlur);
+      root?.addEventListener("pointerdown", onPointerDown, true);
+      root?.addEventListener("focus", onFocus);
+      root?.addEventListener("blur", onBlur);
+    });
+    return () => {
+      unregisterUpdate();
+      unregisterRoot();
+      const root = editor.getRootElement();
+      root?.removeEventListener("pointerdown", onPointerDown, true);
+      root?.removeEventListener("focus", onFocus);
+      root?.removeEventListener("blur", onBlur);
+    };
+  }, [editor]);
+
+  return null;
+}
+
 function ImperativeHandlePlugin(props: { editorRef: ForwardedRef<LexicalPromptEditorHandle> }) {
   const [editor] = useLexicalComposerContext();
 
@@ -1358,6 +1492,9 @@ function ImperativeHandlePlugin(props: { editorRef: ForwardedRef<LexicalPromptEd
       }, { discrete: true });
       editor.focus();
       return draft;
+    },
+    draftOffsetAtSelection() {
+      return editor.getEditorState().read(() => $draftOffsetAtSelection());
     },
   }), [editor]);
 
@@ -1464,6 +1601,7 @@ export const LexicalPromptEditor = forwardRef<LexicalPromptEditorHandle, EditorP
         <PlainTextPlugin
           contentEditable={
             <ContentEditable
+              data-composer-editor=""
               className="min-h-6 max-h-[min(160px,30dvh)] lg:min-h-[60px] lg:max-h-[280px] w-full resize-none overflow-y-auto bg-transparent text-base leading-6 text-dls-text outline-none placeholder:text-dls-secondary lg:text-[13px] lg:leading-[1.55] [&_p]:min-h-[1.5rem] [&_p]:m-0"
               aria-placeholder={props.placeholder}
               placeholder={<span />}
@@ -1494,6 +1632,7 @@ export const LexicalPromptEditor = forwardRef<LexicalPromptEditorHandle, EditorP
         <AttachmentChipPlugin onRemoveAttachment={props.onRemoveAttachment} onExpandAttachment={props.onExpandAttachment} />
         <MentionChipNavigationPlugin />
         <LineBoundaryKeysPlugin />
+        <KeepCaretOnRefocusPlugin />
         <ImperativeHandlePlugin editorRef={ref} />
       </div>
     </LexicalComposer>

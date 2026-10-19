@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { Freestyle, FreestyleApiError } from "freestyle";
 import type { Vm } from "freestyle";
+import { previewWorld, type PreviewWorld } from "@openwork/evidence-provider/review";
 
 export const PREVIEW_KIND = "openwork-review-v1";
 export const ACCESS_FILE = "/opt/openwork-preview/access.json";
@@ -17,11 +18,7 @@ export function client(): Freestyle {
   return new Freestyle({ apiKey, fetch });
 }
 
-export type PreviewWorld = "app-web" | "acme-web" | "desktop" | "workbot";
-export function previewWorld(value: unknown): PreviewWorld {
-  if (value === "app-web" || value === "acme-web" || value === "desktop" || value === "workbot") return value;
-  throw new Error("Unsupported preview world.");
-}
+export { previewWorld, type PreviewWorld };
 
 export function snapshotSlug(sha: string, world: PreviewWorld = "app-web"): string {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("A full pushed commit SHA is required.");

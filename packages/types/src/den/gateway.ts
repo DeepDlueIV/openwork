@@ -1,4 +1,5 @@
 import type {
+  GatewayAwsSsoSettings,
   InferenceProviderCredentialKind,
   InferenceProviderCredentialMode,
   InferenceProviderCredentialStatus,
@@ -19,6 +20,8 @@ export {
   INFERENCE_USAGE_SOURCES as GATEWAY_USAGE_SOURCES,
   inferenceApiKeyMapSecretSchema as gatewayApiKeyMapSecretSchema,
   inferenceAwsKeysSecretSchema as gatewayAwsKeysSecretSchema,
+  inferenceAwsSsoSecretSchema as gatewayAwsSsoSecretSchema,
+  gatewayAwsSsoSettingsSchema,
   inferenceGcpServiceAccountSecretSchema as gatewayGcpServiceAccountSecretSchema,
   inferenceOauthTokenSecretSchema as gatewayOauthTokenSecretSchema,
   parseInferenceProviderSecret as parseGatewayProviderSecret,
@@ -31,6 +34,7 @@ export type {
   InferenceProviderSecret as GatewayProviderSecret,
   InferenceApiKeyMapSecret as GatewayApiKeyMapSecret,
   InferenceAwsKeysSecret as GatewayAwsKeysSecret,
+  InferenceAwsSsoSecret as GatewayAwsSsoSecret,
   InferenceGcpServiceAccountSecret as GatewayGcpServiceAccountSecret,
   InferenceOauthTokenSecret as GatewayOauthTokenSecret,
   InferenceRequestOutcome as GatewayRequestOutcome,
@@ -78,6 +82,10 @@ export interface GatewayCredentialSetWrite {
   /** Omit to retain; empty string explicitly clears OAuth client configuration. */
   oauthClientId?: string;
   oauthClientSecret?: string;
+  /** Microsoft Foundry member sets: the Entra ID directory (tenant) ID. Omit to retain; empty string clears. */
+  oauthTenantId?: string;
+  /** Amazon Bedrock member sets: the IAM Identity Center instance, account and permission set. Omit to retain; null clears. */
+  awsSso?: GatewayAwsSsoSettings | null;
   status?: GatewayResourceStatus;
 }
 
@@ -94,6 +102,8 @@ export interface GatewayCredentialSet {
   credentialStatus: GatewayCredentialStatus;
   oauthClientId?: string | null;
   hasOauthClientSecret?: boolean;
+  oauthTenantId?: string | null;
+  awsSso?: GatewayAwsSsoSettings | null;
 }
 
 export interface GatewayAccessGrantWrite {
@@ -190,6 +200,13 @@ export interface GatewayProviderSummary {
   /** Display when catalog refresh is unavailable or compatibility excludes catalog models. */
   catalogWarning?: string;
   models: GatewayUsableModel[];
+  /**
+   * True only when models + authorizationRequests.models represent every
+   * effective active grant's alias assignment within the provider universe.
+   * Credential/config/catalog omissions make this false even if aggregate
+   * credentialStatus is ready. Missing on older servers means unknown.
+   */
+  modelAssignmentsComplete: boolean;
   pinnedModelIds: string[];
   authorizationRequests: GatewayAuthorizationRequest[];
   migration?: GatewayProviderMigration;
@@ -199,7 +216,10 @@ export interface GatewayProviderSummary {
   oauthClientId?: string | null;
   oauthCallbackUrl?: string;
   hasOauthClientSecret?: boolean;
+  /** Per-person credential rows; only for callers who hold Manage Gateway providers. */
   credentials?: GatewayProviderCredentialSummary[];
+  /** Credential counts by status, returned instead of `credentials` to callers who may only view providers. */
+  credentialCounts?: GatewayProviderCredentialCounts;
   /** Only the caller's ow_gw_ key, in provider-scoped env slots. */
   apiKey?: string;
   apiKeys?: Record<string, string>;
@@ -245,6 +265,13 @@ export interface GatewayLiteLlmSyncResult {
   warnings: string[];
   /** issued mode: keys OpenWork created or refreshed in this sync. */
   issued?: { people: number; keys: number; notInLiteLlm: number; noKeyToMirror: number; noModels: number; errors: number; removed: number };
+}
+
+export interface GatewayProviderCredentialCounts {
+  total: number;
+  active: number;
+  revoked: number;
+  refreshFailed: number;
 }
 
 export interface GatewayProviderDetails extends GatewayProviderSummary {

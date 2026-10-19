@@ -25,7 +25,29 @@ import {
  * Retired keys. Older clients and stored overrides may still send or hold them;
  * inputs accept and ignore them, and they are never stored again.
  */
-export const RETIRED_FEATURE_KEYS = ["gatewayDashboard", "workflows", "codemodeScripts", "remoteMcpApps", "appMcpServers", "cloud"] as const
+export const RETIRED_FEATURE_KEYS = [
+  "gatewayDashboard", "workflows", "codemodeScripts", "remoteMcpApps", "appMcpServers", "cloud",
+  // Generally available (2026-10): always on, the flag and its checks are gone.
+  "auditLogs", "auditLogsCompact", "litellm", "gatewayCloudSignIn", "opencodePlugin", "remoteSessionTargets",
+  "installLinks", "mcpConnections", "simplifiedOnboarding", "connectorReadiness", "driveResumableUploads",
+  "implicitCloudSkills", "platformAuditReads",
+  // Folded into another feature (2026-10): analyticsIntegrated → libraryUsage; the rest → workbot.
+  "analyticsIntegrated", "workbotCalendar", "workbotSideChats", "workbotDefaultModel",
+  // Generally available (2026-10, second pass). calendarPolish is always on
+  // wherever Workbot or the desktop Calendar is.
+  "denFlatPageHeaders", "dashboardActivity", "libraryIntegrated", "libraryUsage", "modelsAnalytics",
+  "headlessAutomations", "calendarPolish",
+  // Removed (2026-10): organization Dashboards and copy-only Workbot sharing
+  "orgManagedDashboards", "workbotSharing",
+  // Generally available (2026-10, third pass): always on, on cloud and self-hosted.
+  "agentPermissions", "appBuildProgress", "backgroundShellTasks", "desktopPolicyScreenRemoval",
+  "gatewayProviderUsageLimits", "googleDocumentTools", "inviteLinkVerifiesEmail", "lastTurnModelFooter",
+  "mcpSkillsExtension", "memberListToolbars", "modelRemovalRecovery", "nativeCloudSkills", "orgDefaultModel",
+  "permissions", "rememberLastOrganization", "sharedRoles", "slackWorkbotReplies", "teamAccessRows",
+  "teamMembershipCache", "teamPageTabs", "teamRoles", "workbot", "workbotLunaDefault",
+  // Folded into managedDeployments (2026-10), which stays off: Google Cloud and agent tools follow it.
+  "managedDeploymentsGcp", "managedDeploymentsMcp",
+] as const
 
 export function isFeatureKey(value: string): value is FeatureKey {
   return Object.hasOwn(FEATURES, value)

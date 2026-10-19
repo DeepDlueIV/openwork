@@ -15,6 +15,7 @@ import type {
   AutomationListItem,
   AutomationRepository,
 } from "@openwork/automations"
+import { REMOTE_SESSION_ONLY_RUNNER_CAPABILITY } from "@openwork/types/automations"
 import type {
   Automation,
   AutomationAction,
@@ -28,7 +29,7 @@ import type {
   AutomationUsage,
   DesktopRunnerInventory,
 } from "@openwork/types/automations"
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from "@openwork-ee/den-db/drizzle"
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from "@openwork-ee/den-db/drizzle"
 import {
   AutomationRevisionTable,
   AutomationRunnerTable,
@@ -48,6 +49,9 @@ type RevisionRow = typeof AutomationRevisionTable.$inferSelect
 type RunRow = typeof AutomationRunTable.$inferSelect
 type EventRow = typeof AutomationRunEventTable.$inferSelect
 type DesktopClaim = { automation: Automation; revision: AutomationRevision; run: AutomationRun }
+
+/** Upper bound for one calendar range read across an owner's Automations. */
+export const AUTOMATION_RUN_RANGE_MAX_ITEMS = 500
 
 const logger = appLogger.child({ component: "automation_repository" })
 const emptyUsage: AutomationUsage = { inputTokens: null, outputTokens: null, costMicros: null }
@@ -1385,6 +1389,7 @@ export class DenAutomationRepository implements AutomationRepository {
       .where(and(
         eq(AutomationRunnerTable.organization_id, normalizeOrganizationId(input.organizationId)),
         eq(AutomationRunnerTable.owner_member_id, normalizeMemberId(input.ownerMemberId)),
+        sql`not coalesce(json_contains(${AutomationRunnerTable.capabilities}, ${JSON.stringify(REMOTE_SESSION_ONLY_RUNNER_CAPABILITY)}), false)`,
       )).orderBy(desc(AutomationRunnerTable.last_seen_at)).limit(1)
     return rows[0]?.lastSeenAt?.getTime() ?? null
   }
@@ -1418,17 +1423,19 @@ export class DenAutomationRepository implements AutomationRepository {
     capability: AutomationDesktopRunnerCapability
     limit: number
   }) {
-    return db.select({
+    const rows = await db.select({
       id: AutomationRunnerTable.id,
       platform: AutomationRunnerTable.platform,
       appVersion: AutomationRunnerTable.app_version,
       lastSeenAt: AutomationRunnerTable.last_seen_at,
+      capabilities: AutomationRunnerTable.capabilities,
       inventory: AutomationRunnerTable.inventory,
     }).from(AutomationRunnerTable).where(and(
       eq(AutomationRunnerTable.organization_id, normalizeOrganizationId(input.organizationId)),
       eq(AutomationRunnerTable.owner_member_id, normalizeMemberId(input.ownerMemberId)),
       sql`json_contains(${AutomationRunnerTable.capabilities}, ${JSON.stringify(input.capability)})`,
     )).orderBy(desc(AutomationRunnerTable.last_seen_at)).limit(input.limit)
+    return rows.map((row) => ({ ...row, capabilities: row.capabilities ?? [] }))
   }
 
   /** The owner's registered desktops, most recently seen first. */
@@ -1441,6 +1448,7 @@ export class DenAutomationRepository implements AutomationRepository {
     }).from(AutomationRunnerTable).where(and(
       eq(AutomationRunnerTable.organization_id, normalizeOrganizationId(input.organizationId)),
       eq(AutomationRunnerTable.owner_member_id, normalizeMemberId(input.ownerMemberId)),
+      sql`not coalesce(json_contains(${AutomationRunnerTable.capabilities}, ${JSON.stringify(REMOTE_SESSION_ONLY_RUNNER_CAPABILITY)}), false)`,
     )).orderBy(desc(AutomationRunnerTable.last_seen_at)).limit(input.limit)
   }
 
@@ -1454,10 +1462,10 @@ export class DenAutomationRepository implements AutomationRepository {
       capabilities: AutomationRunnerTable.capabilities,
       lastSeenAt: AutomationRunnerTable.last_seen_at,
     }).from(AutomationRunnerTable).where(and(
-      eq(AutomationRunnerTable.id, input.runnerId),
+      inArray(AutomationRunnerTable.id, automationRunnerComputerIds(input)),
       eq(AutomationRunnerTable.organization_id, normalizeOrganizationId(input.organizationId)),
       eq(AutomationRunnerTable.owner_member_id, normalizeMemberId(input.ownerMemberId)),
-    )).limit(1)
+    )).orderBy(desc(sql`${AutomationRunnerTable.id} = ${automationRunnerRowId(input)}`)).limit(1)
     const row = rows[0]
     return row ? { capabilities: row.capabilities ?? [], lastSeenAt: row.lastSeenAt.getTime() } : null
   }
@@ -1576,6 +1584,42 @@ export class DenAutomationRepository implements AutomationRepository {
       .orderBy(desc(AutomationRunTable.id)).limit(limit + 1)
     const selected = rows.slice(0, limit)
     return { items: selected.map(mapRun), nextCursor: rows.length > limit ? selected.at(-1)?.id ?? null : null }
+  }
+
+  /**
+   * Runs of the owner's Automations whose calendar position (scheduledFor,
+   * else startedAt, else createdAt) falls in [from, to), oldest first, one
+   * page at a time. Scans created_at with a one-day pad on each side so
+   * recovery runs created after their slot are still found; the cursor is the
+   * last scanned run id (run ids sort by creation).
+   */
+  async listRunsInRange(input: { organizationId: string; ownerMemberId: string; from: number; to: number; cursor?: string; limit: number }): Promise<{
+    items: AutomationRun[]
+    nextCursor: string | null
+  }> {
+    const pad = 24 * 60 * 60 * 1_000
+    const limit = Math.max(1, Math.min(input.limit, AUTOMATION_RUN_RANGE_MAX_ITEMS))
+    const conditions = [
+      eq(AutomationTable.organization_id, normalizeOrganizationId(input.organizationId)),
+      eq(AutomationTable.owner_member_id, normalizeMemberId(input.ownerMemberId)),
+      gte(AutomationRunTable.created_at, new Date(input.from - pad)),
+      lt(AutomationRunTable.created_at, new Date(input.to + pad)),
+    ]
+    if (input.cursor) conditions.push(gt(AutomationRunTable.id, normalizeRunId(input.cursor)))
+    const rows = await db.select({ run: AutomationRunTable })
+      .from(AutomationRunTable)
+      .innerJoin(AutomationTable, eq(AutomationTable.id, AutomationRunTable.automation_id))
+      .where(and(...conditions))
+      .orderBy(asc(AutomationRunTable.id))
+      .limit(limit + 1)
+    const scanned = rows.slice(0, limit).map((row) => mapRun(row.run))
+    return {
+      items: scanned.filter((run) => {
+        const at = run.scheduledFor ?? run.startedAt ?? run.createdAt
+        return at >= input.from && at < input.to
+      }),
+      nextCursor: rows.length > limit ? scanned.at(-1)?.id ?? null : null,
+    }
   }
 
   async reclaimQueued(input: { runId: string; leaseOwner: string; leaseMs: number; now: number }): Promise<{

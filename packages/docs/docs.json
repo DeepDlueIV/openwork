@@ -119,6 +119,20 @@
         ]
       },
       {
+        "tab": "Integrations",
+        "pages": [
+          "integrations/overview",
+          "integrations/mcp",
+          "integrations/client-plugins",
+          {
+            "group": "OpenCode — ready",
+            "pages": [
+              "model-context-protocol/opencode-plugin"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Slack",
         "pages": [
           {
@@ -142,7 +156,9 @@
               "ai-gateway/compare-litellm-bifrost",
               "ai-gateway/litellm",
               "ai-gateway/how-requests-flow",
-              "ai-gateway/google-agent-platform"
+              "ai-gateway/google-agent-platform",
+              "ai-gateway/amazon-bedrock",
+              "ai-gateway/microsoft-foundry"
             ]
           },
           {
@@ -213,7 +229,7 @@
         "tab": "Dashboards",
         "pages": [
           "dashboards/overview",
-          "cloud/share-with-your-team/dashboards"
+          "dashboards/build-an-mcp-app"
         ]
       },
       {
@@ -242,6 +258,7 @@
             "group": "Policies and operations",
             "pages": [
               "cloud/share-with-your-team/desktop-policies",
+              "cloud/share-with-your-team/agent-permissions",
               "cloud/share-with-your-team/team-prompt-cards",
               "cloud/security-and-operations",
               "cloud/enterprise"
@@ -385,6 +402,10 @@
     {
       "source": "/dashboards",
       "destination": "/dashboards/overview"
+    },
+    {
+      "source": "/cloud/share-with-your-team/dashboards",
+      "destination": "/dashboards/build-an-mcp-app"
     },
     {
       "source": "/sso",

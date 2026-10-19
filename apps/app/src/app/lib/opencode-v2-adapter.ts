@@ -1,4 +1,5 @@
 import type {
+  Agent,
   ApiError,
   ConfigProvidersResponse,
   FilePart,
@@ -23,7 +24,21 @@ import { isDesktopRuntime } from "./runtime-env";
 import type { McpStatusMap, OpencodeEvent } from "../types";
 import { normalizeDirectoryPath } from "../utils";
 import { dispatchProviderCatalogChanged } from "./provider-events";
-import { composeV2Prompt, splitV2Prompt, wrapPastedText } from "./v2-prompt-context";
+import { attachmentMarker, attachmentNoteFilenames, composeV2Prompt, splitV2Prompt, wrapPastedText, type PromptAttachment } from "./v2-prompt-context";
+import {
+  BACKGROUND_SHELL_FINISHED_EVENT,
+  BACKGROUND_SHELL_NOTICE_KEY,
+  BACKGROUND_SHELL_STARTED_EVENT,
+  SHELL_CREATED_EVENT,
+  SHELL_DELETED_EVENT,
+  SHELL_EXITED_EVENT,
+  backgroundShellIdFromToolMetadata,
+  backgroundShellNoticeLabel,
+  readBackgroundShellCompletion,
+  readEngineShell,
+  type BackgroundShellNotice,
+  type EngineShell,
+} from "./background-shell-tasks";
 
 type RequestOptions = {
   signal?: AbortSignal;
@@ -61,6 +76,31 @@ function selectedSkill(part: PromptPart): Record<string, unknown> | null {
   return id && /^(?:skill|plugin):/.test(id) ? null : selection;
 }
 
+type SkillResolution = { ids: string[] } | { missing: string } | { ambiguous: string; candidates: string[] };
+
+/**
+ * The engine keys a skill by its folder, the name OpenWork lists and inserts,
+ * while its display name comes from frontmatter and need not be unique (a
+ * renamed copy keeps it). Match the folder first; fall back to a display name
+ * only when exactly one skill carries it.
+ */
+function resolveSelectedSkills(selections: readonly Record<string, unknown>[], registry: readonly unknown[]): SkillResolution {
+  const ids: string[] = [];
+  for (const selection of selections) {
+    const id = readString(selection, "id");
+    const name = readString(selection, "name");
+    const wanted = id ?? name;
+    let matches = wanted ? registry.filter((skill) => readString(skill, "id") === wanted) : [];
+    if (!id && name && matches.length === 0) matches = registry.filter((skill) => readString(skill, "name") === name);
+    const label = name ?? id ?? "(unknown)";
+    if (matches.length > 1) return { ambiguous: label, candidates: matches.flatMap((skill) => readString(skill, "id") ?? []) };
+    const resolved = readString(matches[0], "id");
+    if (!resolved) return { missing: label };
+    if (!ids.includes(resolved)) ids.push(resolved);
+  }
+  return { ids };
+}
+
 function isPastedText(part: PromptPart): boolean {
   return isRecord(part.metadata) && part.metadata.openworkPastedText === true;
 }
@@ -75,7 +115,12 @@ function partText(part: PromptPart): string | null {
  * transcript can show the words without them (see v2-prompt-context).
  */
 export function v2PromptText(parts: readonly PromptPart[]): string {
+  const attached = new Set(parts.flatMap((part) => {
+    const text = partText(part);
+    return text !== null && part.synthetic === true ? attachmentNoteFilenames(text) : [];
+  }));
   const words = parts.flatMap((part) => {
+    if (part.type === "file" && typeof part.filename === "string" && attached.has(part.filename)) return [attachmentMarker(part.filename)];
     const text = partText(part);
     if (text === null || part.synthetic === true) return [];
     return [isPastedText(part) ? wrapPastedText(text) : text];
@@ -430,6 +475,10 @@ function mapV2Session(value: unknown, directory: string | undefined, eventCreate
   const updated = readNumber(time, "updated") ?? readNumber(source, "updated") ?? created;
   const archived = readNumber(time, "archived");
   const parentID = readString(source, "parentID");
+  const model = readRecord(source, "model");
+  const modelID = readString(model, "id") ?? readString(model, "modelID");
+  const providerID = readString(model, "providerID");
+  const variant = readString(model, "variant");
   const revert = readRecord(source, "revert");
   const revertMessageID = revert && readString(revert, "messageID");
   const mapped: Session = {
@@ -446,6 +495,9 @@ function mapV2Session(value: unknown, directory: string | undefined, eventCreate
       ...(archived === undefined ? {} : { archived }),
     },
     ...(parentID ? { parentID } : {}),
+    ...(providerID && modelID ? {
+      model: { providerID, id: modelID, ...(variant ? { variant } : {}) },
+    } : {}),
     ...(revertMessageID ? { revert: { messageID: revertMessageID } } : {}),
   };
   return mapped;
@@ -485,6 +537,12 @@ function toolMetadata(
   callID: string,
   associations: TaskSessionAssociations,
 ): Record<string, unknown> {
+  // Engine progress replaces a running call's saved metadata, so a reload can
+  // find only the results plugin's per-call details. Rebuild the call list.
+  if (tool === "execute" && !Array.isArray(metadata.toolCalls) && Array.isArray(metadata.openworkToolDetails)) {
+    return { ...metadata, toolCalls: metadata.openworkToolDetails.flatMap((detail) => isRecord(detail) && typeof detail.tool === "string"
+      ? [{ tool: detail.tool, status: detail.status, ...(detail.input === undefined ? {} : { input: detail.input }) }] : []) };
+  }
   if (tool !== "subagent") return metadata;
   const explicit = readString(metadata, "sessionId")?.trim() || readString(metadata, "sessionID")?.trim();
   if (explicit) rememberTaskSession(associations, parentSessionID, messageID, callID, explicit);
@@ -790,20 +848,44 @@ function mapV2ReplyModel(value: Record<string, unknown>) {
 function mapV2UserPart(part: Part): Part[] {
   if (part.type !== "text") return [part];
   const { segments, context, attachments } = splitV2Prompt(part.text);
-  if (!context && !segments.some((segment) => segment.kind === "pasted")) return [part];
-  const words = segments.map((segment, index): Part => ({
-    ...part,
-    id: index === 0 ? part.id : `${part.id}:${index}`,
-    text: segment.text,
-    ...(segment.kind === "pasted" ? { metadata: { openworkPastedText: true } } : {}),
-  }));
+  if (!context && !segments.some((segment) => segment.kind !== "text")) return [part];
+  // A marked attachment shows where it was attached; the rest follow the words.
+  const unplaced: PromptAttachment[] = [...attachments];
+  const words = segments.map((segment, index): Part => {
+    const id = index === 0 ? part.id : `${part.id}:${index}`;
+    if (segment.kind !== "attachment") {
+      return { ...part, id, text: segment.text, ...(segment.kind === "pasted" ? { metadata: { openworkPastedText: true } } : {}) };
+    }
+    const at = unplaced.findIndex((item) => item.filename === segment.filename);
+    const placed = at < 0 ? [] : unplaced.splice(at, 1);
+    return { ...part, id, text: "", synthetic: true, ...(placed.length ? { metadata: { openworkAttachments: placed } } : {}) };
+  });
   return context === null ? words : [...words, {
     ...part,
     id: `${part.id}:context`,
     text: context,
     synthetic: true,
-    ...(attachments.length ? { metadata: { openworkAttachments: attachments } } : {}),
+    ...(unplaced.length ? { metadata: { openworkAttachments: unplaced } } : {}),
   }];
+}
+
+/**
+ * A background command's completion notice as a compact transcript row. The
+ * engine's own text is `<shell …>output</shell>` for the model; the person
+ * sees one plain sentence, and the row keeps its details in part metadata.
+ */
+function backgroundShellNoticeMessage(id: string, sessionID: string, created: number, notice: BackgroundShellNotice): V2MappedMessage {
+  return {
+    info: { id, sessionID, role: "system", time: { created } },
+    parts: [{
+      id: `${id}:0`,
+      messageID: id,
+      sessionID,
+      type: "text",
+      text: backgroundShellNoticeLabel(notice),
+      metadata: { [BACKGROUND_SHELL_NOTICE_KEY]: notice },
+    }],
+  };
 }
 
 function mapV2Message(
@@ -814,7 +896,15 @@ function mapV2Message(
   if (!isRecord(value)) return null;
   // Native instruction/catalog updates belong to the model context, not the
   // visible conversation. Filter by role so identical user text is preserved.
-  if (messageRole(value) === "system") return null;
+  // The one exception is a background command's completion notice, which the
+  // chat shows as a short row.
+  if (messageRole(value) === "system") {
+    const notice = readBackgroundShellCompletion(value);
+    const id = readString(value, "id") ?? readString(value, "messageID");
+    if (!notice || !id) return null;
+    const created = readNumber(readRecord(value, "time"), "created") ?? readNumber(value, "timestamp") ?? 0;
+    return backgroundShellNoticeMessage(id, readString(value, "sessionID") ?? sessionID, created, notice);
+  }
   const id = readString(value, "id") ?? readString(value, "messageID");
   if (!id) return null;
   const time = readRecord(value, "time");
@@ -976,6 +1066,30 @@ function mapV2Model(value: unknown): Model | null {
   };
 }
 
+/**
+ * Map a native v2 `/api/agent` row onto the v1 SDK `Agent` the picker expects.
+ * Use the API `id` as `name` — selection and `POST …/session/:id/agent` speak ids
+ * (`build`, `plan`), not the display title (`Build`, `Plan`).
+ */
+export function mapV2Agent(value: unknown): Agent | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id");
+  if (!id) return null;
+  const mode = readString(value, "mode");
+  if (mode !== "subagent" && mode !== "primary" && mode !== "all") return null;
+  const description = readString(value, "description");
+  const color = readString(value, "color");
+  return {
+    name: id,
+    mode,
+    hidden: value.hidden === true,
+    permission: [],
+    options: {},
+    ...(description ? { description } : {}),
+    ...(color ? { color } : {}),
+  };
+}
+
 function mapDefaultModels(value: unknown): Record<string, string> {
   const data = responseData(value);
   const defaults: Record<string, string> = {};
@@ -1095,6 +1209,57 @@ function resolveToolStream(
 
 function toolEventTimestamp(value: Record<string, unknown>, properties: Record<string, unknown>): number {
   return readNumber(properties, "timestamp") ?? readNumber(value, "created") ?? Date.now();
+}
+
+/** A live-only subscription can join after a part's declaration was emitted. */
+function refreshMissingV2Message(
+  value: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  state: V2EventTranslationState,
+  kind: "text" | "reasoning" | "tool",
+): OpencodeEvent[] | null {
+  const sessionID = readSessionID(properties);
+  const messageID = readMessageID(properties);
+  if (!sessionID || !messageID || isRetiredV2Event(state, value, properties)) return null;
+  // Known completed parts are tombstones, not missed declarations. Duplicate
+  // or mismatched late fragments must not trigger history reads.
+  if (kind === "tool"
+    ? state.tools.has(toolStreamKey(sessionID, readToolCallID(properties)))
+    : state.streams.has(streamKey(properties, sessionID, messageID, kind))) return null;
+  return [{ type: "openwork.message.refresh", properties: { sessionID, messageID } }];
+}
+
+function recoverV2TextEvent(
+  value: Record<string, unknown>,
+  properties: Record<string, unknown>,
+  state: V2EventTranslationState,
+  kind: "text" | "reasoning",
+  delta?: string,
+): OpencodeEvent[] | null {
+  const refresh = refreshMissingV2Message(value, properties, state, kind);
+  if (!refresh) return null;
+  const ordinal = readNumber(properties, "ordinal");
+  if (ordinal === undefined || !Number.isInteger(ordinal) || ordinal < 0) return refresh;
+  const sessionID = readSessionID(properties);
+  const messageID = readMessageID(properties);
+  const partID = textPartID(messageID, kind, ordinal);
+  // The canonical transcript retained its declaration across reconnects.
+  // Route native, explicitly addressed deltas there: persisted history can
+  // lag an in-progress answer, so reads alone cannot keep its text growing.
+  if (delta !== undefined) return [
+    { type: "openwork.message.refresh", properties: { sessionID, messageID, partID } },
+    { type: "message.part.delta", properties: { sessionID, messageID, partID, field: "text", delta } },
+  ];
+  const time = toolEventTimestamp(value, properties);
+  state.streams.set(streamKey(properties, sessionID, messageID, kind), {
+    sessionID, messageID, partID, ordinal, start: time,
+  });
+  const text = readString(properties, "text");
+  if (text === undefined) return refresh;
+  return [...refresh, { type: "message.part.updated", properties: { part: {
+    id: partID, sessionID, messageID, type: kind, text,
+    ...(kind === "reasoning" ? { time: { start: time, end: time } } : {}),
+  } } }];
 }
 
 function pendingToolPart(stream: ToolStream): ToolPart {
@@ -1250,7 +1415,27 @@ export function createV2EventTranslationState(): V2EventTranslationState {
 
 function updateToolStreamMetadata(stream: ToolStream, properties: Record<string, unknown>): void {
   const metadata = readRecord(properties, "metadata") ?? readRecord(properties, "structured");
-  if (metadata) stream.metadata = metadata;
+  if (!metadata) return;
+  const previous = stream.metadata;
+  if (stream.tool !== "execute") { stream.metadata = metadata; return; }
+  stream.metadata = { ...previous, ...metadata };
+  // Native progress reports call lists as invocation-ordered prefixes. A
+  // later partial update must not erase retained results or regress a call.
+  for (const key of ["toolCalls", "openworkToolDetails"]) {
+    const oldCalls = previous[key];
+    const newCalls = metadata[key];
+    if (!Array.isArray(oldCalls) || !Array.isArray(newCalls)) continue;
+    stream.metadata[key] = Array.from({ length: Math.max(oldCalls.length, newCalls.length) }, (_, ordinal) => {
+      const old = oldCalls[ordinal];
+      const next = newCalls[ordinal];
+      if (!isRecord(old)) return next;
+      if (!isRecord(next)) return old;
+      if (old.tool !== next.tool || (key === "openworkToolDetails"
+        && (old.invocationId !== next.invocationId || old.ordinal !== next.ordinal))) return old;
+      if ((old.status === "completed" || old.status === "error") && next.status === "running") return old;
+      return { ...old, ...next };
+    });
+  }
 }
 
 export function translateV2Event(
@@ -1272,10 +1457,39 @@ export function translateV2Event(
     } }] : null;
   }
 
+  if (type === SHELL_CREATED_EVENT) {
+    // Forward the engine's own Shell.Info; readers parse it with readEngineShell.
+    const info = readRecord(properties, "info");
+    return info && readEngineShell(info) ? [{ type: SHELL_CREATED_EVENT, properties: info }] : null;
+  }
+
+  if (type === SHELL_EXITED_EVENT || type === SHELL_DELETED_EVENT) {
+    const id = readString(properties, "id");
+    if (!id) return null;
+    return [{ type, properties: {
+      id,
+      ...(type === SHELL_EXITED_EVENT ? { status: readString(properties, "status"), exit: readNumber(properties, "exit") ?? null } : {}),
+    } }];
+  }
+
   if (type === "session.inbox.enqueued") {
     const messageID = readString(properties, "inboxID");
     const item = readRecord(properties, "item");
     const payload = readRecord(item, "payload");
+    const finished = readString(item, "type") === "synthetic" ? readBackgroundShellCompletion(payload) : null;
+    if (sessionID && finished) {
+      const created = readNumber(value, "created") ?? readNumber(properties, "timestamp") ?? Date.now();
+      const notice = messageID
+        ? backgroundShellNoticeMessage(messageID, sessionID, created, finished)
+        : null;
+      return [
+        { type: BACKGROUND_SHELL_FINISHED_EVENT, properties: { sessionID, shellID: finished.shellId, outcome: finished.outcome, exit: finished.exit } },
+        ...(notice ? [
+          { type: "message.updated", properties: { info: notice.info } },
+          ...notice.parts.map((part): OpencodeEvent => ({ type: "message.part.updated", properties: { part } })),
+        ] : []),
+      ];
+    }
     if (!sessionID || !messageID || readString(item, "type") !== "user" || !payload) return null;
     // The inbox ID becomes the persisted user-message ID on delivery. Using
     // it here lets the live row reconcile with history without duplicating it.
@@ -1417,7 +1631,9 @@ export function translateV2Event(
   if (type === `session.${kind}.delta` || type === `session.next.${kind}.delta`) {
     const stream = resolveTextStream(properties, state, kind);
     const delta = readString(properties, "delta");
-    if (!stream || stream.text === undefined || delta === undefined) return null;
+    if (delta === undefined) return null;
+    if (!stream) return recoverV2TextEvent(value, properties, state, kind, delta);
+    if (stream.text === undefined) return null;
     stream.text += delta;
     return [{
       type: "message.part.delta",
@@ -1433,7 +1649,8 @@ export function translateV2Event(
 
   if (type === `session.${kind}.ended` || type === `session.next.${kind}.ended`) {
     const stream = resolveTextStream(properties, state, kind);
-    if (!stream || stream.text === undefined) return null;
+    if (!stream) return recoverV2TextEvent(value, properties, state, kind);
+    if (stream.text === undefined) return null;
     const fullText = readString(properties, "text");
     if (fullText !== undefined) stream.text = fullText;
     const part: TextPart | ReasoningPart = {
@@ -1502,7 +1719,9 @@ export function translateV2Event(
   if (type === "session.tool.input.delta" || type === "session.next.tool.input.delta") {
     const stream = resolveToolStream(properties, state);
     const delta = readString(properties, "delta");
-    if (!stream || stream.inputEnded || stream.start !== undefined || delta === undefined) return null;
+    if (delta === undefined) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
+    if (stream.inputEnded || stream.start !== undefined) return null;
     stream.raw += delta;
     stream.input = parseToolInput(stream.raw, stream.tool);
     return [{ type: "message.part.updated", properties: { part: pendingToolPart(stream) } }];
@@ -1511,7 +1730,9 @@ export function translateV2Event(
   if (type === "session.tool.input.ended" || type === "session.next.tool.input.ended") {
     const stream = resolveToolStream(properties, state);
     const text = readString(properties, "text");
-    if (!stream || stream.inputEnded || stream.start !== undefined || text === undefined) return null;
+    if (text === undefined) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
+    if (stream.inputEnded || stream.start !== undefined) return null;
     stream.raw = text;
     stream.input = parseToolInput(text, stream.tool);
     const part = pendingToolPart(stream);
@@ -1522,7 +1743,7 @@ export function translateV2Event(
 
   if (type === "session.tool.called" || type === "session.next.tool.called") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
     stream.input = parseToolInput(properties.input, stream.tool);
     stream.raw = "";
     stream.start ??= toolEventTimestamp(value, properties);
@@ -1535,7 +1756,7 @@ export function translateV2Event(
 
   if (type === "session.tool.progress" || type === "session.next.tool.progress") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
     updateToolStreamMetadata(stream, properties);
     const start = stream.start ?? toolEventTimestamp(value, properties);
     stream.start = start;
@@ -1546,17 +1767,34 @@ export function translateV2Event(
 
   if (type === "session.tool.success" || type === "session.next.tool.success") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    // A background shell call succeeds at once with its shell id. Report it
+    // even when this stream joined after the call began (no tool stream).
+    const shellID = backgroundShellIdFromToolMetadata(readRecord(properties, "metadata") ?? readRecord(properties, "structured"));
+    const background: OpencodeEvent[] = sessionID && shellID && (!stream || stream.tool === "shell" || stream.tool === "bash")
+      ? [{ type: BACKGROUND_SHELL_STARTED_EVENT, properties: {
+        sessionID,
+        shellID,
+        command: typeof stream?.input.command === "string" ? stream.input.command : null,
+        startedAt: stream?.start ?? toolEventTimestamp(value, properties),
+      } }]
+      : [];
+    if (!stream) {
+      const refresh = refreshMissingV2Message(value, properties, state, "tool") ?? [];
+      return background.length || refresh.length ? [...refresh, ...background] : null;
+    }
     updateToolStreamMetadata(stream, properties);
     const part = completedToolPart(stream, properties, toolEventTimestamp(value, properties), state.taskSessions);
     state.tools.set(toolStreamKey(stream.sessionID, stream.callID), null);
     clearV2SessionTranslation(state, stream.sessionID);
-    return [part, ...codeModeConnectionParts(part)].map((next) => ({ type: "message.part.updated", properties: { part: next } }));
+    return [
+      ...[part, ...codeModeConnectionParts(part)].map((next): OpencodeEvent => ({ type: "message.part.updated", properties: { part: next } })),
+      ...background,
+    ];
   }
 
   if (type === "session.tool.failed" || type === "session.next.tool.failed") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    if (!stream) return refreshMissingV2Message(value, properties, state, "tool");
     updateToolStreamMetadata(stream, properties);
     const part = failedToolPart(stream, properties, toolEventTimestamp(value, properties), state.taskSessions);
     state.tools.set(toolStreamKey(stream.sessionID, stream.callID), null);
@@ -1661,7 +1899,7 @@ function translateV2Events(
   fetchSession: (sessionID: string, signal: AbortSignal) => Promise<Session | null>,
   taskSessions: TaskSessionAssociations,
   directory?: string,
-  onCatalogChanged?: (directory: string | undefined) => void,
+  onCatalogChanged?: (directory: string | undefined, reason?: "native") => void,
 ): AsyncGenerator<OpencodeEvent> {
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
@@ -1745,6 +1983,9 @@ function translateV2Events(
         if ("error" in read) throw read.error;
         const { chunk } = read;
         if (chunk.done) { ended = true; continue; }
+        // Transport activity includes SSE comments and events filtered for
+        // another workspace. Let the watchdog see those bytes as liveness.
+        if (chunk.value.length > 0) yield { type: "server.heartbeat", properties: {} };
         buffer += decoder.decode(chunk.value, { stream: true });
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? "";
@@ -1761,7 +2002,15 @@ function translateV2Events(
             continue;
           }
           const eventDirectory = isRecord(event) ? readString(readRecord(event, "location") ?? {}, "directory") : undefined;
+          // Native catalog changes may be global. Consumers only act on
+          // these new notifications when the server confirms live ownership.
+          if (isRecord(event) && (event.type === "provider.updated" || event.type === "model.updated")) {
+            if (directory && eventDirectory && normalizeDirectoryPath(directory) !== normalizeDirectoryPath(eventDirectory)) continue;
+            onCatalogChanged?.(eventDirectory ?? directory, "native");
+            continue;
+          }
           if (directory && (!eventDirectory || normalizeDirectoryPath(directory) !== normalizeDirectoryPath(eventDirectory))) continue;
+          // Preserve the legacy catalog.updated filtering and refresh path.
           if (isRecord(event) && event.type === "catalog.updated") {
             onCatalogChanged?.(eventDirectory);
             continue;
@@ -1898,6 +2147,12 @@ export function isOpencodeV2Client(client: ReturnType<typeof createClient>): cli
   return v2Clients.has(client);
 }
 
+export type SetSessionModelParameters = {
+  sessionID: string;
+  model: { providerID: string; modelID: string };
+  variant?: string | null;
+};
+
 export function createClientV2(
   opencode2BaseUrl: string,
   directory: string | undefined,
@@ -1929,6 +2184,52 @@ export function createClientV2(
     return { payload: await readPayload(response), request: transportRequest, response };
   };
 
+  // The engine fails every prompt whose agent it does not define, such as
+  // v1's `openwork` kept by migrated chats and their forks, or a saved v1
+  // pick. Those run on the default agent, which the engine lists first.
+  // Agents are re-read only for a name the latest read did not answer, and a
+  // chat is checked once per client, so later sends cost no request.
+  let agentCatalog: Agent[] = [];
+  let agentsMissingFromCatalog = new Set<string>();
+  const readAgentCatalog = async (signal?: AbortSignal): Promise<TransportResult> => {
+    const result = await request("GET", "/api/agent", undefined, signal);
+    if (result.response.ok) {
+      agentCatalog = responseItems(result.payload).flatMap((item) => {
+        const agent = mapV2Agent(item);
+        return agent ? [agent] : [];
+      });
+      agentsMissingFromCatalog = new Set();
+    }
+    return result;
+  };
+  const checkedAgentSessions = new Set<string>();
+  const resolvePromptAgent = async (
+    sessionID: string,
+    picked: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<{ agent?: string; known: boolean } | { failed: TransportResult }> => {
+    if (!picked && checkedAgentSessions.has(sessionID)) return { known: true };
+    let current: string | undefined;
+    if (!picked) {
+      const session = await request("GET", `/api/session/${encodeURIComponent(sessionID)}`, undefined, signal);
+      if (!session.response.ok) return { failed: session };
+      current = readString(responseData(session.payload), "agent");
+    }
+    const wanted = picked ?? current;
+    if (!wanted) return { known: true };
+    if (!agentCatalog.some((agent) => agent.name === wanted) && !agentsMissingFromCatalog.has(wanted)) {
+      const agents = await readAgentCatalog(signal);
+      if (!agents.response.ok) return { failed: agents };
+      if (agentCatalog.length && !agentCatalog.some((agent) => agent.name === wanted)) agentsMissingFromCatalog.add(wanted);
+    }
+    // A starting engine can list no agents yet; keep the choice then.
+    if (!agentCatalog.length) return { agent: picked, known: false };
+    const agent = agentCatalog.some((candidate) => candidate.name === wanted)
+      ? wanted
+      : agentCatalog.find((candidate) => candidate.mode !== "subagent" && !candidate.hidden)?.name ?? "build";
+    return { agent: agent === current ? undefined : agent, known: true };
+  };
+
   const listSessionPermissions = async (
     parameters: SessionParameters,
     options?: RequestOptions,
@@ -1957,6 +2258,9 @@ export function createClientV2(
       "POST",
       `/api/session/${encodeURIComponent(parameters.sessionID)}/permission/${encodeURIComponent(parameters.requestID)}/reply`,
       {
+        // OpenCode v2 2.0.26 reads `decision` and refuses a body without it;
+        // earlier v2 builds read `reply`, and extra keys are ignored.
+        decision: parameters.reply ?? "once",
         reply: parameters.reply ?? "once",
         ...(parameters.message ? { message: parameters.message } : {}),
       },
@@ -2031,7 +2335,7 @@ export function createClientV2(
     parameters: DirectoryParameters & { sessionID?: string } = {}, options?: RequestOptions,
   ): Promise<FieldsResult<QuestionRequest[]>> => {
     const path = parameters.sessionID
-      ? `/api/session/${encodeURIComponent(parameters.sessionID)}/form` : "/api/form/request";
+      ? `/api/session/${encodeURIComponent(parameters.sessionID)}/form` : "/api/form";
     const result = await request("GET", path, undefined, options?.signal);
     if (!result.response.ok) return failedResult(result);
     const questions = responseItems(result.payload).flatMap((item) => {
@@ -2067,7 +2371,7 @@ export function createClientV2(
     const question = questionFormsByID.get(parameters.requestID);
     if (!question) return {
       error: { name: "QuestionNotFound", requestID: parameters.requestID },
-      request: new Request(`${baseUrl}/api/form/request`),
+      request: new Request(`${baseUrl}/api/form`),
       response: new Response(null, { status: 404 }),
     };
     const answer = parameters.answers ? Object.fromEntries(question.fields.map((field, index) => {
@@ -2075,8 +2379,8 @@ export function createClientV2(
         field.options.find((option) => option.label === label)?.value ?? label);
       return [field.key, field.multiple ? values : values[0] ?? ""];
     })) : undefined;
-    const result = await request("POST",
-      `/api/session/${encodeURIComponent(question.request.sessionID)}/form/${encodeURIComponent(parameters.requestID)}/${answer ? "reply" : "cancel"}`,
+    const result = await request(answer ? "POST" : "DELETE",
+      `/api/session/${encodeURIComponent(question.request.sessionID)}/form/${encodeURIComponent(parameters.requestID)}${answer ? "/reply" : ""}`,
       answer ? { answer } : undefined, options?.signal);
     if (!result.response.ok) return failedResult(result);
     questionFormsByID.delete(parameters.requestID);
@@ -2228,6 +2532,22 @@ export function createClientV2(
       }
       return successfulResult(result, statuses);
     },
+    setModel: async (
+      parameters: SetSessionModelParameters,
+      options?: RequestOptions,
+    ): Promise<FieldsResult<Record<string, never>>> => {
+      const modelResult = await request(
+        "POST",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
+        { model: {
+          providerID: parameters.model.providerID,
+          id: parameters.model.modelID,
+          ...(parameters.variant === undefined ? {} : { variant: parameters.variant ?? "default" }),
+        } },
+        options?.signal,
+      );
+      return modelResult.response.ok ? successfulResult(modelResult, {}) : failedResult(modelResult);
+    },
     promptAsync: async (
       parameters: PromptParameters,
       options?: RequestOptions,
@@ -2247,19 +2567,23 @@ export function createClientV2(
       if (selections.length) {
         // Resolve against the same workspace's live registry, never guess an ID
         // from prose or silently fall back to asking the model to load a skill.
-        const catalog = await request("GET", "/api/skill", undefined, options?.signal);
-        if (!catalog.response.ok) return failedResult(catalog);
-        for (const selection of selections) {
-          const id = readString(selection, "id");
-          const name = readString(selection, "name");
-          const matches = responseItems(catalog.payload).filter((skill) => id
-            ? readString(skill, "id") === id : Boolean(name) && readString(skill, "name") === name);
-          const resolvedID = matches.length === 1 ? readString(matches[0], "id") : undefined;
-          if (!resolvedID) {
-            return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${name ?? id ?? "(unknown)"} is unavailable or ambiguous in OpenCode v2. Nothing was sent.`);
-          }
-          if (!skills.some((skill) => skill.id === resolvedID)) skills.push({ id: resolvedID });
+        // A folder the engine has just opened, or a skill written a moment ago,
+        // can be missing from the first read, so look again briefly first.
+        let resolution: SkillResolution = { missing: "(unknown)" };
+        for (const delay of [0, 250, 750, 1_500]) {
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          const catalog = await request("GET", "/api/skill", undefined, options?.signal);
+          if (!catalog.response.ok) return failedResult(catalog);
+          resolution = resolveSelectedSkills(selections, responseItems(catalog.payload));
+          if (!("missing" in resolution)) break;
         }
+        if ("missing" in resolution) {
+          return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${resolution.missing} is not available in OpenCode v2. Nothing was sent.`);
+        }
+        if ("ambiguous" in resolution) {
+          return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${resolution.ambiguous} matches more than one skill in OpenCode v2 (${resolution.candidates.join(", ")}). Rename one, then send again. Nothing was sent.`);
+        }
+        skills.push(...resolution.ids.map((id) => ({ id })));
         // The pinned native prompt materializes attachments without running the
         // skill tool's permission check. Ask the engine (including its policy
         // hooks) rather than treating catalog membership as authorization.
@@ -2276,20 +2600,34 @@ export function createClientV2(
           return unsupportedResult(baseUrl, "skill.attachment", message);
         }
       }
-      const modelResult = await request(
-        "POST",
-        `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
-        { model: {
-          providerID: parameters.model.providerID,
-          id: parameters.model.modelID,
-          ...(parameters.variant === undefined ? {} : { variant: parameters.variant }),
-        } },
-        options?.signal,
-      );
+      const [modelResult, agentResolution] = await Promise.all([
+        request(
+          "POST",
+          `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
+          { model: {
+            providerID: parameters.model.providerID,
+            id: parameters.model.modelID,
+            ...(parameters.variant === undefined ? {} : { variant: parameters.variant }),
+          } },
+          options?.signal,
+        ),
+        resolvePromptAgent(parameters.sessionID, parameters.agent, options?.signal),
+      ]);
       if (!modelResult.response.ok) return failedResult(modelResult);
+      if ("failed" in agentResolution) return failedResult(agentResolution.failed);
+      if (agentResolution.agent) {
+        const agentResult = await request(
+          "POST",
+          `/api/session/${encodeURIComponent(parameters.sessionID)}/agent`,
+          { agent: agentResolution.agent },
+          options?.signal,
+        );
+        if (!agentResult.response.ok) return failedResult(agentResult);
+      }
+      if (agentResolution.known) checkedAgentSessions.add(parameters.sessionID);
       if (parameters.system !== undefined) {
         const instructions = await request("PUT",
-          `/api/session/${encodeURIComponent(parameters.sessionID)}/instructions/entries/openwork-context`,
+          `/api/experimental/session/${encodeURIComponent(parameters.sessionID)}/instructions/entries/openwork-context`,
           { value: parameters.system }, options?.signal);
         if (!instructions.response.ok) return failedResult(instructions);
       }
@@ -2331,8 +2669,8 @@ export function createClientV2(
       }
       if (!parameters.title) return getSession(parameters, options);
       const result = await request(
-        "POST",
-        `/api/session/${encodeURIComponent(parameters.sessionID)}/rename`,
+        "PATCH",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}`,
         { title: parameters.title },
         options?.signal,
       );
@@ -2356,11 +2694,15 @@ export function createClientV2(
       parameters: SessionParameters & { messageID?: string },
       options?: RequestOptions,
     ): Promise<FieldsResult<Session>> => {
-      // Both adapters exclude the supplied boundary. Omitting it copies the
-      // complete conversation; native v2 calls this a "through" boundary.
-      const result = await request("POST", `/api/session/${encodeURIComponent(parameters.sessionID)}/fork`, {
-        boundary: parameters.messageID ? { type: "before", messageID: parameters.messageID } : { type: "through" },
-      }, options?.signal);
+      // Both engines copy history strictly before the supplied message. Native
+      // v2 drops unknown payload keys, so the field must be exactly `before`;
+      // omitting it copies the complete conversation.
+      const result = await request(
+        "POST",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}/fork`,
+        parameters.messageID ? { before: parameters.messageID } : {},
+        options?.signal,
+      );
       if (!result.response.ok) return failedResult(result);
       const mapped = mapV2Session(result.payload, directory);
       return mapped ? successfulResult(result, mapped) : failedResult({ ...result, payload: { name: "InvalidV2SessionResponse" } });
@@ -2379,7 +2721,7 @@ export function createClientV2(
       parameters: SessionParameters,
       options?: RequestOptions,
     ): Promise<FieldsResult<Session>> => {
-      const result = await request("POST", `/api/session/${encodeURIComponent(parameters.sessionID)}/revert/clear`, undefined, options?.signal);
+      const result = await request("DELETE", `/api/session/${encodeURIComponent(parameters.sessionID)}/revert`, undefined, options?.signal);
       return result.response.ok ? getSession(parameters, options) : failedResult(result);
     },
     summarize: async (): Promise<FieldsResult<boolean>> => unsupportedResult(baseUrl, "session.summarize"),
@@ -2437,11 +2779,11 @@ export function createClientV2(
   const adapter = {
     global: {
       health: async (options?: RequestOptions): Promise<FieldsResult<{ healthy: boolean; version: string }>> => {
-        const result = await request("GET", "/api/health", undefined, options?.signal);
+        const result = await request("GET", "/api/info", undefined, options?.signal);
         if (!result.response.ok) return failedResult(result);
         const data = responseData(result.payload);
         return successfulResult(result, {
-          healthy: isRecord(data) && data.healthy === true,
+          healthy: isRecord(data) && typeof data.version === "string" && typeof data.pid === "number",
           version: readString(data, "version") ?? "v2",
         });
       },
@@ -2464,7 +2806,13 @@ export function createClientV2(
       list: (parameters?: DirectoryParameters, options?: RequestOptions) => listProviders(parameters, options),
     },
     app: {
-      agents: async (): Promise<FieldsResult<never[]>> => localResult(baseUrl, "/api/agent", []),
+      agents: async (
+        _parameters: DirectoryParameters = {},
+        options?: RequestOptions,
+      ): Promise<FieldsResult<Agent[]>> => {
+        const result = await readAgentCatalog(options?.signal);
+        return result.response.ok ? successfulResult(result, agentCatalog) : failedResult(result);
+      },
     },
     command: {
       list: async (): Promise<FieldsResult<never[]>> => localResult(baseUrl, "/api/command", []),
@@ -2519,11 +2867,14 @@ export function createClientV2(
           Object.assign(error, { status: response.status, response });
           throw error;
         }
+        // V2 SSE is volatile and has no replay cursor. A reconnect can miss
+        // any number of catalog mutations, so reconcile after every open.
+        dispatchProviderCatalogChanged({ baseUrl, directory, reason: "reconnect" });
         return {
           stream: translateV2Events(response, options?.signal, async (sessionID, signal) => {
             const result = await request("GET", `/api/session/${encodeURIComponent(sessionID)}`, undefined, signal);
             return result.response.ok ? mapV2Session(result.payload, undefined) : null;
-          }, taskSessions, directory, (eventDirectory) => dispatchProviderCatalogChanged({ baseUrl, directory: eventDirectory ?? directory })),
+          }, taskSessions, directory, (eventDirectory, reason) => dispatchProviderCatalogChanged({ baseUrl, directory: eventDirectory ?? directory, ...(reason ? { reason } : {}) })),
         };
       },
     },
@@ -2542,12 +2893,34 @@ export function createClientV2(
   Object.assign(compatibilityClient.mcp, adapter.mcp);
   Object.assign(compatibilityClient.event, adapter.event);
   v2Clients.add(compatibilityClient);
-  return Object.assign(compatibilityClient, {
+  /**
+   * Commands still running in this engine location, across conversations.
+   * Exited commands are not listed, so this is the truth to resync against
+   * after the volatile event stream may have dropped an exit.
+   */
+  const listRunningShells = async (options?: RequestOptions): Promise<FieldsResult<EngineShell[]>> => {
+    const query = directory ? `?${new URLSearchParams({ "location[directory]": directory }).toString()}` : "";
+    const result = await request("GET", `/api/shell${query}`, undefined, options?.signal);
+    if (!result.response.ok) return failedResult(result);
+    if (!Array.isArray(responseData(result.payload))) return failedResult({ ...result, payload: { name: "InvalidV2ShellListResponse" } });
+    return successfulResult(result, responseItems(result.payload).flatMap((item) => {
+      const shell = readEngineShell(item);
+      return shell && shell.status === "running" ? [shell] : [];
+    }));
+  };
+
+  const client = Object.assign(compatibilityClient, {
+    listRunningShells,
     listSessionsPage: session.list, listMessagesPage: session.messages,
     listSessionQuestions: (parameters: SessionParameters, options?: RequestOptions) => listQuestions(parameters, options),
     replySessionQuestion: (parameters: SessionParameters & { requestID: string; answers: string[][] }, options?: RequestOptions) =>
       settleQuestion(parameters, options),
   });
+  // The SDK exposes session through a getter; its object is augmented above,
+  // not reassigned. Reflect that runtime augmentation in the returned type.
+  return client as typeof client & {
+    session: typeof client.session & Pick<typeof adapter.session, "setModel">;
+  };
 }
 
 export type OpencodeV2Client = ReturnType<typeof createClientV2>;

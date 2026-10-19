@@ -20,4 +20,8 @@ export * from "./inference.ts";
 export { requestBrowserTask } from "./browser-task.ts";
 export * from "./browser-fixture.ts";
 export * from "./freestyle-evidence.ts";
+export * from "./evidence-world.ts";
+export * from "./daytona-evidence.ts";
 export * from "./checkpoint-capability.ts";
+export * from "./eventually.ts";
+export * from "./self-host.ts";

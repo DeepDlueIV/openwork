@@ -25,7 +25,7 @@ output "setup_url" {
 
 output "bootstrap_code" {
   description = "Code to enter at /setup with an owner email."
-  value       = local.bootstrap_code
+  value       = var.write_only_secrets ? null : local.bootstrap_code
   sensitive   = true
 }
 
@@ -90,4 +90,34 @@ output "log_groups" {
     headless_runner = one(aws_cloudwatch_log_group.runner[*].name)
     workbot         = one(aws_cloudwatch_log_group.workbot[*].name)
   } : k => v if v != null }
+}
+
+output "target_group_arns" {
+  description = "Load balancer target groups for health monitoring. Null with alb_listener_arn-only setups is not applicable; groups are always created."
+  value       = { den_api = aws_lb_target_group.api.arn, den_web = aws_lb_target_group.web.arn }
+}
+
+output "database_identifier" {
+  description = "RDS instance identifier, for health monitoring. Null with database_url."
+  value       = var.create_database ? aws_db_instance.this[0].identifier : null
+}
+
+output "migration_step_identifier" {
+  description = "Standalone ECS migration task definition; API replicas never migrate."
+  value       = aws_ecs_task_definition.migrate_v1.arn
+}
+
+output "task_definition_arns" {
+  description = "Intended API-only and web revisions, for completed rollout verification."
+  value       = { den_api = aws_ecs_task_definition.api_v1.arn, den_web = aws_ecs_task_definition.web_v1.arn }
+}
+
+output "migration_result" {
+  description = "Migration task ARN, intended image and terminal exit result."
+  value       = jsondecode(aws_lambda_invocation.migrate.result)
+}
+
+output "certificate_arn" {
+  description = "ACM certificate serving the HTTPS listener."
+  value       = local.certificate_arn
 }

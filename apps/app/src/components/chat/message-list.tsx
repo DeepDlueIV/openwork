@@ -1,6 +1,6 @@
 "use memo";
 
-import { appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
+import { appBuildActivity, appBuildInProgress, appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
 import { BuiltAppPreviewSync } from "@/react-app/domains/apps/built-app-chat-preview"
 import { builtAppSummary } from "@/react-app/domains/apps/built-mcp-app-model"
 import { AppBuilderStep } from "./app-builder-step"
@@ -38,11 +38,14 @@ import { useOpenTargets } from "@/lib/target-provider"
 import { openTargetFromUrl } from "@/react-app/domains/session/artifacts/open-target"
 import { presentOpencodeSessionError, sessionErrorPresentationFromUIMessage } from "@/react-app/domains/session/sync/session-error"
 import { TaskRecovery } from "./task-recovery"
+import { BackgroundTaskNotice, BackgroundTasksLabel, BackgroundTasksMessage, backgroundShellNoticeFromMessage } from "./background-tasks"
+import { sessionBackgroundShells, useBackgroundShellStore, type BackgroundShell } from "@/react-app/domains/session/status/background-shell-store"
 import { messageAutoAccessWall } from "@/app/lib/inference-access"
 import { AutoAccessNotice } from "@/react-app/domains/cloud/auto-access-ui"
 import { rejectedRecoveryFromMessage } from "@/react-app/domains/session/sync/rejected-turn"
-import { replyModelLabel } from "@/react-app/domains/session/sync/reply-model"
-import { openModelPickerEvent } from "@/react-app/shell/new-providers-listener"
+import { replyModelLabel, replyModelProvider } from "@/react-app/domains/session/sync/reply-model"
+import { ProviderIcon } from "@/react-app/design-system/provider-icon"
+import { openAlternativeModelPicker } from "@/app/lib/inference-access"
 import { ApplyPatchTool } from "@/components/tools/apply-patch"
 import { BashTool } from "@/components/tools/bash"
 import { EditTool } from "@/components/tools/edit"
@@ -100,6 +103,8 @@ import { Tool } from "@/components/ui/tool"
 import { CapabilityCallLine } from "@/components/chat/capability-call-line"
 import { CodeModeTool, isSilentCodeModePart } from "@/components/chat/code-mode-tool"
 import { ConnectionCard } from "@/components/chat/connection-card"
+import { CredentialPromptCard } from "@/components/chat/credential-prompt-card"
+import { credentialPromptCall } from "@/components/chat/credential-prompt"
 import { connectionFromChatToolPart } from "@/components/tools/error-attribution"
 import { isReservedConnectionQuestion, type ChatConnectionDecisionBinding } from "@/react-app/domains/session/surface/mcp-chat-reconnect"
 import { codeModeToolCalls } from "@/lib/code-mode-tools"
@@ -107,6 +112,9 @@ import { dedupeRenderedTurnErrors } from "@/react-app/domains/session/sync/trans
 import { builtMcpAppId, hasPreservedMcpAppResult, isNativeConnectionAppLaunch, McpAppFrame } from "@/components/chat/mcp-app-frame"
 import { ReasoningBlock } from "@/components/chat/reasoning-block"
 import { SubagentRunLine } from "@/components/chat/subagent-run-line"
+import { RemoteThreadRunLine } from "@/components/chat/remote-thread-run-line"
+import { isRemoteThreadStatusCheck, remoteThreadFromToolPart, type RemoteThreadStart } from "@/lib/remote-session-thread"
+import { useRemoteThreadsEnabled, useReviveRemoteThread } from "@/react-app/domains/session/remote-threads/remote-thread-store"
 import { ToolAggregateGroup } from "@/components/chat/tool-aggregate-group"
 import {
   CurrentToolLifecycleProvider,
@@ -151,6 +159,17 @@ const SEARCH_HIGHLIGHT_MARK_CLASS = "rounded px-0.5 bg-amber-4/70 text-current"
 const COLLAPSED_STEP_RUN_MIN_ROWS = 4
 
 const AppCreationPartsContext = React.createContext<ReadonlySet<string>>(new Set())
+/**
+ * While an App is being built, its panel is the one live
+ * thing in the chat: thinking and plain tool rows fold away and the panel
+ * shows the latest of them. Approvals, connection cards, questions and
+ * sub-agents still show.
+ */
+const AppPanelLiveContext = React.createContext(false)
+const AppPanelFoldContext = React.createContext(false)
+/** Remote task rows a folded turn shows below its fold; inside it they render nothing. */
+const NO_PINNED_REMOTE_THREADS: ReadonlySet<string> = new Set()
+const PinnedRemoteThreadsContext = React.createContext<ReadonlySet<string>>(NO_PINNED_REMOTE_THREADS)
 const ParentRunActiveContext = React.createContext(true)
 
 function MessageTimestamp({ message, className }: { message: UIMessage; className?: string }) {
@@ -237,20 +256,53 @@ function isReservedConnectionQuestionPart(part: ToolUIPart | DynamicToolUIPart):
 
 const ToolMessageInner = ({ part }: ToolMessageProps) => {
   const { connectorIdentities, onMcpReconnect, onMcpReopenAuthorization, connectionQuestionToolCallId, getConnectionDecision } = useMessageList()
+  const remoteThreads = useRemoteThreadsEnabled()
+  const pinnedRemoteThreads = React.useContext(PinnedRemoteThreadsContext)
+  // The agent following up on a task the chat shows makes it run again.
+  useReviveRemoteThread(remoteThreads && part.type === "dynamic-tool" ? part : null)
   const parentActive = React.useContext(ParentRunActiveContext)
   const resolveLifecycle = useCurrentToolLifecycleResolver()
   const lifecycle = resolveLifecycle(part.toolCallId, isToolPartInFlight(part))
   const connectionCardParts = React.useContext(ConnectionCardPartsContext)
   const appCreationParts = React.useContext(AppCreationPartsContext)
+  const appPanelFold = React.useContext(AppPanelFoldContext)
   if (appCreationParts.has(part.toolCallId)) return null
   if (part.toolCallId === connectionQuestionToolCallId || isReservedConnectionQuestionPart(part)) return null
+  const promptCall = credentialPromptCall(part)
+  const remoteStart = remoteThreads && part.type === "dynamic-tool" ? remoteThreadFromToolPart(part) : null
+  const calls = part.type === "dynamic-tool" ? codeModeToolCalls(part) : null
+  const remoteStarts = remoteThreads && calls && part.type === "dynamic-tool" ? (codeModeCallsWithResults(part) ?? []).flatMap((call) => {
+    const start = remoteThreadFromToolPart(call)
+    return start ? [{ start, call }] : []
+  }) : []
+  const foldTool = appPanelFold && lifecycle !== "waiting" && !connectionCardParts.has(part.toolCallId) && !promptCall && !isTaskToolPart(part)
+  if (foldTool && !remoteStart && remoteStarts.length === 0) return null
 
   // Delegated work has its own lifecycle, even after a parent follow-up/error.
   if (isTaskToolPart(part)) return <SubagentRunLine part={part} parentActive={parentActive} />
 
+  // So does a task started on another computer: it reads as a sub-agent.
+  if (remoteStart && part.type === "dynamic-tool") {
+    return pinnedRemoteThreads.has(part.toolCallId) ? null : <RemoteThreadRunLine start={remoteStart} part={part} />
+  }
+
   if (part.type === "dynamic-tool") {
-    const calls = codeModeToolCalls(part)
-    if (calls) return <CodeModeTool part={part} calls={calls} lifecycle={lifecycle} connectors={connectorIdentities} />
+    if (calls && remoteStarts.length > 0) {
+      const started = new Set(remoteStarts.map(({ call }) => call.toolCallId))
+      return (
+        <div className="flex min-w-0 flex-col gap-1">
+          {!foldTool && <CodeModeTool part={part} calls={calls.filter((call) => !started.has(call.toolCallId))} lifecycle={lifecycle} connectors={connectorIdentities} />}
+          {promptCall && <CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} />}
+          {remoteStarts.filter(({ call }) => !pinnedRemoteThreads.has(call.toolCallId))
+            .map(({ start, call }) => <RemoteThreadRunLine key={start.key} start={start} part={call} />)}
+        </div>
+      )
+    }
+    if (calls) {
+      const script = <CodeModeTool part={part} calls={calls} lifecycle={lifecycle} connectors={connectorIdentities} />
+      // A key the script's Den call asked for is entered in the host's private field.
+      return promptCall ? <>{script}<CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} /></> : script
+    }
   }
 
   if (lifecycle === "waiting") {
@@ -342,6 +394,11 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
     return <ConnectionCard part={part} allowDiscovery={Boolean(getConnectionDecision?.(part.toolCallId))} />
   }
 
+  // A key an agent asked for is entered in the host's private field, never in chat.
+  if (part.type === "dynamic-tool" && promptCall) {
+    return <CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} />
+  }
+
   // Failed calls use the same sentence line with the "failures are
   // instructions" treatment (inline Reconnect/Retry).
   if (part.type === "dynamic-tool") {
@@ -366,11 +423,13 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
 
 const isEmptyMessage = (message: UIMessage): boolean => message.parts.length === 0
 
-function withoutSilentSteps(messages: UIMessage[]): UIMessage[] {
+function withoutSilentSteps(messages: UIMessage[], remoteThreads: boolean): UIMessage[] {
   let changed = false
   const next = messages.flatMap((message) => {
     if (message.role !== "assistant") return [message]
-    const parts = message.parts.filter((part) => !(part.type === "dynamic-tool" && isSilentCodeModePart(part)))
+    // With tasks on other computers shown live, the agent's own checks on them are plumbing.
+    const parts = message.parts.filter((part) => !(part.type === "dynamic-tool"
+      && (isSilentCodeModePart(part) || remoteThreads && isRemoteThreadStatusCheck(part))))
     if (parts.length === message.parts.length) return [message]
     changed = true
     return parts.length > 0 ? [{ ...message, parts }] : []
@@ -879,9 +938,8 @@ function renderUserText(text: string, highlightQuery: string | undefined, refere
 
 const UserMessage = React.memo(
   ({ message, isStreaming }: UserMessageProps) => {
-    const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, onEditUserMessage, highlightQuery, readOnly } = useMessageList()
+    const { onRevertToUserMessage, onEditUserMessage, highlightQuery, readOnly } = useMessageList()
     const references = useSessionReferencesMaybe()
-    const branching = forkingMessageId === message.id
     const wall = messageAutoAccessWall(message.metadata)
     const { sessionId, workspaceId } = useMessageList()
     const { onOpenTarget } = useOpenTargets()
@@ -899,13 +957,13 @@ const UserMessage = React.memo(
       [message.parts],
     )
     const hasContent = inlineParts.length > 0
+    // Same actions, in the same order, as the buttons below the bubble.
     const menuActions: MenuAction[] = []
     if (messageText) menuActions.push(
-      { type: "item", id: "edit", label: "Edit message", icon: <Pencil className="size-4" />, disabled: readOnly || Boolean(wall), onSelect: () => onEditUserMessage(message.id, messageText) },
       { type: "item", id: "copy", label: "Copy", icon: <Copy className="size-4" />, onSelect: () => navigator.clipboard.writeText(messageText) },
+      { type: "item", id: "edit", label: "Edit message", icon: <Pencil className="size-4" />, disabled: readOnly || Boolean(wall), onSelect: () => onEditUserMessage(message.id, messageText) },
     )
     if (!wall) menuActions.push(
-      { type: "item", id: "branch", label: branching ? "Branching..." : "Branch in new chat", icon: <Split className="size-4 rotate-90" />, disabled: Boolean(forkingMessageId), onSelect: () => onForkAtMessage(message.id) },
       { type: "item", id: "revert", label: "Revert", icon: <Undo2 className="size-4" />, disabled: readOnly, onSelect: () => onRevertToUserMessage(message.id) },
     )
 
@@ -969,10 +1027,7 @@ const UserMessage = React.memo(
                 ) : null}
                 {!isStreaming && !wall && (
                   <MessageActions
-                    className={cn(
-                      "flex items-center gap-0 transition-opacity duration-150 group-hover:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100",
-                      branching ? "opacity-100" : "opacity-0"
-                    )}
+                    className="flex items-center gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100"
                   >
                     <MessageTimestamp message={message} className="mr-1.5" />
                     <CopyMessageButton messages={[message]} />
@@ -989,19 +1044,6 @@ const UserMessage = React.memo(
                         </Button>
                       </MessageAction>
                     ) : null}
-                    <MessageAction tooltip={branching ? "Branching..." : "Branch in new chat"}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={branching ? "Branching..." : "Branch in new chat"}
-                        aria-busy={branching || undefined}
-                        disabled={Boolean(forkingMessageId)}
-                        onClick={() => onForkAtMessage(message.id)}
-                      >
-                        {branching ? <LoaderCircle className="motion-safe:animate-spin" /> : <Split className="rotate-90" />}
-                      </Button>
-                    </MessageAction>
-                    {branching ? <span role="status" className="sr-only">Branching...</span> : null}
                     <MessageAction tooltip="Revert">
                       <Button
                         variant="ghost"
@@ -1054,6 +1096,9 @@ const MessageComponent = React.memo(
       )
     }
 
+    const backgroundShellNotice = backgroundShellNoticeFromMessage(message)
+    if (backgroundShellNotice) return <BackgroundTaskNotice message={message} notice={backgroundShellNotice} />
+
     if (isEmptyMessage(message)) {
       return null
     }
@@ -1086,13 +1131,35 @@ function TranscriptAutoAccessNotice({ wall }: { wall: NonNullable<ReturnType<typ
 
 MessageComponent.displayName = "MessageComponent"
 
-const LoadingMessage = React.memo(({ elapsedSeconds, starting }: { elapsedSeconds: number; starting: boolean }) => (
+const NO_BACKGROUND_SHELLS: BackgroundShell[] = []
+
+const LoadingMessage = React.memo(({ elapsedSeconds, starting, backgroundShells = NO_BACKGROUND_SHELLS, backgroundStale = false }: {
+  elapsedSeconds: number
+  starting: boolean
+  /** Commands left running in the background share this line while the turn runs. */
+  backgroundShells?: BackgroundShell[]
+  backgroundStale?: boolean
+}) => {
+  const background = backgroundShells.length > 0 ? (
+    <>
+      <span aria-hidden="true"> · </span>
+      <BackgroundTasksLabel shells={backgroundShells} stale={backgroundStale} shimmer={false} />
+    </>
+  ) : null
+  return (
     <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
       <div role={starting ? "status" : undefined} data-loading-message={starting ? "starting" : "working"} className="py-1 text-sm text-muted-foreground">
-        <span className="ow-text-shimmer tabular-nums">{starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}</span>
+        {/* One shimmer sweeps the whole line, so Working and the count move as
+            one. A count the connection cannot confirm stays outside it, still. */}
+        <span className="ow-text-shimmer tabular-nums">
+          {starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}
+          {backgroundStale ? null : background}
+        </span>
+        {backgroundStale ? background : null}
       </div>
     </Message>
-))
+  )
+})
 
 LoadingMessage.displayName = "LoadingMessage"
 
@@ -1181,11 +1248,11 @@ function ErrorMessage({ error, description, showDescriptionOnResume, resumePromp
       retryTestId="session-error-resume"
       actions={gatewaySelectionRequired || selection || changeModel || gatewayConnectUrl !== undefined ? <>
         {gatewaySelectionRequired || selection ? <Button variant="ghost" size="xs" data-testid="session-error-gateway-selection"
-          onClick={() => window.dispatchEvent(new CustomEvent(openModelPickerEvent, { detail: { sessionId, initialTab: "available" } }))}>
+          onClick={() => openAlternativeModelPicker(sessionId)}>
           Choose group and credential set
         </Button> : null}
         {changeModel && !gatewaySelectionRequired && !selection ? <Button variant="ghost" size="xs"
-          onClick={() => window.dispatchEvent(new CustomEvent(openModelPickerEvent, { detail: { sessionId, initialTab: "available" } }))}>Change model</Button> : null}
+          onClick={() => openAlternativeModelPicker(sessionId)}>Change model</Button> : null}
         {gatewayConnectUrl !== undefined ? <Button variant="ghost" size="xs" data-testid="session-error-gateway-connect"
           onClick={() => dispatchAction({ target: "settings", action: "open", section: "providers" })}>Connect</Button> : null}
       </> : null} />
@@ -1259,7 +1326,7 @@ function getRenderableMessage(message: UIMessage) {
  * Running steps only ever grow. When a finished step folds its live detail
  * before the next step's row arrives, the area briefly got shorter and the
  * chat jumped; holding the tallest height seen during the run keeps it still.
- * The hold ends when the turn folds (this element unmounts).
+ * The hold ends when the turn folds or the App panel replaces these steps.
  */
 function LiveSteps({ children, active }: { children: React.ReactNode; active: boolean }) {
   const ref = React.useRef<HTMLDivElement>(null)
@@ -1346,7 +1413,6 @@ interface AssistantMessageGroupProps {
   isStreaming: boolean
   /** Newline-joined tool call ids of each built App's newest card in the conversation. */
   newestAppCallIds: string
-  creationRequested: boolean
 }
 
 function isMcpAppFramePart(part: UIMessage["parts"][number]): part is DynamicToolUIPart {
@@ -1354,6 +1420,33 @@ function isMcpAppFramePart(part: UIMessage["parts"][number]): part is DynamicToo
     && (part.state === "output-available" || part.state === "output-error")
     && hasPreservedMcpAppResult(part)
     && !isNativeConnectionAppLaunch(part)
+}
+
+/**
+ * A script's calls with their results. A one-call script whose call kept no
+ * result of its own returned that call's result, as its row already shows.
+ */
+function codeModeCallsWithResults(part: DynamicToolUIPart): DynamicToolUIPart[] | null {
+  const calls = codeModeToolCalls(part)
+  const only = calls?.length === 1 ? calls[0] : undefined
+  if (!only || only.state !== "output-available" || only.output !== undefined || part.state !== "output-available") return calls
+  return [{ ...only, output: part.output }]
+}
+
+/** Tasks a group's steps started on other computers, directly or from a script. */
+function collectRemoteThreadStarts(items: UIMessageWithIndex[]) {
+  const starts = new Map<string, { start: RemoteThreadStart; part: DynamicToolUIPart }>()
+  for (const item of items) {
+    if (item.message.role !== "assistant" || isSessionErrorMessage(item.message)) continue
+    for (const part of item.message.parts) {
+      if (part.type !== "dynamic-tool") continue
+      for (const call of codeModeCallsWithResults(part) ?? [part]) {
+        const start = remoteThreadFromToolPart(call)
+        if (start && !starts.has(start.key)) starts.set(start.key, { start, part: call })
+      }
+    }
+  }
+  return [...starts.values()]
 }
 
 function collectMcpAppParts(items: UIMessageWithIndex[]): DynamicToolUIPart[] {
@@ -1390,9 +1483,8 @@ function MessageGroup({
   isLastGroup,
   isStreaming,
   newestAppCallIds,
-  creationRequested,
 }: AssistantMessageGroupProps) {
-  const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision } = useMessageList()
+  const { onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision, resolveReplyModelTitle } = useMessageList()
   const connectionCardParts = React.useMemo(() => connectionCardPartIds(items, getConnectionDecision), [items, getConnectionDecision])
   const newestAppCalls = React.useMemo(() => new Set(newestAppCallIds.split("\n")), [newestAppCallIds])
   const lastItem = items[items.length - 1]
@@ -1401,17 +1493,40 @@ function MessageGroup({
   // silently corrupt fork/revert boundaries.
   const lastRealItem = items.findLast((item) => !isSessionErrorMessage(item.message))
   const parentActive = React.useContext(ParentRunActiveContext)
-  const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationRequested), [items, creationRequested])
+  const panelLive = React.useContext(AppPanelLiveContext) && isLastGroup
+  const creationLive = (parentActive || panelLive) && isLastGroup && !readOnly
+  const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationLive), [items, creationLive])
   const creationParts = React.useMemo(() => new Set(creationRuns.flatMap(run => [...(run.executions ?? []).map(part => part.toolCallId), ...(run.discoveries ?? []).map(part => part.toolCallId), ...(run.attempts ?? []).map(part => part.toolCallId), ...(run.preparation ? [run.preparation.toolCallId] : []), ...run.builds.map(part => part.toolCallId)])), [creationRuns])
-  const isLiveGroup = isStreaming && isLastGroup
+  const isLiveGroup = (isStreaming || (creationLive && creationRuns.length > 0)) && isLastGroup
+  const panelActivity = React.useMemo(
+    () => panelLive ? appBuildActivity(items.map(item => item.message), creationParts, showThinking) : null,
+    [panelLive, items, creationParts, showThinking],
+  )
+  const remoteThreads = useRemoteThreadsEnabled()
+  const remoteThreadStarts = React.useMemo(() => remoteThreads ? collectRemoteThreadStarts(items) : [], [items, remoteThreads])
 
   if (!lastItem || isMessageEmptyGroup(items)) {
     return null;
   }
 
   const renderableItems = getRenderableMessages(items)
-  const lastTextMessage = getLastTextPart(lastItem.message)
-  const resolvedReplyModel = lastRealItem?.message.role === "assistant" ? replyModelLabel(lastRealItem.message) : null
+  const lastTextMessage = items.findLast(item => getLastTextPart(item.message))
+  // Same actions, in the same order, as the buttons below the reply, and only
+  // once those buttons show (a finished reply with text).
+  const replyText = getMessagesText(renderableItems.map((item) => item.message))
+  const replyMenuActions: MenuAction[] = []
+  if (lastTextMessage && !isStreaming) {
+    if (replyText) replyMenuActions.push(
+      { type: "item", id: "copy", label: "Copy", icon: <Copy className="size-4" />, onSelect: () => navigator.clipboard.writeText(replyText) },
+    )
+    if (lastRealItem) replyMenuActions.push(
+      { type: "item", id: "branch", label: forkingMessageId === lastRealItem.message.id ? "Branching..." : "Branch in new chat", icon: <Split className="size-4 rotate-90" />, disabled: Boolean(forkingMessageId), onSelect: () => onForkAtMessage(lastRealItem.message.id) },
+    )
+  }
+  // Native turns can end with a metadata-free completion marker. Keep the
+  // latest known model within this turn rather than losing the answer's name.
+  const replyModelMessage = items.findLast(item => item.message.role === "assistant" && replyModelLabel(item.message, resolveReplyModelTitle))?.message
+  const resolvedReplyModel = replyModelMessage ? replyModelLabel(replyModelMessage, resolveReplyModelTitle) : null
   const mcpAppParts = collectMcpAppParts(items)
 
   // Leading messages without prose (tool/reasoning steps) render inline and
@@ -1484,6 +1599,10 @@ function MessageGroup({
   // A short finished run reads fine as a list, so only long ones fold away.
   const collapseSteps =
     !isLiveGroup && stepItems.length > 0 && stepRowCount > COLLAPSED_STEP_RUN_MIN_ROWS
+  // A task on another computer outlives the turn that started it and may still
+  // need the person, so its row stays in view below a folded run.
+  const pinnedRemoteThreads = collapseSteps ? remoteThreadStarts : []
+  const pinnedRemoteIds = pinnedRemoteThreads.length > 0 ? new Set(pinnedRemoteThreads.map(({ part }) => part.toolCallId)) : NO_PINNED_REMOTE_THREADS
   const replyStartedAt = stepsStartedAt ?? (lastRealItem ? getMessageCreated(lastRealItem.message) : null)
   const replySummaryLabel = replyStartedAt !== null && stepsEndedAt !== null && stepsEndedAt > replyStartedAt
     ? `Worked for ${formatToolCallDuration(stepsEndedAt - replyStartedAt)}${stepRowCount ? ` · ${stepRowCount} ${stepRowCount === 1 ? "step" : "steps"}` : ""}`
@@ -1525,6 +1644,11 @@ function MessageGroup({
     let run: { parts: AnyToolPart[]; key: string } | null = null
     const flush = () => {
       if (!run) return
+      // Plain command, read and search runs fold into the App panel while it is live.
+      if (panelLive) {
+        run = null
+        return
+      }
       nodes.push(
         <div key={`aggregate-${run.key}`}>
           <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
@@ -1554,34 +1678,50 @@ function MessageGroup({
   return (
     <DevProfiler id={`MessageGroup:${lastItem.message.id}`}>
       <AppCreationPartsContext.Provider value={creationParts}>
+      <AppPanelFoldContext.Provider value={panelLive}>
+      <PinnedRemoteThreadsContext.Provider value={pinnedRemoteIds}>
       <ConnectionCardPartsContext.Provider value={connectionCardParts}>
-      <div className="flex flex-col gap-2 group/message-group">
+      <ActionContextMenu
+        actions={replyMenuActions}
+        contentClassName="w-56"
+        // Override Trigger's select-none so replies stay selectable and copyable.
+        className="!select-text"
+        render={<div className="flex flex-col gap-2 group/message-group !select-text" style={{ userSelect: "text" }} />}
+      >
       {/* The scroll area keeps the same 8px rhythm the parts inside a single
           message use, so a step row is spaced identically whether or not a
           message boundary happens to fall between it and the previous row. */}
-      {!isLiveGroup && resolvedReplyModel && !collapseSteps ? <div data-testid="completed-work-rail" className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1 px-2 text-sm text-muted-foreground md:px-10">
-        {replySummaryLabel ? <span>{replySummaryLabel} · </span> : null}<span data-testid="reply-model">{resolvedReplyModel}</span>
+      {!isLiveGroup && resolvedReplyModel && !collapseSteps && replySummaryLabel ? <div data-testid="completed-work-rail" className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1 px-2 text-sm text-muted-foreground md:px-10">
+        <span>{replySummaryLabel}</span>
       </div> : null}
       {stepItems.length > 0 ? (
         collapseSteps ? (
-          <CompletedStepRun label={resolvedReplyModel ? replySummaryLabel : stepRunLabel} modelLabel={resolvedReplyModel}>
+          <CompletedStepRun label={resolvedReplyModel ? replySummaryLabel : stepRunLabel} modelLabel={null}>
             <div className="flex flex-col gap-2">
               {renderItems(stepItems, 0)}
               {foldedReasoning}
             </div>
           </CompletedStepRun>
         ) : (
-          <LiveSteps active={isLiveGroup}>
-            {renderItems(stepItems, 0)}
+          <LiveSteps active={isLiveGroup && !panelLive}>
+            {/* The App panel replaces ordinary steps. Release their held height
+                as they fold away, otherwise an empty rail pushes the panel down. */}
+            {renderItems(stepItems, 0, panelLive)}
           </LiveSteps>
         )
       ) : null}
-      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} active={parentActive && isLastGroup && !readOnly && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
+      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} startedAt={getMessageCreated(items[0]!.message)} completedAt={getMessageCompleted(lastItem.message)} activity={run === creationRuns.at(-1) ? panelActivity : null} active={creationLive && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
       {mcpAppParts.map(appFrame)}
-      {renderItems(proseItems, stepItems.length, collapseSteps)}
+      {pinnedRemoteThreads.map(({ start, part }) => (
+        <Message key={`remote-thread-${start.key}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10">
+          <RemoteThreadRunLine start={start} part={part} />
+        </Message>
+      ))}
+      {renderItems(proseItems, stepItems.length, collapseSteps || panelLive)}
       {lastTextMessage && !isStreaming && (
-        <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100 md:px-8", forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0")}>
-          <MessageActions className="flex gap-0">
+        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 md:px-8">
+          <div className={cn("flex items-center gap-2 transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0")}>
+          <MessageActions data-testid="reply-actions" className="flex gap-0">
             <CopyMessageButton messages={renderableItems.map((item) => item.message)} />
             {lastRealItem ? (
               <>
@@ -1598,26 +1738,30 @@ function MessageGroup({
                   </Button>
                 </MessageAction>
                 {forkingMessageId === lastRealItem.message.id ? <span role="status" className="sr-only">Branching...</span> : null}
-                <MessageAction tooltip="Revert">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Revert"
-                    disabled={readOnly}
-                    onClick={() => onRevertToUserMessage(lastRealItem.message.id)}
-                  >
-                    <Undo2 />
-                  </Button>
-                </MessageAction>
               </>
             ) : null}
           </MessageActions>
            <MessageTimestamp message={lastItem.message} />
+          </div>
+          {/* Keep caption ink readable (DESIGN.md V1/V2); hierarchy comes from size,
+              not compounded opacity. Hidden actions retain their layout slot. */}
+          {!isLiveGroup && resolvedReplyModel ? <span
+            data-testid="reply-model"
+            className={cn("inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground dark:text-foreground/70 transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", isLastGroup ? "opacity-100" : "opacity-0")}
+          >
+            <span className="sr-only">Replied with </span>
+            <span aria-hidden="true" className="flex size-3 shrink-0 items-center justify-center">
+              {replyModelMessage && replyModelProvider(replyModelMessage) ? <ProviderIcon providerId={replyModelProvider(replyModelMessage)} size={12} /> : null}
+            </span>
+            <span className="truncate">{resolvedReplyModel}</span>
+          </span> : null}
           {/* <MessageSources messages={items.map((item) => item.message)} /> */}
         </div>
       )}
-      </div>
+      </ActionContextMenu>
       </ConnectionCardPartsContext.Provider>
+      </PinnedRemoteThreadsContext.Provider>
+      </AppPanelFoldContext.Provider>
       </AppCreationPartsContext.Provider>
     </DevProfiler>
   )
@@ -1626,7 +1770,6 @@ function MessageGroup({
 function sameMessageGroupProps(left: AssistantMessageGroupProps, right: AssistantMessageGroupProps): boolean {
   return left.isLastGroup === right.isLastGroup
     && left.isStreaming === right.isStreaming
-    && left.creationRequested === right.creationRequested
     && left.newestAppCallIds === right.newestAppCallIds
     && left.items.length === right.items.length
     && left.items.every((item, index) => (
@@ -1687,6 +1830,11 @@ export function shouldShowRunReconnecting(status: ThreadStatus, syncDegraded: bo
 
 export function MessageList({ messages, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
   const { workspaceId, sessionId, onStopSubagentSession } = useMessageList()
+  const runningShells = useBackgroundShellStore((state) => state.booksByWorkspaceId[workspaceId]?.running)
+  const backgroundShells = React.useMemo(
+    () => sessionBackgroundShells(runningShells, sessionId),
+    [runningShells, sessionId],
+  )
   const [stoppingBackground, setStoppingBackground] = React.useState(false)
   const workspace = useWorkspaceMaybe()
   const tasks = React.useMemo(() => activeDelegatedTasks(messages), [messages])
@@ -1710,6 +1858,9 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
   }))
   const isStreaming = status === "streaming" || status === "retrying"
   const runActive = status === "streaming" || status === "retrying"
+  const appRunActive = runActive || activityStatus === "thinking" || activityStatus === "responding" || activityStatus === "compacting" || activityStatus === "waiting"
+  // The App panel replaces the Working line and the thinking rows while it builds.
+  const appPanelLive = React.useMemo(() => (appRunActive || status === "submitted") && appBuildInProgress(messages), [appRunActive, status, messages])
   const syncDegraded = syncHealth?.degraded === true
   const activityActive = runActive || tasks.length > 0
   const runStartedAtRef = React.useRef<number | null>(null)
@@ -1749,7 +1900,13 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
   }, [activityActive, runStartedAt, syncDegraded])
   const latestUserMessageId = React.useMemo(() => messages.findLast((message) => message.role === "user")?.id, [messages])
   // Steps that render nothing are removed before layout, so they leave no gap.
-  const items = React.useMemo(() => groupMessages(dedupeRenderedTurnErrors(withoutSilentSteps(messages)), status), [messages, status]);
+  const remoteThreads = useRemoteThreadsEnabled()
+  const visibleMessages = React.useMemo(() => dedupeRenderedTurnErrors(withoutSilentSteps(messages, remoteThreads)), [messages, remoteThreads]);
+  const items = React.useMemo(() => groupMessages(visibleMessages, status), [visibleMessages, status]);
+  // groupMessages indexes the visible transcript. Comparing those positions
+  // with the unfiltered transcript marks the live turn historical as soon as
+  // a silent script or duplicate error is removed.
+  const lastVisibleIndex = visibleMessages.length - 1;
   const error = useSessionErrorMessage();
   const hasSessionErrorMessage = React.useMemo(() => messages.some(isSessionErrorMessage), [messages])
   const latestAssistantToolParts = React.useMemo(
@@ -1779,7 +1936,8 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
   )
 
   return (
-    <ParentRunActiveContext.Provider value={runActive}>
+    <ParentRunActiveContext.Provider value={appRunActive}>
+    <AppPanelLiveContext.Provider value={appPanelLive}>
     <BuiltAppPreviewSync key={sessionId} messages={messages} active={runActive}>
     <CurrentToolLifecycleProvider
       activityStatus={activityStatus}
@@ -1800,17 +1958,16 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
             <MemoizedMessageGroup
               key={item.messages[0]?.message.id ?? "empty-assistant-group"}
               items={item.messages}
-              isLastGroup={item.messages.at(-1)?.index === messages.length - 1}
-              isStreaming={isStreaming && item.messages.at(-1)?.index === messages.length - 1}
+              isLastGroup={item.messages.at(-1)?.index === lastVisibleIndex}
+              isStreaming={isStreaming && item.messages.at(-1)?.index === lastVisibleIndex}
               newestAppCallIds={newestAppCallIds}
-              creationRequested={messages.slice(0, item.messages[0]?.index ?? 0).findLast(message => message.role === "user")?.parts.some(part => part.type === "text" && /\b(?:build|create|make|edit|update)\b[\s\S]*\b(?:mcp\s+)?app\b/i.test(part.text)) ?? false}
             />
           )
         }
 
-        const isLastMessage = item.index === messages.length - 1
+        const isLastMessage = item.index === lastVisibleIndex
         const isLastStep =
-          !messages[item.index + 1] || messages[item.index + 1].role !== item.message.role
+          !visibleMessages[item.index + 1] || visibleMessages[item.index + 1].role !== item.message.role
 
         return (
           <StandaloneMessage
@@ -1843,13 +2000,19 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
             </button>
           ) : null}
         </div>}
-        {showLoading && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} />}
+        {/* One rule for commands left running in the background: while the turn
+            runs, the count joins its Working line; otherwise it takes that
+            line's place on its own. One line either way, so the chat does not
+            move when the turn ends and the count stays. */}
+        {showLoading && !appPanelLive && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} backgroundShells={backgroundShells} backgroundStale={syncDegraded} />}
         {showReconnecting && <ReconnectingMessage lastConfirmedAt={syncHealth?.lastConfirmedAt ?? null} />}
+        {!showLoading && backgroundShells.length > 0 && <BackgroundTasksMessage shells={backgroundShells} stale={syncDegraded} />}
         {retryStatus ? <RetryMessage status={retryStatus} /> : null}
         {error && !hasSessionErrorMessage && !sessionErrorHandled ? <ErrorMessage error={error} /> : null}
       </ProgressiveMessageList>
     </CurrentToolLifecycleProvider>
     </BuiltAppPreviewSync>
+    </AppPanelLiveContext.Provider>
     </ParentRunActiveContext.Provider>
   )
 }

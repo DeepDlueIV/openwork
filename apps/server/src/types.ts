@@ -71,6 +71,15 @@ export interface ApprovalConfig {
 
 export type LocalManagedMcpVaultKeyProvider = () => Promise<Uint8Array>;
 
+export type DriveFileApprovalRequest = {
+  action: "push" | "overwrite" | "pull";
+  path: string;
+  fileId: string;
+  name: string;
+  webViewLink?: string | null;
+  mode?: "replace" | "copy";
+};
+
 /** What OpenWork Desktop tells the free Auto relay about this installation. */
 export type DesktopFreeHost = {
   currentVersion: string;
@@ -100,9 +109,21 @@ export interface ServerConfig {
   logRequests: boolean;
   /** In-memory secure key custody supplied by an embedding host such as OpenWork Desktop. */
   localManagedMcpVaultKey?: LocalManagedMcpVaultKeyProvider;
+  /** In-process Desktop confirmation; never configured through HTTP, files or the engine environment. */
+  driveFileApproval?: (request: DriveFileApprovalRequest) => Promise<boolean>;
   /** Desktop-owned managed engines only; never enabled by remote clients. */
   resumeInterruptedTasks?: boolean;
   anonymousInference?: { desktop: DesktopFreeHost };
+  /**
+   * Set by OpenWork Desktop or a hosted web bootstrap for a brand-new install (no earlier
+   * OpenWork state on disk). The server then starts on this engine unless an
+   * engine choice is already saved or OpenCode v1 history exists.
+   */
+  freshInstallEngine?: "v2";
+  /** Hosted bootstrap's resolved org rollout. Never downgrades an existing v2 engine. */
+  engineAutoUpgrade?: boolean;
+  /** An org policy was resolved; explicit false reverts only force-upgraded instances. */
+  engineForcePolicy?: boolean;
 }
 
 export interface Capabilities {

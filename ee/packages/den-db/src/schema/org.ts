@@ -20,6 +20,8 @@ export const DesktopHandoffGrantTable = mysqlTable(
   ],
 )
 
+// Unused since install pages stopped carrying tokens. Kept until a follow-up
+// migration drops it, so this release can still be rolled back.
 export const DesktopConnectGrantTable = mysqlTable(
   "desktop_connect_grant",
   {
@@ -47,6 +49,8 @@ export const OrganizationTable = mysqlTable(
     allowedEmailDomains: json("allowed_email_domains").$type<string[] | null>(),
     desktopAppRestrictions: json("desktop_app_restrictions").$type<DesktopAppRestrictions>().notNull().default(sql`(json_object())`),
     metadata: json("metadata").$type<Record<string, unknown> | null>(),
+    /** Changed atomically with team writes; makes Redis authorization entries disposable. */
+    teamMembershipRevision: varchar("team_membership_revision", { length: 36 }).notNull().default(""),
     createdAt: timestamp("created_at", { fsp: 3 }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { fsp: 3 })
       .notNull()
@@ -213,6 +217,8 @@ export const WorkspaceClaimCodeTable = mysqlTable(
   ],
 )
 
+// Unused since install pages stopped carrying tokens. Kept until a follow-up
+// migration drops it, so this release can still be rolled back.
 export const InstallLinkTable = mysqlTable(
   "install_link",
   {

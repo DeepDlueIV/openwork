@@ -3,19 +3,20 @@ import { ArtifactViewRevisionTable, ArtifactViewTable, DashboardAppTable } from 
 import { createDenTypeId, normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import type { GeneratedArtifactView, GeneratedArtifactViewRevision } from "@openwork/types/workflows"
 import { db } from "./db.js"
-import { organizationBuildsMcpApps } from "./mcp-app-rollout.js"
+import { env } from "./env.js"
 import { getWorkflowAccess, getWorkflowDetail } from "./workflows.js"
 import { buildGeneratedArtifactView } from "./generated-artifact-view-builder.js"
 import type { PluginArchActorContext } from "./routes/org/plugin-system/access.js"
 import { artifactViewResourceUri } from "./artifact-view-resource.js"
 
 /**
- * Workflow-bound views are read-only wherever the organization builds its own
- * Apps as MCP servers (see appMcpServersEnabled). They keep rendering, running
- * live data, and can be retired, but are not created, edited, or re-activated.
+ * Workflow-bound views are read-only wherever the deployment lets organizations
+ * build their own Apps as MCP servers (DEN_APP_MCP_SERVERS_ENABLED). They keep
+ * rendering, running live data, and can be retired, but are not created,
+ * edited, or re-activated.
  */
-export async function legacyArtifactViewsReadOnly(context: PluginArchActorContext): Promise<boolean> {
-  return organizationBuildsMcpApps(context.organizationContext.organization.id)
+function legacyArtifactViewsReadOnly(): boolean {
+  return env.appMcpServersEnabled
 }
 
 const ARTIFACT_VIEW_LIST_LIMIT = 50
@@ -201,6 +202,26 @@ export async function listArtifactViewsForScript(input: {
   return rows.map((row) => serializeView(row, revisions.get(row.id) ?? []))
 }
 
+/** listArtifactViewsForScript for many Workflows the caller can already read, keyed by Workflow. */
+export async function listArtifactViewsForScripts(input: {
+  context: PluginArchActorContext
+  configObjectIds: DenTypeId<"configObject">[]
+}): Promise<Map<string, GeneratedArtifactView[]>> {
+  const views = new Map<string, GeneratedArtifactView[]>()
+  if (input.configObjectIds.length === 0) return views
+  const rows = await db.select().from(ArtifactViewTable).where(and(
+    eq(ArtifactViewTable.organization_id, input.context.organizationContext.organization.id),
+    inArray(ArtifactViewTable.config_object_id, input.configObjectIds),
+  )).orderBy(desc(ArtifactViewTable.updated_at), desc(ArtifactViewTable.id))
+  const revisions = await batchedRevisionRows(rows)
+  for (const row of rows) {
+    const workflowViews = views.get(row.config_object_id) ?? []
+    workflowViews.push(serializeView(row, revisions.get(row.id) ?? []))
+    views.set(row.config_object_id, workflowViews)
+  }
+  return views
+}
+
 export async function loadArtifactViewRevision(input: {
   context: PluginArchActorContext
   artifactViewId: string
@@ -243,7 +264,7 @@ export async function saveArtifactViewRevision(input: {
   cssSource?: string
   dataMode?: "live" | "snapshot"
 }): Promise<GeneratedArtifactView> {
-  if (await legacyArtifactViewsReadOnly(input.context)) throw new Error("legacy_view_read_only")
+  if (legacyArtifactViewsReadOnly()) throw new Error("legacy_view_read_only")
   const script = await getWorkflowDetail({ context: input.context, configObjectId: input.configObjectId })
   if (!script.canManage) throw new Error("artifact_view_not_found")
   if (!script.currentVersion.outputSchema || !script.currentVersion.outputSchemaDigest) {
@@ -332,7 +353,7 @@ export async function activateArtifactViewRevision(input: {
   revisionId: string
   save?: { title: string; useInWorkflow: boolean; expectedActiveRevisionId: string | null }
 }): Promise<GeneratedArtifactView> {
-  if (await legacyArtifactViewsReadOnly(input.context)) throw new Error("legacy_view_read_only")
+  if (legacyArtifactViewsReadOnly()) throw new Error("legacy_view_read_only")
   const view = await accessibleView({ context: input.context, artifactViewId: input.artifactViewId, role: "manager" })
   const revisionId = parseRevisionId(input.revisionId)
   const revisions = await db.select().from(ArtifactViewRevisionTable).where(and(

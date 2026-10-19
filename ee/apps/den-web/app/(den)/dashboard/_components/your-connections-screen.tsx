@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, Loader2, Plug, Wrench } from "lucide-react";
 import { buttonVariants, DenButton } from "../../_components/ui/button";
 import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-template";
-import { getOrgAccessFlags, getToolTesterRoute } from "../../_lib/den-org";
+import { getLibraryConnectorRoute, getMcpConnectionRoute, getOrgAccessFlags, getToolTesterRoute } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { useDenFlow } from "../../_providers/den-flow-provider";
 import { McpConnectionAppSetup } from "./mcp-connection-app-setup";
@@ -19,7 +19,9 @@ import type { MarketplacePluginCloudReadinessConnection } from "./marketplace-da
 import { formatRequiredBy, sortConnectionsForFocus, trustedConnectionFocusId } from "./mcp-connection-display";
 import { marketplaceConnectionNeedsAdminSetup, marketplaceConnectionSetupTarget } from "./mcp-connection-setup";
 import { personalApiKeyStatus, personalApiKeyStatusLabel, usesMemberApiKey } from "./member-api-key";
-import { ItemMenu } from "./item-list";
+import { ItemMenu, ItemRow } from "./item-list";
+import { connectorReadinessState, connectorReadinessNote } from "./connector-readiness";
+import { useCheckMcpConnection } from "./mcp-connections-data";
 import { MemberApiKeyDialog, type MemberApiKeyTarget } from "./member-api-key-dialog";
 import { MICROSOFT_365_DISPLAY_SCOPES } from "./microsoft-365-permissions";
 import {
@@ -50,7 +52,7 @@ export function YourConnectionsScreen() {
   const access = getOrgAccessFlags(
     orgContext?.currentMember.role ?? "member",
     orgContext?.currentMember.isOwner ?? false,
-    orgContext?.roles,
+    orgContext?.currentMember.permissions,
   );
   const authorization = useMcpAccountAuthorization();
   const disconnectProvider = useDisconnectMyProviderAccount();
@@ -96,7 +98,6 @@ export function YourConnectionsScreen() {
       icon={Plug}
       title="Your Connections"
       description="Tools your organization has made available to you. Connect your own account where needed; workspace admins can test tools directly, and your AI coworker uses them with your permissions."
-      colors={["#DBEAFE", "#1E3A8A", "#2563EB", "#93C5FD"]}
     >
       {error ? (
         <div className="mb-6 rounded-[24px] border border-red-200 bg-red-50 px-5 py-4 text-[14px] text-red-700">
@@ -116,11 +117,11 @@ export function YourConnectionsScreen() {
         <div className="divide-y divide-gray-100 rounded-2xl border border-gray-100 bg-white">
           {visibleConnections.map((connection) => {
             const needsAdminSetup = marketplaceConnectionNeedsAdminSetup(connection, presets);
-            const setupTarget = marketplaceConnectionSetupTarget(connection, presets, access.isAdmin);
+            const setupTarget = marketplaceConnectionSetupTarget(connection, presets, access.canManageConnections);
             return <YourConnectionRow
               key={connection.id}
               connection={connection}
-              isAdmin={access.isAdmin}
+              canManageConnections={access.canManageConnections}
               needsAdminSetup={needsAdminSetup}
               setupTarget={setupTarget}
               presets={presets}
@@ -163,7 +164,7 @@ export function YourConnectionsScreen() {
 
 function YourConnectionRow({
   connection,
-  isAdmin,
+  canManageConnections,
   needsAdminSetup,
   setupTarget,
   presets,
@@ -179,7 +180,8 @@ function YourConnectionRow({
   toolTesterRoute,
 }: {
   connection: ExternalMcpConnection;
-  isAdmin: boolean;
+  /** `connections.manage`: finish setup, connect the org account, review OAuth and test tools. */
+  canManageConnections: boolean;
   needsAdminSetup: boolean;
   setupTarget: { connectionId: string; pluginId: string } | null;
   presets: ReturnType<typeof useMcpConnectionPresets>["data"];
@@ -195,7 +197,7 @@ function YourConnectionRow({
   toolTesterRoute: string;
 }) {
   const { runtimeConfig, runtimeConfigLoaded } = useDenFlow();
-  const { orgContext } = useOrgDashboard();
+  const { orgContext, orgSlug } = useOrgDashboard();
   const isPerMember = connection.credentialMode === "per_member";
   const apiKeyStatus = personalApiKeyStatus(connection);
   const needsAdminRecovery = !needsAdminSetup
@@ -205,17 +207,29 @@ function YourConnectionRow({
     && !needsAdminRecovery
     && (connection.needsReconnect === true || apiKeyStatus === "reconnect_required");
   const needsMyConnect = !needsAdminSetup && !needsAdminRecovery && isPerMember && !connection.connectedForMe;
-  const needsAdminConnect = !needsAdminSetup && !needsAdminRecovery && isAdmin && !isPerMember && connection.authType === "oauth" && !connection.connectedForMe;
+  const needsAdminConnect = !needsAdminSetup && !needsAdminRecovery && canManageConnections && !isPerMember && connection.authType === "oauth" && !connection.connectedForMe;
   const canDisconnect = !needsAdminSetup && canDisconnectMyConnectionAccount(connection);
   // A saved personal key keeps one visible action (Replace key); removal lives in the row menu.
   const keyInMenu = canDisconnect && apiKeyStatus !== null && apiKeyStatus !== "missing";
   const isNativeProvider = isNativeProviderConnectionId(connection.id, connection.nativeProviderKey);
-  const canTestTools = !needsAdminSetup && !needsAdminRecovery && isAdmin
+  const canTestTools = !needsAdminSetup && !needsAdminRecovery && canManageConnections
     && !isNativeProvider && connection.connectedForMe && !needsReconnect;
   const microsoftScopes = (connection.nativeProviderKey === "microsoft-365" || connection.id === "microsoft-365")
     ? (connection.grantedScopes ?? []).filter((scope) => MICROSOFT_365_DISPLAY_SCOPES.has(scope))
     : [];
   const requiredByLabel = formatRequiredBy(connection.requiredBy);
+  const checkConnection = useCheckMcpConnection();
+  const state = connectorReadinessState(connection);
+  if (state) return (
+    <div data-connector-row={connection.name} ref={rowRef}>
+      <ItemRow href={getLibraryConnectorRoute(orgSlug, connection.id)} logo={<IntegrationIcon name={connection.name} serviceUrl={connection.url} />} title={connection.name}
+        description={checkConnection.error ? "Could not check this connection. Try again." : !canManageConnections && state === "Couldn't verify" ? `${connectorReadinessNote(connection)} An admin can check again.` : connectorReadinessNote(connection)} status={state} statusOnNarrow wideAction wrapDescription={state === "Couldn't verify"}
+        action={state === "Sign in" ? <DenButton size="xs" variant="secondary" onClick={onConnect} data-testid={`connect-my-mcp-account-${connection.id}`}>Sign in</DenButton>
+          : state === "Set up" ? <DenButton size="xs" variant="secondary" disabled={!canManageConnections} title={!canManageConnections ? "An admin can finish setup." : undefined} href={canManageConnections ? getMcpConnectionRoute(orgSlug, connection.id) : undefined}>Set up</DenButton>
+          : <DenButton size="xs" variant="secondary" disabled={!canManageConnections || checkConnection.isPending} title={!canManageConnections ? "An admin can check this connection." : undefined} onClick={() => checkConnection.mutate(connection.id)}>Check again</DenButton>}
+      />
+    </div>
+  );
 
   return (
     <div
@@ -308,7 +322,7 @@ function YourConnectionRow({
               onSetup={onSetup}
             />
           ) : null}
-          {needsAdminRecovery && isAdmin ? (
+          {needsAdminRecovery && canManageConnections ? (
             <Link href="/dashboard/mcp-connections" className={buttonVariants({ variant: "primary", size: "sm" })}>
               Review OAuth
             </Link>

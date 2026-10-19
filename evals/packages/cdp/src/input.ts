@@ -67,6 +67,30 @@ export async function readDom(surface: Surface, selector: string) {
   return snapshot;
 }
 
+/** Browser-native file selection. Uses the real file input/change path without opening an OS picker or evaluating app state. */
+export async function attachFiles(surface: Surface, selector: string, files: string[]): Promise<void> {
+  const documentSnapshot = await surface.client.send("DOM.getDocument", { depth: 0 });
+  const root = isRecord(documentSnapshot) && isRecord(documentSnapshot.root) ? numberField(documentSnapshot.root, "nodeId") : null;
+  if (!root) throw new Error("The file picker document is unavailable");
+  const result = await surface.client.send("DOM.querySelectorAll", { nodeId: root, selector });
+  const nodes = isRecord(result) && Array.isArray(result.nodeIds) ? result.nodeIds : [];
+  if (nodes.length !== 1 || typeof nodes[0] !== "number") throw new Error(`Expected one file input for ${selector}; found ${nodes.length}`);
+  const unavailable = await callFunctionOnSurface(surface, (selector) => {
+    const input = document.querySelector(selector);
+    if (!(input instanceof HTMLInputElement) || input.type !== "file" || !input.isConnected) return "not an available file input";
+    // :disabled includes inherited fieldset disabling (and respects the first-legend exception).
+    if (input.matches(":disabled") || input.closest('[aria-disabled="true"], [inert]')) return "disabled";
+    // A file input itself is intentionally hidden by most pickers; an unavailable parent surface is not.
+    for (let parent = input.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      if (parent.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return "unavailable parent surface";
+    }
+    return null;
+  }, [selector]);
+  if (unavailable !== null) throw new Error(`File input unavailable: ${unavailable}`);
+  await surface.client.send("DOM.setFileInputFiles", { nodeId: nodes[0], files });
+}
+
 interface SerializedMatcher {
   kind: "string" | "regexp";
   value: string;
@@ -418,7 +442,11 @@ export async function locate(surface: Surface, target: Target): Promise<Located>
         matches = starts.length === 1 ? starts : [];
       }
     }
-    const element = matches[target.nth];
+    // Retained conversations leave hidden controls in DOM order. A person's
+    // target is the rendered control; a hidden earlier composer must not steal
+    // clicks or draft verification from the selected conversation.
+    const visibleMatches = matches.filter(rendered);
+    const element = visibleMatches[target.nth] ?? (visibleMatches.length === 0 ? matches[target.nth] : undefined);
     if (!element) {
       // Miss diagnostics: every rendered element of the requested role (or every rendered
       // button/link for role-less targets), so a miss shows the page's real controls rather
@@ -540,6 +568,13 @@ export async function clickAt(
 ): Promise<void> {
   const button = options.button ?? "left";
   const clickCount = options.clickCount ?? 1;
+  // A person activates the window they click. Electron can leave an admin or
+  // OAuth window foregrounded; synthetic input alone does not activate this
+  // target, and subsequent insertText can otherwise be silently discarded.
+  // An isolated frame (an MCP App) has no window of its own to activate.
+  await surface.client.send("Page.bringToFront").catch((cause: unknown) => {
+    if (!String(cause).includes("only be executed on top-level targets")) throw cause;
+  });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button, clickCount });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button, clickCount });

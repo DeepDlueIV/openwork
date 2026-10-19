@@ -4,16 +4,17 @@ import { fileURLToPath } from "node:url"
 import { getRequestListener } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
+import { routePath } from "hono/route"
 import { createAuth, type AppEnv } from "./auth.js"
 import { loadConfig } from "./config.js"
 import { createDen } from "./den.js"
+import { closeErrorReporting, initErrorReporting, reportError } from "./error-reporting.js"
 import { registerWorkbotRoutes } from "./routes.js"
-import { Store } from "./store.js"
 
 const config = loadConfig()
-const store = new Store(config.dbPath, config.sessionSecret)
-const den = createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl })
-const auth = createAuth({ config, store, den })
+await initErrorReporting(config.errorReporting)
+const den = createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl, serviceToken: config.runner.token })
+const auth = createAuth({ config, den })
 
 const app = new Hono<AppEnv>()
 app.use("*", async (c, next) => {
@@ -24,6 +25,7 @@ app.use("*", async (c, next) => {
 })
 app.onError((error, c) => {
   console.error("[workbot] request failed", { path: c.req.path, error: error.message })
+  reportError("route_error", error, { route: routePath(c), method: c.req.method })
   return c.json({ error: "internal_error" }, 500)
 })
 app.get("/healthz", (c) => c.json({ ok: true }))
@@ -59,13 +61,12 @@ if (config.dev) {
   server = createServer(getRequestListener(app.fetch))
 }
 
-setInterval(() => store.sweep(), 60 * 60_000).unref()
 server.listen(config.port, () => {
   console.log(`[workbot] listening on :${config.port} (${config.publicUrl}, den ${config.denApiUrl}, runner ${config.runner.url}${config.dev ? ", dev" : ""})`)
 })
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
     server.close()
-    process.exit(0)
+    void closeErrorReporting().finally(() => process.exit(0))
   })
 }

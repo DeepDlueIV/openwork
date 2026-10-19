@@ -6,8 +6,7 @@ import type { AuditCategory } from "@openwork/types/den/audit"
 import { db } from "../db.js"
 import { env } from "../env.js"
 import { appLogger } from "../observability/logger.js"
-import { getFeaturesForOrganizations } from "../features.js"
-import { appendAuditEventInOwnTransaction, readEffectiveAuditPolicyWithRetry, auditOperationOutcome, auditUserPrincipalKey, currentAuditChangeCapture, auditLogsFeatureEnabled, currentAuditRequestId, logAuditOutcomeLost, type AuditChangeCapture } from "./request-capture.js"
+import { appendAuditEventInOwnTransaction, readEffectiveAuditPolicyWithRetry, auditOperationOutcome, auditUserPrincipalKey, currentAuditChangeCapture, currentAuditRequestId, logAuditOutcomeLost, type AuditChangeCapture } from "./request-capture.js"
 
 // Events about a USER (sessions, account security, failed sign-ins) that have
 // no single request tenant (attribution "user_memberships", src/audit/routes).
@@ -16,8 +15,7 @@ import { appendAuditEventInOwnTransaction, readEffectiveAuditPolicyWithRetry, au
 // session belongs to (`organizationId`). Each organization gets its own
 // operation and transaction (entitlement recheck + policy-current fence) and
 // shares the request id, so the organization sees the request reference.
-// Only organizations with the auditLogs feature (features registry), deployment capture, an
-// enabled policy (lazy default allowed; entitlement checked there) and the
+// Only organizations with deployment capture, an enabled policy (lazy default allowed; entitlement checked there) and the
 // event category store anything. A failure in one organization logs
 // [audit-outcome-lost] and never fails the user's request or other organizations.
 
@@ -76,14 +74,12 @@ function fanoutActor(actor: UserMembershipsAuditInput["actor"], membership: Audi
 
 /**
  * Own-operation capture in one organization for code outside its request
- * operation: null unless deployment capture, the auditLogs feature
- * (`auditLogs` when already resolved in this call, else read), an enabled
+ * operation: null unless deployment capture, an enabled
  * policy (lazy default allowed) and the category hold. Throws on lookup errors
  * (callers log [audit-outcome-lost]).
  */
 export async function standaloneOrganizationAuditCapture(input: Readonly<{
   organizationId: string
-  auditLogs?: boolean
   actor: AuditActor
   principalKey: string
   origin?: AuditOrigin
@@ -95,8 +91,6 @@ export async function standaloneOrganizationAuditCapture(input: Readonly<{
   if (!env.auditCaptureEnabled) return null
   const organizationId = typeIdOrNull("organization", input.organizationId)
   if (!organizationId) return null
-  const auditLogs = input.auditLogs ?? await auditLogsFeatureEnabled(organizationId)
-  if (!auditLogs) return null
   const policy = await readEffectiveAuditPolicyWithRetry(organizationId)
   if (!policy || !policy.categories.includes(input.category)) return null
   return {
@@ -117,18 +111,14 @@ export async function recordAuditForUserMemberships(input: UserMembershipsAuditI
   if (input.organizationId !== undefined && !onlyOrganizationId) return 0
   const requestId = input.requestId === undefined ? currentAuditRequestId() : input.requestId
   let memberships: Awaited<ReturnType<typeof activeMemberships>>
-  let features: Awaited<ReturnType<typeof getFeaturesForOrganizations>>
   try {
     memberships = await activeMemberships(userId, onlyOrganizationId)
-    // Every membership organization's features in one batched read.
-    features = await getFeaturesForOrganizations([...new Set(memberships.map((row) => row.organizationId))])
   } catch (error) {
     logger.warn("audit membership lookup failed; user event not recorded", { request_id: requestId, audit_action: input.action, error_name: errorName(error) })
     return 0
   }
   let stored = 0
   for (const row of memberships) {
-    if (!features.get(row.organizationId)?.auditLogs) continue
     const membership: AuditUserMembership = { organizationId: row.organizationId, memberId: row.memberId, userId }
     const outcome = input.outcome ?? "succeeded"
     try {
@@ -139,7 +129,7 @@ export async function recordAuditForUserMemberships(input: UserMembershipsAuditI
       if (!capture) {
         const { actor, principalKey } = fanoutActor(input.actor, membership)
         capture = await standaloneOrganizationAuditCapture({
-          organizationId: membership.organizationId, auditLogs: true, actor, principalKey, origin: input.origin, requestId,
+          organizationId: membership.organizationId, actor, principalKey, origin: input.origin, requestId,
           kind: input.kind, scope: input.scope ?? userId, category: input.category,
         })
         if (!capture) continue

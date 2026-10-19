@@ -1,3 +1,4 @@
+import { recordConnectorCall, toolCallFailed } from "../capability-usage.js"
 import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import {
@@ -29,7 +30,6 @@ import {
   readExternalMcpResource,
 } from "../capability-sources/external-mcp-client-runtime.js"
 import { externalMcpDiagnosticForResponse } from "../capability-sources/external-mcp-diagnostics.js"
-import { organizationFeatureEnabled } from "../features.js"
 import { evaluateToolPolicy } from "../capability-sources/external-mcp-tool-policy.js"
 import { env } from "../env.js"
 import { tokenRoute } from "../middleware/index.js"
@@ -182,7 +182,16 @@ export function createExternalConnectionProxyServer(input: {
         }) }],
       }
     }
-    return runtime.callTool({ ...input.operation, toolName: tool.name, args })
+    const call = runtime.callTool({ ...input.operation, toolName: tool.name, args })
+    // Library usage: one row per direct call, ok or error, never the arguments or result.
+    recordConnectorCall(Promise.resolve(call), {
+      organizationId: connection.organizationId,
+      orgMembershipId: input.operation.member.orgMembershipId,
+      connectionId: connection.id,
+      // The App host calls tools for an open App; any other client is the member's agent.
+      source: input.appHostClient === true ? "app" : "agent",
+    }, toolCallFailed)
+    return call
   }
   // An administrator opted this connection into direct exposure: ordinary MCP
   // clients receive the provider's own catalog instead of the bounded
@@ -481,10 +490,7 @@ export function registerExternalConnectionProxyRoutes<T extends { Variables: Req
       return c.json({ error: "connection_not_available", message: "Connect your personal API key in Your Connections." }, 403)
     }
 
-    // The direct provider catalog is a member-facing MCP surface, so it obeys
-    // the same organization flag as the member-facing connection list.
     const directExposureEnabled = connection.exposeDirectly
-      && await organizationFeatureEnabled(organizationId, "mcpConnections")
 
     const redirectUriBase = resolvePublicOrigin(c.req.raw, env.apiPublicUrl)
     const redirectUri = `${redirectUriBase}/v1/mcp-connections/${encodeURIComponent(connection.id)}/connect/callback`

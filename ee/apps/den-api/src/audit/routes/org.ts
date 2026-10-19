@@ -1,5 +1,5 @@
 // Org slice: tenant routes of the org/admin/platform inventory (r3). Organization context
-// routes (orgMemberRoute/orgRoleRoute), platform-admin routes that target one org through a
+// routes (orgMemberRoute/orgRoleRoute/orgPermissionRoute), platform-admin routes that target one org through a
 // validated path param, and token/webhook routes whose handler proves the org after
 // verification. Tenant-less routes of the same inventory live in ./platform.ts.
 //
@@ -18,7 +18,7 @@ function route(
   return { method, path, class: auditClass, action, kind, resource: { type, idParam }, attribution, ...extra }
 }
 
-/** orgMemberRoute()/orgRoleRoute(): organizationContext supplies org + member actor. */
+/** orgMemberRoute()/orgRoleRoute()/orgPermissionRoute(): organizationContext supplies org + member actor. */
 function member(
   method: AuditRouteMethod, path: string, auditClass: AuditRouteClass, action: string, kind: string,
   type: string, idParam: string | null, extra: Extra = {},
@@ -71,6 +71,10 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("GET", "/v1/desktop-policies/by-key/:externalKey", "tenant_read", "desktop_policy.read_by_key", "desktop_policy.management", "desktop_policy", "externalKey"),
   member("PUT", "/v1/desktop-policies/by-key/:externalKey", "tenant_change", "desktop_policy.upsert_by_key", "desktop_policy.management", "desktop_policy", "externalKey"),
   member("DELETE", "/v1/desktop-policies/by-key/:externalKey", "tenant_change", "desktop_policy.delete_by_key", "desktop_policy.management", "desktop_policy", "externalKey"),
+  member("GET", "/v1/agent-permissions", "tenant_read", "agent_permission.list", "agent_permission.management", "agent_permission_policy", null),
+  member("PUT", "/v1/agent-permissions/everyone", "tenant_change", "agent_permission.everyone.update", "agent_permission.management", "agent_permission_policy", null, { changeEvidence: DOMAIN("agent-permissions"), notes: "agent_permission_policy.updated (only when a permission changed); per permission the before → after decision and for commands and websites how many allowed and blocked patterns were added or removed (patterns withheld)." }),
+  member("PUT", "/v1/agent-permissions/teams/:teamId", "tenant_change", "agent_permission.team.update", "agent_permission.management", "team", "teamId", { changeEvidence: DOMAIN("agent-permissions"), notes: "agent_permission_policy.updated, or .removed when nothing is left set for the team; per permission the before → after decision and for commands and websites how many allowed and blocked patterns were added or removed (patterns withheld)." }),
+  member("DELETE", "/v1/agent-permissions/teams/:teamId", "tenant_change", "agent_permission.team.delete", "agent_permission.management", "team", "teamId", { changeEvidence: DOMAIN("agent-permissions"), notes: "agent_permission_policy.removed with the team's overrides before removal (none when it had none)." }),
   member("GET", "/v1/me/desktop-config", "tenant_read", "desktop_policy.effective.read", "desktop_policy.management", "desktop_policy", null),
 
   // Members and invitations
@@ -78,12 +82,23 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/members/:memberId/transfer-ownership", "tenant_change", "member.ownership.transfer", "member.management", "member", "memberId", { changeEvidence: DOMAIN("members"), notes: "Legacy organization.member.ownership_transferred; one event lists every member whose role changed. Implicit API key revocation follows (api_key.revoked)." }),
   member("DELETE", "/v1/members/:memberId", "tenant_external", "member.remove", "member.management", "member", "memberId", { changeEvidence: DOMAIN("members"), external: `${SEAT_SYNC}; google credential revocation`, notes: "Legacy organization.member.removed. removeOrganizationMember commits locally, then awaits Stripe quantity hooks; a 5xx may follow a committed removal." }),
   member("POST", "/v1/invitations", "tenant_external", "invitation.create", "invitation.management", "invitation", null, { changeEvidence: DOMAIN("invitations"), external: `resend (invitation email); ${SEAT_SYNC}`, notes: "Legacy organization.invitation.created / organization.invitation.refreshed. inviteToken is a bearer secret and is never snapshotted." }),
+  member("GET", "/v1/invitations/:invitationId/link", "tenant_read", "invitation.link.read", "invitation.management", "invitation", "invitationId", { notes: "Returns the bearer join link; the link and token are never snapshotted." }),
   member("POST", "/v1/invitations/:invitationId/cancel", "tenant_external", "invitation.cancel", "invitation.management", "invitation", "invitationId", { changeEvidence: DOMAIN("invitations"), external: SEAT_SYNC, notes: "Legacy organization.invitation.canceled; placeholder member removal is an alternate removeOrganizationMember path (members emitter)." }),
 
   // Roles
-  member("POST", "/v1/roles", "tenant_change", "role.create", "role.management", "role", null, { changeEvidence: DOMAIN("roles"), notes: "Legacy organization.role.created." }),
-  member("PATCH", "/v1/roles/:roleId", "tenant_change", "role.update", "role.management", "role", "roleId", { changeEvidence: DOMAIN("roles"), notes: "Legacy organization.role.updated; rename cascades to members/invitations in the same transaction, permission change revokes credentials afterwards (api_key.revoked)." }),
-  member("DELETE", "/v1/roles/:roleId", "tenant_change", "role.delete", "role.management", "role", "roleId", { changeEvidence: DOMAIN("roles"), notes: "Legacy organization.role.deleted." }),
+
+  // Permissions
+  member("GET", "/v1/permissions/catalog", "tenant_read", "permission.catalog.read", "permission.management", "permission", null),
+  member("GET", "/v1/permissions/sets", "tenant_read", "permission_set.list", "permission.management", "permission_set", null),
+  member("POST", "/v1/permissions/sets", "tenant_change", "permission_set.create", "permission.management", "permission_set", null, { changeEvidence: DOMAIN("permissions"), notes: "Legacy organization.permission_set.created; creates the set, its team link and its allow rows in one transaction." }),
+  member("GET", "/v1/permissions/sets/:permissionSetId", "tenant_read", "permission_set.read", "permission.management", "permission_set", "permissionSetId"),
+  member("PATCH", "/v1/permissions/sets/:permissionSetId", "tenant_change", "permission_set.rename", "permission.management", "permission_set", "permissionSetId", { changeEvidence: DOMAIN("permissions"), notes: "Legacy organization.permission_set.renamed (only when the name changed); Shared roles." }),
+  member("PUT", "/v1/teams/:teamId/permission-set", "tenant_change", "team.permission_set.update", "permission.management", "team", "teamId", { changeEvidence: DOMAIN("permissions"), notes: "Legacy organization.permission_set.teams_changed; replaces the team's custom role in one transaction, one teams_changed event per set whose teams changed. Shared roles." }),
+  member("PUT", "/v1/permissions/sets/:permissionSetId/permissions", "tenant_change", "permission_set.permissions.update", "permission.management", "permission_set", "permissionSetId", { changeEvidence: DOMAIN("permissions"), notes: "Legacy organization.permission_set.permissions_changed (only when a status changed); append-only rows, granted/revoked keys annotated." }),
+  member("GET", "/v1/permissions/sets/:permissionSetId/history", "tenant_read", "permission_set.history.read", "permission.management", "permission_set", "permissionSetId"),
+  member("DELETE", "/v1/permissions/sets/:permissionSetId", "tenant_change", "permission_set.archive", "permission.management", "permission_set", "permissionSetId", { changeEvidence: DOMAIN("permissions"), notes: "Legacy organization.permission_set.archived; archives the team set and soft-removes its team link, never deletes." }),
+  member("GET", "/v1/permissions/keys/:permissionKey", "tenant_read", "permission.read", "permission.management", "permission", "permissionKey"),
+  member("GET", "/v1/members/:memberId/permissions", "tenant_read", "member.permissions.read", "permission.management", "member", "memberId"),
 
   // Teams
   member("POST", "/v1/teams", "tenant_change", "team.create", "team.management", "team", null),
@@ -96,13 +111,21 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("DELETE", "/v1/teams/by-key/:externalKey", "tenant_change", "team.delete_by_key", "team.management", "team", "externalKey"),
 
   // Organization settings
-  member("GET", "/v1/org", "tenant_read", "organization.read", "organization.settings", "organization", null, { notes: "Limitation: refreshRoles=true (owner/admin only) re-seeds the default role rows (seedDefaultOrganizationRoles) inside this GET; that write is only covered by this read's request evidence (read category), with no intent and no role change snapshots." }),
+  member("GET", "/v1/org", "tenant_read", "organization.read", "organization.settings", "organization", null),
   member("PATCH", "/v1/org", "tenant_change", "organization.settings.update", "organization.settings", "organization", null, { notes: "Includes requireSso/allowedEmailDomains; brand icon URL validation fetch is incidental." }),
   route("DELETE", "/v1/org", "platform", "organization.delete", "organization.settings", "organization", null, "none", { notes: "Evidence is a platform_audit_event row (success and failure), written before the response is released, because the purge deletes the organization's tenant audit history (a failed insert is logged [platform-audit-lost] and does not fail the deletion): actor = authenticated user (+ API key), target = organization from the verified organizationContext (handler addAuditRequestResource before the purge; never request input). External effects: stripe (cancelOrganizationSubscriptions), linear (deletion ticket). No tenant intent is recorded." }),
   member("POST", "/v1/org/brand-assets", "tenant_change", "organization.brand_assets.update", "organization.settings", "organization", null),
   member("GET", "/v1/org/web-origins", "tenant_read", "web_origin.list", "web_origin.management", "web_origin", null),
   member("POST", "/v1/org/web-origins", "tenant_change", "web_origin.approve", "web_origin.management", "web_origin", null, { changeEvidence: DOMAIN("web-origins"), notes: "Legacy organization.web_origin.approved." }),
   member("DELETE", "/v1/org/web-origins/:webOriginId", "tenant_change", "web_origin.remove", "web_origin.management", "web_origin", "webOriginId", { changeEvidence: DOMAIN("web-origins"), notes: "Legacy organization.web_origin.removed." }),
+  member("GET", "/v1/org/activity", "tenant_read", "organization.activity.read", "organization.activity", "organization", null, { notes: "Admin dashboard Activity (dashboardActivity feature): the five newest stored additions and skill versions across connections, providers, marketplaces and plugins; titles and ids only, no member identities." }),
+  member("POST", "/v1/org/workbot-settings/test-default-model", "tenant_external", "workbot.model_test", "organization.settings", "organization", null, { external: "headless_runner", notes: "Bounded paid synthetic completion only; no member content, tools, files, MCP token or stored conversation. Genuine recent user session and inference.manage required; durable diagnostic request throttle. Response excludes answer text and provider error details." }),
+  member("GET", "/v1/org/workbot-settings", "tenant_read", "workbot.settings.read", "organization.settings", "organization", null),
+  member("PUT", "/v1/org/workbot-settings", "tenant_change", "workbot.settings.update", "organization.settings", "organization", null, { notes: "Sets organization metadata workbot.model (the default model for Workbot, the Slack assistant and cloud-default Automations); the headless runner model catalog read is incidental." }),
+  member("GET", "/v1/org/default-model", "tenant_read", "default_model.read", "organization.settings", "organization", null),
+  member("GET", "/v1/org/default-model/options", "tenant_read", "default_model.options.list", "organization.settings", "organization", null, { notes: "Reads the organization's OpenWork Models, AI Gateway and provider model catalogs; no write." }),
+  member("PUT", "/v1/org/default-model/everyone", "tenant_change", "default_model.everyone.update", "organization.settings", "organization", null, { notes: "Sets or clears org_default_model for everyone (the model new OpenCode v2 desktop chats start with)." }),
+  member("PUT", "/v1/org/default-model/teams/:teamId", "tenant_change", "default_model.team.update", "organization.settings", "team", "teamId", { notes: "Sets or clears one team's org_default_model override; null returns the team to the organization default." }),
 
   // SCIM management
   member("GET", "/v1/scim", "tenant_read", "scim.connection.read", "scim.configuration", "scim_connection", null),
@@ -126,7 +149,7 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/sso/test/:intentId/cancel", "tenant_change", "sso_test.cancel", "sso.configuration", "sso_test_intent", "intentId"),
 
   // Billing
-  member("GET", "/v1/billing", "tenant_access", "billing.read", "billing.management", "billing", null, { notes: "includePortalUrl creates a Stripe billing portal session and returns its URL (super-admin)." }),
+  member("GET", "/v1/billing", "tenant_access", "billing.read", "billing.management", "billing", null, { notes: "includePortalUrl creates a Stripe billing portal session and returns its URL (billing.manage)." }),
   member("GET", "/v1/billing/web", "tenant_read", "billing.web.read", "billing.management", "billing", null),
   member("POST", "/v1/billing/stripe/checkout", "tenant_external", "billing.checkout.create", "billing.management", "billing_subscription", null, { external: "stripe (checkout session)" }),
   member("POST", "/v1/billing/stripe/checkout/sync", "tenant_external", "billing.subscription.sync", "billing.management", "billing_subscription", null, { external: "stripe (subscription fetch + local entitlement sync)" }),
@@ -147,17 +170,26 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/diagnostics/egress", "tenant_external", "diagnostics.egress.run", "diagnostics", "diagnostic", null, { external: "diagnostics_origin (egress probe)" }),
   member("PUT", "/v1/diagnostics/egress/token", "tenant_change", "diagnostics.egress_token.update", "diagnostics", "diagnostic_credential", null, { notes: "Stores a diagnostics credential; never snapshotted." }),
 
+  // Managed deployments (customer-cloud installs)
+  member("GET", "/v1/managed-deployments/configuration", "tenant_read", "managed_deployment.configuration.read", "managed_deployment", "managed_deployment", null),
+  member("GET", "/v1/managed-deployments", "tenant_read", "managed_deployment.list", "managed_deployment", "managed_deployment", null),
+  member("POST", "/v1/managed-deployments", "tenant_change", "managed_deployment.create", "managed_deployment", "managed_deployment", null),
+  member("DELETE", "/v1/managed-deployments/:deploymentId", "tenant_change", "managed_deployment.delete", "managed_deployment", "managed_deployment", "deploymentId", { notes: "Only never-approved records; installed deployments answer 409." }),
+  member("POST", "/v1/managed-deployments/:deploymentId/launch", "tenant_change", "managed_deployment.launch.prepare", "managed_deployment", "managed_deployment", "deploymentId", { notes: "Prepares an approval link or account-checked command; nothing runs until the customer approves in their cloud." }),
+
   // Member-facing org reads and install distribution
-  member("GET", "/v1/me/dashboards", "tenant_read", "dashboard.my.list", "dashboard.access", "dashboard", null),
   member("GET", "/v1/me/library", "tenant_read", "library.list", "library.access", "plugin", null),
   member("GET", "/v1/me/plugin-access", "tenant_read", "plugin_access.effective.list", "library.access", "plugin", null),
   member("GET", "/v1/me/install-config", "tenant_read", "install_config.read", "install.distribution", "organization", null),
   member("GET", "/v1/me/install/:platform", "tenant_access", "install_artifact.download", "install.distribution", "install_artifact", "platform"),
-  member("POST", "/v1/orgs/:organizationId/install-links", "tenant_change", "install_link.create", "install.distribution", "install_link", null, { notes: "Path organizationId only seeds context; attribute to organizationContext. Returns the install token; rotate revokes older links." }),
+  member("POST", "/v1/orgs/:organizationId/install-links", "tenant_change", "install_link.create", "install.distribution", "install_link", null, { notes: "Path organizationId only seeds context; attribute to organizationContext. Returns the normal install page address; creates nothing." }),
 
   // Platform admin acting on one org (actor = admin user, origin platform_admin)
+  admin("GET", "/v1/admin/organizations/:organizationId", "tenant_read", "organization.admin_detail.read"),
+  admin("GET", "/v1/admin/organizations/:organizationId/insights", "tenant_read", "organization.admin_insights.read"),
+  admin("GET", "/v1/admin/organizations/:organizationId/usage", "tenant_read", "organization.admin_usage.read"),
   admin("GET", "/v1/admin/organizations/:organizationId/capabilities", "tenant_read", "organization.capabilities.read"),
-  admin("PUT", "/v1/admin/organizations/:organizationId/capabilities", "tenant_change", "organization.capabilities.update", { notes: "Sets or clears this organization's feature overrides (organization_feature, features registry). Can turn auditLogs itself on or off: capture is decided by the feature read before the write; when the request turns it off, the outcome falls back to platform evidence (audit_policy_changed). The admin MCP tool den_set_org_capability makes the same change (service action organization.capability.set)." }),
+  admin("PUT", "/v1/admin/organizations/:organizationId/capabilities", "tenant_change", "organization.capabilities.update", { notes: "Sets or clears this organization's feature overrides (organization_feature, features registry). The admin MCP tool den_set_org_capability makes the same change (service action organization.capability.set)." }),
   admin("PATCH", "/v1/admin/organizations/:organizationId/plan", "tenant_change", "organization.plan.update"),
   admin("PATCH", "/v1/admin/organizations/:organizationId/free-seats", "tenant_external", "organization.free_seats.update", { external: "stripe (seat subscription quantity resync)" }),
   admin("PATCH", "/v1/admin/organizations/:organizationId/dpa", "tenant_change", "organization.dpa.update", { changeEvidence: DOMAIN("organization-settings"), notes: "Legacy organization.dpa_signed.updated; reason text is not snapshotted (reasonProvided only)." }),
@@ -182,12 +214,10 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   // Worker tokens
   handler("POST", "/v1/workers/:id/activity-heartbeat", "tenant_signal", "worker.activity.heartbeat", "worker.runtime", "worker", "id", "Org proof: activity-scope WorkerTokenTable match for :id -> worker org (actor service worker:<id>). High volume."),
 
-  // Install links and connect grants
-  handler("GET", "/v1/install-config", "tenant_access", "install_link.resolve", "install.distribution", "install_link", null, "Org proof: install-link token (query) -> InstallLink.organizationId; actor service install_link:<installLinkId>; attributed before the connect handoff grant is minted."),
-  handler("GET", "/v1/install/:platform", "tenant_access", "install_link.artifact.download", "install.distribution", "install_artifact", "platform", "Org proof: install-link token -> InstallLink.organizationId; actor service install_link:<installLinkId>."),
-  handler("POST", "/v1/install-connect/preview", "tenant_access", "connect_grant.preview", "install.distribution", "connect_grant", null, "Org proof: connect grant code (body) -> grant's install link -> organization (previewDesktopConnectGrant, no consumption); actor service install_link:<installLinkId> (never the code or its hash)."),
-  handler("POST", "/v1/install-connect/exchange", "tenant_access", "connect_grant.exchange", "install.distribution", "connect_grant", null, "Org proof: the grant is resolved without consuming it, attributed (actor service install_link:<installLinkId>), then the one-time exchange runs and returns connection claims."),
-  handler("POST", "/v1/install-connect/status", "tenant_access", "connect_grant.status.read", "install.distribution", "connect_grant", null, "Org proof: connect grant code (body) -> grant's install link -> organization; actor service install_link:<installLinkId>. Polling; returns claims."),
+  // Managed deployment installers and health agents (customer cloud identity)
+  handler("POST", "/v1/managed-deployments/:deploymentId/runs/:runId/enroll", "tenant_signal", "managed_deployment.run.enroll", "managed_deployment.runtime", "managed_deployment_run", "runId", "Org proof: AWS-verified signed STS identity of the deployment's runner role and run challenge -> ManagedDeployment.org_id (actor service managed-deployment:<id>)."),
+  handler("POST", "/v1/managed-deployments/:deploymentId/runs/:runId/events", "tenant_signal", "managed_deployment.run.event", "managed_deployment.runtime", "managed_deployment_run", "runId", "Org proof: run-scoped token hash for :runId -> ManagedDeployment.org_id (actor service managed-deployment:<id>)."),
+  handler("POST", "/v1/managed-deployments/:deploymentId/heartbeat", "tenant_signal", "managed_deployment.health.report", "managed_deployment.runtime", "managed_deployment", "deploymentId", "Org proof: AWS-verified signed STS identity of the deployment's health role, bound to the body hash -> ManagedDeployment.org_id (actor service managed-deployment:<id>). Every 5 minutes per deployment."),
 
   // Workspace bootstrap claims (provisional org)
   handler("GET", "/v1/bootstrap/workspace/:bootstrapId/claim", "tenant_read", "workspace_claim.read", "workspace.bootstrap", "workspace_bootstrap", "bootstrapId", "Org proof: preclaim assertion (Bearer JWT, readPreclaimAssertion) bound to :bootstrapId -> provisional org; actor = the setup agent user + setup member."),

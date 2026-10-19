@@ -3,8 +3,6 @@ import { eq, sql } from "@openwork-ee/den-db/drizzle"
 import { AuditPolicyTable, OrganizationTable } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import type { AuditEntitlement } from "@openwork/types/den/audit"
-import { organizationFeatureEnabled } from "../features.js"
-import { AuditReadError } from "./cursors.js"
 import { PILOT_DEFAULT_CATEGORIES } from "./pilot-policy.js"
 
 // Temporary server-owned declarations, not an enforced cap or a billing product.
@@ -14,24 +12,17 @@ export const PROVISIONAL_AUDIT_ALLOWANCE = 6_000_000
 export const PROVISIONAL_AUDIT_ATTACHMENT_WINDOW_SECONDS = 300
 export const PROVISIONAL_AUDIT_SYSTEM_ACTOR = "den-api.audit-defaults"
 
-/** One fresh, unlocked organization read; the rollout flag never changes the entitlement. */
+/** One fresh, unlocked organization read of the audit entitlement. */
 export async function readAuditAvailability(database: AuditDatabase | AuditTx, organizationId: string) {
   const [organization] = await database.select({ metadata: OrganizationTable.metadata }).from(OrganizationTable)
     .where(eq(OrganizationTable.id, normalizeDenTypeId("organization", organizationId))).limit(1)
   if (!organization) throw new AuditLogError("audit_storage_inconsistent")
   const { getAuditEntitlement } = await import("../entitlements.js")
-  const featureEnabled = await organizationFeatureEnabled(organizationId, "auditLogs", { database })
-  return { featureEnabled, entitlement: getAuditEntitlement(organization.metadata) }
+  return { entitlement: getAuditEntitlement(organization.metadata) }
 }
 
 export async function readAuditEntitlement(database: AuditDatabase | AuditTx, organizationId: string): Promise<AuditEntitlement> {
   return (await readAuditAvailability(database, organizationId)).entitlement
-}
-
-export async function requireAuditFeature(database: AuditDatabase | AuditTx, organizationId: string) {
-  const availability = await readAuditAvailability(database, organizationId)
-  if (!availability.featureEnabled) throw new AuditReadError("audit_feature_disabled")
-  return availability
 }
 
 /**
@@ -43,7 +34,7 @@ export async function initializeAuditPolicyInTx(tx: AuditTx, inputOrganizationId
   if (!captureAvailable) return { policy: null, initialized: false }
   const organizationId = normalizeDenTypeId("organization", inputOrganizationId)
   const availability = await readAuditAvailability(tx, organizationId)
-  if (!availability.featureEnabled || !availability.entitlement.enabled) return { policy: null, initialized: false }
+  if (!availability.entitlement.enabled) return { policy: null, initialized: false }
   const existing = await readAuditPolicy(tx, organizationId)
   if (existing) return { policy: existing, initialized: false }
 
@@ -96,5 +87,5 @@ export async function readEffectiveAuditPolicy(database: AuditDatabase | AuditTx
 /** Fresh, unlocked recheck that the organization still has audit capture available. */
 export async function recheckAuditEntitlement(database: AuditDatabase | AuditTx, organizationId: string): Promise<void> {
   const availability = await readAuditAvailability(database, organizationId)
-  if (!availability.featureEnabled || !availability.entitlement.enabled) throw new AuditLogError("audit_policy_changed")
+  if (!availability.entitlement.enabled) throw new AuditLogError("audit_policy_changed")
 }

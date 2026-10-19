@@ -20,7 +20,10 @@ import type { AuditRouteClass, AuditRouteDeclaration, AuditRouteMethod } from ".
 // GET /api/auth/scim/get-provider-connection, GET /api/auth/scim/list-provider-connections,
 // POST /api/auth/scim/v2/Users, PUT|PATCH|DELETE /api/auth/scim/v2/Users/:userId,
 // GET|POST /api/auth/scim/v2/Groups, GET|PUT|PATCH|DELETE /api/auth/scim/v2/Groups/:groupId,
-// GET /api/auth/scim/v2/ResourceTypes, GET /api/auth/scim/v2/Schemas.
+// GET /api/auth/scim/v2/ResourceTypes, GET /api/auth/scim/v2/Schemas,
+// POST /api/auth/organization/create-role | update-role | delete-role (no longer registered by
+// better-auth now that dynamicAccessControl is off; Den refuses and audits them,
+// routes/auth/raw-role-refusals.ts).
 
 const CREDENTIAL = "Security-relevant credential event."
 const TOKEN = "Security-relevant: issues credentials; token values are never recorded."
@@ -38,12 +41,12 @@ function platform(method: AuditRouteMethod, path: string, action: string, kind: 
   return declare(method, path, "platform", action, kind, type, idParam, "none", { notes })
 }
 
-/** Side-effect-free GET (session/metadata read): successes need the platformAuditReads feature. */
+/** Side-effect-free GET (session/metadata read). */
 function readOnly(path: string, action: string, kind: string, type: string, idParam: string | null, notes: string): AuditRouteDeclaration {
   return { ...platform("GET", path, action, kind, type, idParam, notes), readOnly: true }
 }
 
-const RAW_REFUSED = "Before the refusal, hooks.before (auditBetterAuthRefusal) attributes the attempt to the organization the body names (organizationId), else the cookie session's active organization, ONLY when the session user is an active member there (attribution refusal: no .requested intent is written, so audit can never turn the 403 into a 503): <action>.attempted, outcome denied, reasonCode raw_endpoint_refused, category security when selected. No session, an unflagged organization or one the user is not a member of: platform evidence only."
+const RAW_REFUSED = "Before the refusal, hooks.before (auditBetterAuthRefusal) attributes the attempt to the organization the body names (organizationId), else the cookie session's active organization, ONLY when the session user is an active member there (attribution refusal: no .requested intent is written, so audit can never turn the 403 into a 503): <action>.attempted, outcome denied, reasonCode raw_endpoint_refused, category security when selected. No session, an unknown organization or one the user is not a member of: platform evidence only."
 
 function refused(path: string, action: string, type: string, denRoute: string): AuditRouteDeclaration {
   return declare("POST", path, "tenant_change", action, "platform.auth.raw_mutation", type, null, "handler", { notes: `Refused by hooks.before (getRawBetterAuthMutationDenial, 403 for every external caller); ${denRoute} performs this server-side. ${RAW_REFUSED}` })
@@ -69,7 +72,7 @@ function tenant(method: AuditRouteMethod, path: string, cls: AuditRouteClass, ac
 }
 
 const ORG_READ = "hooks.before (audit/better-auth.ts): org = query organizationId (get-full-organization: organizationSlug lookup), else the session's activeOrganizationId, used only once the cookie session user's active membership in it is confirmed; actor = session user + memberId."
-const SCIM_READ = "hooks.before: the organization part of the SCIM bearer only selects the audit flag read; for a flagged organization the token is verified through resolveScimProviderFromBearerToken -> provider.organizationId (must match); actor service scim:<providerId>. Invalid tokens stay unattributed (platform store)."
+const SCIM_READ = "hooks.before: the organization part of the SCIM bearer only selects the organization lookup; for an existing organization the token is verified through resolveScimProviderFromBearerToken -> provider.organizationId (must match); actor service scim:<providerId>. Invalid tokens stay unattributed (platform store)."
 const SSO_CALLBACK = "hooks.after, phase after, only when ctx.context.newSession exists: org = sso_provider.organizationId of the :providerId that validated the assertion; actor = newSession user (+ member id once JIT provisioning made one). Failed callbacks stay platform (provider id is caller-controlled until validated). The created session also records session.created (method sso) through databaseHooks.session.create.after in the session's own activeOrganizationId (its own operation; may differ from the provider's organization)."
 const OAUTH_TOKENS = "audit/domain/oauth-tokens.ts"
 const OAUTH_AUTHORIZE = "When the signed-in user has an MCP consent organization (postLogin.consentReferenceId = the session's active organization, noted for the request) the request is attributed there after the endpoint ran (phase after) once their active membership is verified; actor = user + memberId. The authorization code is request evidence only and never recorded. Non-MCP (OIDC) authorization, no session or failures: platform evidence."
@@ -157,7 +160,7 @@ export const authAuditRoutes: readonly AuditRouteDeclaration[] = [
   platform("POST", "/device/approve", "auth.device.approve", "platform.device", "device_code", null, `${TOKEN} ${USER_ONLY} Kept platform: the raw endpoint stages no organization (it writes status/userId only; device_code.organizationId is set solely by Den POST /v1/auth/device/decision, which is already attributed to the chosen member's organization before the code is decided). A code decided through Den is no longer pending, so this endpoint cannot act on a staged organization.`),
   platform("POST", "/device/deny", "auth.device.deny", "platform.device", "device_code", null, `${USER_ONLY} Kept platform: denial binds no organization (Den POST /v1/auth/device/decision is the org-aware path).`),
   // Organization plugin: user-scoped
-  platform("POST", "/organization/create", "auth.organization.create", "platform.organization", "organization", null, "Creates a new org that has no audit policy yet; alternate route to POST /v1/org (afterCreateOrganization seeds roles)."),
+  platform("POST", "/organization/create", "auth.organization.create", "platform.organization", "organization", null, "Creates a new org that has no audit policy yet; alternate route to POST /v1/org."),
   readOnly("/organization/list", "auth.organization.list", "platform.organization", "organization", null, USER_ONLY),
   readOnly("/organization/list-user-invitations", "auth.organization.user_invitation.list", "platform.organization", "invitation", null, USER_ONLY),
   readOnly("/organization/list-user-teams", "auth.organization.user_team.list", "platform.organization", "team", null, USER_ONLY),
@@ -169,7 +172,7 @@ export const authAuditRoutes: readonly AuditRouteDeclaration[] = [
   // Organization plugin: org-attributable
   tenant("POST", "/organization/leave", "tenant_change", "auth.organization.leave", "organization.membership", "member", null, {
     changeEvidence: "audit/domain/members.ts",
-    notes: "Alternate route to member removal (legacy organization.member.removed). hooks.before attributes once the session user's active membership in body.organizationId is confirmed (flagged organizations only; intent before the delete, 503 only when the intent append fails) and keeps the member row; hooks.after appends member.removed (memberRemovedEvent, reasonCode member_left) in a fresh transaction after better-auth's delete, or writes the legacy row when change capture is off for that flagged organization. Unflagged organizations and deployment capture off: no lookup and no record (as before this change).",
+    notes: "Alternate route to member removal (legacy organization.member.removed). hooks.before attributes once the session user's active membership in body.organizationId is confirmed (intent before the delete, 503 only when the intent append fails) and keeps the member row; hooks.after appends member.removed (memberRemovedEvent, reasonCode member_left) in a fresh transaction after better-auth's delete, or writes the legacy row when change capture is off for that organization. Deployment capture off: no lookup and no record.",
   }),
   tenant("POST", "/organization/set-active", "tenant_change", "auth.organization.active.set", "organization.session", "organization", null, { changeEvidence: SESSIONS, notes: "Alternate route to POST /v1/me/active-organization. hooks.before attributes once the session user's active membership in body.organizationId (or organizationSlug) is confirmed; clearing the active organization (null) is not attributed. On success hooks.after appends session.organization_entered (via active_organization) in the destination organization only, inside the request operation when it is captured; the previous organization is never recorded and an unchanged organization records nothing." }),
   tenant("GET", "/organization/get-full-organization", "tenant_read", "auth.organization.read", "organization.read", "organization", null, { notes: ORG_READ }),
@@ -177,8 +180,6 @@ export const authAuditRoutes: readonly AuditRouteDeclaration[] = [
   tenant("GET", "/organization/list-invitations", "tenant_read", "auth.organization.invitation.list", "organization.read", "invitation", null, { notes: ORG_READ }),
   tenant("GET", "/organization/get-active-member", "tenant_read", "auth.organization.active_member.read", "organization.read", "member", null, { notes: ORG_READ }),
   tenant("GET", "/organization/get-active-member-role", "tenant_read", "auth.organization.active_member_role.read", "organization.read", "member", null, { notes: ORG_READ }),
-  tenant("GET", "/organization/list-roles", "tenant_read", "auth.organization.role.list", "organization.read", "role", null, { notes: ORG_READ }),
-  tenant("GET", "/organization/get-role", "tenant_read", "auth.organization.role.read", "organization.read", "role", null, { notes: ORG_READ }),
   tenant("GET", "/organization/list-teams", "tenant_read", "auth.organization.team.list", "organization.read", "team", null, { notes: ORG_READ }),
   tenant("GET", "/organization/list-team-members", "tenant_read", "auth.organization.team_member.list", "organization.read", "team", null, { notes: ORG_READ }),
   // Organization plugin: refused raw mutations
@@ -186,9 +187,6 @@ export const authAuditRoutes: readonly AuditRouteDeclaration[] = [
   refused("/organization/delete", "auth.organization.delete", "organization", "Den DELETE /v1/org"),
   refused("/organization/update-member-role", "auth.organization.member.role.update", "member", "Den POST /v1/members/:memberId/role"),
   refused("/organization/remove-member", "auth.organization.member.remove", "member", "Den DELETE /v1/members/:memberId"),
-  refused("/organization/create-role", "auth.organization.role.create", "role", "Den POST /v1/roles"),
-  refused("/organization/update-role", "auth.organization.role.update", "role", "Den PATCH /v1/roles/:roleId"),
-  refused("/organization/delete-role", "auth.organization.role.delete", "role", "Den DELETE /v1/roles/:roleId"),
   refused("/organization/create-team", "auth.organization.team.create", "team", "Den POST /v1/teams"),
   refused("/organization/update-team", "auth.organization.team.update", "team", "Den PATCH /v1/teams/:teamId"),
   refused("/organization/remove-team", "auth.organization.team.remove", "team", "Den DELETE /v1/teams/:teamId"),

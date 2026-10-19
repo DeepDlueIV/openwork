@@ -5,6 +5,27 @@ The MCP catalog is generated from `openapi.json`, then filtered by `policy.ts` b
 For third-party client setup and `invalid_target` troubleshooting, see
 [Connect a third-party MCP client with OAuth](../../../../../docs/mcp-client-oauth.md).
 
+## Gateway discovery metadata
+
+`/mcp/agent` identifies itself as **OpenWork Connect** during initialization,
+including its purpose, public website, and scalable public SVG icon. Initialization
+keeps critical routing and safety guidance within 2048 UTF-8 bytes, including when
+remote-session receipt subscriptions are enabled. Agents read
+`openwork://agent/guidance.md` for the full operating rules; those rules are retained
+rather than silently truncated. App authoring details live in `build-an-app`.
+
+The fixed connection-action and Workflow-artifact views share one HTTPS widget
+origin and advertise descriptions through resource `_meta`, never resource
+annotations. Invocation labels live on their tools.
+
+`execute_capability_script` declares the schema of its structured authoring-test
+result. `execute_capability` deliberately has no output schema: it forwards
+heterogeneous provider results, some with structured content and some text-only.
+The installed MCP server SDK rejects a successful text-only result whenever an
+output schema is registered. Advertising even an unconstrained object schema
+would break those existing calls; a checker should accept this optional-structured
+proxy case rather than require a fabricated result shape or runtime conversion.
+
 ## Allowed Tags
 
 Every tagged Den API product surface is allowed unless it is listed under blocked tags or blocked operation IDs:
@@ -27,7 +48,7 @@ Every tagged Den API product surface is allowed unless it is listed under blocke
 - `Worker Activity`
 - `Workers`
 
-`Desktop Policies` reads require org admin; mutations require super-admin + Enterprise entitlement. Both are enforced in-route.
+`Desktop Policies` reads require org admin; mutations require admin (the `desktop_policies.manage` permission) + Enterprise entitlement. Both are enforced in-route.
 
 ## Blocked Tags
 
@@ -107,6 +128,17 @@ drop the `openwork/mcpApp` and `openwork/serverTools` hints, which name tools on
 `/mcp/agent`. Plugin access is rechecked on every request; unavailable Apps
 return a JSON-RPC error.
 
+Agents learn App building from one owner per rule. Server instructions only
+route App requests to the built-in `build-an-app` skill
+(`skill://build-an-app/SKILL.md`, listed while App servers are on), which owns
+the order of calls and the quality bar. `prepare_app` returns a starter wired
+to the verified tools: `lookup` when every tool reads, `action` when one
+changes data, `standalone` with none; the same three are resources at
+`openwork://apps/starters/<pattern>.json`. `create_app`'s concise description
+routes agents to `build-an-app` for the source, tool-call, approval, and caching
+rules the compiler and host enforce. Add detailed rules to the skill rather
+than growing the discovery payload.
+
 `create_app` and `update_app` add each bound Workflow to the App's Plugin and
 route its tool through that Plugin, so sharing the Plugin shares the Workflows;
 adding one requires Workflow manager access. `update_app` keeps omitted
@@ -120,24 +152,20 @@ fits beside every usable connection as `kind: mcp_app`, and executing it returns
 an `openwork/mcpApp` launch reference to the App's own server; an App past the
 limit keeps its MCP URL but gets no launch.
 
-Organization Dashboards can hold Apps too. `GET /v1/mcp-apps` lists the Apps
-the calling admin can use in the dashboard element shape (`connectionId` is the
-App id, `toolName` is `open_app`), which Den web's Add app picker offers as
-"Apps built in OpenWork". Every dashboard read, including the desktop's
-`GET /v1/me/dashboards`, serves such an element with the App's current
-revision, so `update_app` never strands an assigned tile; a member still needs
-the App's Plugin to open it.
+`GET /v1/mcp-apps` lists the Apps the calling member can use in the dashboard
+element shape (`connectionId` is the App id, `toolName` is `open_app`), which
+the desktop offers on the personal Dashboard; a member still needs the App's
+Plugin to open it.
 
 Where `create_app` is available, Workflow-bound views are read-only:
 `save_artifact_view` (create or edit), `activate_artifact_view_revision`, and
 the REST save and activate routes return `legacy_view_read_only`. Existing views
 keep their render, preview, run, and resource paths, and can still be retired.
 
-Building your own Apps is on for every organization. It needs
+Building your own Apps is on for every organization. Only
 `DEN_APP_MCP_SERVERS_ENABLED` (default `true`; `false`, `0`, `off`, or `no`
-turns it off for the deployment) and the organization's member-facing MCP
-connections. `appMcpServersEnabled` in `mcp-app-rollout.ts` combines the two,
-and `GET /v1/org` reports the result as the `appMcpServers` capability. The
+turns it off for the deployment) gates it, and `GET /v1/org` reports it as the
+`appMcpServers` capability. The
 retired per-organization `appMcpServers` override is ignored and dropped on the
 next admin capabilities write. Where it is off, an organization keeps the
 previous surface: no builder tools or App servers, the original connection index

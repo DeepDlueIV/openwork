@@ -1,13 +1,14 @@
 "use client";
 
 import { Dialog } from "@base-ui/react/dialog";
+import { Tooltip } from "@base-ui/react/tooltip";
 import { Download, FileText, Paperclip, Trash2, X } from "lucide-react";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { workbotHost } from "./host";
+import { workbotHost, useRetainedSurface } from "./host";
 import {
   downloadWorkbotFile,
-  uploadWorkbotFile,
   useDeleteWorkbotFile,
+  useWorkbotChat,
   useWorkbotFiles,
   useWorkbotImageUrl,
   type WorkbotAttachment,
@@ -15,6 +16,8 @@ import {
 } from "./data";
 import { OpenFileContext } from "./open-file";
 import { dayLabel } from "./format";
+import type { Upload } from "./composer-state";
+export type { Upload } from "./composer-state";
 
 /** Files in Workbot (Paper v5: screens 5–8). */
 
@@ -95,81 +98,6 @@ export function AppMark({ name, size = 12 }: { name: string; size?: number }) {
 
 // ---------------------------------------------------------------- uploads
 
-export type Upload = {
-  key: string;
-  file: File;
-  /** Local preview for images, before the upload finishes. */
-  previewUrl: string | null;
-  loaded: number;
-  status: "uploading" | "done" | "failed";
-  error: string | null;
-  saved: WorkbotFile | null;
-};
-
-/**
- * Files picked, dropped or pasted into the composer. Each uploads right away; the message can be sent while
- * they finish, and waits for them.
- */
-export function useUploads() {
-  const [uploads, setUploads] = useState<Upload[]>([]);
-  const waiters = useRef(new Map<string, { promise: Promise<WorkbotFile | null>; controller: AbortController }>());
-
-  const update = (key: string, patch: Partial<Upload>) => setUploads((current) => current.map((upload) => (upload.key === key ? { ...upload, ...patch } : upload)));
-
-  const start = useCallback((file: File, key: string = crypto.randomUUID()) => {
-    const controller = new AbortController();
-    const promise = uploadWorkbotFile(file, (loaded) => update(key, { loaded }), controller.signal)
-      .then((saved) => {
-        update(key, { status: "done", saved, loaded: file.size });
-        return saved;
-      })
-      .catch((error: unknown) => {
-        update(key, { status: "failed", error: error instanceof Error ? error.message : "Couldn't upload." });
-        return null;
-      });
-    waiters.current.set(key, { promise, controller });
-    return key;
-  }, []);
-
-  const add = useCallback((files: FileList | File[]) => {
-    const added = Array.from(files).map((file) => ({
-      key: crypto.randomUUID(),
-      file,
-      previewUrl: isImage(file.type) ? URL.createObjectURL(file) : null,
-      loaded: 0,
-      status: "uploading" as const,
-      error: null,
-      saved: null,
-    }));
-    setUploads((current) => [...current, ...added]);
-    for (const upload of added) start(upload.file, upload.key);
-  }, [start]);
-
-  const retry = (key: string) => {
-    const upload = uploads.find((entry) => entry.key === key);
-    if (!upload) return;
-    update(key, { status: "uploading", error: null, loaded: 0 });
-    start(upload.file, key);
-  };
-
-  const remove = (key: string) => {
-    waiters.current.get(key)?.controller.abort();
-    waiters.current.delete(key);
-    setUploads((current) => current.filter((upload) => upload.key !== key));
-  };
-
-  /** Hands the tray's files to a message and clears the tray. Resolves once every upload settled. */
-  const take = () => {
-    const taken = uploads;
-    const pending = taken.map((upload) => waiters.current.get(upload.key)?.promise ?? Promise.resolve(upload.saved));
-    waiters.current.clear();
-    setUploads([]);
-    return { taken, settled: Promise.all(pending).then((files) => files.flatMap((file) => (file ? [file] : []))) };
-  };
-
-  return { uploads, add, retry, remove, take };
-}
-
 function ProgressRing({ value }: { value: number }) {
   const circumference = 2 * Math.PI * 8;
   return (
@@ -235,28 +163,41 @@ export function UploadTray({ uploads, onRemove, onRetry }: { uploads: Upload[]; 
 export function AttachButton({ enabled, onFiles }: { enabled: boolean; onFiles: (files: FileList) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [showLock, setShowLock] = useState(false);
+  const surface = useRetainedSurface(showLock);
+  // A press (mouse click or touch tap) pins the explanation: on touch, the emulated hover and focus changes that
+  // follow a tap would otherwise close it before it can be read. Only Escape or a press elsewhere dismisses it.
+  const pinned = useRef(false);
   if (!enabled) {
     return (
-      <span className="relative shrink-0">
-        <button
+      <Tooltip.Root
+        open={surface.open}
+        onOpenChange={(open, details) => {
+          if (surface.blocked) return;
+          if (!open && pinned.current && (details.reason === "trigger-hover" || details.reason === "trigger-focus")) return;
+          if (!open) pinned.current = false;
+          setShowLock(open);
+        }}
+      >
+        <Tooltip.Trigger
           type="button"
           aria-disabled="true"
           aria-label="Attach files. Files aren't set up on this server; your admin can turn them on."
-          onClick={() => setShowLock((open) => !open)}
-          onBlur={() => setShowLock(false)}
-          onMouseEnter={() => setShowLock(true)}
-          onMouseLeave={() => setShowLock(false)}
-          className="grid h-9 w-9 place-items-center rounded-full bg-[var(--wb-chip)] text-[var(--wb-disabled)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
+          delay={0}
+          closeOnClick={false}
+          onClick={() => { pinned.current = true; setShowLock(true); }}
+          className="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--wb-chip)] text-[var(--wb-disabled)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
         >
           <Paperclip size={18} strokeWidth={1.75} aria-hidden />
-        </button>
-        {showLock ? (
-          <span role="tooltip" className="absolute bottom-[calc(100%+10px)] left-0 z-10 flex w-[300px] items-center gap-2 rounded-xl bg-[var(--wb-text)] px-3 py-2 text-[13px] leading-4 text-[var(--wb-mark-text)]">
-            <LockGlyph />
-            Files aren&apos;t set up on this server. Your admin can turn them on.
-          </span>
-        ) : null}
-      </span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal {...surface.portal}>
+          <Tooltip.Positioner side="top" align="start" sideOffset={10} collisionPadding={8} positionMethod="fixed" collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "none" }} className="z-50">
+            <Tooltip.Popup data-workbot-attachment-hint className="workbot flex w-[300px] max-w-[min(var(--available-width),calc(100vw-1rem))] max-h-[var(--available-height)] items-center gap-2 overflow-y-auto rounded-xl bg-[var(--wb-text)] px-3 py-2 text-[13px] leading-4 text-[var(--wb-mark-text)]">
+              <LockGlyph />
+              <span className="min-w-0">Files aren&apos;t set up on this server. Your admin can turn them on.</span>
+            </Tooltip.Popup>
+          </Tooltip.Positioner>
+        </Tooltip.Portal>
+      </Tooltip.Root>
     );
   }
   return (
@@ -363,6 +304,7 @@ export function FilesButton({ open, onOpen }: { open: boolean; onOpen: () => voi
 
 function FileRow({ file, assistantName, onOpen }: { file: WorkbotFile; assistantName: string; onOpen: (file: WorkbotFile) => void }) {
   const remove = useDeleteWorkbotFile();
+  const chat = useWorkbotChat();
   const thumb = useWorkbotImageUrl(isImage(file.mediaType) ? file.id : null);
   const when = dayLabel(file.createdAt);
   return (
@@ -386,7 +328,7 @@ function FileRow({ file, assistantName, onOpen }: { file: WorkbotFile; assistant
       </button>
       <button
         type="button"
-        onClick={() => void downloadWorkbotFile(file)}
+        onClick={() => void downloadWorkbotFile(file, chat)}
         aria-label={`Download ${file.name}`}
         title="Download"
         className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--wb-muted)] transition-colors duration-150 hover:bg-[var(--wb-chip)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
@@ -399,12 +341,13 @@ function FileRow({ file, assistantName, onOpen }: { file: WorkbotFile; assistant
 
 /** Everything kept, newest first (Paper v5, screen 7). */
 export function FilesPanel({ open, onClose, assistantName, onOpenFile }: { open: boolean; onClose: () => void; assistantName: string; onOpenFile: (file: WorkbotFile) => void }) {
-  const files = useWorkbotFiles(open);
+  const surface = useRetainedSurface(open);
+  const files = useWorkbotFiles(surface.open);
   const list = files.data?.files ?? [];
   const total = list.reduce((sum, file) => sum + file.size, 0);
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <Dialog.Portal>
+    <Dialog.Root open={surface.open} onOpenChange={(next) => { if (!surface.blocked && !next) onClose(); }}>
+      <Dialog.Portal {...surface.portal}>
         <Dialog.Popup className="workbot fixed inset-y-0 right-0 z-50 flex w-full max-w-[400px] flex-col bg-[var(--wb-surface)] shadow-[var(--wb-sheet-shadow)] outline-none transition-transform duration-200 ease-out data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full motion-reduce:transition-none">
           <div className="flex h-15 shrink-0 items-center justify-between border-b border-[var(--wb-hairline)] pl-6 pr-4">
             <Dialog.Title className="text-[15px] font-semibold leading-[18px] tracking-[-0.01em] text-[var(--wb-text)]">Files</Dialog.Title>

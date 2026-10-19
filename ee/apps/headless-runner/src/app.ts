@@ -1,15 +1,20 @@
 import { timingSafeEqual } from "node:crypto"
 import { Hono, type MiddlewareHandler } from "hono"
 import { bodyLimit } from "hono/body-limit"
+import { routePath } from "hono/route"
 import { streamSSE } from "hono/streaming"
+import type { ErrorReporter } from "./error-reporting.js"
 import type { SessionEvents } from "./events.js"
 import { SavedFileLimitError, type SavedFiles } from "./saved-files.js"
 import { formatBytes } from "./tool-files.js"
 import { z } from "zod"
 import { normalizePath } from "./files.js"
 import type { Runner } from "./runner.js"
-import type { Store } from "./store.js"
-import { ACTIVE, repeatLimitsSchema, turnCredentialsSchema, type SessionComputer } from "./types.js"
+import { scopedCatalogResponse } from "./model-catalog.js"
+import type { HeadlessModelAccess } from "@openwork-ee/headless-protocol"
+import { modelProbeResponse, type ModelProbe } from "./model-probe.js"
+import { CONVERSATION_TABLES, sqlRow, type StoredMessage, type Store } from "./store.js"
+import { ACTIVE, repeatLimitsSchema, turnCredentialsSchema, turnStatusSchema, type SessionComputer } from "./types.js"
 
 const createSessionBody = z
   .object({
@@ -24,11 +29,31 @@ const createSessionBody = z
     reactions: z.boolean().optional(),
     /** Let the conversation hand longer work to background tasks (start_task) and keep talking. Off unless asked for. */
     tasks: z.boolean().optional(),
+    /** Who the conversation belongs to, in the caller's terms, so the caller can list one person's conversations. */
+    owner: z.string().min(1).max(200).optional(),
+    /** The caller's own id for the conversation, returned when listing. */
+    ref: z.string().min(1).max(200).optional(),
+    /** The person's IANA time zone; the model sees when each message was sent, in it. */
+    timeZone: z.string().min(1).max(64).refine(isTimeZone, "unknown time zone").optional(),
+    /** Name the conversation after its first answer, while its title is empty. */
+    autoTitle: z.boolean().optional(),
+    /** Another conversation of the same person whose memory/ this one shares. It must exist. */
+    memoryOf: z.string().regex(/^hs_[A-Za-z0-9_-]{8,96}$/).optional(),
   })
   .strict()
 const messageIdSchema = z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/)
 /** Caller-chosen session ids share the runner's `hs_` prefix so they can never collide with other ids. */
 const sessionIdSchema = z.string().regex(/^hs_[A-Za-z0-9_-]{8,96}$/)
+const listQuery = z.object({ owner: z.string().min(1).max(200), limit: z.coerce.number().int().min(1).max(200).default(50) })
+
+function isTimeZone(zone: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone })
+    return true
+  } catch {
+    return false
+  }
+}
 const sendBody = z
   .object({
     messageId: messageIdSchema,
@@ -37,37 +62,80 @@ const sendBody = z
     credentials: turnCredentialsSchema.default({}),
     /** Ids of saved files (POST /v1/sessions/:id/saved-files) sent with this message. */
     attachments: z.array(z.string().regex(/^fl_[a-f0-9]{32}$/)).optional(),
+    /**
+     * The conversation's answer in progress wraps up at its next safe point (now, if it is writing; after the step it is
+     * running otherwise), keeping what it wrote, and this message is answered next with all of that in view.
+     */
+    interrupt: z.boolean().optional(),
   })
   .strict()
   .refine((body) => body.prompt.trim().length > 0 || (body.attachments?.length ?? 0) > 0, "prompt or attachments is required")
 const abortBody = z.object({ messageId: messageIdSchema.optional() }).strict()
+/** Turns a session read returns when the caller doesn't say how many: about a screenful (Workbot's first page). */
+export const DEFAULT_READ_TURNS = 30
+/** The most turns one session read returns; asking for more gets this many, and `before` pages further back. */
+export const MAX_READ_TURNS = 200
 const readQuery = z.object({
+  /** Explicit owner fence for trusted callers on Node, where the cell-routing header alone is not an isolation boundary. */
+  expectedOwner: z.string().min(1).max(200).optional(),
+  /** One turn: its transcript, and the turn with the background tasks it started and their reports. */
   messageId: messageIdSchema.optional(),
   limit: z.coerce.number().int().min(1).max(5_000).default(100),
   /** `none` leaves tool outputs out, for callers that poll a long turn and only need its steps. */
   outputs: z.enum(["full", "none"]).default("full"),
   /**
-   * Only the newest `turns` turns (before `before`, a messageId) and their messages, so reading a long
-   * conversation costs the same as reading a short one. `limit` still caps the messages returned.
+   * Without `messageId`, only the newest `turns` turns (before `before`, a messageId) and their messages, so reading
+   * a long conversation costs the same as reading a short one. `limit` still caps the messages returned.
    */
-  turns: z.coerce.number().int().min(1).max(200).optional(),
+  turns: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .transform((turns) => Math.min(turns ?? DEFAULT_READ_TURNS, MAX_READ_TURNS)),
   before: messageIdSchema.optional(),
 })
 
-export type ModelCatalog = { defaultModel: string; models: Array<{ id: string; name: string }> }
+/** What the assistant wrote in one turn, its messages joined. */
+function assistantText(entries: StoredMessage[], messageId: string) {
+  return entries
+    .filter((entry) => entry.messageId === messageId)
+    .flatMap((entry) => (entry.message.role === "assistant" && entry.message.text ? [entry.message.text] : []))
+    .join("\n\n")
+}
+
+/** A conversation moving to another runner: every row as stored. Kept files' bytes stay in the blob store. */
+const EXPORT_FORMAT = "openwork-headless-conversation"
+const exportedConversation = z
+  .object({
+    format: z.literal(EXPORT_FORMAT),
+    version: z.literal(1),
+    session: sqlRow,
+    turns: z.array(sqlRow),
+    messages: z.array(sqlRow),
+    files: z.array(sqlRow),
+    saved_files: z.array(sqlRow),
+  })
+  .strict()
+
+export type ModelCatalog = { defaultModel: string; models: Array<{ id: string; name: string }>; verified?: boolean }
 
 export function createApp(input: {
   store: Store
   runner: Runner
   apiToken: string
   /** Models a caller may pick per turn; without it only the default is listed. */
-  models?: () => Promise<ModelCatalog>
+  models?: (modelAccess?: HeadlessModelAccess) => Promise<ModelCatalog>
+  /** Bounded synthetic completion with scoped access or the deployment key; no conversation is created. */
+  modelProbe?: ModelProbe
   /** Live session events; without it the events route is not served. */
   events?: SessionEvents
   /** Saved files; without them the file routes answer `files_not_configured`. */
   files?: SavedFiles
   /** The per-conversation computers, deleted with their conversation. */
   computer?: SessionComputer
+  /** Reports request failures (route and error type only, never the request or its body). */
+  errors?: ErrorReporter
 }) {
   const { store, runner } = input
   const expected = Buffer.from(input.apiToken)
@@ -88,15 +156,26 @@ export function createApp(input: {
 
   app.onError((error, c) => {
     console.error("[headless-runner] request failed", { path: c.req.path, error: error.message })
+    if (input.errors?.enabled) void input.errors.report({ code: "request_failed", tags: { route: routePath(c), method: c.req.method }, error })
     return c.json({ error: "internal_error" }, 500)
   })
 
   app.get("/v1/models", async (c) => c.json(input.models ? await input.models() : { defaultModel: "", models: [] }))
+  app.post("/v1/models", bodyLimit({ maxSize: 8192 }), (c) => scopedCatalogResponse(c.req.raw, input.models))
+  app.post("/v1/model-probe", bodyLimit({ maxSize: 8192 }), (c) => modelProbeResponse(c.req.raw, input.modelProbe))
 
   app.post("/v1/sessions", async (c) => {
     const body = createSessionBody.safeParse(await c.req.json().catch(() => ({})))
     if (!body.success) return c.json({ error: "invalid_request", issues: body.error.issues }, 400)
+    if (body.data.memoryOf && !store.getSession(body.data.memoryOf)) return c.json({ error: "unknown_memory_session" }, 400)
     return c.json(store.createSession(body.data), 201)
+  })
+
+  // One owner's conversations that have messages, most recently used first.
+  app.get("/v1/sessions", (c) => {
+    const query = listQuery.safeParse(c.req.query())
+    if (!query.success) return c.json({ error: "invalid_request", issues: query.error.issues }, 400)
+    return c.json({ sessions: store.listSessions(query.data.owner, query.data.limit) })
   })
 
   app.put("/v1/sessions/:id", async (c) => {
@@ -104,6 +183,7 @@ export function createApp(input: {
     if (!id.success) return c.json({ error: "invalid_session_id" }, 400)
     const body = createSessionBody.safeParse(await c.req.json().catch(() => ({})))
     if (!body.success) return c.json({ error: "invalid_request", issues: body.error.issues }, 400)
+    if (body.data.memoryOf && (body.data.memoryOf === id.data || !store.getSession(body.data.memoryOf))) return c.json({ error: "unknown_memory_session" }, 400)
     const { session, created } = store.putSession(id.data, body.data)
     return c.json(session, created ? 201 : 200)
   })
@@ -113,30 +193,28 @@ export function createApp(input: {
     if (!session) return c.json({ error: "unknown_session" }, 404)
     const query = readQuery.safeParse(c.req.query())
     if (!query.success) return c.json({ error: "invalid_request", issues: query.error.issues }, 400)
-    const windowed = query.data.turns ? store.recentTurns(session.id, query.data.turns, query.data.before) : null
-    const turns = windowed ? windowed.turns : store.listTurns(session.id)
-    const target = query.data.messageId ?? turns.at(-1)?.messageId
-    const all = query.data.messageId
-      ? store.turnMessages(session.id, query.data.messageId)
-      : windowed
-        ? store.messagesForTurns(session.id, turns.map((turn) => turn.messageId))
-        : store.messages(session.id)
-    const scoped = all
-    const finalAssistantText = all
-      .filter((entry) => entry.messageId === target && entry.message.role === "assistant")
-      .flatMap((entry) => (entry.message.role === "assistant" && entry.message.text ? [entry.message.text] : []))
-      .join("\n\n")
-    // Busy means the conversation itself is answering; background tasks running alongside don't count.
-    const busy = windowed
-      ? store.activeTurn(session.id, { conversation: true }) !== null
-      : turns.some((turn) => ACTIVE.has(turn.status) && turn.kind !== "task")
+    if (query.data.expectedOwner !== undefined && session.owner !== query.data.expectedOwner) return c.json({ error: "unknown_session" }, 404)
+    const { messageId, limit } = query.data
+    // Every read is bounded, however long the conversation: one turn (messageId), or a window of the newest turns
+    // that `before` pages back through. Nothing here reads the whole transcript.
+    const read = messageId ? readTurn(session.id, messageId, limit) : readWindow(session.id, query.data.turns, limit, query.data.before)
+    const { turns } = read
+    // Busy means the conversation itself is answering; background tasks running alongside don't count. Asked of the
+    // whole session, so a turn outside the window still counts.
+    const busy = store.activeTurn(session.id, { conversation: true }) !== null
+    // A message waiting its turn (or stopped before it started) has no transcript yet: its text comes with the turn.
+    const waiting = store.waitingPrompts(session.id, turns.filter((turn) => turn.kind === undefined && (turn.status === "queued" || turn.status === "aborted")).map((turn) => turn.messageId))
     return c.json({
       session,
       status: busy ? "busy" : "idle",
-      turns,
-      ...(windowed ? { hasEarlier: windowed.hasEarlier } : {}),
+      turns: turns.map((turn) => {
+        const prompt = waiting.get(turn.messageId)
+        return prompt === undefined ? turn : { ...turn, prompt }
+      }),
+      // Older turns exist: read them with `before` set to the first turn's messageId.
+      ...(read.hasEarlier === undefined ? {} : { hasEarlier: read.hasEarlier }),
       // Image and PDF data stay in the store; callers poll this, so they get counts instead.
-      messages: scoped.slice(-query.data.limit).map((entry) => {
+      messages: read.messages.map((entry) => {
         const { seq, messageId, message, createdAt } = entry
         if (message.role !== "tool") return { seq, messageId, ...(createdAt === undefined ? {} : { createdAt }), ...message }
         const { images, documents, output, ...rest } = message
@@ -150,9 +228,32 @@ export function createApp(input: {
           ...(documents ? { documentCount: documents.length } : {}),
         }
       }),
-      finalAssistantText,
+      finalAssistantText: read.finalAssistantText,
     })
   })
+
+  /** One turn's transcript (its newest `limit` messages) and its family; the answer is the whole turn's. */
+  function readTurn(sessionId: string, messageId: string, limit: number) {
+    const transcript = store.turnMessages(sessionId, messageId)
+    return {
+      turns: store.turnFamily(sessionId, messageId),
+      messages: transcript.slice(-limit),
+      finalAssistantText: assistantText(transcript, messageId),
+      hasEarlier: undefined,
+    }
+  }
+
+  /** The newest `count` turns before `before` with their newest `limit` messages; the answer is the newest turn's. */
+  function readWindow(sessionId: string, count: number, limit: number, before?: string) {
+    const window = store.recentTurns(sessionId, count, before)
+    const first = window.turns.at(0)?.messageId
+    const last = window.turns.at(-1)?.messageId
+    const messages = first && last ? store.windowMessages(sessionId, first, last, limit) : []
+    // Fewer than `limit` messages means the window's whole transcript came back; otherwise the newest turn may
+    // start before the cut, so its answer is read on its own (one turn).
+    const finalAssistantText = !last ? "" : assistantText(messages.length < limit ? messages : store.turnMessages(sessionId, last), last)
+    return { turns: window.turns, messages, finalAssistantText, hasEarlier: window.hasEarlier }
+  }
 
   // Live events for one session as server-sent events: `changed` (re-read the session) and `text` (model text
   // as it is written). A comment every 15 seconds keeps idle proxies from closing the stream.
@@ -191,6 +292,46 @@ export function createApp(input: {
     })
   })
 
+  // Moving a conversation to a Node runner with nothing lost: its export, then its import there with the same id.
+  // Only while nothing runs in it; callers pause their traffic first.
+  app.get("/v1/sessions/:id/export", (c) => {
+    const id = sessionIdSchema.safeParse(c.req.param("id"))
+    const conversation = id.success ? store.exportConversation(id.data) : null
+    if (!id.success || !conversation) return c.json({ error: "unknown_session" }, 404)
+    if (store.activeTurn(id.data)) return c.json({ error: "session_busy" }, 409)
+    return c.json({ format: EXPORT_FORMAT, version: 1, ...conversation })
+  })
+
+  app.post("/v1/sessions/:id/import", async (c) => {
+    const id = sessionIdSchema.safeParse(c.req.param("id"))
+    if (!id.success) return c.json({ error: "invalid_session_id" }, 400)
+    if (store.getSession(id.data)) return c.json({ error: "session_exists" }, 409)
+    const parsed = exportedConversation.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ error: "invalid_import", issues: parsed.error.issues }, 400)
+    const { session, turns, messages, files, saved_files } = parsed.data
+    const conversation = { session, turns, messages, files, saved_files }
+    if (session.id !== id.data || CONVERSATION_TABLES.some((table) => conversation[table].some((row) => row.session_id !== id.data))) {
+      return c.json({ error: "id_mismatch" }, 400)
+    }
+    const unknown = (["sessions", ...CONVERSATION_TABLES] as const).flatMap((table) => {
+      const known = store.columns(table)
+      const rows = table === "sessions" ? [session] : conversation[table]
+      return [...new Set(rows.flatMap((row) => Object.keys(row)))].filter((name) => !known.has(name)).map((name) => `${table}.${name}`)
+    })
+    if (unknown.length) return c.json({ error: "unsupported_export", message: `This runner has no ${unknown.join(", ")}; update it first.` }, 400)
+    const running = turns.some((turn) => {
+      const status = turnStatusSchema.safeParse(turn.status)
+      return status.success && ACTIVE.has(status.data)
+    })
+    if (running) return c.json({ error: "invalid_import", message: "A turn was still running when this was exported." }, 400)
+    try {
+      store.importConversation(conversation)
+    } catch (error) {
+      return c.json({ error: "invalid_import", message: error instanceof Error ? error.message : "unknown error" }, 400)
+    }
+    return c.json({ id: id.data, rows: Object.fromEntries(CONVERSATION_TABLES.map((table) => [table, conversation[table].length])) }, 201)
+  })
+
   app.delete("/v1/sessions/:id", async (c) => {
     const id = c.req.param("id")
     if (store.activeTurn(id)) return c.json({ error: "session_busy" }, 409)
@@ -203,7 +344,7 @@ export function createApp(input: {
   })
 
   // Saved files: uploads a person sends with messages, and files the agent hands back. Bytes live in the
-  // configured blob store (disk, any S3-compatible bucket, or Vercel Blob), only for conversations created with
+  // configured blob store (disk, or any S3-compatible bucket), only for conversations created with
   // `files: true`, within a per-file and a per-conversation limit.
   app.get("/v1/files/status", (c) =>
     c.json({
@@ -296,7 +437,7 @@ export function createApp(input: {
     const body = sendBody.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return c.json({ error: "invalid_request", issues: body.error.issues }, 400)
     const result = runner.send({ sessionId: c.req.param("id"), ...body.data })
-    if (!result.ok) return c.json({ error: result.error }, result.error === "unknown_session" ? 404 : result.error === "unknown_file" ? 400 : 429)
+    if (!result.ok) return c.json({ error: result.error }, result.error === "unknown_session" ? 404 : result.error === "unknown_file" || result.error === "model_required" ? 400 : result.error === "model_mismatch" ? 409 : 429)
     return c.json({ state: result.state, turn: result.turn }, 202)
   })
 

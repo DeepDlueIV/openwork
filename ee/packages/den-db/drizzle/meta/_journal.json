@@ -918,6 +918,132 @@
       "when": 1791313243548,
       "tag": "0131_platform_audit_event",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "5",
+      "when": 1791407326379,
+      "tag": "0132_gateway_cloud_sign_in",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "5",
+      "when": 1791492698722,
+      "tag": "0133_free_auto_cached_input_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "5",
+      "when": 1791507341644,
+      "tag": "0134_managed_deployments",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "5",
+      "when": 1791528001798,
+      "tag": "0135_restore_legacy_analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "5",
+      "when": 1791528391963,
+      "tag": "0136_capability_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "5",
+      "when": 1791533354128,
+      "tag": "0137_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "5",
+      "when": 1791533359673,
+      "tag": "0138_deprecate_super_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "5",
+      "when": 1791567943380,
+      "tag": "0139_library_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "5",
+      "when": 1791677020888,
+      "tag": "0140_blushing_thanos",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "5",
+      "when": 1791686356530,
+      "tag": "0141_salty_captain_midlands",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "5",
+      "when": 1791850844830,
+      "tag": "0142_secret_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "5",
+      "when": 1791920764226,
+      "tag": "0143_library_usage_rollups",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "5",
+      "when": 1791933660565,
+      "tag": "0144_agent_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "5",
+      "when": 1791943155627,
+      "tag": "0145_org_default_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "5",
+      "when": 1792003878606,
+      "tag": "0146_gateway_provider_usage_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "5",
+      "when": 1792104699960,
+      "tag": "0147_free_auto_behavior",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "5",
+      "when": 1792192418476,
+      "tag": "0148_headless_resume_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "5",
+      "when": 1792434268632,
+      "tag": "0149_headless_resume_revocation",
+      "breakpoints": true
     }
   ]
 }

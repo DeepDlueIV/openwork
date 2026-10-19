@@ -26,6 +26,7 @@ config:
   #   "false" off for everyone; /admin shows "Set by deployment config"
   # The /admin kill switch still turns a feature off, even when locked on.
   features:
+    cloudAgentGateway: ""         # default off · Choose and run cloud-agent models through the organization's AI Gateway access instead of the runner's shared model credentials.
     liveProviderSync: ""          # default off · Keep desktop OpenCode v2 models up to date with the organization's AI Gateway in real time.
     offlineRecovery: ""           # default off · Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations.
     secureSecretFields: ""        # default off · When an agent sets up a connection, plugin or AI Gateway provider that needs keys, people enter them in private fields in the chat and the agent continues once they are saved. Key fields across OpenWork and OpenWork Cloud can be shown while typing and show saved keys as Replace rows.

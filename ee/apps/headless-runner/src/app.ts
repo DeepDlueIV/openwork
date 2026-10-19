@@ -10,6 +10,8 @@ import { formatBytes } from "./tool-files.js"
 import { z } from "zod"
 import { normalizePath } from "./files.js"
 import type { Runner } from "./runner.js"
+import { scopedCatalogResponse } from "./model-catalog.js"
+import type { HeadlessModelAccess } from "@openwork-ee/headless-protocol"
 import { modelProbeResponse, type ModelProbe } from "./model-probe.js"
 import { CONVERSATION_TABLES, sqlRow, type StoredMessage, type Store } from "./store.js"
 import { ACTIVE, repeatLimitsSchema, turnCredentialsSchema, turnStatusSchema, type SessionComputer } from "./types.js"
@@ -74,6 +76,8 @@ export const DEFAULT_READ_TURNS = 30
 /** The most turns one session read returns; asking for more gets this many, and `before` pages further back. */
 export const MAX_READ_TURNS = 200
 const readQuery = z.object({
+  /** Explicit owner fence for trusted callers on Node, where the cell-routing header alone is not an isolation boundary. */
+  expectedOwner: z.string().min(1).max(200).optional(),
   /** One turn: its transcript, and the turn with the background tasks it started and their reports. */
   messageId: messageIdSchema.optional(),
   limit: z.coerce.number().int().min(1).max(5_000).default(100),
@@ -121,8 +125,8 @@ export function createApp(input: {
   runner: Runner
   apiToken: string
   /** Models a caller may pick per turn; without it only the default is listed. */
-  models?: () => Promise<ModelCatalog>
-  /** Bounded, synthetic completion with the deployment model key; no conversation is created. */
+  models?: (modelAccess?: HeadlessModelAccess) => Promise<ModelCatalog>
+  /** Bounded synthetic completion with scoped access or the deployment key; no conversation is created. */
   modelProbe?: ModelProbe
   /** Live session events; without it the events route is not served. */
   events?: SessionEvents
@@ -157,7 +161,8 @@ export function createApp(input: {
   })
 
   app.get("/v1/models", async (c) => c.json(input.models ? await input.models() : { defaultModel: "", models: [] }))
-  app.post("/v1/model-probe", bodyLimit({ maxSize: 512 }), (c) => modelProbeResponse(c.req.raw, input.modelProbe))
+  app.post("/v1/models", bodyLimit({ maxSize: 8192 }), (c) => scopedCatalogResponse(c.req.raw, input.models))
+  app.post("/v1/model-probe", bodyLimit({ maxSize: 8192 }), (c) => modelProbeResponse(c.req.raw, input.modelProbe))
 
   app.post("/v1/sessions", async (c) => {
     const body = createSessionBody.safeParse(await c.req.json().catch(() => ({})))
@@ -188,6 +193,7 @@ export function createApp(input: {
     if (!session) return c.json({ error: "unknown_session" }, 404)
     const query = readQuery.safeParse(c.req.query())
     if (!query.success) return c.json({ error: "invalid_request", issues: query.error.issues }, 400)
+    if (query.data.expectedOwner !== undefined && session.owner !== query.data.expectedOwner) return c.json({ error: "unknown_session" }, 404)
     const { messageId, limit } = query.data
     // Every read is bounded, however long the conversation: one turn (messageId), or a window of the newest turns
     // that `before` pages back through. Nothing here reads the whole transcript.
@@ -431,7 +437,7 @@ export function createApp(input: {
     const body = sendBody.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return c.json({ error: "invalid_request", issues: body.error.issues }, 400)
     const result = runner.send({ sessionId: c.req.param("id"), ...body.data })
-    if (!result.ok) return c.json({ error: result.error }, result.error === "unknown_session" ? 404 : result.error === "unknown_file" ? 400 : 429)
+    if (!result.ok) return c.json({ error: result.error }, result.error === "unknown_session" ? 404 : result.error === "unknown_file" || result.error === "model_required" ? 400 : result.error === "model_mismatch" ? 409 : 429)
     return c.json({ state: result.state, turn: result.turn }, 202)
   })
 

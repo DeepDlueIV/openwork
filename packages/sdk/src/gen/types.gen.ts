@@ -732,6 +732,7 @@ export type AdminDashboard = {
 
 export type AdminFeature = {
   key:
+    | "cloudAgentGateway"
     | "liveProviderSync"
     | "offlineRecovery"
     | "secureSecretFields"
@@ -789,6 +790,7 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities?: {
+      cloudAgentGateway: boolean;
       liveProviderSync: boolean;
       offlineRecovery: boolean;
       secureSecretFields: boolean;
@@ -819,6 +821,15 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates?: {
+      cloudAgentGateway: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       liveProviderSync: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1053,6 +1064,7 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      cloudAgentGateway: boolean;
       liveProviderSync: boolean;
       offlineRecovery: boolean;
       secureSecretFields: boolean;
@@ -1083,6 +1095,15 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      cloudAgentGateway: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       liveProviderSync: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -3429,6 +3450,20 @@ export type OAuthClientConfigDetailResponse = {
   scopes: Array<string>;
   redirectUri: string;
   tenantId: string | null;
+};
+
+export type OAuthProviderApiCheck = {
+  providerId: string;
+  checked: boolean;
+  apis: Array<{
+    id: string;
+    name: string;
+    service: string;
+    features: Array<string>;
+    status: "enabled" | "disabled" | "unknown";
+    enableUrl: string | null;
+    detail: string | null;
+  }>;
 };
 
 export type OAuthConnectStartResponse = {
@@ -6370,9 +6405,11 @@ export type WorkbotSettings = {
   models: Array<{
     id: string;
     name: string;
+    provider?: string;
   }>;
   modelAvailable: boolean;
   runnerReachable: boolean;
+  gatewayModels?: boolean;
   defaultReadiness?: "available" | "unavailable" | "unverified";
 };
 
@@ -6465,12 +6502,18 @@ export type WorkbotSession = {
   sideChats: boolean;
   model?: string | null;
   verifyModel?: boolean;
+  gatewayModels?: boolean;
 };
 
 export type WorkbotRunToken = {
   token: string;
   expiresAt: string;
   resumeGrant?: string;
+  modelAccess?: {
+    baseUrl: string;
+    apiKey: string;
+    protocol: "anthropic" | "openai" | "openai-responses";
+  };
 };
 
 export type DenAppVersionResponse = {
@@ -7422,6 +7465,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      cloudAgentGateway: boolean;
       liveProviderSync: boolean;
       offlineRecovery: boolean;
       secureSecretFields: boolean;
@@ -7452,6 +7496,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      cloudAgentGateway: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       liveProviderSync: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7674,6 +7727,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      cloudAgentGateway: boolean;
       liveProviderSync: boolean;
       offlineRecovery: boolean;
       secureSecretFields: boolean;
@@ -7704,6 +7758,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      cloudAgentGateway: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       liveProviderSync: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -23016,6 +23079,43 @@ export type PostV1OauthProvidersByProviderIdClientResponses = {
 export type PostV1OauthProvidersByProviderIdClientResponse =
   PostV1OauthProvidersByProviderIdClientResponses[keyof PostV1OauthProvidersByProviderIdClientResponses];
 
+export type GetV1OauthProvidersByProviderIdApiCheckData = {
+  body?: never;
+  path: {
+    providerId: string;
+  };
+  query?: never;
+  url: "/v1/oauth-providers/{providerId}/api-check";
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OAuth apps permission.
+   */
+  403: ForbiddenError;
+  /**
+   * Unknown providerId, or not a Google Workspace connector.
+   */
+  404: UnknownOAuthProviderError;
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckError =
+  GetV1OauthProvidersByProviderIdApiCheckErrors[keyof GetV1OauthProvidersByProviderIdApiCheckErrors];
+
+export type GetV1OauthProvidersByProviderIdApiCheckResponses = {
+  /**
+   * Each needed Google API and whether it is turned on.
+   */
+  200: OAuthProviderApiCheck;
+};
+
+export type GetV1OauthProvidersByProviderIdApiCheckResponse =
+  GetV1OauthProvidersByProviderIdApiCheckResponses[keyof GetV1OauthProvidersByProviderIdApiCheckResponses];
+
 export type GetV1OauthProvidersByProviderIdConnectStartData = {
   body?: never;
   path: {
@@ -34154,6 +34254,8 @@ export type CreateWorkbotRunTokenData = {
     readOnly?: boolean;
     sessionId?: string;
     messageId?: string;
+    model?: string;
+    modelAccessRequired?: boolean;
   };
   path?: never;
   query?: never;

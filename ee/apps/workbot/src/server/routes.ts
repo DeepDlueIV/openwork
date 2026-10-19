@@ -91,12 +91,14 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       client: createHeadlessRunnerClient({
         config: runnerFor(member),
         fetch: runnerFetch,
-        mintToken: ({ readOnly, sessionId, messageId }) => den.runToken(member.accessToken, { readOnly, sessionId, messageId }),
+        modelAccessRequired: () => member.den.gatewayModels,
+        mintToken: ({ readOnly, sessionId, messageId, model, modelAccessRequired }) => den.runToken(member.accessToken, { readOnly, sessionId, messageId, model, modelAccessRequired, gatewayModels: member.den.gatewayModels }),
         maxTokenTtlMs: RUN_TOKEN_TTL_MS,
       }),
       canSchedule: async () => member.den.canSchedule,
       model: async () => member.den.model,
-      verifyModel: member.den.verifyModel,
+      // Gateway access is validated for this actor and model by Den when minting each turn, not by the runner catalog.
+      verifyModel: !member.den.gatewayModels && member.den.verifyModel,
       workspaceAssistant: async () => member.den.workspaceAssistant,
     })
 

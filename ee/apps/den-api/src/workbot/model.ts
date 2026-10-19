@@ -3,6 +3,8 @@ import { OrganizationTable } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
 import { db } from "../db.js"
+import { organizationFeatureEnabled } from "../features.js"
+import { cloudAgentGatewayCatalog } from "./gateway-model.js"
 import { createHeadlessRunnerClient, defaultHeadlessRunnerDeps, type HeadlessModelCatalog } from "../headless-runner/client.js"
 import { explicitWorkbotModel, workbotDefaultReadiness } from "./readiness.js"
 
@@ -52,6 +54,41 @@ export async function readOrganizationDefaultModel(organizationId: string): Prom
   return readWorkbotModel(organization?.metadata)
 }
 
+export type CloudModelActor = { organizationId: string; userId: string }
+
+export function cloudAgentGatewayEnabled(organizationId: string): Promise<boolean> {
+  return organizationFeatureEnabled(organizationId, "cloudAgentGateway")
+}
+
+/** One catalog boundary for settings and execution. Gateway reads are never shared across actors. */
+export async function cloudAgentModelCatalog(actor: CloudModelActor, refresh = false): Promise<HeadlessModelCatalog | null> {
+  if (await cloudAgentGatewayEnabled(actor.organizationId)) return cloudAgentGatewayCatalog(actor)
+  if (refresh) forgetHeadlessModelCatalog()
+  return headlessModelCatalog()
+}
+
+/** Selection only. Authorization belongs after the shared client's persisted-turn pin, at credential minting. */
+export async function organizationCloudModelSelection(actor: CloudModelActor, fallback: string | null = null): Promise<string | null> {
+  const chosen = await readOrganizationDefaultModel(actor.organizationId)
+  return chosen ?? fallback ?? (await cloudAgentGatewayCatalog(actor)).defaultModel
+}
+
+/**
+ * An organization default selects a model; it never grants inference access. In Gateway mode every
+ * caller must have its own usable assignment, and unavailable choices never fall back to a shared key.
+ */
+export async function organizationCloudModel(actor: CloudModelActor, fallback: string | null = null): Promise<string | null> {
+  if (!(await cloudAgentGatewayEnabled(actor.organizationId))) {
+    const policy = await organizationModelPolicy(actor.organizationId)
+    return policy.enabled ? policy.model : fallback
+  }
+  const catalog = await cloudAgentGatewayCatalog(actor)
+  const chosen = await readOrganizationDefaultModel(actor.organizationId)
+  const model = chosen ?? fallback ?? catalog.defaultModel
+  if (!model || !catalog.models.some((entry) => entry.id === model)) throw new Error("cloud_model_unavailable")
+  return model
+}
+
 /** The chosen model when the runner serves it (or can't say right now), otherwise null: the runner's default. */
 export function servableModel(chosen: string | null, catalog: HeadlessModelCatalog | null): string | null {
   if (!chosen) return null
@@ -60,11 +97,15 @@ export function servableModel(chosen: string | null, catalog: HeadlessModelCatal
 }
 
 /** What the admin page shows: the saved model, whether the runner still serves it, and what can be chosen. */
-export function workbotSettingsView(chosen: string | null, catalog: HeadlessModelCatalog | null) {
+export function workbotSettingsView(chosen: string | null, catalog: HeadlessModelCatalog | null, gatewayModels = false) {
+  const defaultReadiness = gatewayModels
+    ? catalog === null ? "unverified" : catalog.models.some((entry) => entry.id === catalog.defaultModel) ? "available" : "unavailable"
+    : workbotDefaultReadiness(catalog)
   return {
     model: chosen,
-    defaultModel: explicitWorkbotModel(null, catalog),
-    defaultReadiness: workbotDefaultReadiness(catalog),
+    ...(gatewayModels ? { gatewayModels: true } : {}),
+    defaultModel: gatewayModels ? catalog?.defaultModel || null : explicitWorkbotModel(null, catalog),
+    defaultReadiness,
     models: catalog?.models ?? [],
     modelAvailable: chosen === null || catalog === null || catalog.models.some((entry) => entry.id === chosen),
     runnerReachable: catalog !== null,

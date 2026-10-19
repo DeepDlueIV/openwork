@@ -5,7 +5,7 @@ import { isWorkbotTurn, type WorkbotTurnFact } from "./workbot-telemetry.js"
 import type { SessionEvents } from "./events.js"
 import { FILE_TOOLS, FILE_TOOL_NAMES, runFileTool } from "./files.js"
 import type { McpConnector, ToolSession } from "./mcp.js"
-import { ModelError, normalizeTranscript, type ModelClient } from "./model.js"
+import { createModelAdapter, ModelError, normalizeTranscript, type ModelClient } from "./model.js"
 import type { Store, StoredMessage, Turn } from "./store.js"
 import { REACTION_TOOL_NAMES, REACTION_TOOLS, reactionEndsTurn, runReactionTool } from "./reactions.js"
 import { asAttachment, runSavedFileTool, SAVED_FILE_TOOL_NAMES, SAVED_FILE_TOOLS, type SavedFiles } from "./saved-files.js"
@@ -23,7 +23,7 @@ import {
   tasksSection,
 } from "./tasks.js"
 import { formatBytes, withoutAttachments } from "./tool-files.js"
-import { RESUMABLE, type Attachment, type Message, type RepeatLimits, type SessionComputer, type ToolResult, type TurnCredentials } from "./types.js"
+import { RESUMABLE, type Attachment, type HeadlessModelAccess, type Message, type RepeatLimits, type SessionComputer, type ToolResult, type TurnCredentials } from "./types.js"
 
 const READ_ONLY_LOCAL_TOOLS: ReadonlySet<string> = new Set(["list_files", "read_file", "list_saved_files", "open_file"])
 
@@ -93,6 +93,8 @@ export type RunnerOptions = {
   model: ModelClient
   defaultModel: string
   defaultModelApiKey?: string
+  /** Per-run adapters for trusted, scoped access. Never used as a deployment fallback. */
+  modelForAccess?: (access: HeadlessModelAccess) => ModelClient
   mcp?: McpConnector
   limits: {
     maxConcurrentTurns: number
@@ -142,7 +144,7 @@ export type SendInput = {
 }
 export type SendResult =
   | { ok: true; state: "accepted" | "resumed" | "already_present"; turn: Turn }
-  | { ok: false; error: "unknown_session" | "too_many_queued" | "unknown_file" }
+  | { ok: false; error: "unknown_session" | "too_many_queued" | "unknown_file" | "model_required" | "model_mismatch" }
 
 /** Follow-ups a person can stack behind a running turn in one conversation. */
 export const MAX_QUEUED_PER_SESSION = 20
@@ -344,9 +346,9 @@ export class Runner {
 
   constructor(private readonly options: RunnerOptions) {}
 
-  private reportWorkbot(fact: WorkbotTurnFact, token: string | undefined, modelApiKey?: string) {
+  private reportWorkbot(fact: WorkbotTurnFact, token: string | undefined, modelApiKey?: string, modelBaseUrl?: string) {
     if (!token || !this.options.workbotTelemetry || !isWorkbotTurn(fact.sessionId, fact.messageId)) return
-    const privateValues = [this.options.defaultModelApiKey, modelApiKey, token].filter((value): value is string => typeof value === "string")
+    const privateValues = [this.options.defaultModelApiKey, modelApiKey, modelBaseUrl, token].filter((value): value is string => typeof value === "string")
     const model = telemetryModelId(fact.model, privateValues)
     const safeFact: WorkbotTurnFact = fact.event === "accepted" ? { ...fact, model: model ?? "unreported" }
       : { ...fact, model: model ?? "unreported", modelSource: model ? fact.modelSource : "configured" }
@@ -355,20 +357,30 @@ export class Runner {
     void report.finally(() => this.pendingTelemetry.delete(report))
   }
 
-  private reportWorkbotOutcome(turn: Turn | null, token: string | undefined, answeredModel?: string, modelApiKey?: string) {
+  private reportWorkbotOutcome(turn: Turn | null, token: string | undefined, answeredModel?: string, modelApiKey?: string, modelBaseUrl?: string) {
     if (!turn || !["completed", "failed", "aborted"].includes(turn.status) || (turn.messageId !== "wb_hello" && turn.status !== "completed")) return
     const event = turn.status === "completed" ? "completed" : turn.status === "aborted" ? "aborted" : "failed"
     this.reportWorkbot({ event, sessionId: turn.sessionId, messageId: turn.messageId, timestamp: turn.updatedAt, attempt: turn.createdAt,
       model: answeredModel ?? turn.model ?? this.options.defaultModel, modelSource: answeredModel ? "response" : "configured",
-      errorCode: turn.error ? telemetryFailureCode(turn.error) : null }, token, modelApiKey)
+      errorCode: turn.error ? telemetryFailureCode(turn.error) : null }, token, modelApiKey, modelBaseUrl)
+  }
+
+  private scopedModel(access: HeadlessModelAccess) {
+    return this.options.modelForAccess?.(access) ?? createModelAdapter(access, { maxOutputTokens: 16_384 })
   }
 
   /**
    * Names a conversation that asked for it (Session.autoTitle) once it has an answer: a few words from the model,
    * or the person's first words when the model can't. Never replaces a title the caller set.
    */
-  private async nameConversation(sessionId: string, messageId: string, apiKey: string | undefined) {
-    const { store, model, defaultModel } = this.options
+  private async nameConversation(sessionId: string, messageId: string, credentials: TurnCredentials) {
+    const { store, defaultModel } = this.options
+    const access = credentials.modelAccess
+    if (store.modelAccessRequired(sessionId, messageId) && !access) return
+    const selectedModel = access ? store.getTurn(sessionId, messageId)?.model : defaultModel
+    if (!selectedModel) return
+    const model = access ? this.scopedModel(access) : this.options.model
+    const apiKey = access?.apiKey ?? credentials.modelApiKey ?? this.options.defaultModelApiKey
     const session = store.getSession(sessionId)
     if (!session?.autoTitle || session.title.trim() || this.naming.has(sessionId)) return
     this.naming.add(sessionId)
@@ -383,13 +395,13 @@ export class Runner {
             system: TITLE_PROMPT,
             messages: [{ role: "user", text: `Their message:\n${asked.slice(0, 2_000)}\n\nThe answer:\n${answer.slice(0, 2_000)}` }],
             tools: [],
-            model: defaultModel,
+            model: selectedModel,
             apiKey,
             signal: AbortSignal.timeout(30_000),
           })
           title = cleanTitle(named.text)
         } catch (error) {
-          console.warn(`[headless-runner] naming failed ${JSON.stringify({ sessionId, error: error instanceof ModelError ? error.code : "unknown" })}`)
+          console.warn(`[headless-runner] naming failed ${JSON.stringify({ sessionId, error: error instanceof ModelError ? telemetryFailureCode(error.code) : "unknown" })}`)
         }
       }
       if (!title) title = cleanTitle(asked.split(/\s+/).slice(0, 6).join(" "))
@@ -423,11 +435,18 @@ export class Runner {
     if (!store.getSession(input.sessionId)) return { ok: false, error: "unknown_session" }
     const existing = store.getTurn(input.sessionId, input.messageId)
     if (existing && !RESUMABLE.has(existing.status)) return { ok: true, state: "already_present", turn: existing }
+    if (input.credentials.modelAccess) {
+      // A member key must never be paired with the deployment's default, including retries of legacy turns whose
+      // original selection was never stored. The shared client pins known selections before minting their route.
+      if (!(existing ? existing.model : input.model)) return { ok: false, error: "model_required" }
+      if (existing?.model && input.model && input.model !== existing.model) return { ok: false, error: "model_mismatch" }
+    }
     // A message sent while another turn runs is not an error: it is queued and answered next.
     const queued = this.queue.filter((job) => job.sessionId === input.sessionId && job.kind !== "task").length
     if (queued >= MAX_QUEUED_PER_SESSION) return { ok: false, error: "too_many_queued" }
     let state: "accepted" | "resumed"
     if (existing) {
+      if (input.credentials.modelAccess) store.requireModelAccess(input.sessionId, input.messageId)
       store.setTurnStatus(input.sessionId, input.messageId, "queued")
       state = "resumed"
     } else {
@@ -437,14 +456,14 @@ export class Runner {
         if (!saved) return { ok: false, error: "unknown_file" }
         attachments.push(asAttachment(saved.file))
       }
-      store.admitTurn({ sessionId: input.sessionId, messageId: input.messageId, prompt: input.prompt, model: input.model ?? null, attachments })
+      store.admitTurn({ sessionId: input.sessionId, messageId: input.messageId, prompt: input.prompt, model: input.model ?? null, attachments, modelAccessRequired: !!input.credentials.modelAccess })
       state = "accepted"
     }
     const turn = store.getTurn(input.sessionId, input.messageId)
     if (!turn) throw new Error("turn_missing_after_admission")
     if (state === "accepted") this.reportWorkbot({ event: "accepted", sessionId: input.sessionId, messageId: input.messageId,
       timestamp: turn.createdAt, model: turn.model ?? this.options.defaultModel, attachmentCount: input.attachments?.length ?? 0,
-      hasContext: input.messageId !== "wb_hello" && input.credentials.readOnly === true }, input.credentials.mcpToken, input.credentials.modelApiKey)
+      hasContext: input.messageId !== "wb_hello" && input.credentials.readOnly === true }, input.credentials.mcpToken, input.credentials.modelAccess?.apiKey ?? input.credentials.modelApiKey, input.credentials.modelAccess?.baseUrl)
     if (input.interrupt && turn.kind === undefined) this.supersede(input.sessionId, input.messageId)
     // A grant is kept (encrypted) and held only with self-resume; without it the runner ignores grants.
     const { resumeGrant, ...withoutGrant } = input.credentials
@@ -482,7 +501,7 @@ export class Runner {
       const credentials = this.credentials.get(`${job.sessionId}:${job.messageId}`)?.credentials
       this.credentials.delete(`${job.sessionId}:${job.messageId}`)
       this.options.store.setTurnStatus(job.sessionId, job.messageId, "aborted")
-      this.reportWorkbotOutcome(this.options.store.getTurn(job.sessionId, job.messageId), credentials?.mcpToken, undefined, credentials?.modelApiKey)
+      this.reportWorkbotOutcome(this.options.store.getTurn(job.sessionId, job.messageId), credentials?.mcpToken, undefined, credentials?.modelAccess?.apiKey ?? credentials?.modelApiKey, credentials?.modelAccess?.baseUrl)
       stopped = true
     }
     // A task paused for fresh credentials is in neither place; stopping it means it won't be resumed.
@@ -578,7 +597,7 @@ export class Runner {
     }
     const messageId = taskMessageId(parent.messageId, store.taskCount(sessionId, parent.messageId) + 1)
     if (messageId.length > MAX_MESSAGE_ID_LENGTH) return { output: "This message can't start more tasks.", isError: true }
-    store.admitTurn({ sessionId, messageId, prompt: brief, model: parent.model, kind: "task", parent: parent.messageId, title })
+    store.admitTurn({ sessionId, messageId, prompt: brief, model: parent.model, kind: "task", parent: parent.messageId, title, modelAccessRequired: store.modelAccessRequired(sessionId, parent.messageId) })
     this.enqueue({ sessionId, messageId, kind: "task" }, { ...held, inherited: true })
     return { output: `Started task ${messageId} "${title}". Its report will arrive in this conversation when it's done.`, isError: false }
   }
@@ -600,6 +619,7 @@ export class Runner {
       kind: "report",
       parent: task.messageId,
       title: task.title,
+      modelAccessRequired: store.modelAccessRequired(task.sessionId, task.messageId),
     })
     this.enqueue({ sessionId: task.sessionId, messageId, kind: "report" }, { ...held, inherited: true })
   }
@@ -652,7 +672,9 @@ export class Runner {
       const fresh = await this.options.resume.refresh(sessionId, messageId, grant)
       // A grant never widens a turn: a read-only token for a turn that writes waits for its caller instead.
       if (!fresh || (fresh.readOnly && credentials.readOnly !== true)) return false
-      credentials = { ...credentials, mcpToken: fresh.mcpToken }
+      if (store.modelAccessRequired(sessionId, messageId) && !fresh.modelAccess) return false
+      if (fresh.modelAccess) store.requireModelAccess(sessionId, messageId)
+      credentials = { ...credentials, mcpToken: fresh.mcpToken, ...(fresh.modelAccess ? { modelAccess: fresh.modelAccess } : {}) }
       credentialsAt = Date.now()
       issuedAt = credentialsAt
       // The turn timeout applies to each stretch between refreshes, as it does to each resumed run.
@@ -679,8 +701,11 @@ export class Runner {
       }
       if (superseded()) return wrapUp()
 
-      const apiKey = credentials.modelApiKey ?? this.options.defaultModelApiKey
-      if (!apiKey) {
+      if ((store.modelAccessRequired(sessionId, messageId) && !credentials.modelAccess) || (credentials.modelAccess && !store.getTurn(sessionId, messageId)?.model)) {
+        store.setTurnStatus(sessionId, messageId, "failed", "model_credentials_missing")
+        return
+      }
+      if (!(credentials.modelAccess?.apiKey ?? credentials.modelApiKey ?? this.options.defaultModelApiKey)) {
         store.setTurnStatus(sessionId, messageId, "failed", "model_credentials_missing")
         return
       }
@@ -814,14 +839,15 @@ export class Runner {
         let written = ""
         let result: Awaited<ReturnType<ModelClient["complete"]>>
         try {
-          result = await this.options.model.complete({
+          const model = credentials.modelAccess ? this.scopedModel(credentials.modelAccess) : this.options.model
+          result = await model.complete({
             system: askedToStop ? `${baseSystem}\n\n${STOP_REPEATING_INSTRUCTION}` : baseSystem,
             messages,
             // Cached up to the two newest earlier turns (so the next turn starts from the cache) and the newest message.
             cacheAfter: new Set([...context.cachePoints, ...history.slice(-1)]),
             tools: toolSpecs,
             model: turn?.model ?? this.options.defaultModel,
-            apiKey,
+            apiKey: credentials.modelAccess?.apiKey ?? credentials.modelApiKey ?? this.options.defaultModelApiKey ?? "",
             signal: AbortSignal.any([signal, writing.signal]),
             ...(events
               ? {
@@ -951,13 +977,13 @@ export class Runner {
       if (reason === "aborted") store.setTurnStatus(sessionId, messageId, "aborted")
       else if (reason === "shutdown") store.setTurnStatus(sessionId, messageId, "interrupted", "runner_shutdown")
       else if (reason === "turn_timeout") store.setTurnStatus(sessionId, messageId, "failed", "turn_timeout")
-      else if (error instanceof ModelError) store.setTurnStatus(sessionId, messageId, "failed", error.code, error.detail ?? null)
+      else if (error instanceof ModelError) store.setTurnStatus(sessionId, messageId, "failed", store.modelAccessRequired(sessionId, messageId) ? telemetryFailureCode(error.code) : error.code, store.modelAccessRequired(sessionId, messageId) ? null : error.detail ?? null)
       else store.setTurnStatus(sessionId, messageId, "failed", "runner_error")
-      if (!(error instanceof ModelError) && !reason) {
+      if (!(error instanceof ModelError) && !reason && !store.modelAccessRequired(sessionId, messageId)) {
         console.error("[headless-runner] turn failed", { sessionId, messageId, error: error instanceof Error ? error.message : "unknown" })
       }
     } finally {
-      this.reportWorkbotOutcome(store.getTurn(sessionId, messageId), credentials.mcpToken, answeredModel, credentials.modelApiKey)
+      this.reportWorkbotOutcome(store.getTurn(sessionId, messageId), credentials.mcpToken, answeredModel, credentials.modelAccess?.apiKey ?? credentials.modelApiKey, credentials.modelAccess?.baseUrl)
       clearTimeout(timeout)
       await tools?.close()
       // A no-op for conversations whose computer never started; pauses one that did, even if since switched off.
@@ -975,8 +1001,8 @@ export class Runner {
       if (turn && ["completed", "failed", "aborted"].includes(turn.status)) store.stripAttachments(sessionId, messageId)
       if (turn?.status === "completed" && kind === "message") {
         // In the background: naming never holds up the conversation, and a failure (even at shutdown) only leaves it unnamed.
-        void this.nameConversation(sessionId, messageId, credentials.modelApiKey ?? this.options.defaultModelApiKey).catch((error: unknown) => {
-          console.warn(`[headless-runner] naming failed ${JSON.stringify({ sessionId, error: error instanceof Error ? error.message : "unknown" })}`)
+        void this.nameConversation(sessionId, messageId, credentials).catch((error: unknown) => {
+          console.warn(`[headless-runner] naming failed ${JSON.stringify({ sessionId, error: error instanceof ModelError ? telemetryFailureCode(error.code) : "unknown" })}`)
         })
       }
       console.log(
@@ -998,7 +1024,7 @@ export class Runner {
           kind: "turn_failed",
           code: turn.error ?? "runner_error",
           tags: { sessionId, messageId, turnKind: kind, steps, toolCalls },
-          error: thrown,
+          error: store.modelAccessRequired(sessionId, messageId) ? undefined : thrown,
         })
       }
     }

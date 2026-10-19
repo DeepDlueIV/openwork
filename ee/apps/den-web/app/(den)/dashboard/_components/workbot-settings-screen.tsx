@@ -28,8 +28,8 @@ function workbotName(metadata: string | null): string {
 }
 
 /** Runner model ids read "provider/model"; the provider part picks the logo. */
-function ModelMark({ id }: { id: string }) {
-  const provider = id.includes("/") ? id.slice(0, id.indexOf("/")) : id;
+function ModelMark({ id, provider: brand }: { id: string; provider?: string }) {
+  const provider = brand ?? (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
   return (
     <DenBrandMark
       name={provider}
@@ -43,12 +43,12 @@ function ModelMark({ id }: { id: string }) {
 /** The same searchable rows as the organization default model picker. */
 function modelOptions(settings: WorkbotSettings): DenComboboxOption[] {
   const missing = settings.model && !settings.models.some((entry) => entry.id === settings.model)
-    ? [{ value: settings.model, label: settings.model, description: "No longer available" }]
+    ? [{ value: settings.model, label: settings.gatewayModels ? "Unavailable model" : settings.model, description: settings.gatewayModels ? "Not available to you" : "No longer available" }]
     : [];
   return [
     { value: "", label: defaultLabel(settings) },
     ...missing,
-    ...settings.models.map((entry) => ({ value: entry.id, label: entry.name, keywords: [entry.id], icon: <ModelMark id={entry.id} /> })),
+    ...settings.models.map((entry) => ({ value: entry.id, label: entry.name, keywords: [entry.id], icon: <ModelMark id={entry.id} provider={entry.provider} /> })),
   ];
 }
 
@@ -163,7 +163,9 @@ export function WorkbotSettingsScreen() {
           {settings && settings.runnerReachable && !settings.modelAvailable && settings.model ? (
             <DenNotice
               tone="warning"
-              message={settings.defaultReadiness
+              message={settings.gatewayModels
+                ? "The organization's saved model isn't available to you. Ask your model administrator to check your AI Gateway access."
+                : settings.defaultReadiness
                 ? "The saved model isn't available. Workbot won't send new messages with another model. Choose an available model."
                 : `The saved model is no longer available. New messages use ${defaultModelName(settings)} until you choose another model.`}
             />

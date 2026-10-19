@@ -1,5 +1,13 @@
 import { z } from "zod"
-import type { Message, ToolCall, ToolSpec } from "./types.js"
+import type { HeadlessModelAccess, Message, ToolCall, ToolSpec } from "./types.js"
+
+/** Constructed per run: never mutates the deployment adapter or retains another member's credentials. */
+export function createModelAdapter(access: HeadlessModelAccess, options: { maxOutputTokens: number; fetch?: typeof fetch }): ModelClient {
+  const config = { ...options, baseUrl: access.baseUrl }
+  return access.protocol === "anthropic" ? anthropicModel(config)
+    : access.protocol === "openai-responses" ? openAIResponsesModel(config)
+    : openAIModel(config)
+}
 
 export type ModelRequest = {
   system: string

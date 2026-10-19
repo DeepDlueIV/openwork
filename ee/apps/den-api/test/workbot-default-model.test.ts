@@ -87,6 +87,20 @@ test("the admin page sees whether the saved model is still served", () => {
   })
 })
 
+test("Gateway settings use the actor's exact default alias, never a display-name match or runner fallback", () => {
+  const scoped = {
+    verified: true,
+    defaultModel: "gwm_exact_default",
+    models: [{ id: "gwm_exact_default", name: "Assigned Luna" }, { id: "gwm_other", name: "GPT-6 Luna" }],
+  }
+  const view = workbotSettingsView(null, scoped, true)
+  assert.equal(view.defaultModel, "gwm_exact_default")
+  assert.equal(view.defaultReadiness, "available")
+  assert.equal(workbotSettingsView(null, { ...scoped, models: [scoped.models[1]!] }, true).defaultReadiness, "unavailable")
+  assert.equal(workbotSettingsView(null, null, true).defaultReadiness, "unverified")
+  assert.equal(workbotSettingsView("removed_alias", scoped, true).modelAvailable, false)
+})
+
 test("the model is stored in organization metadata without touching anything else", () => {
   const metadata = { brandAppName: "Acme Helper", workbot: { other: 1 } }
   const saved = withWorkbotModel(metadata, "gateway/model-a")

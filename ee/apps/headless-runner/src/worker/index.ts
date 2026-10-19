@@ -5,6 +5,7 @@ import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { loadConfig, type Config } from "../config.js"
 import { createErrorReporter, type ErrorReporter } from "../error-reporting.js"
+import { scopedCatalogResponse } from "../model-catalog.js"
 import { createRuntime, gatewayModelCatalog } from "../runtime.js"
 import { createModelProbe, modelProbeResponse, type ModelProbe } from "../model-probe.js"
 import { Store } from "../store.js"
@@ -196,8 +197,17 @@ router.get("/v1/models", async (c) => {
   }
   return c.json(await catalog())
 })
+router.post("/v1/models", bodyLimit({ maxSize: 8192 }), (c) => {
+  const config = configFor(c.env)
+  let catalog = catalogs.get(config)
+  if (!catalog) {
+    catalog = gatewayModelCatalog(config)
+    catalogs.set(config, catalog)
+  }
+  return scopedCatalogResponse(c.req.raw, catalog)
+})
 const modelProbes = new WeakMap<Config, ModelProbe>()
-router.post("/v1/model-probe", bodyLimit({ maxSize: 512 }), (c) => {
+router.post("/v1/model-probe", bodyLimit({ maxSize: 8192 }), (c) => {
   const config = configFor(c.env)
   let probe = modelProbes.get(config)
   if (!probe) {

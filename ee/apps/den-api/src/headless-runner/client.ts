@@ -12,8 +12,10 @@ export function defaultHeadlessRunnerDeps(env: Record<string, string | undefined
   // Loaded lazily: the minter pulls in the auth and database modules. A resume grant comes back only where
   // `headlessDurableTurns` is on and the turn's session and message are known.
   const mintToken: HeadlessRunnerDeps["mintToken"] = async (input) => {
-    const { token, resumeGrant } = await (await import("./resume-grants.js")).mintHeadlessTurnCredentials(input)
-    return resumeGrant ? { token, resumeGrant } : { token }
+    const { token, resumeGrant, modelAccess } = await (await import("./resume-grants.js")).mintHeadlessTurnCredentials(input)
+    return { token, ...(resumeGrant ? { resumeGrant } : {}), ...(modelAccess ? { modelAccess } : {}) }
   }
-  return config ? { config, fetch, mintToken, maxTokenTtlMs: DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS } : null
+  const modelAccessRequired: HeadlessRunnerDeps["modelAccessRequired"] = async (actor) =>
+    (await import("../workbot/model.js")).cloudAgentGatewayEnabled(actor.organizationId)
+  return config ? { config, fetch, mintToken, modelAccessRequired, maxTokenTtlMs: DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS } : null
 }

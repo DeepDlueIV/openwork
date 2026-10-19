@@ -9,8 +9,8 @@ import { forbiddenSchema, invalidRequestSchema, jsonResponse, unauthorizedSchema
 import { updateOrganizationMetadata } from "../../organization-metadata.js"
 import {
   checkWorkbotModelChoice,
-  forgetHeadlessModelCatalog,
-  headlessModelCatalog,
+  cloudAgentGatewayEnabled,
+  cloudAgentModelCatalog,
   readOrganizationDefaultModel,
   workbotSettingsView,
 } from "../../workbot/model.js"
@@ -44,7 +44,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
     describeRoute({
       tags: ["Organizations"],
       summary: "Test Workbot's default model",
-      description: "Runs one bounded synthetic completion on the server-resolved organization default with the runner's configured key. No member content, tools, files, MCP access or conversation is used. May consume paid inference. Returns only status, a safe error code and requested/provider-reported model IDs. Requires a genuine user session, recent sign-in, Manage OpenWork Models. Limited durably to three checks per organization and three per member in a ten-minute inactivity-reset window. Never exposed to MCP.",
+      description: "Runs one bounded synthetic completion on the server-resolved organization default with the runner's configured key, or the signed-in member's AI Gateway access when cloudAgentGateway is on. No member content, tools, files, MCP access or conversation is used. May consume paid inference. Returns only status, a safe error code and requested/provider-reported model IDs. Requires a genuine user session, recent sign-in, Manage OpenWork Models. Limited durably to three checks per organization and three per member in a ten-minute inactivity-reset window. Never exposed to MCP.",
       ...{ "x-mcp": false },
       responses: {
         200: jsonResponse("Synthetic completion result; catalog availability alone never means answered.", workbotModelTestSchema.meta({ ref: "WorkbotModelTest" })),
@@ -70,7 +70,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
           return c.json({ error: "rate_limited", retryAfterSeconds }, 429)
         }
       }
-      return c.json(await testOrganizationWorkbotModel(context.organization.id))
+      return c.json(await testOrganizationWorkbotModel(context.organization.id, context.currentMember.userId))
     },
   )
 
@@ -80,7 +80,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
       tags: ["Organizations"],
       summary: "Get Workbot settings",
       description:
-        "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Workbot's null choice means explicit GPT-6 Luna, defaultModel identifies that default and defaultReadiness reports authenticated catalog availability; Slack and Automations keep their existing default policy. Requires View OpenWork Models settings or Manage OpenWork Models, and Workbot.",
+        "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Workbot's null choice means explicit GPT-6 Luna, defaultModel identifies that default and defaultReadiness reports authenticated catalog availability; Slack and Automations keep their existing default policy. With cloudAgentGateway on, the catalog is the caller's credential-ready, supported AI Gateway assignments; an organization default never grants inference access. Requires View OpenWork Models settings or Manage OpenWork Models.",
       responses: {
         200: jsonResponse("Workbot settings returned.", workbotSettingsDocumentSchema),
         401: jsonResponse("Authentication required.", unauthorizedSchema),
@@ -92,11 +92,14 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
     requireWorkbotSettingsRead,
     async (c) => {
       c.header("Cache-Control", "no-store")
-      const organizationId = c.get("organizationContext").organization.id
-      const chosen = await readOrganizationDefaultModel(organizationId)
-      // An admin's refresh checks current readiness rather than reusing Den's per-turn cache.
-      forgetHeadlessModelCatalog()
-      return c.json(workbotSettingsView(chosen, await headlessModelCatalog()))
+      const context = c.get("organizationContext")
+      const actor = { organizationId: context.organization.id, userId: context.currentMember.userId }
+      const chosen = await readOrganizationDefaultModel(actor.organizationId)
+      const gatewayModels = await cloudAgentGatewayEnabled(actor.organizationId)
+      // Gateway projections are live and actor-scoped; never put them in the deployment catalog cache.
+      // An admin's refresh always checks current readiness when using the deployment catalog.
+      const catalog = await cloudAgentModelCatalog(actor, true).catch(() => null)
+      return c.json(workbotSettingsView(chosen, catalog, gatewayModels))
     },
   )
 
@@ -106,7 +109,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
       tags: ["Organizations"],
       summary: "Set Workbot's default model",
       description:
-        "Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default, except Workbot uses explicit GPT-6 Luna. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.",
+        "Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default, except Workbot uses explicit GPT-6 Luna. Automations with their own model keep it. Only models the runner serves are accepted, or the caller's supported, credential-ready Gateway aliases with cloudAgentGateway on. Each executing member still needs their own assignment and credentials. Requires the Manage OpenWork Models permission and a recent sign-in.",
       responses: {
         200: jsonResponse("Workbot settings saved.", workbotSettingsDocumentSchema),
         400: jsonResponse("The model is not one the runner serves, or the request was invalid.", z.union([unknownModelSchema, invalidRequestSchema])),
@@ -121,16 +124,17 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
     jsonValidator(workbotSettingsInputDocumentSchema),
     async (c) => {
       c.header("Cache-Control", "no-store")
-      const organizationId = c.get("organizationContext").organization.id
+      const context = c.get("organizationContext")
+      const organizationId = context.organization.id
+      const actor = { organizationId, userId: context.currentMember.userId }
       const { model } = c.req.valid("json")
-      // Checked against a fresh catalog, so a model added to the runner a moment ago can be chosen.
-      if (model !== null) forgetHeadlessModelCatalog()
-      const catalog = await headlessModelCatalog()
+      const catalog = await cloudAgentModelCatalog(actor, model !== null).catch(() => null)
+      const gatewayModels = await cloudAgentGatewayEnabled(organizationId)
       const choice = checkWorkbotModelChoice(model, catalog)
       if (choice === "runner_unavailable") return c.json({ error: "workbot_runner_unavailable" as const, message: RUNNER_UNAVAILABLE_MESSAGE }, 503)
       if (choice === "unknown_model") return c.json({ error: "unknown_model" as const, message: UNKNOWN_MODEL_MESSAGE }, 400)
       const metadata = await updateOrganizationMetadata(organizationId, (current) => withWorkbotModel(current, model))
-      return c.json(workbotSettingsView(readWorkbotModel(metadata), catalog))
+      return c.json(workbotSettingsView(readWorkbotModel(metadata), catalog, gatewayModels))
     },
   )
 }

@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto"
+import { telemetryFailureCode, telemetryModelId } from "@openwork-ee/headless-protocol"
 import type { ErrorReporter } from "./error-reporting.js"
+import { isWorkbotTurn, type WorkbotTurnFact } from "./workbot-telemetry.js"
 import type { SessionEvents } from "./events.js"
 import { FILE_TOOLS, FILE_TOOL_NAMES, runFileTool } from "./files.js"
 import type { McpConnector, ToolSession } from "./mcp.js"
-import { ModelError, normalizeTranscript, type ModelClient } from "./model.js"
+import { createModelAdapter, ModelError, normalizeTranscript, type ModelClient } from "./model.js"
 import type { Store, StoredMessage, Turn } from "./store.js"
 import { REACTION_TOOL_NAMES, REACTION_TOOLS, reactionEndsTurn, runReactionTool } from "./reactions.js"
 import { asAttachment, runSavedFileTool, SAVED_FILE_TOOL_NAMES, SAVED_FILE_TOOLS, type SavedFiles } from "./saved-files.js"
+import type { SelfResume, SweepResult } from "./self-resume.js"
 
 import {
   MAX_OPEN_TASKS,
@@ -20,7 +23,7 @@ import {
   tasksSection,
 } from "./tasks.js"
 import { formatBytes, withoutAttachments } from "./tool-files.js"
-import { RESUMABLE, type Attachment, type Message, type RepeatLimits, type SessionComputer, type ToolResult, type TurnCredentials } from "./types.js"
+import { RESUMABLE, type Attachment, type HeadlessModelAccess, type Message, type RepeatLimits, type SessionComputer, type ToolResult, type TurnCredentials } from "./types.js"
 
 const READ_ONLY_LOCAL_TOOLS: ReadonlySet<string> = new Set(["list_files", "read_file", "list_saved_files", "open_file"])
 
@@ -90,6 +93,8 @@ export type RunnerOptions = {
   model: ModelClient
   defaultModel: string
   defaultModelApiKey?: string
+  /** Per-run adapters for trusted, scoped access. Never used as a deployment fallback. */
+  modelForAccess?: (access: HeadlessModelAccess) => ModelClient
   mcp?: McpConnector
   limits: {
     maxConcurrentTurns: number
@@ -110,6 +115,13 @@ export type RunnerOptions = {
   computer?: SessionComputer
   /** Turns that end `failed` are reported here (codes and ids only); without it, nothing is reported. */
   errors?: ErrorReporter
+  /** Server-side adoption outcomes, even when no browser is watching. Never a turn dependency. */
+  workbotTelemetry?: (fact: WorkbotTurnFact, token: string) => Promise<void>
+  /**
+   * Keeps turns' resume grants and exchanges them with Den (see self-resume.ts): a turn with a grant refreshes its MCP
+   * token in place instead of pausing, and `selfResume` resumes interrupted ones. Without it grants are ignored.
+   */
+  resume?: SelfResume
   now?: () => number
   /** Waits between repeated steps; tests pass a fake. Rejects with the signal's reason when the turn is stopped. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>
@@ -132,7 +144,7 @@ export type SendInput = {
 }
 export type SendResult =
   | { ok: true; state: "accepted" | "resumed" | "already_present"; turn: Turn }
-  | { ok: false; error: "unknown_session" | "too_many_queued" | "unknown_file" }
+  | { ok: false; error: "unknown_session" | "too_many_queued" | "unknown_file" | "model_required" | "model_mismatch" }
 
 /** Follow-ups a person can stack behind a running turn in one conversation. */
 export const MAX_QUEUED_PER_SESSION = 20
@@ -330,14 +342,45 @@ export class Runner {
   /** Conversations being named right now (see nameConversation), so one answer names a conversation once. */
   private readonly naming = new Set<string>()
 
+  private readonly pendingTelemetry = new Set<Promise<void>>()
+
   constructor(private readonly options: RunnerOptions) {}
+
+  private reportWorkbot(fact: WorkbotTurnFact, token: string | undefined, modelApiKey?: string, modelBaseUrl?: string) {
+    if (!token || !this.options.workbotTelemetry || !isWorkbotTurn(fact.sessionId, fact.messageId)) return
+    const privateValues = [this.options.defaultModelApiKey, modelApiKey, modelBaseUrl, token].filter((value): value is string => typeof value === "string")
+    const model = telemetryModelId(fact.model, privateValues)
+    const safeFact: WorkbotTurnFact = fact.event === "accepted" ? { ...fact, model: model ?? "unreported" }
+      : { ...fact, model: model ?? "unreported", modelSource: model ? fact.modelSource : "configured" }
+    const report = Promise.resolve().then(() => this.options.workbotTelemetry?.(safeFact, token)).catch(() => undefined).then(() => undefined)
+    this.pendingTelemetry.add(report)
+    void report.finally(() => this.pendingTelemetry.delete(report))
+  }
+
+  private reportWorkbotOutcome(turn: Turn | null, token: string | undefined, answeredModel?: string, modelApiKey?: string, modelBaseUrl?: string) {
+    if (!turn || !["completed", "failed", "aborted"].includes(turn.status) || (turn.messageId !== "wb_hello" && turn.status !== "completed")) return
+    const event = turn.status === "completed" ? "completed" : turn.status === "aborted" ? "aborted" : "failed"
+    this.reportWorkbot({ event, sessionId: turn.sessionId, messageId: turn.messageId, timestamp: turn.updatedAt, attempt: turn.createdAt,
+      model: answeredModel ?? turn.model ?? this.options.defaultModel, modelSource: answeredModel ? "response" : "configured",
+      errorCode: turn.error ? telemetryFailureCode(turn.error) : null }, token, modelApiKey, modelBaseUrl)
+  }
+
+  private scopedModel(access: HeadlessModelAccess) {
+    return this.options.modelForAccess?.(access) ?? createModelAdapter(access, { maxOutputTokens: 16_384 })
+  }
 
   /**
    * Names a conversation that asked for it (Session.autoTitle) once it has an answer: a few words from the model,
    * or the person's first words when the model can't. Never replaces a title the caller set.
    */
-  private async nameConversation(sessionId: string, messageId: string, apiKey: string | undefined) {
-    const { store, model, defaultModel } = this.options
+  private async nameConversation(sessionId: string, messageId: string, credentials: TurnCredentials) {
+    const { store, defaultModel } = this.options
+    const access = credentials.modelAccess
+    if (store.modelAccessRequired(sessionId, messageId) && !access) return
+    const selectedModel = access ? store.getTurn(sessionId, messageId)?.model : defaultModel
+    if (!selectedModel) return
+    const model = access ? this.scopedModel(access) : this.options.model
+    const apiKey = access?.apiKey ?? credentials.modelApiKey ?? this.options.defaultModelApiKey
     const session = store.getSession(sessionId)
     if (!session?.autoTitle || session.title.trim() || this.naming.has(sessionId)) return
     this.naming.add(sessionId)
@@ -352,13 +395,13 @@ export class Runner {
             system: TITLE_PROMPT,
             messages: [{ role: "user", text: `Their message:\n${asked.slice(0, 2_000)}\n\nThe answer:\n${answer.slice(0, 2_000)}` }],
             tools: [],
-            model: defaultModel,
+            model: selectedModel,
             apiKey,
             signal: AbortSignal.timeout(30_000),
           })
           title = cleanTitle(named.text)
         } catch (error) {
-          console.warn(`[headless-runner] naming failed ${JSON.stringify({ sessionId, error: error instanceof ModelError ? error.code : "unknown" })}`)
+          console.warn(`[headless-runner] naming failed ${JSON.stringify({ sessionId, error: error instanceof ModelError ? telemetryFailureCode(error.code) : "unknown" })}`)
         }
       }
       if (!title) title = cleanTitle(asked.split(/\s+/).slice(0, 6).join(" "))
@@ -372,15 +415,38 @@ export class Runner {
   }
 
   send(input: SendInput): SendResult {
+    return this.accept(input, true)
+  }
+
+  /**
+   * Resumes interrupted turns that have a resume grant, the way their callers would: the same messageId with a fresh
+   * MCP token from Den. A no-op without self-resume.
+   */
+  selfResume(): Promise<SweepResult> {
+    const resume = this.options.resume
+    if (!resume) return Promise.resolve({ resumed: 0, waiting: 0, failed: 0 })
+    // The grant is already kept: the runner found it there.
+    return resume.sweep(({ sessionId, messageId, credentials }) => this.accept({ sessionId, messageId, prompt: "", credentials }, false))
+  }
+
+  /** `rememberGrant`: keep the caller's resume grant for this turn (false when the runner resumes it with the kept one). */
+  private accept(input: SendInput, rememberGrant: boolean): SendResult {
     const { store } = this.options
     if (!store.getSession(input.sessionId)) return { ok: false, error: "unknown_session" }
     const existing = store.getTurn(input.sessionId, input.messageId)
     if (existing && !RESUMABLE.has(existing.status)) return { ok: true, state: "already_present", turn: existing }
+    if (input.credentials.modelAccess) {
+      // A member key must never be paired with the deployment's default, including retries of legacy turns whose
+      // original selection was never stored. The shared client pins known selections before minting their route.
+      if (!(existing ? existing.model : input.model)) return { ok: false, error: "model_required" }
+      if (existing?.model && input.model && input.model !== existing.model) return { ok: false, error: "model_mismatch" }
+    }
     // A message sent while another turn runs is not an error: it is queued and answered next.
     const queued = this.queue.filter((job) => job.sessionId === input.sessionId && job.kind !== "task").length
     if (queued >= MAX_QUEUED_PER_SESSION) return { ok: false, error: "too_many_queued" }
     let state: "accepted" | "resumed"
     if (existing) {
+      if (input.credentials.modelAccess) store.requireModelAccess(input.sessionId, input.messageId)
       store.setTurnStatus(input.sessionId, input.messageId, "queued")
       state = "resumed"
     } else {
@@ -390,14 +456,22 @@ export class Runner {
         if (!saved) return { ok: false, error: "unknown_file" }
         attachments.push(asAttachment(saved.file))
       }
-      store.admitTurn({ sessionId: input.sessionId, messageId: input.messageId, prompt: input.prompt, model: input.model ?? null, attachments })
+      store.admitTurn({ sessionId: input.sessionId, messageId: input.messageId, prompt: input.prompt, model: input.model ?? null, attachments, modelAccessRequired: !!input.credentials.modelAccess })
       state = "accepted"
     }
     const turn = store.getTurn(input.sessionId, input.messageId)
     if (!turn) throw new Error("turn_missing_after_admission")
+    if (state === "accepted") this.reportWorkbot({ event: "accepted", sessionId: input.sessionId, messageId: input.messageId,
+      timestamp: turn.createdAt, model: turn.model ?? this.options.defaultModel, attachmentCount: input.attachments?.length ?? 0,
+      hasContext: input.messageId !== "wb_hello" && input.credentials.readOnly === true }, input.credentials.mcpToken, input.credentials.modelAccess?.apiKey ?? input.credentials.modelApiKey, input.credentials.modelAccess?.baseUrl)
     if (input.interrupt && turn.kind === undefined) this.supersede(input.sessionId, input.messageId)
+    // A grant is kept (encrypted) and held only with self-resume; without it the runner ignores grants.
+    const { resumeGrant, ...withoutGrant } = input.credentials
+    const resume = this.options.resume
+    if (resume && resumeGrant && rememberGrant) resume.remember(input.sessionId, input.messageId, resumeGrant)
+    const credentials = resume ? input.credentials : withoutGrant
     // Resuming a task or a report keeps it in its lane.
-    this.enqueue({ sessionId: input.sessionId, messageId: input.messageId, kind: turn.kind ?? "message" }, { credentials: input.credentials, at: Date.now() })
+    this.enqueue({ sessionId: input.sessionId, messageId: input.messageId, kind: turn.kind ?? "message" }, { credentials, at: Date.now() })
     return { ok: true, state, turn: store.getTurn(input.sessionId, input.messageId) ?? turn }
   }
 
@@ -424,8 +498,10 @@ export class Runner {
       const job = this.queue[index]
       if (!matches(job)) continue
       this.queue.splice(index, 1)
+      const credentials = this.credentials.get(`${job.sessionId}:${job.messageId}`)?.credentials
       this.credentials.delete(`${job.sessionId}:${job.messageId}`)
       this.options.store.setTurnStatus(job.sessionId, job.messageId, "aborted")
+      this.reportWorkbotOutcome(this.options.store.getTurn(job.sessionId, job.messageId), credentials?.mcpToken, undefined, credentials?.modelAccess?.apiKey ?? credentials?.modelApiKey, credentials?.modelAccess?.baseUrl)
       stopped = true
     }
     // A task paused for fresh credentials is in neither place; stopping it means it won't be resumed.
@@ -450,9 +526,11 @@ export class Runner {
     for (const job of this.queue) if (job.sessionId === sessionId && job.kind !== "task" && job.messageId !== follower) job.superseded = true
   }
 
-  /** Resolves when every queued and running turn has settled. */
+  /** Resolves when every queued and running turn has settled, and every resume grant received is written. */
   async idle() {
     while (this.running.size || this.queue.length) await Promise.all([...this.running])
+    await Promise.all([...this.pendingTelemetry])
+    await this.options.resume?.settled()
   }
 
   /** Stops accepting work and interrupts in-flight turns so they can be resumed later. */
@@ -462,6 +540,7 @@ export class Runner {
     }
     for (const { controller } of this.controllers.values()) controller.abort(new Error("shutdown"))
     await Promise.all([...this.running])
+    await Promise.all([...this.pendingTelemetry])
   }
 
   private runningTasks(sessionId: string) {
@@ -518,7 +597,7 @@ export class Runner {
     }
     const messageId = taskMessageId(parent.messageId, store.taskCount(sessionId, parent.messageId) + 1)
     if (messageId.length > MAX_MESSAGE_ID_LENGTH) return { output: "This message can't start more tasks.", isError: true }
-    store.admitTurn({ sessionId, messageId, prompt: brief, model: parent.model, kind: "task", parent: parent.messageId, title })
+    store.admitTurn({ sessionId, messageId, prompt: brief, model: parent.model, kind: "task", parent: parent.messageId, title, modelAccessRequired: store.modelAccessRequired(sessionId, parent.messageId) })
     this.enqueue({ sessionId, messageId, kind: "task" }, { ...held, inherited: true })
     return { output: `Started task ${messageId} "${title}". Its report will arrive in this conversation when it's done.`, isError: false }
   }
@@ -540,6 +619,7 @@ export class Runner {
       kind: "report",
       parent: task.messageId,
       title: task.title,
+      modelAccessRequired: store.modelAccessRequired(task.sessionId, task.messageId),
     })
     this.enqueue({ sessionId: task.sessionId, messageId, kind: "report" }, { ...held, inherited: true })
   }
@@ -549,20 +629,21 @@ export class Runner {
     const events = this.options.events
     const key = `${sessionId}:${messageId}`
     const held = this.credentials.get(key)
-    const credentials = held?.credentials ?? {}
+    let credentials = held?.credentials ?? {}
     this.credentials.delete(key)
-    const timeout = Number.isFinite(limits.turnTimeoutMs)
-      ? setTimeout(() => controller.abort(new Error("turn_timeout")), limits.turnTimeoutMs)
-      : undefined
+    const startTimeout = () =>
+      Number.isFinite(limits.turnTimeoutMs) ? setTimeout(() => controller.abort(new Error("turn_timeout")), limits.turnTimeoutMs) : undefined
+    let timeout = startTimeout()
     const signal = controller.signal
     let tools: ToolSession | null = null
     const startedAt = Date.now()
     const inherited = held?.inherited === true
     // When the credentials were issued, for the tasks and report this turn passes them to; this turn itself counts
     // their age from when it started, unless it inherited them.
-    const issuedAt = held?.at ?? startedAt
-    const credentialsAt = inherited ? issuedAt : startedAt
+    let issuedAt = held?.at ?? startedAt
+    let credentialsAt = inherited ? issuedAt : startedAt
     let steps = 0
+    let answeredModel: string | undefined
     let toolCalls = 0
     let lastStep = ""
     let identicalSteps = 0
@@ -580,6 +661,28 @@ export class Runner {
     // A follow-up interrupted this answer (see supersede): it wraps up at the next safe point, keeping what it said.
     const superseded = () => this.controllers.get(lane)?.superseded === true
     const wrapUp = () => store.setTurnStatus(sessionId, messageId, "aborted", "superseded")
+    /**
+     * Den's fresh MCP token for this turn, from its resume grant, in place of pausing for `credentials_refresh`: the
+     * turn, and the tasks and report it starts from now on, count the token's age from now. False when the turn has
+     * no grant or Den gave no token; the turn then pauses as without self-resume.
+     */
+    const refreshCredentials = async () => {
+      const grant = credentials.resumeGrant
+      if (!grant || !this.options.resume) return false
+      const fresh = await this.options.resume.refresh(sessionId, messageId, grant)
+      // A grant never widens a turn: a read-only token for a turn that writes waits for its caller instead.
+      if (!fresh || (fresh.readOnly && credentials.readOnly !== true)) return false
+      if (store.modelAccessRequired(sessionId, messageId) && !fresh.modelAccess) return false
+      if (fresh.modelAccess) store.requireModelAccess(sessionId, messageId)
+      credentials = { ...credentials, mcpToken: fresh.mcpToken, ...(fresh.modelAccess ? { modelAccess: fresh.modelAccess } : {}) }
+      credentialsAt = Date.now()
+      issuedAt = credentialsAt
+      // The turn timeout applies to each stretch between refreshes, as it does to each resumed run.
+      clearTimeout(timeout)
+      timeout = startTimeout()
+      console.log(`[headless-runner] turn credentials refreshed ${JSON.stringify({ sessionId, messageId })}`)
+      return true
+    }
     const closeUnanswered = (reason: string) => {
       for (const call of unansweredCalls(turnMessages())) {
         store.appendMessage(sessionId, messageId, { role: "tool", callId: call.id, name: call.name, output: reason, isError: true })
@@ -598,10 +701,17 @@ export class Runner {
       }
       if (superseded()) return wrapUp()
 
-      const apiKey = credentials.modelApiKey ?? this.options.defaultModelApiKey
-      if (!apiKey) {
+      if ((store.modelAccessRequired(sessionId, messageId) && !credentials.modelAccess) || (credentials.modelAccess && !store.getTurn(sessionId, messageId)?.model)) {
         store.setTurnStatus(sessionId, messageId, "failed", "model_credentials_missing")
         return
+      }
+      if (!(credentials.modelAccess?.apiKey ?? credentials.modelApiKey ?? this.options.defaultModelApiKey)) {
+        store.setTurnStatus(sessionId, messageId, "failed", "model_credentials_missing")
+        return
+      }
+      // Inherited credentials may already be too old: a turn with a grant gets fresh ones before it connects.
+      if (kind !== "report" && this.options.mcp && credentials.mcpToken && inherited && Date.now() - credentialsAt >= limits.credentialRefreshMs) {
+        await refreshCredentials()
       }
       if (kind !== "report" && this.options.mcp && credentials.mcpToken) {
         try {
@@ -688,12 +798,24 @@ export class Runner {
         // Between steps: the step a follow-up arrived during has finished, so nothing is cut off mid-way.
         if (superseded()) return wrapUp()
         if (waitBeforeNextStep) await sleep(waitBeforeNextStep, signal)
-        // Between steps, never mid-call, so no tool is cut off. The caller resumes the turn right away with a
-        // fresh MCP token; a caller that stopped supervising simply never resumes it. Inherited credentials may
-        // already be too old before the first step.
+        // Between steps, never mid-call, so no tool is cut off. A turn with a resume grant swaps in a fresh MCP
+        // token and goes on; otherwise it pauses, and the caller resumes it right away with a fresh one (a caller
+        // that stopped supervising simply never resumes it). Inherited credentials may already be too old before
+        // the first step.
         if (tools && (step > 0 || inherited) && Date.now() - credentialsAt >= limits.credentialRefreshMs) {
-          store.setTurnStatus(sessionId, messageId, "interrupted", "credentials_refresh")
-          return
+          const reconnected = (await refreshCredentials()) && credentials.mcpToken && this.options.mcp
+            ? await this.options.mcp({ token: credentials.mcpToken, signal }).catch(() => null)
+            : null
+          if (signal.aborted) {
+            await reconnected?.close().catch(() => undefined)
+            signal.throwIfAborted()
+          }
+          if (!reconnected) {
+            store.setTurnStatus(sessionId, messageId, "interrupted", "credentials_refresh")
+            return
+          }
+          await tools.close().catch(() => undefined)
+          tools = reconnected
         }
         const streamStep = modelStep
         // A task sees only its own brief and work; the conversation sees everything but tasks' work.
@@ -717,14 +839,15 @@ export class Runner {
         let written = ""
         let result: Awaited<ReturnType<ModelClient["complete"]>>
         try {
-          result = await this.options.model.complete({
+          const model = credentials.modelAccess ? this.scopedModel(credentials.modelAccess) : this.options.model
+          result = await model.complete({
             system: askedToStop ? `${baseSystem}\n\n${STOP_REPEATING_INSTRUCTION}` : baseSystem,
             messages,
             // Cached up to the two newest earlier turns (so the next turn starts from the cache) and the newest message.
             cacheAfter: new Set([...context.cachePoints, ...history.slice(-1)]),
             tools: toolSpecs,
             model: turn?.model ?? this.options.defaultModel,
-            apiKey,
+            apiKey: credentials.modelAccess?.apiKey ?? credentials.modelApiKey ?? this.options.defaultModelApiKey ?? "",
             signal: AbortSignal.any([signal, writing.signal]),
             ...(events
               ? {
@@ -748,6 +871,7 @@ export class Runner {
         } finally {
           if (running) running.onSupersede = undefined
         }
+        answeredModel = result.model
         modelStep += 1
         steps += 1
         toolCalls += result.toolCalls.length
@@ -853,12 +977,13 @@ export class Runner {
       if (reason === "aborted") store.setTurnStatus(sessionId, messageId, "aborted")
       else if (reason === "shutdown") store.setTurnStatus(sessionId, messageId, "interrupted", "runner_shutdown")
       else if (reason === "turn_timeout") store.setTurnStatus(sessionId, messageId, "failed", "turn_timeout")
-      else if (error instanceof ModelError) store.setTurnStatus(sessionId, messageId, "failed", error.code, error.detail ?? null)
+      else if (error instanceof ModelError) store.setTurnStatus(sessionId, messageId, "failed", store.modelAccessRequired(sessionId, messageId) ? telemetryFailureCode(error.code) : error.code, store.modelAccessRequired(sessionId, messageId) ? null : error.detail ?? null)
       else store.setTurnStatus(sessionId, messageId, "failed", "runner_error")
-      if (!(error instanceof ModelError) && !reason) {
+      if (!(error instanceof ModelError) && !reason && !store.modelAccessRequired(sessionId, messageId)) {
         console.error("[headless-runner] turn failed", { sessionId, messageId, error: error instanceof Error ? error.message : "unknown" })
       }
     } finally {
+      this.reportWorkbotOutcome(store.getTurn(sessionId, messageId), credentials.mcpToken, answeredModel, credentials.modelAccess?.apiKey ?? credentials.modelApiKey, credentials.modelAccess?.baseUrl)
       clearTimeout(timeout)
       await tools?.close()
       // A no-op for conversations whose computer never started; pauses one that did, even if since switched off.
@@ -876,8 +1001,8 @@ export class Runner {
       if (turn && ["completed", "failed", "aborted"].includes(turn.status)) store.stripAttachments(sessionId, messageId)
       if (turn?.status === "completed" && kind === "message") {
         // In the background: naming never holds up the conversation, and a failure (even at shutdown) only leaves it unnamed.
-        void this.nameConversation(sessionId, messageId, credentials.modelApiKey ?? this.options.defaultModelApiKey).catch((error: unknown) => {
-          console.warn(`[headless-runner] naming failed ${JSON.stringify({ sessionId, error: error instanceof Error ? error.message : "unknown" })}`)
+        void this.nameConversation(sessionId, messageId, credentials).catch((error: unknown) => {
+          console.warn(`[headless-runner] naming failed ${JSON.stringify({ sessionId, error: error instanceof ModelError ? telemetryFailureCode(error.code) : "unknown" })}`)
         })
       }
       console.log(
@@ -899,7 +1024,7 @@ export class Runner {
           kind: "turn_failed",
           code: turn.error ?? "runner_error",
           tags: { sessionId, messageId, turnKind: kind, steps, toolCalls },
-          error: thrown,
+          error: store.modelAccessRequired(sessionId, messageId) ? undefined : thrown,
         })
       }
     }

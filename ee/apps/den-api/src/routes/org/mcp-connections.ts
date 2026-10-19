@@ -30,6 +30,7 @@ import { cache, type CachedOrgMember } from "../../cache.js"
 import { db } from "../../db.js"
 import { requestReadFor } from "../../request-reads.js"
 import { env } from "../../env.js"
+import { recordWorkbotConnection } from "../../workbot/telemetry.js"
 import { memberSignInLink } from "../../agent-links.js"
 import { appLogger } from "../../observability/logger.js"
 import {
@@ -92,6 +93,7 @@ import { EXECUTE_CAPABILITY_TOOL_NAME, SEARCH_CAPABILITIES_TOOL_NAME } from "../
 import { listNativeProviderUsableEntries } from "../../capability-sources/native-provider-connections.js"
 import { getNativeOAuthProvider } from "../../capability-sources/provider-registry.js"
 import { connectCallbackPage } from "../../capability-sources/oauth-callback-page.js"
+import { workbotConnectReturn, workbotCallbackReturn } from "../../workbot/connect-return.js"
 import { getConnectedAccount, getConnectedAccountForListing, getOrgOAuthClient, upsertOrgOAuthClient } from "../../capability-sources/oauth-credentials.js"
 import { assertPublicUrl, createGuardedFetch, createRealmSafeFetch } from "../../capability-sources/url-guard.js"
 import {
@@ -1433,6 +1435,7 @@ async function handleExternalMcpOAuthCallback(input: {
     return invalidMcpOAuthCallback("Invalid or expired state.")
   }
 
+  const completionPage = (result: Parameters<typeof connectCallbackPage>[0]) => connectCallbackPage(result, workbotCallbackReturn(statePayload.workbotReturn, statePayload.providerId))
   const isScopedRoute = input.scopedConnectionId !== undefined
   const callbackMode = statePayload.version === 2 ? statePayload.callbackMode : "legacy-v1"
   // Version-two transactions can use either callback, but the route and the
@@ -1562,7 +1565,7 @@ async function handleExternalMcpOAuthCallback(input: {
         organization_id: statePayload.organizationId,
         ...externalMcpDiagnosticForLog(error, input.requestId, "AUTH_ISSUER_DISCOVERY"),
       })
-      return mcpOAuthCallbackHtml(connectCallbackPage({
+      return mcpOAuthCallbackHtml(completionPage({
         ok: false,
         name: connection.name,
         message: diagnostic.message,
@@ -1587,7 +1590,7 @@ async function handleExternalMcpOAuthCallback(input: {
       organization_id: statePayload.organizationId,
       ...externalMcpDiagnosticForLog(callbackError, input.requestId, "AUTH_USER_OR_WORKLOAD"),
     })
-    return mcpOAuthCallbackHtml(connectCallbackPage({
+    return mcpOAuthCallbackHtml(completionPage({
       ok: false,
       name: connection.name,
       message: callbackError.diagnostic.message,
@@ -1634,7 +1637,7 @@ async function handleExternalMcpOAuthCallback(input: {
       organization_id: statePayload.organizationId,
       ...externalMcpDiagnosticForLog(error, input.requestId, "AUTH_TOKEN_ACQUISITION"),
     })
-    return mcpOAuthCallbackHtml(connectCallbackPage({
+    return mcpOAuthCallbackHtml(completionPage({
       ok: false,
       name: connection.name,
       message: diagnostic.message,
@@ -1645,16 +1648,19 @@ async function handleExternalMcpOAuthCallback(input: {
   // change this separate grant binding.
   await rotateReadinessCredentialBinding(connection, statePayload.orgMembershipId)
   const refreshedConnection = await getExternalMcpConnection({ organizationId: connection.organizationId, connectionId: connection.id })
-  if (refreshedConnection) await checkConnectionReadiness(refreshedConnection, statePayload.orgMembershipId, input.requestId)
+  const readiness = refreshedConnection ? await checkConnectionReadiness(refreshedConnection, statePayload.orgMembershipId, input.requestId) : null
   if (member) {
     const { bindSlackOAuthMember } = await import("../../slack-assistant/repository.js")
     try {
       await bindSlackOAuthMember(connection, member.orgMembershipId)
     } catch {
-      return mcpOAuthCallbackHtml(connectCallbackPage({ ok: false, name: connection.name, message: "Slack connected, but the assistant identity could not be verified. Connect the Slack account for this workspace and try again." }), 400)
+      return mcpOAuthCallbackHtml(completionPage({ ok: false, name: connection.name, message: "Slack connected, but the assistant identity could not be verified. Connect the Slack account for this workspace and try again." }), 400)
     }
   }
-  return mcpOAuthCallbackHtml(connectCallbackPage({ ok: true, name: connection.name }))
+  if (readiness?.status === "ready") void recordWorkbotConnection({ organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId }, {
+    attemptId: statePayload.nonce, connectionId: connection.id, appId: "external_mcp",
+  })
+  return mcpOAuthCallbackHtml(completionPage({ ok: true, name: connection.name }))
 }
 
 type McpConnectionOrganizationContext = NonNullable<OrgRouteVariables["organizationContext"]>
@@ -3550,6 +3556,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
             callbackMode,
             authorizationServerIssuer: target.oauthConfiguration?.authorizationServerIssuer ?? undefined,
             authorizationResponseIssuerRequired: responseIssuerRequired,
+            workbotReturn: workbotConnectReturn(c.req.raw),
             secret: env.betterAuthSecret,
           })
           const result = await connectExternalMcp(

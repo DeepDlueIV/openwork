@@ -43,6 +43,7 @@ const turnRow = z.object({
   message_id: z.string(),
   status: turnStatusSchema,
   model: z.string().nullable(),
+  model_access_required: z.number().optional(),
   error: z.string().nullable(),
   input_tokens: z.number(),
   cached_input_tokens: z.number(),
@@ -153,6 +154,8 @@ export type Turn = {
   messageId: string
   status: TurnStatus
   model: string | null
+  /** Nonsecret durable policy: callers must reacquire scoped access even after a rollout is disabled. */
+  modelAccessRequired?: boolean
   error: string | null
   /**
    * What the model provider said when the turn failed (its error message and request id), for logs and support.
@@ -233,6 +236,7 @@ function toTurn(row: unknown): Turn {
     messageId: value.message_id,
     status: value.status,
     model: value.model,
+    ...(value.model_access_required === 1 ? { modelAccessRequired: true } : {}),
     error: value.error,
     ...(value.error_detail ? { errorDetail: value.error_detail } : {}),
     usage: { inputTokens: value.input_tokens, cachedInputTokens: value.cached_input_tokens, outputTokens: value.output_tokens },
@@ -249,7 +253,7 @@ function toTurn(row: unknown): Turn {
  * their state. The prompt is read where it is needed (startTranscript, waitingPrompts).
  */
 const TURN_COLUMNS =
-  "session_id, message_id, status, model, error, input_tokens, cached_input_tokens, output_tokens, created_at, updated_at, kind, parent, title, error_detail"
+  "session_id, message_id, status, model, model_access_required, error, input_tokens, cached_input_tokens, output_tokens, created_at, updated_at, kind, parent, title, error_detail"
 
 /** Leaves out background tasks' own transcripts: the conversation hears from a task through its report. */
 const CONVERSATION_ROWS = "message_id NOT IN (SELECT message_id FROM turns WHERE session_id = ? AND kind = 'task')"
@@ -340,6 +344,11 @@ export class Store {
     }
     if (!sessionColumns.includes("context_from")) this.db.exec("ALTER TABLE sessions ADD COLUMN context_from INTEGER")
     this.db.exec("CREATE INDEX IF NOT EXISTS sessions_by_owner ON sessions (owner, updated_at)")
+    // A turn's resume grant, encrypted (see resume-grants.ts), and finding interrupted turns without reading them all.
+    if (!turnColumns.includes(RESUME_GRANT_COLUMN)) this.db.exec(`ALTER TABLE turns ADD COLUMN ${RESUME_GRANT_COLUMN} TEXT`)
+    // Nonsecret downgrade guard: scoped inference must be reacquired, never replaced by a deployment key.
+    if (!turnColumns.includes("model_access_required")) this.db.exec("ALTER TABLE turns ADD COLUMN model_access_required INTEGER NOT NULL DEFAULT 0")
+    this.db.exec("CREATE INDEX IF NOT EXISTS turns_by_status ON turns (status)")
   }
 
   close() {
@@ -574,11 +583,12 @@ export class Store {
     kind?: "task" | "report"
     parent?: string
     title?: string
+    modelAccessRequired?: boolean
   }): Turn {
     const at = this.now()
     this.db
       .prepare(
-        "INSERT INTO turns (session_id, message_id, status, prompt, model, error, attachments, kind, parent, title, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO turns (session_id, message_id, status, prompt, model, error, attachments, kind, parent, title, model_access_required, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         input.sessionId,
@@ -589,6 +599,7 @@ export class Store {
         input.kind ?? null,
         input.parent ?? null,
         input.title ?? null,
+        input.modelAccessRequired ? 1 : 0,
         at,
         at,
       )
@@ -628,6 +639,52 @@ export class Store {
          output_tokens = output_tokens + ? WHERE session_id = ? AND message_id = ?`,
       )
       .run(usage.inputTokens, usage.cachedInputTokens, usage.outputTokens, sessionId, messageId)
+  }
+
+  /** Only a nonsecret boolean is durable; endpoint credentials stay in the runner's memory. */
+  modelAccessRequired(sessionId: string, messageId: string): boolean {
+    const row = this.db.prepare("SELECT model_access_required FROM turns WHERE session_id = ? AND message_id = ?").get(sessionId, messageId)
+    return z.object({ model_access_required: z.number() }).parse(row).model_access_required === 1
+  }
+
+  requireModelAccess(sessionId: string, messageId: string) {
+    this.db.prepare("UPDATE turns SET model_access_required = 1 WHERE session_id = ? AND message_id = ?").run(sessionId, messageId)
+  }
+
+  /** Keeps (or, with null, forgets) a turn's encrypted resume grant. Never part of a turn as callers read it. */
+  setResumeGrant(sessionId: string, messageId: string, sealed: string | null) {
+    this.db.prepare(`UPDATE turns SET ${RESUME_GRANT_COLUMN} = ? WHERE session_id = ? AND message_id = ?`).run(sealed, sessionId, messageId)
+  }
+
+  /**
+   * The encrypted resume grant a turn resumes with: its own, else the one of the turn that started it (a report's
+   * task, then that task's message). `holder` is the turn that keeps it.
+   */
+  resumeGrantOf(sessionId: string, messageId: string): { sealed: string; holder: string } | null {
+    let id = messageId
+    for (let hop = 0; hop < 3; hop += 1) {
+      const row = this.db.prepare(`SELECT ${RESUME_GRANT_COLUMN}, kind, parent FROM turns WHERE session_id = ? AND message_id = ?`).get(sessionId, id)
+      if (!row) return null
+      const value = grantRow.parse(row)
+      if (value.resume_grant) return { sealed: value.resume_grant, holder: id }
+      if (!value.kind || !value.parent) return null
+      id = value.parent
+    }
+    return null
+  }
+
+  /** Every interrupted turn stopped for one of these reasons, oldest first, across sessions. */
+  interruptedTurns(errors: readonly string[]): Turn[] {
+    if (errors.length === 0) return []
+    return this.db
+      .prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE status = 'interrupted' AND error IN (${errors.map(() => "?").join(", ")}) ORDER BY created_at, rowid`)
+      .all(...errors)
+      .map(toTurn)
+  }
+
+  /** Whether any turn, in any session, is queued or running. */
+  hasActiveTurns(): boolean {
+    return this.db.prepare(`SELECT 1 AS n FROM turns WHERE status IN (${[...ACTIVE].map(() => "?").join(", ")}) LIMIT 1`).get(...ACTIVE) !== undefined
   }
 
   /** Marks every turn a previous process left queued or running as interrupted. */
@@ -847,4 +904,47 @@ export class Store {
   deleteFile(sessionId: string, path: string) {
     return Number(this.db.prepare("DELETE FROM files WHERE session_id = ? AND path = ?").run(sessionId, path).changes) > 0
   }
+
+  /**
+   * Every row of one conversation exactly as stored, to move it to another runner (GET /v1/sessions/:id/export),
+   * except resume grants: they are secrets sealed with this runner's key, so the conversation's callers resume it there.
+   */
+  exportConversation(id: string): ConversationRows | null {
+    const session = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id)
+    if (!session) return null
+    const rows = (table: ConversationTable) => z.array(sqlRow).parse(this.db.prepare(`SELECT * FROM ${table} WHERE session_id = ? ORDER BY rowid`).all(id))
+    return { session: sqlRow.parse(session), turns: rows("turns").map(withoutGrant), messages: rows("messages"), files: rows("files"), saved_files: rows("saved_files") }
+  }
+
+  /** The columns this database has for a table: an export from a newer runner can name ones it lacks. */
+  columns(table: "sessions" | ConversationTable): Set<string> {
+    return new Set(tableColumns.parse(this.db.prepare(`PRAGMA table_info(${table})`).all()).map((column) => column.name))
+  }
+
+  /** Writes an exported conversation in one transaction: all of it, or nothing. Columns must be checked first. */
+  importConversation(conversation: ConversationRows) {
+    const insert = (table: "sessions" | ConversationTable, row: SqlRow) => {
+      const names = Object.keys(row)
+      if (!names.length || names.some((name) => !/^[a-z_]+$/.test(name))) throw new Error("invalid_column")
+      this.db.prepare(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(...names.map((name) => row[name] ?? null))
+    }
+    this.transaction(() => {
+      insert("sessions", conversation.session)
+      for (const table of CONVERSATION_TABLES) for (const row of conversation[table]) insert(table, table === "turns" ? withoutGrant(row) : row)
+    })
+  }
 }
+
+const RESUME_GRANT_COLUMN = "resume_grant"
+const grantRow = z.object({ resume_grant: z.string().nullable().optional(), kind: z.string().nullable().optional(), parent: z.string().nullable().optional() })
+/** A turn row without its resume grant, which never leaves the runner that sealed it. */
+function withoutGrant(row: SqlRow): SqlRow {
+  const { [RESUME_GRANT_COLUMN]: _grant, ...rest } = row
+  return rest
+}
+
+export const CONVERSATION_TABLES = ["turns", "messages", "files", "saved_files"] as const
+type ConversationTable = (typeof CONVERSATION_TABLES)[number]
+export const sqlRow = z.record(z.string(), z.union([z.string(), z.number(), z.null()]))
+type SqlRow = z.infer<typeof sqlRow>
+export type ConversationRows = { session: SqlRow } & Record<ConversationTable, SqlRow[]>

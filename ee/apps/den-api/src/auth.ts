@@ -7,7 +7,6 @@ import { getInitialActiveOrganizationIdForUser } from "./active-organization.js"
 import { db } from "./db.js";
 import { resolveOrganizationMemberAuthority } from "./organization-team-roles.js";
 import { env } from "./env.js";
-import { organizationFeatureEnabled } from "./features.js";
 import { appLogger } from "./observability/logger.js";
 import {
   deleteMcpOAuthGrantFamilyForSession,
@@ -453,7 +452,7 @@ function readSignUpInvite(ctx: { request?: Request; query?: unknown; body?: unkn
 
 /**
  * Whether signing up from an invitation link counts as verifying the email
- * (inviteLinkVerifiesEmail). Only the join token proves it, never the
+ * for every organization. Only the join token proves it, never the
  * invitation id, which every member can see; the invitation must be pending,
  * unexpired and addressed to this email.
  */
@@ -473,7 +472,7 @@ async function invitationLinkVerifiesEmail(input: { inviteToken: string | null; 
     ))
     .limit(1);
 
-  return invitation ? organizationFeatureEnabled(invitation.organizationId, "inviteLinkVerifiesEmail") : false;
+  return Boolean(invitation);
 }
 
 async function isEmailAlreadyVerified(email: string) {

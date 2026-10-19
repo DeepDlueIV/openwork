@@ -854,6 +854,7 @@ PYEOF`;
   }
 
   async function spawnChrome(name: string, opts: ChromeSurfaceOptions = {}): Promise<SurfaceHandle> {
+    if (opts.hostRules) throw new Error("hostRules is supported for local Chrome only.");
     const sandbox = requireSandbox();
     const safeName = sanitizeName(name);
     const port = await allocateSandboxPort(chromePorts, exec, sandbox);

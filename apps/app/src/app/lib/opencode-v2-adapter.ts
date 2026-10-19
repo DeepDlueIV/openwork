@@ -34,7 +34,6 @@ import {
   SHELL_EXITED_EVENT,
   backgroundShellIdFromToolMetadata,
   backgroundShellNoticeLabel,
-  backgroundShellTasksEnabled,
   readBackgroundShellCompletion,
   readEngineShell,
   type BackgroundShellNotice,
@@ -898,9 +897,9 @@ function mapV2Message(
   // Native instruction/catalog updates belong to the model context, not the
   // visible conversation. Filter by role so identical user text is preserved.
   // The one exception is a background command's completion notice, which the
-  // chat shows as a short row while `backgroundShellTasks` is on.
+  // chat shows as a short row.
   if (messageRole(value) === "system") {
-    const notice = backgroundShellTasksEnabled() ? readBackgroundShellCompletion(value) : null;
+    const notice = readBackgroundShellCompletion(value);
     const id = readString(value, "id") ?? readString(value, "messageID");
     if (!notice || !id) return null;
     const created = readNumber(readRecord(value, "time"), "created") ?? readNumber(value, "timestamp") ?? 0;
@@ -1480,7 +1479,7 @@ export function translateV2Event(
     const finished = readString(item, "type") === "synthetic" ? readBackgroundShellCompletion(payload) : null;
     if (sessionID && finished) {
       const created = readNumber(value, "created") ?? readNumber(properties, "timestamp") ?? Date.now();
-      const notice = messageID && backgroundShellTasksEnabled()
+      const notice = messageID
         ? backgroundShellNoticeMessage(messageID, sessionID, created, finished)
         : null;
       return [
@@ -1900,7 +1899,7 @@ function translateV2Events(
   fetchSession: (sessionID: string, signal: AbortSignal) => Promise<Session | null>,
   taskSessions: TaskSessionAssociations,
   directory?: string,
-  onCatalogChanged?: (directory: string | undefined) => void,
+  onCatalogChanged?: (directory: string | undefined, reason?: "native") => void,
 ): AsyncGenerator<OpencodeEvent> {
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
@@ -2003,7 +2002,15 @@ function translateV2Events(
             continue;
           }
           const eventDirectory = isRecord(event) ? readString(readRecord(event, "location") ?? {}, "directory") : undefined;
+          // Native catalog changes may be global. Consumers only act on
+          // these new notifications when the server confirms live ownership.
+          if (isRecord(event) && (event.type === "provider.updated" || event.type === "model.updated")) {
+            if (directory && eventDirectory && normalizeDirectoryPath(directory) !== normalizeDirectoryPath(eventDirectory)) continue;
+            onCatalogChanged?.(eventDirectory ?? directory, "native");
+            continue;
+          }
           if (directory && (!eventDirectory || normalizeDirectoryPath(directory) !== normalizeDirectoryPath(eventDirectory))) continue;
+          // Preserve the legacy catalog.updated filtering and refresh path.
           if (isRecord(event) && event.type === "catalog.updated") {
             onCatalogChanged?.(eventDirectory);
             continue;
@@ -2860,11 +2867,14 @@ export function createClientV2(
           Object.assign(error, { status: response.status, response });
           throw error;
         }
+        // V2 SSE is volatile and has no replay cursor. A reconnect can miss
+        // any number of catalog mutations, so reconcile after every open.
+        dispatchProviderCatalogChanged({ baseUrl, directory, reason: "reconnect" });
         return {
           stream: translateV2Events(response, options?.signal, async (sessionID, signal) => {
             const result = await request("GET", `/api/session/${encodeURIComponent(sessionID)}`, undefined, signal);
             return result.response.ok ? mapV2Session(result.payload, undefined) : null;
-          }, taskSessions, directory, (eventDirectory) => dispatchProviderCatalogChanged({ baseUrl, directory: eventDirectory ?? directory })),
+          }, taskSessions, directory, (eventDirectory, reason) => dispatchProviderCatalogChanged({ baseUrl, directory: eventDirectory ?? directory, ...(reason ? { reason } : {}) })),
         };
       },
     },

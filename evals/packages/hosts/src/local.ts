@@ -340,7 +340,7 @@ function spawnDetached(command: string, args: string[], { cwd, env, logPath }: S
   return { child, pid: child.pid, exit };
 }
 
-function chromeArgs(cdpPort: number, profileDir: string, startUrl: string, headless: boolean, mouse: boolean): string[] {
+function chromeArgs(cdpPort: number, profileDir: string, startUrl: string, headless: boolean, mouse: boolean, hostRules?: string): string[] {
   const args = [
     `--remote-debugging-port=${cdpPort}`,
     `--user-data-dir=${profileDir}`,
@@ -352,6 +352,10 @@ function chromeArgs(cdpPort: number, profileDir: string, startUrl: string, headl
     // Avoid the Daytona preview h2 stall when ~28 dev chunks multiplex; h1.1 loads them, while plain-http local Den never negotiates h2.
     "--disable-http2",
     ...(mouse ? [MOUSE_POINTER_CHROME_ARG] : []),
+    ...(hostRules ? [`--host-resolver-rules=${hostRules}`] : []),
+    // Recordings: a real 2x display, so screencast frames carry device pixels (an emulated
+    // deviceScaleFactor alone still yields 1x screencast frames).
+    ...(/^[1-4]$/.test(process.env.OPENWORK_EVAL_CHROME_SCALE ?? "") ? [`--force-device-scale-factor=${process.env.OPENWORK_EVAL_CHROME_SCALE}`] : []),
     startUrl,
   ];
   // Match Linux/Windows' classic gutter on headless macOS too, without changing
@@ -1006,7 +1010,7 @@ async function ensureDisplay(repoRoot: string, env: NodeJS.ProcessEnv, log: (mes
           await mkdir(join(profileDir, "Default"), { recursive: true });
           await writeFile(join(profileDir, "Default", "Preferences"), JSON.stringify({ intl: { accept_languages: "en-US,en", selected_languages: "en-US,en" } }), "utf8");
         }
-        const spawned = spawnDetached(binary, chromeArgs(cdpPort, profileDir, startUrl, headless, opts.mouse === true), { cwd: profileRoot, env, logPath });
+        const spawned = spawnDetached(binary, chromeArgs(cdpPort, profileDir, startUrl, headless, opts.mouse === true, opts.hostRules), { cwd: profileRoot, env, logPath });
         await writeFile(join(profileDir, "openwork-eval-chrome.pid"), `${spawned.pid}\n`, "utf8");
         try {
           await waitForCdpOrExit("Chrome", cdpUrl, spawned, logPath);

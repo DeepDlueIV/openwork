@@ -49,7 +49,7 @@ Every route registers exactly one access marker (deny by default):
   With the `permissions` feature off, admins hold every key and members none.
 - `orgRoleRoute(["owner"])`: owner-only actions (delete organization, transfer ownership).
 - `requireOrgPermission(key)`: not a marker. Same check as `orgPermissionRoute`, for routes
-  that must run something first, e.g. `orgMemberRoute(), requireFeature("permissions"), requireOrgPermission(key)`
+  that must run something first, e.g. `orgMemberRoute(), requireFeature("managedDeployments"), requireOrgPermission(key)`
   so a disabled feature answers 404 before any permission check.
 
 In handlers, use `requirePermission(c, key)` / `hasPermission(c, key)` from

@@ -8,6 +8,11 @@ import {
   AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER,
 } from "@openwork/types/automations";
 import type { GatewayProviderSummary } from "@openwork/types/den/gateway";
+import {
+  parseModelRemovalInventory,
+  type ModelRemovalInventory,
+} from "../../react-app/domains/session/surface/model-removal-inventory";
+export type { ModelRemovalInventory } from "../../react-app/domains/session/surface/model-removal-inventory";
 import { workbotSettingsSchema } from "@openwork/types/den/workbot-settings";
 import {
   remoteSessionStatusResultSchema,
@@ -31,6 +36,7 @@ import type {
   UpdateAutomation,
 } from "@openwork/types/automations";
 import { generatedArtifactViewSchema, savedAppDetailSchema, savedAppSummarySchema, type SaveApp, type WorkflowDetail } from "@openwork/types/workflows";
+import { canScheduleWorkflow, type WorkflowAccessRole } from "./workflow-run-access";
 import { gatewayUsageStatusSchema, gatewayUsageResetRequestSchema } from "@openwork/types/den/gateway-usage-limits";
 
 // Re-export the shared schema under the local alias so React consumers
@@ -2788,6 +2794,7 @@ type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 
 type DenRequestOptions = {
   method?: string;
+  cache?: RequestCache;
   token?: string | null;
   body?: unknown;
   timeoutMs?: number;
@@ -2864,6 +2871,7 @@ async function requestJsonRaw<T>(
         headers,
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         credentials: "include",
+        ...(options.cache ? { cache: options.cache } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
       },
       options.timeoutMs ?? DEFAULT_DEN_TIMEOUT_MS,
@@ -3251,6 +3259,19 @@ export function createDenClient(options: {
       return providers;
     },
 
+    /** Never treats unsupported endpoints, auth failures, or partial parsing as absence. */
+    async getModelRemovalInventory(orgId: string): Promise<ModelRemovalInventory> {
+      const [legacy, gateway] = await Promise.all([
+        requestJson<unknown>(baseUrls, "/v1/llm-providers", {
+          method: "GET", token, organizationId: orgId, cache: "no-store",
+        }),
+        requestJson<unknown>(baseUrls, "/v1/inference-providers?scope=usable", {
+          method: "GET", token, organizationId: orgId, cache: "no-store",
+        }),
+      ]);
+      return parseModelRemovalInventory(legacy, gateway);
+    },
+
     async listOrgGatewayProviders(orgId: string): Promise<DenOrgGatewayProvider[]> {
       try {
         const payload = await requestJson<unknown>(baseUrls, "/v1/inference-providers?scope=usable", {
@@ -3359,13 +3380,13 @@ export function createDenClient(options: {
       });
     },
 
-    async getWorkflow(orgId: string, configObjectId: string): Promise<WorkflowDetail> {
-      const payload = await requestJson<{ script: WorkflowDetail }>(
+    async getWorkflow(orgId: string, configObjectId: string): Promise<WorkflowDetail & { canSchedule: boolean }> {
+      const payload = await requestJson<{ script: WorkflowDetail; workflow: { role: WorkflowAccessRole } }>(
         baseUrls,
         `/v1/workflows/${encodeURIComponent(configObjectId)}?maxAgeMs=86400000`,
         { method: "GET", token, organizationId: orgId },
       );
-      return payload.script;
+      return { ...payload.script, canSchedule: canScheduleWorkflow(payload.workflow?.role) };
     },
 
     async getAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {

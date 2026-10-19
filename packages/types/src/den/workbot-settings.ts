@@ -9,22 +9,46 @@ import { z } from "zod"
  * reads there. One organization-wide value for now; per-team overrides can be layered on top of it later.
  */
 
-export const workbotModelOptionSchema = z.object({ id: z.string(), name: z.string() })
+export const WORKBOT_DEFAULT_MODEL_ID = "openai/gpt-6-luna"
+export const WORKBOT_DEFAULT_MODEL_NAME = "GPT-6 Luna"
+
+/** Resolve only an exact Luna identity from the runner's own authorized route; never guess another provider. */
+export function workbotLunaAlias(catalog: { defaultModel: string; models: { id: string; name: string }[] }): string | null {
+  const candidates = catalog.models.filter((model) => model.id === WORKBOT_DEFAULT_MODEL_ID || model.name === WORKBOT_DEFAULT_MODEL_NAME || model.name === `OpenWork: ${WORKBOT_DEFAULT_MODEL_NAME}`)
+  const canonical = candidates.find((model) => model.id === WORKBOT_DEFAULT_MODEL_ID)
+  if (canonical) return canonical.id
+  const configured = candidates.find((model) => model.id === catalog.defaultModel)
+  if (configured) return configured.id
+  return candidates.length === 1 ? candidates[0]?.id ?? null : null
+}
+
+export const workbotModelOptionSchema = z.object({ id: z.string(), name: z.string(), provider: z.string().optional() })
 export type WorkbotModelOption = z.infer<typeof workbotModelOptionSchema>
 
 export const workbotSettingsSchema = z.object({
-  /** The model the admin chose; null means the runner's default. */
+  /** The model the admin chose; null uses the explicit Luna default for Workbot. */
   model: z.string().nullable(),
-  /** The runner's default model, or null when the runner can't be reached. */
+  /** The effective default for Workbot; legacy mode returns the runner's default or null when unreachable. */
   defaultModel: z.string().nullable(),
   /** The models the runner can serve. Empty when the runner can't be reached. */
   models: z.array(workbotModelOptionSchema),
-  /** False when the chosen model is no longer offered: everything uses the runner's default until it is changed. */
+  /** False when a saved model is no longer offered. The explicit Luna rollout refuses new Workbot turns instead of falling back. */
   modelAvailable: z.boolean(),
   /** The runner answered; when false, the model list is unknown. */
   runnerReachable: z.boolean(),
+  /** The catalog is scoped to this member's usable AI Gateway assignments, not the deployment runner. */
+  gatewayModels: z.boolean().optional(),
+  /** Present only during the explicit Luna rollout. Catalog readiness is not a paid completion probe. */
+  defaultReadiness: z.enum(["available", "unavailable", "unverified"]).optional(),
 })
 export type WorkbotSettings = z.infer<typeof workbotSettingsSchema>
+
+/** A paid, synthetic diagnostic result, never a catalog-derived readiness claim. No answer text or credentials. */
+export const workbotModelTestSchema = z.discriminatedUnion("status", [
+  z.strictObject({ status: z.literal("answered"), errorCode: z.null(), requestedModel: z.string(), reportedModel: z.string().nullable() }),
+  z.strictObject({ status: z.literal("failed"), errorCode: z.enum(["model_unavailable", "runner_unavailable", "credentials_unavailable", "authentication_failed", "payment_required", "provider_unavailable", "timed_out", "invalid_response", "busy"]), requestedModel: z.string(), reportedModel: z.null() }),
+])
+export type WorkbotModelTest = z.infer<typeof workbotModelTestSchema>
 
 export const workbotSettingsInputSchema = z.strictObject({
   /** A model id from `models`, or null for the runner's default. */

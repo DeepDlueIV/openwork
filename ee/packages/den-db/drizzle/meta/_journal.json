@@ -1037,6 +1037,13 @@
       "when": 1792192418476,
       "tag": "0148_headless_resume_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "5",
+      "when": 1792434268632,
+      "tag": "0149_headless_resume_revocation",
+      "breakpoints": true
     }
   ]
 }

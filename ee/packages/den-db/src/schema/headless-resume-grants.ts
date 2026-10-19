@@ -1,4 +1,4 @@
-import { boolean, index, int, mysqlTable, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core"
+import { boolean, index, int, mysqlTable, primaryKey, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core"
 import { denTypeIdColumn } from "../columns"
 
 /**
@@ -24,6 +24,11 @@ export const HeadlessResumeGrantTable = mysqlTable(
     tokenHash: varchar("token_hash", { length: 64 }).notNull(),
     expiresAt: timestamp("expires_at", { fsp: 3 }).notNull(),
     revokedAt: timestamp("revoked_at", { fsp: 3 }),
+    /**
+     * When Den authorized the member for this turn, taken before the turn's credentials were minted. A revocation
+     * after this moment makes the grant useless even if the row was written after the revocation ran (see
+     * HeadlessResumeRevocationTable).
+     */
     createdAt: timestamp("created_at", { fsp: 3 }).notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at", { fsp: 3 }),
     useCount: int("use_count").notNull().default(0),
@@ -33,4 +38,19 @@ export const HeadlessResumeGrantTable = mysqlTable(
     index("headless_resume_grant_member").on(table.userId, table.organizationId),
     index("headless_resume_grant_expires_at").on(table.expiresAt),
   ],
+)
+
+/**
+ * The last time one member's credentials were revoked in one organization (member removed, role or role permissions
+ * changed, ownership transferred). The exchange refuses every resume grant authorized before this moment, so a grant
+ * minted concurrently with a revocation, and written after it swept the live grants, cannot be used afterwards.
+ */
+export const HeadlessResumeRevocationTable = mysqlTable(
+  "headless_resume_revocation",
+  {
+    organizationId: denTypeIdColumn("organization", "organization_id").notNull(),
+    userId: denTypeIdColumn("user", "user_id").notNull(),
+    revokedAt: timestamp("revoked_at", { fsp: 3 }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.userId] })],
 )

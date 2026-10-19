@@ -20,7 +20,7 @@ const { client } = await import("../../src/db.js")
 const { env } = await import("../../src/env.js")
 const { defaultHeadlessRunnerDeps, createHeadlessRunnerClient } = await import("../../src/headless-runner/client.js")
 const { slackHeadlessDeps } = await import("../../src/slack-assistant/headless.js")
-const { mintHeadlessResumeGrant, HEADLESS_RESUME_GRANT_EXCHANGES_PER_WINDOW } = await import("../../src/headless-runner/resume-grants.js")
+const { mintHeadlessResumeGrant, HEADLESS_RESUME_GRANT_EXCHANGES_PER_WINDOW, HEADLESS_RESUME_REVOCATION_MARGIN_MS } = await import("../../src/headless-runner/resume-grants.js")
 const { hashOpaqueMcpSecret } = await import("../../src/mcp/auth.js")
 const { DEN_MCP_OPAQUE_ACCESS_TOKEN_PREFIX } = await import("../../src/auth.js")
 
@@ -334,4 +334,35 @@ test("a member whose membership ended cannot exchange, and removing a member rev
   // Other members' grants are untouched.
   const stillFine = await exchange({ grant: stayingGrant, ...stayingIds })
   assert.equal(stillFine.status, 200, summary(stillFine))
+})
+
+test("a grant minted concurrently with a role change cannot be exchanged afterwards", async () => {
+  await setDurable(true)
+  const changing = await den.newMember(owner, orgId, "Rowan Role", "admin")
+  const authorizedAt = new Date()
+  const racingIds = nextTurn()
+  // ARRANGE: Den authorizes the turn, then the role changes (revoking live grants) before the grant row is written.
+  // The revocation sweep cannot see that row; the grant still must not work afterwards.
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  const demoted = await den.as(owner, orgId)("POST", `/v1/members/${changing.memberId}/role`, { role: "member" })
+  assert.ok(demoted.status < 300, summary(demoted))
+  const [watermark] = await sql("SELECT revoked_at FROM headless_resume_revocation WHERE organization_id = ? AND user_id = ?", [orgId, changing.userId])
+  assert.ok(watermark?.revoked_at, "the role change records when the member's credentials were revoked")
+  const racing = await mintHeadlessResumeGrant({ userId: changing.userId, organizationId: orgId, ...racingIds, now: authorizedAt })
+  const [row] = await sql("SELECT revoked_at FROM headless_resume_grant WHERE token_hash = ?", [sha256(racing.grant)])
+  assert.equal(row?.revoked_at, null, "the racing grant was written after the sweep, so it is not marked revoked")
+  const refused = await exchange({ grant: racing.grant, ...racingIds })
+  assert.equal(refused.status, 403, summary(refused))
+  assert.equal(field(refused.body, "error"), "grant_revoked")
+
+  // A grant authorized clearly after the role change works, with the member's current access.
+  const laterIds = nextTurn()
+  const later = await mintHeadlessResumeGrant({
+    userId: changing.userId,
+    organizationId: orgId,
+    ...laterIds,
+    now: new Date(Date.now() + HEADLESS_RESUME_REVOCATION_MARGIN_MS + 1_000),
+  })
+  const fresh = await exchange({ grant: later.grant, ...laterIds })
+  assert.equal(fresh.status, 200, summary(fresh))
 })

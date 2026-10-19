@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto"
 import { and, eq, inArray, isNull, lt, sql } from "@openwork-ee/den-db/drizzle"
-import { HeadlessResumeGrantTable, MemberTable, RateLimitTable } from "@openwork-ee/den-db/schema"
+import { HeadlessResumeGrantTable, HeadlessResumeRevocationTable, MemberTable, RateLimitTable } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { db } from "../db.js"
 import { organizationFeatureEnabled } from "../features.js"
@@ -28,6 +28,12 @@ export const HEADLESS_RESUME_GRANT_EXCHANGES_PER_WINDOW = 60
 export const HEADLESS_RESUME_GRANT_EXCHANGE_WINDOW_MS = 60 * 60 * 1000
 /** The runner's own limits on ids it accepts; anything longer cannot be a real turn. */
 const MAX_BOUND_ID_LENGTH = 128
+/**
+ * A grant must be authorized clearly after the member's last credential revocation: this margin covers clock
+ * differences between Den instances and the moments between authorizing a turn and minting its credentials. A grant
+ * minted within it right after a revocation is refused; its turn falls back to its caller re-sending it.
+ */
+export const HEADLESS_RESUME_REVOCATION_MARGIN_MS = 30_000
 /** Expired rows deleted per mint, so one mint never turns into a long delete. */
 const PRUNE_BATCH = 500
 
@@ -66,6 +72,7 @@ export async function mintHeadlessResumeGrant(input: {
   sessionId: string
   messageId: string
   readOnly?: boolean
+  /** When the member was authorized for this turn; stored as the grant's `createdAt`. */
   now?: Date
 }): Promise<{ grant: string; grantId: string; expiresAt: Date }> {
   const now = input.now ?? new Date()
@@ -102,12 +109,13 @@ async function resumeGrantForTurn(input: {
   sessionId?: string
   messageId?: string
   readOnly?: boolean
+  authorizedAt: Date
 }): Promise<string | undefined> {
   const { sessionId, messageId } = input
   if (!boundId(sessionId) || !boundId(messageId)) return undefined
   try {
     if (!(await organizationFeatureEnabled(input.organizationId, "headlessDurableTurns"))) return undefined
-    const { grant } = await mintHeadlessResumeGrant({ ...input, sessionId, messageId })
+    const { grant } = await mintHeadlessResumeGrant({ ...input, sessionId, messageId, now: input.authorizedAt })
     return grant
   } catch (error) {
     // The turn still runs; only self-resume is lost. Never log the grant.
@@ -129,8 +137,11 @@ export async function mintHeadlessTurnCredentials(input: {
   sessionId?: string
   messageId?: string
 }): Promise<{ token: string; tokenId: string; expiresAt: Date; resumeGrant?: string }> {
+  // Taken before anything is minted: a credential revocation after this moment outranks the grant (see
+  // headlessResumeGrantAuthorizedBeforeRevocation), however long minting takes.
+  const authorizedAt = new Date()
   const minted = await mintHeadlessRunMcpToken(input)
-  const resumeGrant = await resumeGrantForTurn(input)
+  const resumeGrant = await resumeGrantForTurn({ ...input, authorizedAt })
   return resumeGrant ? { ...minted, resumeGrant } : minted
 }
 
@@ -169,21 +180,37 @@ export async function activeHeadlessResumeGrantMember(row: Pick<GrantRow, "userI
   return member?.id ?? null
 }
 
+/**
+ * True when the member's credentials were revoked in the grant's organization at or after the grant was authorized
+ * (within HEADLESS_RESUME_REVOCATION_MARGIN_MS). Revocation also marks live grants revoked, but a grant minted
+ * concurrently can be written after that sweep; this check refuses it anyway.
+ */
+export async function headlessResumeGrantAuthorizedBeforeRevocation(row: Pick<GrantRow, "userId" | "organizationId" | "createdAt">) {
+  const [revocation] = await db
+    .select({ revokedAt: HeadlessResumeRevocationTable.revokedAt })
+    .from(HeadlessResumeRevocationTable)
+    .where(and(eq(HeadlessResumeRevocationTable.organizationId, row.organizationId), eq(HeadlessResumeRevocationTable.userId, row.userId)))
+    .limit(1)
+  if (!revocation) return false
+  return row.createdAt.getTime() <= revocation.revokedAt.getTime() + HEADLESS_RESUME_REVOCATION_MARGIN_MS
+}
+
 export type HeadlessResumeExchange =
   | { ok: true; mcpToken: string; expiresAt: Date; readOnly: boolean }
   | { ok: false; status: 403; error: HeadlessResumeGrantError }
   | { ok: false; status: 429; error: "rate_limited"; retryAfterMs: number }
 
 /**
- * Exchanges a found grant for a fresh MCP token, checking in order: revoked, expired, bound to this turn, member
- * still active, feature on, rate limit. `memberId` is the active membership (null when it ended).
+ * Exchanges a found grant for a fresh MCP token, checking in order: revoked (marked, or authorized before the member's
+ * last credential revocation), expired, bound to this turn, member still active, feature on, rate limit. `memberId`
+ * is the active membership (null when it ended).
  */
 export async function exchangeHeadlessResumeGrant(
   row: GrantRow,
   input: { sessionId: string; messageId: string; memberId: string | null; now?: Date },
 ): Promise<HeadlessResumeExchange> {
   const now = input.now ?? new Date()
-  if (row.revokedAt) return { ok: false, status: 403, error: "grant_revoked" }
+  if (row.revokedAt || (await headlessResumeGrantAuthorizedBeforeRevocation(row))) return { ok: false, status: 403, error: "grant_revoked" }
   if (row.expiresAt.getTime() <= now.getTime()) return { ok: false, status: 403, error: "grant_expired" }
   if (!headlessResumeGrantCovers(row, input)) return { ok: false, status: 403, error: "grant_mismatch" }
   if (!input.memberId) return { ok: false, status: 403, error: "membership_inactive" }

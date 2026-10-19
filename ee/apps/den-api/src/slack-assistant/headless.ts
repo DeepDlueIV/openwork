@@ -100,9 +100,9 @@ export type SlackRunStep = { id: string; label: string; status: "running" | "com
 export type SlackBackgroundTurn = { id: string; title: string; status: string }
 
 /**
- * How a thread's runner session is set up before each message. With `slackWorkbotReplies` the instructions live in
- * the session (the provider caches them) and the model may react and start background tasks; without it they are
- * cleared, so turning the feature off also turns them off for threads that had them.
+ * How a thread's runner session is set up before each message. Instructions live in
+ * the session (the provider caches them) and the model may react and start background tasks.
+ * Older in-flight checkpoints still clear these settings when resuming their legacy reply mode.
  */
 export type SlackSessionSettings = { instructions: string; reactions: boolean; tasks: boolean }
 
@@ -127,7 +127,7 @@ export type SlackRunSnapshot = {
 }
 
 export type SlackRunner = {
-  /** `settings` only with `slackWorkbotReplies`; otherwise the session keeps the runner's defaults. */
+  /** New runs supply `settings`; older checkpoints can keep the runner's defaults. */
   create(input: { title: string; settings?: SlackSessionSettings }): Promise<RunnerOutcome<{ sessionId: string }>>
   /**
    * With `settings`, the session is brought up to date first. `accepted`: the runner started a new turn (not a resend

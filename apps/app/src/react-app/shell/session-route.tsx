@@ -114,9 +114,6 @@ import { AutomationsPage } from "@/react-app/domains/automations/automations-pag
 import { automationProviderCatalog } from "@/react-app/domains/automations/automation-model-options";
 import { CalendarPage } from "@/react-app/domains/calendar/calendar-page";
 import { useOrgFeatureState } from "@/react-app/domains/cloud/use-org-feature";
-import { useBackgroundShellTasksFeature } from "@/react-app/domains/session/status/use-background-shell-tasks-feature";
-import { useAppBuildProgressFeature } from "@/react-app/domains/apps/use-app-build-progress-feature";
-import { useLastTurnModelFooterFeature } from "@/react-app/domains/session/sync/use-last-turn-model-footer-feature";
 import { useRemoteSessionSubagentsFeature } from "@/react-app/domains/session/remote-threads/use-remote-session-subagents-feature";
 import { remoteThreadAttentionBySession, useRemoteThreadAttentionKey } from "@/react-app/domains/session/remote-threads/remote-thread-store";
 import { AppsPage } from "@/react-app/domains/apps/apps-page";
@@ -186,7 +183,7 @@ import {
 import { assignedModelOptions } from "@/react-app/domains/connections/provider-auth/assigned-model-options";
 import { runtimeModelOptions } from "@/react-app/domains/models/catalog";
 import { pickerFallbackModels } from "@/react-app/domains/connections/provider-auth/live-provider-sync";
-import { withImportedModelMetadata, isAutoModel, modelTitle, nextAvailableModel, shouldSelectInitialAuto, starterModel, openWorkModelsLunaReplacement, EXPLICIT_MODEL_CHOICE_KEY } from "@/react-app/domains/models/model-catalog";
+import { withImportedModelMetadata, isAutoModel, shouldSelectInitialAuto, starterModel, openWorkModelsLunaReplacement, EXPLICIT_MODEL_CHOICE_KEY } from "@/react-app/domains/models/model-catalog";
 import {
   filterEntitledModelOptions,
   keylessProviderIds,
@@ -444,9 +441,6 @@ export function SessionRoute() {
   const automationsRouteActive = automationsSurfaceAvailable && automationsRouteRequested;
   // The Calendar is an Automations view behind the automationCalendar feature.
   const calendarFeature = useOrgFeatureState("automationCalendar");
-  useBackgroundShellTasksFeature();
-  useAppBuildProgressFeature();
-  useLastTurnModelFooterFeature();
   useRemoteSessionSubagentsFeature();
   const calendarSurfaceAvailable = automationsEnabled && denAuth.isSignedIn && calendarFeature.data === true;
   const calendarAvailabilityPending = denAuthChecking || (automationsEnabled && denAuth.isSignedIn && calendarFeature.isLoading);
@@ -1292,7 +1286,6 @@ export function SessionRoute() {
   // Debounce catalog churn before checking Den. Time alone never confirms an
   // organization model's removal: two complete member inventory reads, with an
   // engine refetch between them, must independently establish lost assignment.
-  const modelRemovalRecovery = useOrgFeatureState("modelRemovalRecovery").enabled;
   const modelRecoveryScope = JSON.stringify([sessionDraftScope, opencodeBaseUrl, selectedWorkspaceId]);
   const selectedSessionModelSelection = useSessionModelStore((state) =>
     (selectedSessionId ? state.bySessionId[selectedSessionId] ?? null : null),
@@ -1443,8 +1436,7 @@ export function SessionRoute() {
       && (!isCloudManagedProviderKey(option.providerID) || assigned.has(`${option.providerID}/${option.modelID}`)));
     const previous = activeComposerModel
       ? rememberedModelTitles.get(`${activeComposerModel.providerID}/${activeComposerModel.modelID}`) ?? activeComposerModel : null;
-    const chooseReplacement = modelRemovalRecovery ? closestAvailableModel : nextAvailableModel;
-    const replacement = previous ? chooseReplacement(candidates, collections.favorites, collections.recent, previous,
+    const replacement = previous ? closestAvailableModel(candidates, collections.favorites, collections.recent, previous,
       (option) => resolveModelAvailability(option).status === "available") : null;
     if (!replacement) {
       window.dispatchEvent(new CustomEvent(openComposerModelPickerEvent, { detail: { sessionId: targetSessionId ?? undefined, focusAlternative: true } }));
@@ -1452,15 +1444,8 @@ export function SessionRoute() {
     }
     if (targetSessionId) useSessionModelStore.getState().setModel(targetSessionId, replacement, null);
     else changeNewTaskModel(replacement, null);
-    if (modelRemovalRecovery && previous) {
-      useModelRecoveryStore.getState().record(recoveryChatKey, { previous, replacement });
-    } else {
-      toast.info(`Your model isn't available anymore. Switched to ${modelTitle(replacement)}.`, {
-        id: `model-unavailable-switch:${targetSessionId ?? "default"}`,
-        action: { label: "Change", onClick: () => window.dispatchEvent(new CustomEvent(openComposerModelPickerEvent, { detail: { sessionId: targetSessionId ?? undefined } })) },
-      });
-    }
-  }, [activityRouteActive, activeComposerModel, activeComposerTargetsSession, changeNewTaskModel, cloudProviderList, cloudProviderSyncReady, denAuth.isSignedIn, entitledModelOptions, entitledOrgDefaultModel, providerListQuery.data, organizationModelsEmpty, resolveModelAvailability, selectedModelUnavailableKey, selectedSessionId, workspaceDefault, organizationRemovalConfirmed, modelRemovalRecovery, recoveryChatKey, modelPicker.actionOptions, rememberedModelTitles, modelRemovalConfirmation.assignedModels]);
+    if (previous) useModelRecoveryStore.getState().record(recoveryChatKey, { previous, replacement });
+  }, [activityRouteActive, activeComposerModel, activeComposerTargetsSession, changeNewTaskModel, cloudProviderList, cloudProviderSyncReady, denAuth.isSignedIn, entitledModelOptions, entitledOrgDefaultModel, providerListQuery.data, organizationModelsEmpty, resolveModelAvailability, selectedModelUnavailableKey, selectedSessionId, workspaceDefault, organizationRemovalConfirmed, recoveryChatKey, modelPicker.actionOptions, rememberedModelTitles, modelRemovalConfirmation.assignedModels]);
 
   // Optimistic model selection: a remembered model is treated as valid until
   // the availability gate CONFIRMS it absent (selectedModelUnavailable).

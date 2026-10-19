@@ -1,8 +1,8 @@
 # Workbot's explicit Luna default
 
-`workbotLunaDefault` is off by default on cloud and self-hosted deployments. It
-also requires `workbot`. With it on, an organization without a saved model uses
-an explicit GPT-6 Luna model from the configured runner's authorized catalog.
+Workbot and its explicit Luna default are generally available on cloud and
+self-hosted deployments. An organization without a saved model uses an explicit
+GPT-6 Luna model from the configured runner's authorized catalog.
 An exact canonical ID or exact display name identifies Luna; ambiguous aliases
 are refused rather than choosing a provider arbitrarily. A saved organization
 choice always wins, even when unavailable: Workbot never silently replaces it.
@@ -87,15 +87,16 @@ catalog for the explicit model. When it cannot verify that model, it does not
 send on a different model. The failure asks the person to have their workspace
 admin check the model. Corrections use #6147's append-only path, so a lookup
 failure cannot remove the original or later turns. History reads, files,
-active turns and stored model choices are not removed by this rollout. Turning off `workbotLunaDefault` restores the old next-turn
-routing and hides the new readiness row; it does not roll back append-only
-corrections, clear organization metadata or restart conversations. Workbot's existing Den-session cache can
-delay a changed model or rollout by up to 30 seconds. Existing accepted turns retain their
+active turns and stored model choices are not removed by graduation. There is
+no rollout switch for the Luna default; administrators can choose another
+available model without clearing history or restarting conversations. Workbot's
+existing Den-session cache can delay a changed model by up to 30 seconds.
+Existing accepted turns retain their
 runner-stored model, including when resumed after interruption.
 
 ## Deployment owner confirmation before Monday
 
-No environment or rollout is changed by this work. The deployment owner must
+Graduation does not configure a live provider or certify a deployment. The deployment owner must
 confirm these names on the intended deployment, privately, without copying
 values or credentials into a PR, log, screenshot, or chat:
 
@@ -155,10 +156,10 @@ and claims no durable per-member spend protection.
 
 Options for the owner:
 
-1. Keep the **Workbot rollout (`workbot`) off** until shared-key exposure is
-   explicitly accepted and actual provider-side caps, alerting and operating
-   limits are confirmed. Turning off only `workbotLunaDefault` does not cap
-   spend: the earlier runner-model policy still allows answers. Those controls
+1. Workbot no longer has a rollout switch. Before exposing the configured runner,
+   explicitly accept shared-key exposure and confirm actual provider-side caps,
+   alerting and operating limits. Restrict runner/service access if that exposure
+   is unacceptable. Changing the default model does not cap spend. These controls
    are deployment-wide, not member fairness or a hard monetary guarantee.
 2. Follow up with member-scoped Gateway delegation and reuse its existing
    usage-limit admission/settlement primitives at each inference request.

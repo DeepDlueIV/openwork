@@ -503,7 +503,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
     "den_set_org_capability",
     {
       description:
-        "Admin write tool: turn one feature on or off for one organization (an organization override, the same switch as the admin panel), e.g. capability='workbot'. enabled=null removes the override so the feature follows the deployment-wide on/off state again. The kill switch (den_set_feature_rollout) still outranks it.",
+        "Admin write tool: turn one feature on or off for one organization (an organization override, the same switch as the admin panel), e.g. capability='workbotDocuments'. enabled=null removes the override so the feature follows the deployment-wide on/off state again. The kill switch (den_set_feature_rollout) still outranks it.",
       inputSchema: z.object({
         organizationId: z.string().min(1).describe("Organization id, e.g. org_..."),
         capability: featureKeySchema.describe("Feature to set (see packages/features/src/registry.ts)"),

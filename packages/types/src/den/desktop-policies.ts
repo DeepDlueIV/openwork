@@ -396,7 +396,7 @@ export type DesktopAgentPermissionRule = z.infer<typeof desktopAgentPermissionsS
 
 /**
  * The model new desktop chats start with on the OpenCode v2 engine, chosen by
- * the organization or one of the member's teams (feature `orgDefaultModel`).
+ * the organization or one of the member's teams.
  * Mirrors `desktopDefaultModelSchema` in ./default-model.ts, which owns the
  * resolution rules; kept inline for the same reason as agent permissions.
  */

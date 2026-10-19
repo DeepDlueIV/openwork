@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
-import { Globe, Layers, LockKeyhole, Plus, Trash2, User, Users } from "lucide-react";
+import { Globe, Layers, Plus, Trash2, User, Users } from "lucide-react";
 import {
   gatewayUsagePolicyWriteSchema, gatewayUsageTimeframes,
   type GatewayUsageLimitPolicy, type GatewayUsagePolicyWrite, type GatewayUsageTimeframe,
@@ -14,7 +14,7 @@ import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
 import { DenSwitch } from "../../_components/ui/switch";
-import { getAiGatewayLimitRoute, getAiGatewayLimitsRoute, orgFeatureEnabled, type DenOrgMember, type DenOrgTeam } from "../../_lib/den-org";
+import { getAiGatewayLimitRoute, getAiGatewayLimitsRoute, type DenOrgMember, type DenOrgTeam } from "../../_lib/den-org";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
 import { useGatewayAccessProviders } from "./gateway-subject-access-data";
 import { providerLimitLabel } from "./provider-limit-scope";
@@ -75,14 +75,14 @@ export function GatewayLimitEditorScreen({ policyId, target }: { policyId?: stri
   const { orgId, orgSlug, orgContext } = useOrgDashboard();
   if (!orgId || !orgContext) return <p role="status" className="text-sm text-gray-500">Loading…</p>;
   return <GatewayLimitEditor key={`${orgId}:${policyId ?? "new"}`} orgId={orgId} orgSlug={orgSlug} policyId={policyId} target={target} teams={orgContext.teams} members={orgContext.members}
-    providerLimits={orgFeatureEnabled(orgContext, "gatewayProviderUsageLimits")} />;
+    />;
 }
 
-type EditorProps = { orgId: string; orgSlug: string | null | undefined; teams: DenOrgTeam[]; members: DenOrgMember[]; providerLimits?: boolean };
+type EditorProps = { orgId: string; orgSlug: string | null | undefined; teams: DenOrgTeam[]; members: DenOrgMember[] };
 
-export function GatewayLimitEditor({ orgId, orgSlug, policyId, target, teams, members, providerLimits = false }: EditorProps & { policyId?: string; target?: GatewayLimitTarget }) {
+export function GatewayLimitEditor({ orgId, orgSlug, policyId, target, teams, members }: EditorProps & { policyId?: string; target?: GatewayLimitTarget }) {
   const policies = useGatewayPolicies(orgId);
-  if (!policyId) return <GatewayLimitForm orgId={orgId} orgSlug={orgSlug} target={target} teams={teams} members={members} providerLimits={providerLimits} />;
+  if (!policyId) return <GatewayLimitForm orgId={orgId} orgSlug={orgSlug} target={target} teams={teams} members={members} />;
   if (policies.isPending) return <p role="status" className="text-sm text-gray-500">Loading limit…</p>;
   if (policies.isError) {
     return (
@@ -94,12 +94,12 @@ export function GatewayLimitEditor({ orgId, orgSlug, policyId, target, teams, me
   }
   const policy = policies.data.policies.find((entry) => entry.id === policyId);
   if (!policy || policy.archivedAt) return <DenNotice tone="info" message="This limit was deleted or does not exist." />;
-  return <GatewayLimitForm orgId={orgId} orgSlug={orgSlug} policy={policy} teams={teams} members={members} providerLimits={providerLimits} />;
+  return <GatewayLimitForm orgId={orgId} orgSlug={orgSlug} policy={policy} teams={teams} members={members} />;
 }
 
 const DEFAULT_PROVIDER = "default";
 
-function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members, providerLimits = false }: EditorProps & { policy?: GatewayUsageLimitPolicy; target?: GatewayLimitTarget }) {
+function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members }: EditorProps & { policy?: GatewayUsageLimitPolicy; target?: GatewayLimitTarget }) {
   const id = useId();
   const router = useRouter();
   const policies = useGatewayPolicies(orgId);
@@ -110,7 +110,7 @@ function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members, prov
   const [allowRequestReset, setAllowRequestReset] = useState(policy?.allowRequestReset ?? true);
   const [revision] = useState(policy?.revision);
   const [providerId, setProviderId] = useState<string | null>(policy?.providerId ?? null);
-  const showProvider = providerLimits || Boolean(policy?.providerId);
+
   const [adding, setAdding] = useState<"person" | "team" | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -119,7 +119,7 @@ function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members, prov
   const whoLabel = describeWho(who, teams, members);
   const draft: GatewayUsagePolicyWrite = {
     name: policy?.name ?? (whoLabel.slice(0, 120) || "Spend limit"),
-    ...(showProvider ? { providerId } : {}),
+    ...({ providerId }),
     hardLimit,
     allowRequestReset,
     limits: gatewayUsageTimeframes.filter((timeframe) => amounts[timeframe].enabled).map((timeframe) => ({ timeframe, costUsd: amounts[timeframe].value.trim() })),
@@ -200,9 +200,9 @@ function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members, prov
     <div className="flex flex-col" data-testid="gateway-limit-editor">
       <h2 className="text-[20px] font-medium tracking-[-0.01em] text-gray-950">{policy ? policy.name : "New spend limit"}</h2>
 
-      {showProvider ? <ProviderCard orgId={orgId} headingId={`${id}-provider`} value={providerId} onChange={setProviderId} enabled={providerLimits} /> : null}
+      <ProviderCard orgId={orgId} headingId={`${id}-provider`} value={providerId} onChange={setProviderId} />
 
-      <section className={`${CARD} ${showProvider ? "mt-3" : "mt-5"}`} aria-labelledby={`${id}-who`}>
+      <section className={`${CARD} mt-3`} aria-labelledby={`${id}-who`}>
         <h3 id={`${id}-who`} className={CARD_TITLE}>Who</h3>
         <div className="mt-3 flex items-center gap-3">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500"><Globe className="h-4 w-4" aria-hidden="true" /></span>
@@ -330,13 +330,13 @@ function GatewayLimitForm({ orgId, orgSlug, policy, target, teams, members, prov
 }
 
 /** Which provider the limit governs: every provider without its own limit (default), or one provider. */
-function ProviderCard({ orgId, headingId, value, onChange, enabled }: {
-  orgId: string; headingId: string; value: string | null; onChange: (value: string | null) => void; enabled: boolean;
+function ProviderCard({ orgId, headingId, value, onChange }: {
+  orgId: string; headingId: string; value: string | null; onChange: (value: string | null) => void;
 }) {
   const providers = useGatewayAccessProviders(orgId);
   const unverified = providers.isPending || providers.isFetching || providers.isError;
   const options = [
-    { value: DEFAULT_PROVIDER, label: providerLimitLabel(null, undefined, enabled), description: enabled ? "A provider's own applicable limit replaces this default" : "Limits per provider are off. This default covers every provider.", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> },
+    { value: DEFAULT_PROVIDER, label: providerLimitLabel(null, undefined), description: "A provider's own applicable limit replaces this default", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> },
     ...(providers.data ?? []).filter((provider) => provider.status !== "disabled" || provider.id === value).map((provider) => ({
       value: provider.id,
       label: provider.name,
@@ -345,19 +345,18 @@ function ProviderCard({ orgId, headingId, value, onChange, enabled }: {
     })),
   ];
   if (value && !providers.data?.some((provider) => provider.id === value)) {
-    options.push({ value, label: providerLimitLabel(value, unverified ? undefined : providers.data, enabled), description: "The saved provider scope is unchanged.", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> });
+    options.push({ value, label: providerLimitLabel(value, unverified ? undefined : providers.data), description: "The saved provider scope is unchanged.", icon: <span className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-gray-100 text-gray-500"><Layers className="h-3.5 w-3.5" aria-hidden="true" /></span> });
   }
   return (
     <section className={`${CARD} mt-5`} aria-labelledby={headingId} data-testid="gateway-limit-provider">
       <h3 id={headingId} className={CARD_TITLE}>Provider</h3>
       <div className="mt-3 max-w-[520px]">
-        <DenCombobox ariaLabel="Provider" value={value ?? DEFAULT_PROVIDER} options={options} disabled={!enabled || unverified}
+        <DenCombobox ariaLabel="Provider" value={value ?? DEFAULT_PROVIDER} options={options} disabled={unverified}
           placeholder="Choose a provider…" searchPlaceholder="Search providers" emptyLabel="No providers"
           onChange={(next) => onChange(next === DEFAULT_PROVIDER ? null : next)} />
       </div>
       {providers.isPending || providers.isFetching ? <p role="status" className="mt-2 text-[12px] text-gray-500">Checking provider choices. The saved scope is unchanged.</p> : providers.isError ? <DenNotice className="mt-2" tone="error" message="Could not verify provider choices. The saved scope is unchanged." action={<DenButton variant="secondary" onClick={() => void providers.refetch()}>Retry providers</DenButton>} /> : value && !providers.data.some((provider) => provider.id === value) ? <p role="status" className="mt-2 text-[12px] text-gray-500">The saved provider is not in your current list. Keep its scope or choose another provider.</p> : null}
-      {!enabled ? <div className="mt-2" data-testid="gateway-limit-provider-off"><DenNotice tone="neutral" presentation="inline" icon={LockKeyhole} message="Limits per provider are turned off, so default limits cover all providers. Ask an OpenWork operator to turn provider limits on." /></div>
-        : value ? <p className="mt-2 text-[12px] text-gray-500">People with this limit stop counting this provider toward the default limit.</p> : null}
+      { value ? <p className="mt-2 text-[12px] text-gray-500">People with this limit stop counting this provider toward the default limit.</p> : null}
     </section>
   );
 }

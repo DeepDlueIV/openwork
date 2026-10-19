@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
-  discoverySkills,
   mentionedSkillIds,
   nativeSkills,
   registerCloudSkillDiscovery,
@@ -11,25 +10,15 @@ import {
 const longDescription = `Sync the CRM with the latest pipeline updates. ${"Triggers when the user mentions: update the CRM, sync the CRM, refresh the pipeline. ".repeat(4)}`;
 const crmBody = "---\nname: crm-pipeline-sync-7y86nr3j\n---\n\nRead Gmail, then update Notion.";
 const catalog = {
-  delivery: "native" as const,
   skills: [
     { name: "crm-pipeline-sync-7y86nr3j", title: "crm-pipeline-sync", description: longDescription, url: "skill://crm-pipeline-sync-7y86nr3j/SKILL.md",
-      capability: "plugin:plg_1:cob_1", modelDiscovery: true, digest: sha256Digest(crmBody) },
+      capability: "plugin:plg_1:cob_1", digest: sha256Digest(crmBody) },
     { name: "salesforce-notes-ab12cd34", title: "Salesforce notes", description: "Log call notes.", url: "skill://salesforce-notes-ab12cd34/SKILL.md",
-      capability: "plugin:plg_2:cob_2", modelDiscovery: true, setup: { status: "needs_connection", message: "Connect Salesforce from Your Connections." } },
+      capability: "plugin:plg_2:cob_2", setup: { status: "needs_connection", message: "Connect Salesforce from Your Connections." } },
     { name: "release", title: "Release", description: "Cut a release.", url: "skill://release/SKILL.md",
-      capability: "skill:release", modelDiscovery: true, digest: sha256Digest("tampered") },
+      capability: "skill:release", digest: sha256Digest("tampered") },
   ],
 };
-
-describe("discovery mode", () => {
-  test("keeps metadata-only stubs with 200-character descriptions", () => {
-    const [crm] = discoverySkills({ skills: catalog.skills });
-    expect(crm?.id).toBe("openwork-cloud-crm-pipeline-sync-7y86nr3j");
-    expect(crm?.description.length).toBe(200);
-    expect(crm?.content).toContain("discovery metadata, NOT the skill's instructions");
-  });
-});
 
 describe("native mode", () => {
   test("lists full descriptions and loads verified bodies, setup notes, or the discovery note", () => {
@@ -57,7 +46,7 @@ describe("registerCloudSkillDiscovery", () => {
   let server: ReturnType<typeof Bun.serve> | undefined;
   afterEach(async () => { await stop?.(); server?.stop(true); });
 
-  test("native delivery registers bodies once per digest and attaches skills the prompt names", async () => {
+  test("registers native bodies and named skills without rollout metadata", async () => {
     const reads: string[] = [];
     server = Bun.serve({ port: 0, async fetch(request) {
       const body: { name: string; input: { url?: string } } = await request.json();

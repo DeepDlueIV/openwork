@@ -4,7 +4,6 @@ import { createDenClient, readDenSettings } from "@/app/lib/den";
 import type { ModelRef } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { modelTitle } from "@/react-app/domains/models/model-catalog";
-import { useOrgFeature } from "@/react-app/domains/cloud/use-org-feature";
 import { modelRecoveryChatKey, useModelRecoveryStore } from "../model-recovery-store";
 
 export function ModelRecoveryNote(props: {
@@ -14,7 +13,6 @@ export function ModelRecoveryNote(props: {
   onChange: () => void;
   onSwitchBack: (model: ModelRef) => void;
 }) {
-  const enabled = useOrgFeature("modelRemovalRecovery");
   const chatKey = modelRecoveryChatKey(props.scope ?? "", props.sessionId);
   const recovery = useModelRecoveryStore((state) => state.byChat[chatKey]);
   const settings = readDenSettings();
@@ -25,7 +23,7 @@ export function ModelRecoveryNote(props: {
   // Each visible composer owns return monitoring, including an alternate-workspace
   // pane. A dismissed note can reappear only after a verified usable return.
   useEffect(() => {
-    if (!enabled || !props.scope || !previousProvider || !previousModel || !token || !organizationId) return;
+    if (!props.scope || !previousProvider || !previousModel || !token || !organizationId) return;
     const client = createDenClient({ baseUrl: settings.baseUrl, token, requireCompleteInventory: true });
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -41,8 +39,8 @@ export function ModelRecoveryNote(props: {
     };
     void inspect();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [enabled, props.scope, previousProvider, previousModel, token, organizationId, settings.baseUrl, chatKey]);
-  if (!enabled || !props.scope || !recovery || recovery.dismissed
+  }, [props.scope, previousProvider, previousModel, token, organizationId, settings.baseUrl, chatKey]);
+  if (!props.scope || !recovery || recovery.dismissed
     || recovery.replacement.providerID !== props.selectedModel.providerID
     || recovery.replacement.modelID !== props.selectedModel.modelID) return null;
   return (

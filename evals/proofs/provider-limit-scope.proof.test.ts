@@ -1,45 +1,50 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { providerLimitScope, providerLimitScopeOff } from "../worlds/provider-limit-scope.ts";
+import { providerLimitScope, providerLimitScopeDefault } from "../worlds/provider-limit-scope.ts";
 import { isRecord, records } from "../worlds/library.ts";
 
 const test = spec.world(providerLimitScope, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
-const offTest = spec.world(providerLimitScopeOff, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
+const defaultTest = spec.world(providerLimitScopeDefault, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
 
-offTest("turning provider limits off restores an all-provider default without deleting retained provider policies", async ({ world, user, probe, step, evidence }) => {
-  await step("the default covers all providers while the retained provider policy is marked unenforced", async () => {
-    await user.see({ text: "All providers" }, { timeoutMs: 60_000 });
-    await user.see({ text: "Not enforced while off" });
-    await user.notSee({ text: "Providers without their own limit" });
+defaultTest("an owner manages provider-specific limits without a feature override", async ({ world, user, probe, step, evidence }) => {
+  await step("the default excludes providers with their own limit", async () => {
+    await user.see({ text: "Providers without their own limit" }, { timeoutMs: 60_000 });
+    await user.notSee({ text: "Not enforced while off" });
     const label = await probe.dom(`[data-policy-id="${world.defaultPolicyId}"] [data-testid="gateway-limit-provider-label"]`);
-    expect(label.elements.map((entry) => entry.text).join()).toBe("All providers");
-    evidence.recordAssertionEvidence("the off-state default names its actual admission scope", `retained provider row visible; default label=${label.elements.map((entry) => entry.text).join()}`, label.elements.length === 1 && label.elements[0]?.text === "All providers");
+    expect(label.elements.map((entry) => entry.text).join()).toBe("Providers without their own limit");
+    evidence.recordAssertionEvidence("the default names its actual admission scope", `default label=${label.elements.map((entry) => entry.text).join()}`, label.elements.length === 1 && label.elements[0]?.text === "Providers without their own limit");
     await user.screenshot();
   });
-  await step("the default editor never suggests a provider exclusion while the rollout is off", async () => {
+  await step("the default editor offers the generally available provider choices", async () => {
     await user.click({ role: "link", label: "Edit Default provider limit" });
     await user.see({ testId: "gateway-limit-editor" });
-    await user.notSee({ testId: "gateway-limit-provider" });
-    const org = await probe.api(world.den.admin, "/v1/org");
-    const features = isRecord(org.body) && isRecord(org.body.features) ? org.body.features : null;
-    expect(features?.gatewayProviderUsageLimits).toBe(false);
-    evidence.recordAssertionEvidence("the disabled rollout is observed, not inferred from an empty list", `organization flag=${features?.gatewayProviderUsageLimits}; no exclusion picker in default editor`, org.response.ok && features?.gatewayProviderUsageLimits === false);
+    await user.see({ role: "combobox", label: "Provider" }, { value: "Providers without their own limit", timeoutMs: 60_000 });
+    await probe.eventually(() => probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)'), {
+      within: 60_000, until: (value) => value.elements.length === 1, label: "provider choices are verified and editable",
+    });
+    await user.click({ role: "combobox", label: "Provider" });
+    await user.see({ role: "option", label: /Saved model provider/ });
+    const enabled = await probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)');
+    expect(enabled.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("provider scope needs no rollout override", `editable provider pickers=${enabled.elements.length}`, enabled.elements.length === 1);
     await user.screenshot();
+    await user.press("Escape");
     await user.click({ role: "link", label: "Cancel" });
   });
-  await step("the retained provider scope remains visible and locked rather than being reset to the default", async () => {
+  await step("the saved provider policy remains separate from the default and editable", async () => {
     await user.click({ role: "link", label: "Edit Saved provider limit" });
     await user.see({ role: "combobox", label: "Provider" }, { value: "Saved model provider", timeoutMs: 60_000 });
-    await user.see({ testId: "gateway-limit-provider-off" });
-    await user.see({ text: /Ask an OpenWork operator to turn provider limits on/ });
-    const locks = await probe.dom('[data-testid="gateway-limit-provider-off"] svg');
-    expect(locks.elements).toHaveLength(1);
-    const disabled = await probe.dom('[data-testid="gateway-limit-provider"] input:disabled');
+    await probe.eventually(() => probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)'), {
+      within: 60_000, until: (value) => value.elements.length === 1, label: "provider choices are verified and editable",
+    });
+    await user.click({ role: "combobox", label: "Provider" });
+    await user.see({ role: "option", label: /Providers without their own limit/ });
+    const enabled = await probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)');
     const read = await probe.api(world.den.admin, "/v1/gateway/usage-limit-policies");
     const retained = isRecord(read.body) ? records(read.body.policies).find((entry) => entry.id === world.policyId) : null;
     expect(retained?.providerId).toBe(world.providerId);
-    expect(disabled.elements.length).toBe(1);
-    evidence.recordAssertionEvidence("turning off enforcement does not delete saved policy scope", `retained provider=${retained?.providerId === world.providerId}; locked pickers=${disabled.elements.length}`, read.response.ok && retained?.providerId === world.providerId && disabled.elements.length === 1);
+    expect(enabled.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("general availability preserves the saved policy scope", `retained provider=${retained?.providerId === world.providerId}; editable pickers=${enabled.elements.length}`, read.response.ok && retained?.providerId === world.providerId && enabled.elements.length === 1);
     await user.screenshot();
   });
 });

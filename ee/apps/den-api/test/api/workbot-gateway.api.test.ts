@@ -83,11 +83,6 @@ test("Workbot uses current member Gateway grants, exact org defaults and private
   const noGrant = await den.newMember(a.owner, a.orgId, "Gateway No Grant")
   const owner = den.as(a.owner, a.orgId)
   const otherOwner = den.as(b.owner, b.orgId)
-  for (const org of [a, b]) {
-    ok(await den.setFeature(org.orgId, "workbot", true))
-    ok(await den.setFeature(org.orgId, "workbotLunaDefault", true))
-    ok(await den.setFeature(org.orgId, "permissions", true))
-  }
   for (const [person, key] of [[member, "inference.view"], [manager, "inference.manage"]] satisfies [Member, string][]) {
     const teamId = await den.createTeam(a.owner, a.orgId, `${key} team`, [person.memberId])
     ok(await owner("POST", "/v1/permissions/sets", { teamId, permissions: [{ key, status: "allow" }] }), 201)

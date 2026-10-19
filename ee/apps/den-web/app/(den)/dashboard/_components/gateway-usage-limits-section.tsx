@@ -240,11 +240,9 @@ function PersonLookup({ orgId, orgSlug }: { orgId: string; orgSlug: OrgSlug }) {
 }
 
 /** One spend limit: who it applies to, its provider, amounts, what happens at the limit, and Edit. */
-export function GatewayLimitRow({ policy, orgSlug, teams, members, providerColumn, providerLimits, providers, canEdit = true }: {
+export function GatewayLimitRow({ policy, orgSlug, teams, members, providers, canEdit = true }: {
   policy: GatewayUsageLimitPolicy;
   orgSlug: OrgSlug;
-  providerColumn: boolean;
-  providerLimits: boolean;
   providers: { id: string; name: string }[] | undefined;
   canEdit?: boolean;
 } & Directory) {
@@ -256,12 +254,12 @@ export function GatewayLimitRow({ policy, orgSlug, teams, members, providerColum
         <span className="truncate text-[13px] font-medium text-gray-900">{policy.name}</span>
         <span className="truncate text-[12px] text-gray-500">{!who ? "Not applied to anyone yet" : who === policy.name ? targetKind(policy) : who}</span>
       </span>
-      {providerColumn ? (
+      {(
         <span className="flex w-36 shrink-0 flex-col" data-testid="gateway-limit-provider-label">
-          <span className="text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers, providerLimits)}</span>
-          {policy.providerId && !providerLimits ? <span className="text-[11px] text-gray-500">Not enforced while off</span> : null}
+          <span className="text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers)}</span>
+
         </span>
-      ) : null}
+      )}
       <span className="min-w-0 flex-1 text-[13px] tabular-nums text-gray-700">{describeLimitAmounts(policy)} each</span>
       <span className="w-28 shrink-0 text-[12px] text-gray-600">{policy.hardLimit ? "Pauses them" : "Only warns"}</span>
       {canEdit ? <Link href={getAiGatewayLimitRoute(orgSlug, policy.id)} aria-label={`Edit ${policy.name}`} data-testid="gateway-limit-edit" className={buttonVariants({ variant: "secondary", size: "sm" })}>Edit</Link> : null}
@@ -269,7 +267,7 @@ export function GatewayLimitRow({ policy, orgSlug, teams, members, providerColum
   );
 }
 
-export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members, providerLimits = false }: { orgId: string; orgSlug: OrgSlug; providerLimits?: boolean } & Directory) {
+export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members }: { orgId: string; orgSlug: OrgSlug } & Directory) {
   const policies = useGatewayPolicies(orgId);
   const searchParams = useSearchParams();
   const deletedId = searchParams?.get("deleted") ?? null;
@@ -278,8 +276,8 @@ export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members, prov
     .map((policy, index) => ({ policy, index }))
     .sort((a, b) => (a.policy.providerId ?? "").localeCompare(b.policy.providerId ?? "") || a.index - b.index)
     .map(({ policy }) => policy);
-  const hasProviderLimits = providerLimits || active.some((policy) => policy.providerId);
-  const providers = useGatewayAccessProviders(orgId, hasProviderLimits);
+
+  const providers = useGatewayAccessProviders(orgId, true);
   const deleted = deletedId ? policies.data?.policies.find((policy) => policy.id === deletedId) : undefined;
   return (
     <section aria-labelledby="gateway-usage-limits-heading" className="flex flex-col gap-5" data-testid="gateway-limits">
@@ -304,7 +302,7 @@ export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members, prov
           </div>
           <ul className="divide-y divide-gray-100 overflow-hidden rounded-[12px] border border-gray-100 bg-white" aria-label="Spend limits">
             {active.map((policy) => (
-              <GatewayLimitRow key={policy.id} policy={policy} orgSlug={orgSlug} teams={teams} members={members} providerColumn={hasProviderLimits} providerLimits={providerLimits} providers={providers.data} />
+              <GatewayLimitRow key={policy.id} policy={policy} orgSlug={orgSlug} teams={teams} members={members} providers={providers.data} />
             ))}
           </ul>
           <PersonLookup orgId={orgId} orgSlug={orgSlug} />

@@ -17,13 +17,10 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   });
   const organizationId = await seededOrganizationId(seed, den.admin);
   if (!organizationId) throw new Error("The footer proof requires an organization.");
-  async function setRollout(enabled: boolean) {
-    const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { lastTurnModelFooter: enabled, liveProviderSync: true } }),
-    });
-    if (!result.response.ok) throw new Error(`Changing the footer rollout failed: ${result.response.status} ${result.text}`);
-  }
-  await setRollout(false);
+  const enabled = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
+    method: "PUT", body: JSON.stringify({ capabilities: { liveProviderSync: true } }),
+  });
+  if (!enabled.response.ok) throw new Error(`Enabling live provider sync failed: ${enabled.response.status} ${enabled.text}`);
   const assigned = await seed.api(den.admin, "/v1/inference-providers", {
     method: "POST", body: JSON.stringify({ name: "Reply model proof", providerId: "openai", modelIds: ["gpt-4o-mini"],
       credential: { kind: "api_key", secret: "synthetic-footer-upstream-key" }, allMembers: true }),
@@ -102,6 +99,7 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   const pending = new Map<number, { resolve(): void; reject(error: Error): void }>();
   let sequence = 0;
   let fixtureReads = 0;
+  let autoHistoryReads = 0;
   let failure: Error | undefined;
   let disposing = false;
   const fail = (error: unknown) => {
@@ -151,6 +149,7 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
       body: Buffer.from(JSON.stringify({ data: messageId ? history.find(message => message.id === messageId) : history })).toString("base64"),
     });
     fixtureReads++;
+    if (sessionId === auto.sessionId && !messageId) autoHistoryReads++;
   }
   socket.addEventListener("message", ({ data }) => {
     try {
@@ -182,14 +181,9 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   await command("Fetch.enable", { patterns: bases.map(base => ({ urlPattern: `${origin}${base}*/message*`, requestStage: "Request" })) });
   const resources = setup.move();
   return {
-    app, den, normal, auto, gateway, gatewayReply, gatewayName, gatewayIdentity, older, latest, autoReply, modelName, autoModelName, setRollout,
+    app, den, normal, auto, gateway, gatewayReply, gatewayName, gatewayIdentity, older, latest, autoReply, modelName, autoModelName,
     get fixtureReads() { if (failure) throw failure; return fixtureReads; },
-    async featureEnabled() {
-      if (failure) throw failure;
-      const result = await seed.api(den.admin, "/v1/org");
-      if (!result.response.ok || !isRecord(result.body) || !isRecord(result.body.features)) throw new Error("The organization feature response is missing.");
-      return result.body.features.lastTurnModelFooter === true;
-    },
+    get autoHistoryReads() { if (failure) throw failure; return autoHistoryReads; },
     async touchInput() {
       if (failure) throw failure;
       await app.client.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });

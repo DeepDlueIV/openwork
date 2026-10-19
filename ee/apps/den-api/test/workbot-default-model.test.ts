@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
+import { WORKBOT_DEFAULT_MODEL_ID } from "@openwork/types/den/workbot-settings"
+import { workbotDefaultReadiness } from "../src/workbot/readiness.ts"
 import { AUTOMATION_CLOUD_DEFAULT_MODEL } from "@openwork/types/automations"
 import { readWorkbotModel, withWorkbotModel, workbotSettingsInputSchema } from "@openwork/types/den/workbot-settings"
 
@@ -19,6 +21,7 @@ const { checkWorkbotModelChoice, organizationModelPolicy, slackAssistantModel, w
 const { chooseModel } = await import("../src/automations/headless-agent-executor.ts")
 
 const catalog = {
+  verified: true,
   defaultModel: "gateway/runner-default",
   models: [
     { id: "gateway/runner-default", name: "Runner default" },
@@ -26,49 +29,28 @@ const catalog = {
     { id: "gateway/model-b", name: "Model B" },
   ],
 }
-const on = async () => ({ workbot: true })
-
-test("the default model applies only while Workbot is on", async () => {
-  let reads = 0
-  const chosenModel = async () => {
-    reads += 1
-    return "gateway/model-a"
-  }
-  assert.deepEqual(await organizationModelPolicy("org_1", { features: async () => ({ workbot: false }), chosenModel, catalog: async () => catalog }), { enabled: false, model: null })
-  // Off ignores the saved value without reading it.
-  assert.equal(reads, 0)
-})
-
 test("unset, unavailable and available saved models", async () => {
   const policy = (chosen: string | null, served = catalog) =>
-    organizationModelPolicy("org_1", { features: on, chosenModel: async () => chosen, catalog: async () => served })
+    organizationModelPolicy("org_1", { chosenModel: async () => chosen, catalog: async () => served })
   assert.deepEqual(await policy(null), { enabled: true, model: null })
   assert.deepEqual(await policy("gateway/model-a"), { enabled: true, model: "gateway/model-a" })
   // A model the runner no longer lists falls back to the runner's default, so chats keep working.
   assert.deepEqual(await policy("gateway/removed"), { enabled: true, model: null })
   // A runner that can't be asked right now: keep the choice; the send itself reports the outage.
   assert.deepEqual(
-    await organizationModelPolicy("org_1", { features: on, chosenModel: async () => "gateway/model-a", catalog: async () => null }),
+    await organizationModelPolicy("org_1", { chosenModel: async () => "gateway/model-a", catalog: async () => null }),
     { enabled: true, model: "gateway/model-a" },
   )
 })
 
-test("Slack uses the organization default while on, and its own model while off", async () => {
+test("Slack always uses the organization default, with its old model only as an outage fallback", async () => {
   const installation = { organizationId: "org_1", model: "gateway/model-b" }
-  const off = async () => ({ workbot: false })
-  assert.equal(await slackAssistantModel(installation, { features: off, catalog: async () => catalog }), "gateway/model-b")
-  assert.equal(await slackAssistantModel({ ...installation, model: null }, { features: off }), undefined)
   assert.equal(
-    await slackAssistantModel(installation, { features: on, chosenModel: async () => "gateway/model-a", catalog: async () => catalog }),
+    await slackAssistantModel(installation, { chosenModel: async () => "gateway/model-a", catalog: async () => catalog }),
     "gateway/model-a",
   )
-  // On with no default chosen: the runner's default, not the installation's old pick.
-  assert.equal(await slackAssistantModel(installation, { features: on, chosenModel: async () => null, catalog: async () => catalog }), undefined)
-  // A failed read keeps Slack answering as it did before.
-  assert.equal(
-    await slackAssistantModel(installation, { features: async () => { throw new Error("db_down") } }),
-    "gateway/model-b",
-  )
+  assert.equal(await slackAssistantModel(installation, { chosenModel: async () => null, catalog: async () => catalog }), undefined)
+  assert.equal(await slackAssistantModel(installation, { chosenModel: async () => { throw new Error("db_down") } }), "gateway/model-b")
 })
 
 test("only a model the runner serves can be saved", () => {
@@ -77,6 +59,7 @@ test("only a model the runner serves can be saved", () => {
   assert.equal(checkWorkbotModelChoice("gateway/model-a", catalog), "ok")
   assert.equal(checkWorkbotModelChoice("gateway/unknown", catalog), "unknown_model")
   assert.equal(checkWorkbotModelChoice("gateway/model-a", null), "runner_unavailable")
+  assert.equal(checkWorkbotModelChoice("gateway/model-a", { ...catalog, verified: false }), "runner_unavailable")
 
   assert.equal(workbotSettingsInputSchema.safeParse({ model: "" }).success, false)
   assert.equal(workbotSettingsInputSchema.safeParse({ model: "gateway/model-a", locked: true }).success, false)
@@ -87,7 +70,8 @@ test("only a model the runner serves can be saved", () => {
 test("the admin page sees whether the saved model is still served", () => {
   assert.deepEqual(workbotSettingsView("gateway/model-a", catalog), {
     model: "gateway/model-a",
-    defaultModel: "gateway/runner-default",
+    defaultModel: WORKBOT_DEFAULT_MODEL_ID,
+    defaultReadiness: workbotDefaultReadiness(catalog),
     models: catalog.models,
     modelAvailable: true,
     runnerReachable: true,
@@ -95,7 +79,8 @@ test("the admin page sees whether the saved model is still served", () => {
   assert.equal(workbotSettingsView("gateway/removed", catalog).modelAvailable, false)
   assert.deepEqual(workbotSettingsView("gateway/model-a", null), {
     model: "gateway/model-a",
-    defaultModel: null,
+    defaultModel: WORKBOT_DEFAULT_MODEL_ID,
+    defaultReadiness: workbotDefaultReadiness(null),
     models: [],
     modelAvailable: true,
     runnerReachable: false,
@@ -108,12 +93,12 @@ test("Gateway settings use the actor's exact default alias, never a display-name
     defaultModel: "gwm_exact_default",
     models: [{ id: "gwm_exact_default", name: "Assigned Luna" }, { id: "gwm_other", name: "GPT-6 Luna" }],
   }
-  const view = workbotSettingsView(null, scoped, true, true)
+  const view = workbotSettingsView(null, scoped, true)
   assert.equal(view.defaultModel, "gwm_exact_default")
   assert.equal(view.defaultReadiness, "available")
-  assert.equal(workbotSettingsView(null, { ...scoped, models: [scoped.models[1]!] }, true, true).defaultReadiness, "unavailable")
-  assert.equal(workbotSettingsView(null, null, true, true).defaultReadiness, "unverified")
-  assert.equal(workbotSettingsView("removed_alias", scoped, true, true).modelAvailable, false)
+  assert.equal(workbotSettingsView(null, { ...scoped, models: [scoped.models[1]!] }, true).defaultReadiness, "unavailable")
+  assert.equal(workbotSettingsView(null, null, true).defaultReadiness, "unverified")
+  assert.equal(workbotSettingsView("removed_alias", scoped, true).modelAvailable, false)
 })
 
 test("the model is stored in organization metadata without touching anything else", () => {

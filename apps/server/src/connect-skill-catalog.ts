@@ -23,7 +23,7 @@ const skillIndexSchema = z.object({
     type: z.literal("skill-md"),
     title: z.string().max(1_024).optional(),
     description: z.string().max(1_024),
-    // Den resolves the default-off rollout; older servers never opt in.
+    // Compatibility metadata for clients that still read the discovery marker.
     modelDiscovery: z.boolean().optional(),
     marketplaceName: z.string().max(1_024).optional(),
     pluginName: z.string().max(1_024).optional(),
@@ -34,7 +34,7 @@ const skillIndexSchema = z.object({
     size: z.number().int().nonnegative().optional(),
     setup: z.object({ status: z.string().max(64), message: z.string().max(4_000) }).optional(),
   }).passthrough()),
-  // Den's nativeCloudSkills rollout: load skills with their full SKILL.md.
+  // Delivery metadata retained for older clients.
   delivery: z.enum(["native"]).optional(),
 }).passthrough();
 

@@ -66,12 +66,22 @@ export async function workbotConnect(seed: Seed, { place }: { place: Place }, op
     const url = new URL(request.url ?? "/", "http://fixture");
     if (url.pathname === "/authorize") {
       response.setHeader("content-type", "text/html");
-      const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
-      const fields = [...url.searchParams].map(([name, value]) => `<input type="hidden" name="${escape(name)}" value="${escape(value)}">`).join("");
-      const standalone = new URL(url.pathname + url.search, provider.url);
-      standalone.searchParams.set("presentation", "standalone");
-      // Real browser navigation with noopener models a provider that severs the opener. The callback itself is not mocked.
-      response.end(`<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local provider consent</title><body style="font:16px system-ui;padding:32px"><h1>Connect your account</h1><p>Allow OpenWork to read your Drive files.</p><form action="/consent">${fields}<button name="outcome" value="approve">Approve access</button> <button name="outcome" value="deny">Decline access</button> <button name="outcome" value="partial">Grant incomplete access</button> <button name="outcome" value="expired">Use expired consent</button></form><p><a href="${escape(standalone.toString())}" target="_blank" rel="noopener">Continue in a separate tab</a></p></body></html>`);
+      // This response is constant: request data never enters HTML or script source. The browser copies only
+      // the two consent fields through input.value, not markup. Real noopener navigation still severs the opener.
+      response.end(`<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Local provider consent</title><body style="font:16px system-ui;padding:32px"><h1>Connect your account</h1><p>Allow OpenWork to read your Drive files.</p><form action="/consent"><button name="outcome" value="approve">Approve access</button> <button name="outcome" value="deny">Decline access</button> <button name="outcome" value="partial">Grant incomplete access</button> <button name="outcome" value="expired">Use expired consent</button></form><p><a href="/authorize" target="_blank" rel="noopener">Continue in a separate tab</a></p><script>
+        const form = document.querySelector("form");
+        const parameters = new URLSearchParams(location.search);
+        for (const name of ["redirect_uri", "state"]) {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = name;
+          input.value = parameters.get(name) || "";
+          form.appendChild(input);
+        }
+        const standalone = new URL(location.href);
+        standalone.searchParams.set("presentation", "standalone");
+        document.querySelector("a").href = standalone.href;
+      </script></body></html>`);
       return;
     }
     if (url.pathname === "/consent") {

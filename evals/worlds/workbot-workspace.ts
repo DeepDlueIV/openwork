@@ -23,6 +23,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
   const identityScopes: { principalId: string; organizationId: string; status: number }[] = [];
   const listingReads: { view: string; folder: string; status: number }[] = [];
   const officeOpens: string[] = [];
+  const officeRequests: string[] = [];
   const officeCloses: string[] = [];
   const officeLaunches: string[] = [];
   const officeSessions = new Map<string, { expiresAt: string; recoveryExpiresAt: string }>();
@@ -47,6 +48,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
   const files = [
     { id: "file_brief", name: "Project brief.txt", mimeType: "text/plain", modifiedTime: "2026-10-12T09:00:00Z", size: "42", webViewLink: "https://drive.google.com/file/d/file_brief/view" },
     { id: "file_budget", name: "Budget notes.txt", mimeType: "text/plain", modifiedTime: "2026-10-11T09:00:00Z", size: "36", webViewLink: "https://drive.google.com/file/d/file_budget/view" },
+    { id: "file_sheet", name: "Trigger phrases", mimeType: "application/vnd.google-apps.spreadsheet", modifiedTime: "2026-10-11T09:00:00Z", size: null, webViewLink: "https://docs.google.com/spreadsheets/d/file_sheet/edit" },
     { id: "file_office", name: "Analysis.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", modifiedTime: "2026-10-11T09:00:00Z", size: "256", webViewLink: "https://drive.google.com/file/d/file_office/view" },
   ];
   const folder = { id: "folder_private", name: "Team folder", mimeType: "application/vnd.google-apps.folder", modifiedTime: "2026-10-11T09:00:00Z", size: null, webViewLink: "https://drive.google.com/drive/folders/folder_private" };
@@ -109,6 +111,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
           if (url.pathname.startsWith("/v1/workbot/documents")) {
             const write = /\/files\/([^/]+)\/editor$/.exec(url.pathname);
             if (req.method === "POST" && write) documentWrites.push(write[1]!);
+            if (/\/files\/[^/]+\/office(?:\/|$)/.test(url.pathname)) officeRequests.push(url.pathname);
             const office = /\/files\/file_office\/office(?:\/([^/]+)(?:\/(close|save))?)?$/.exec(url.pathname);
             if (office?.[2] === "close") officeCloses.push(office[1]!);
             if (!documents) return json({ error: "workbot_documents_not_enabled" }, 403);
@@ -142,7 +145,11 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
               const file = [...files, secret].find(file => file.id === match[1]);
               if (match[2] === "editor") editorReads.push(match[1]!);
               if (!file || fileDenied || deniedFiles.has(file.id)) return json({ error: "permission_denied" }, 403);
-              if (match[2] === "metadata") { opened.push(file.id); return json({ id: file.id, name: file.name, mimeType: file.mimeType, modifiedTime: file.modifiedTime, size: Number(file.size), openUrl: file.webViewLink }); }
+              if (match[2] === "metadata") { opened.push(file.id); return json({ id: file.id, name: file.name, mimeType: file.mimeType, modifiedTime: file.modifiedTime, size: file.size === null ? null : Number(file.size), openUrl: file.webViewLink }); }
+              if (file.id === "file_sheet") {
+                if (req.method === "POST") return json({ ok: true });
+                return json({ kind: "spreadsheet", source: "google", fileId: file.id, connectionId: "google-workspace", name: file.name, revision: "v1", canEdit: true, sheets: [{ id: "0", name: "Phrases", rows: 3, columns: 2 }], activeSheetId: "0", startRow: 1, endRow: 3, cells: [{ row: 1, column: 1, text: "Trigger phrase" }, { row: 2, column: 1, text: "book a demo" }] });
+              }
               return json({ kind: "text", fileId: file.id, connectionId: "google-workspace", name: file.name, revision: "v1", canEdit: true, text: file.id === "file_brief" ? "Project overview" : "Budget overview" });
             }
           }
@@ -177,7 +184,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
       holdOtherThread: () => { holdOtherThread = true; }, releaseOtherThread: releaseOther,
       seedOwnerConversation: (text: string) => { thread("user_example").push({ id: "owner_account_turn", text, sentAt: Date.now(), finishedAt: Date.now(), status: "done", attachments: [], outputs: [], parts: [{ kind: "text", text: "Original account answer" }], modelSteps: 1, error: null }); },
       async documentReadStatus() { const response = await fetch(`${url}v1/workbot/documents/v1/documents/google-drive/files/file_brief/editor`); await response.arrayBuffer(); return response.status; },
-      officeOpens: () => [...officeOpens], officeCloses: () => [...officeCloses], officeLaunches: () => [...officeLaunches],
+      officeOpens: () => [...officeOpens], officeRequests: () => [...officeRequests], officeCloses: () => [...officeCloses], officeLaunches: () => [...officeLaunches],
       revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; },
       expireSession: () => { sessionExpired = true; }, restoreSession: () => { sessionExpired = false; },
       expireIdentity: () => { identityStatus = 401; }, failIdentity: () => { identityStatus = 503; }, restoreIdentityService: () => { identityStatus = 200; },

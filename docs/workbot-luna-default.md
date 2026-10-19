@@ -16,13 +16,13 @@ rollout**. That head has the same source tree as its functional source head
 `fc5f230f3ecf8febfab625bd5fb7ae6b7e8eb63a`; its extra commit only refreshed CI.
 The dependency is logical: this branch carries all six unchanged source
 patches/authorship replayed onto dev
-`ff09acc6d844e591fd63a17f4c08a0b14c3ce5d7`, including merged adoption telemetry
-(#6156) and Sharing (#6168), without copying an empty CI trigger.
-The rebased dependency prefix ends at
-`fdfee3d362162afd74b24c61e43fbe29ef5ebc70`; original dependency SHAs are source
+`f02e4590c78cb52d4c5badefbe48da2d55390dbd`, including merged adoption telemetry
+(#6156), Sharing (#6168) and team-settings links (#6165), without copying an
+empty CI trigger. The rebased dependency prefix ends at
+`686358510decc01a68cd6438aa876616eefca696`; original dependency SHAs are source
 references, not literal ancestors of this refreshed branch. No competing
 correction implementation or changes to its pending or context work were
-introduced; merged Sharing UI is retained alongside it. Corrections append
+introduced; merged Sharing and TeamControls UI is retained alongside it. Corrections append
 instead of deleting earlier turns. An earlier successful catalog check is not a safety boundary: the next
 lookup inside `modelFor` can fail. Append-only corrections keep the original
 history and failed correction recoverable even in that race. There is no

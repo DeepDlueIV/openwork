@@ -109,9 +109,10 @@ export async function resolveCollectibleOpenTarget(
   client: ArtifactTargetResolver,
   workspaceId: string,
   target: OpenTarget,
+  sessionId?: string | null,
 ): Promise<OpenTarget | null> {
   if (target.kind !== "file") return null;
 
-  const response = await client.resolveArtifacts(workspaceId, [target]);
+  const response = await client.resolveArtifacts(workspaceId, [target], { sessionId: sessionId ?? undefined });
   return response.items.find(isWorkspaceContainedArtifactTarget) ?? null;
 }

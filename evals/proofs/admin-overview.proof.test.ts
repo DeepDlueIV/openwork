@@ -322,12 +322,15 @@ test("an admin navigates organizations and member usage without loading every de
   });
 
   await step("after: organization insights rank people and models, compare periods and show an activity chart", async () => {
-    await admin.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+    // Keep the models section beyond the observer's 400px prefetch margin,
+    // including while the earlier lazy charts are still settling their layout.
+    await admin.resizeViewport({ width: 1280, height: 700, deviceScaleFactor: 1 });
     await admin.click({ role: "link", label: "Insights" });
     await admin.see({ testId: "admin-organization-insights" }, { text: /Active member adoption/ });
     await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Insights" });
     const deferredModels = await adminProbe.dom('[aria-label="Most used models"] [data-admin-deferred="pending"]');
     expect(deferredModels.elements).toHaveLength(1);
+    expect(deferredModels.elements[0].rect.top).toBeGreaterThan(700 + 400);
     expect((await adminProbe.dom('[aria-label="Top eight models by AI requests"]')).elements).toHaveLength(0);
     const report = await world.organizationInsights();
     const { current, previous, daily, people, models } = report.insights;
@@ -337,16 +340,16 @@ test("an admin navigates organizations and member usage without loading every de
       && models[0].name === "test-active-model" && models[0].requests === 4
       && !models.some((model) => model.name.includes("previous-period") || model.name.includes("outside-window"))
       && current.costMicroUsd === 2000000 && current.unpricedRequests === null;
-    evidence.recordAssertionEvidence("Insights preserve organization scope, retained usage, period bounds, current-member adoption and leader rankings", JSON.stringify({ current, previous, people: people.length, models }), ok);
+    evidence.recordAssertionEvidence("Insights preserve organization scope, retained usage, period bounds, current-member adoption and leader rankings", JSON.stringify({ current, previous, people: people.length, models, deferredModelChartTop: deferredModels.elements[0].rect.top, prefetchBoundary: 700 + 400 }), ok);
     expect(ok).toBe(true);
     await admin.click({ role: "button", label: "Chart metric" });
     await admin.click({ role: "option", label: "Active members" });
     await admin.see({ testId: "admin-dashboard-chart-activeMembers" });
     await admin.screenshot();
-    await admin.wheelAt({ x: 1000, y: 700, deltaY: 700 });
+    await admin.wheelAt({ x: 1000, y: 600, deltaY: 700 });
     await admin.see({ role: "heading", label: "Most active people" });
     await admin.screenshot();
-    await admin.wheelAt({ x: 1000, y: 700, deltaY: 700 });
+    await admin.wheelAt({ x: 1000, y: 600, deltaY: 700 });
     await admin.see({ role: "heading", label: "Most used models" });
     const modelChart = await adminProbe.eventually(() => adminProbe.dom('[aria-label="Top eight models by AI requests"]'), { within: 10_000, until: (value) => value.elements.length === 1, label: "visible model chart" });
     expect(modelChart.elements).toHaveLength(1);

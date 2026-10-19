@@ -19,15 +19,22 @@ defaultTest("an owner manages provider-specific limits without a feature overrid
     await user.click({ role: "link", label: "Edit Default provider limit" });
     await user.see({ testId: "gateway-limit-editor" });
     await user.see({ role: "combobox", label: "Provider" }, { value: "Providers without their own limit", timeoutMs: 60_000 });
+    await user.notSee({ text: "Checking provider choices. The saved scope is unchanged." }, { timeoutMs: 60_000 });
+    await user.click({ role: "combobox", label: "Provider" });
+    await user.see({ role: "option", label: /Saved model provider/ });
     const enabled = await probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)');
     expect(enabled.elements).toHaveLength(1);
     evidence.recordAssertionEvidence("provider scope needs no rollout override", `editable provider pickers=${enabled.elements.length}`, enabled.elements.length === 1);
     await user.screenshot();
+    await user.press("Escape");
     await user.click({ role: "link", label: "Cancel" });
   });
   await step("the saved provider policy remains separate from the default and editable", async () => {
     await user.click({ role: "link", label: "Edit Saved provider limit" });
     await user.see({ role: "combobox", label: "Provider" }, { value: "Saved model provider", timeoutMs: 60_000 });
+    await user.notSee({ text: "Checking provider choices. The saved scope is unchanged." }, { timeoutMs: 60_000 });
+    await user.click({ role: "combobox", label: "Provider" });
+    await user.see({ role: "option", label: /Providers without their own limit/ });
     const enabled = await probe.dom('[data-testid="gateway-limit-provider"] input:not(:disabled)');
     const read = await probe.api(world.den.admin, "/v1/gateway/usage-limit-policies");
     const retained = isRecord(read.body) ? records(read.body.policies).find((entry) => entry.id === world.policyId) : null;

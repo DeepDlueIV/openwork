@@ -127,13 +127,24 @@ test("a member sees the last reply's verified model below the answer without rep
   });
 
   await step("reopening the conversation preserves the Auto model footer and answer", async () => {
+    const readsBeforeReload = world.autoHistoryReads;
     await user.reload();
+    // Page.reload can return while the outgoing document is still complete.
+    // Witness the new history request before checking the rehydrated transcript,
+    // rather than accepting visibility checks against the outgoing page.
+    const readsAfterReload = await probe.eventually(() => world.autoHistoryReads, {
+      within: 15_000, label: "Auto history reloaded from the native engine", until: reads => reads > readsBeforeReload,
+    });
+    const reloaded = await probe.eventually(() => probe.dom(`${auto} [data-testid="reply-model"]`), {
+      within: 15_000, label: "the reopened Auto conversation's model footer", until: value => value.elements.length === 1,
+    });
     await user.see({ text: world.autoReply.reply });
     await user.see({ testId: "reply-model" });
-    const found = (await probe.dom(`${auto} [data-testid="reply-model"]`)).elements;
+    const found = reloaded.elements;
+    expect(readsAfterReload).toBeGreaterThan(readsBeforeReload);
     expect(found.map(value => value.text)).toEqual([`Replied with ${world.autoModelName}`]);
     expect((await probe.dom(`${auto} [data-testid="completed-work-rail"] [data-testid="reply-model"]`)).elements).toHaveLength(0);
-    evidence.recordAssertionEvidence("Reload retains one footer rather than restoring a duplicate above the answer", `footer labels=${found.length}; reply preserved; model=${world.autoModelName}`, found.length === 1);
+    evidence.recordAssertionEvidence("Reload retains one footer rather than restoring a duplicate above the answer", `Auto history reads=${readsBeforeReload}→${readsAfterReload}; footer labels=${found.length}; reply preserved; model=${world.autoModelName}`, readsAfterReload > readsBeforeReload && found.length === 1);
     await user.screenshot();
   });
 });

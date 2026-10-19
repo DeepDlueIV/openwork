@@ -99,6 +99,7 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   const pending = new Map<number, { resolve(): void; reject(error: Error): void }>();
   let sequence = 0;
   let fixtureReads = 0;
+  let autoHistoryReads = 0;
   let failure: Error | undefined;
   let disposing = false;
   const fail = (error: unknown) => {
@@ -148,6 +149,7 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
       body: Buffer.from(JSON.stringify({ data: messageId ? history.find(message => message.id === messageId) : history })).toString("base64"),
     });
     fixtureReads++;
+    if (sessionId === auto.sessionId && !messageId) autoHistoryReads++;
   }
   socket.addEventListener("message", ({ data }) => {
     try {
@@ -181,6 +183,7 @@ export async function lastTurnModelFooterResolved(seed: Seed) {
   return {
     app, den, normal, auto, gateway, gatewayReply, gatewayName, gatewayIdentity, older, latest, autoReply, modelName, autoModelName,
     get fixtureReads() { if (failure) throw failure; return fixtureReads; },
+    get autoHistoryReads() { if (failure) throw failure; return autoHistoryReads; },
     async touchInput() {
       if (failure) throw failure;
       await app.client.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });

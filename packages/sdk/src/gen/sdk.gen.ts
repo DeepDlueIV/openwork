@@ -467,6 +467,8 @@ import type {
   GetV1MePluginAccessErrors,
   GetV1MePluginAccessResponses,
   GetV1MeResponses,
+  GetV1OauthProvidersByProviderIdApiCheckErrors,
+  GetV1OauthProvidersByProviderIdApiCheckResponses,
   GetV1OauthProvidersByProviderIdClientErrors,
   GetV1OauthProvidersByProviderIdClientResponses,
   GetV1OauthProvidersByProviderIdConnectCallbackErrors,
@@ -9199,6 +9201,29 @@ export class DenClient extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    });
+  }
+
+  /**
+   * Check which Google APIs a Google Workspace connector can reach
+   *
+   * Requires the View OAuth apps permission and a sign-in within the last 24 hours. For each Google API the connector's saved permissions call, makes one read with the caller's own sign-in on this connector and reports whether the API is turned on in the Google Cloud project that owns the OAuth client, with Google's link to turn it on. Returns no Google content. Without a sign-in, lists the APIs as unchecked.
+   */
+  public getV1OauthProvidersByProviderIdApiCheck<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "providerId" }] }]);
+    return (options?.client ?? this.client).get<
+      GetV1OauthProvidersByProviderIdApiCheckResponses,
+      GetV1OauthProvidersByProviderIdApiCheckErrors,
+      ThrowOnError
+    >({
+      url: "/v1/oauth-providers/{providerId}/api-check",
+      ...options,
+      ...params,
     });
   }
 

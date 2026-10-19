@@ -180,6 +180,13 @@ jobs:
             echo "::warning title=Self-resume not configured::set all of HEADLESS_DEN_API_URL (variable), HEADLESS_DEN_CALLBACK_TOKEN and HEADLESS_GRANT_KEY (secrets) on celld-production, or none"
           fi
           jq -r '.[]' "$RUNNER_TEMP/vars.json" | while IFS= read -r value; do [ -n "$value" ] && echo "::add-mask::$value"; done
+          # What the bundle is configured with, without any value: every value above is masked, so settings are named,
+          # and a few that decide behaviour are described in words that are never a value.
+          echo "Runner settings in the bundle: $(jq -r 'keys | join(", ")' "$RUNNER_TEMP/vars.json")"
+          jq -r '
+            def state(k): if (.[k] // "") == "" or .[k] == "off" then "disabled" else "enabled" end;
+            "computer: \(state("HEADLESS_COMPUTER")); saved files: \(state("HEADLESS_FILES")); error reporting: \(state("HEADLESS_SENTRY_DSN")); self-resume: \(if (.HEADLESS_DEN_API_URL and .HEADLESS_DEN_CALLBACK_TOKEN and .HEADLESS_GRANT_KEY) then "enabled" else "disabled" end)"
+          ' "$RUNNER_TEMP/vars.json"
           cd ee/apps/headless-runner
           pnpm exec tsx scripts/celld-bundle.ts "$RUNNER_TEMP/celld" "$RUNNER_TEMP/vars.json"
           echo "CELLD_ESBUILD=$PWD/node_modules/.bin/esbuild" >> "$GITHUB_ENV"

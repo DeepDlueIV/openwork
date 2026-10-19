@@ -19,6 +19,26 @@ const runner = await startFakeHttpServer((request, _body, response) => {
 const den = await bootDen({ env: { DEN_DEPLOYMENT: "self_hosted", DEN_FEATURE_WORKBOT: "false", DEN_FEATURE_WORKBOT_LUNA_DEFAULT: "false", DEN_HEADLESS_RUNNER_URL: runner.url, DEN_HEADLESS_RUNNER_TOKEN: "r".repeat(32) } })
 after(async () => { await den.close(); await runner.close() })
 
+test("guided navigation still requires both remaining rollouts after Workbot becomes generally available", async () => {
+  const workspace = await den.createOrg(await den.signUp("Navigation Owner"), "Navigation workspace")
+  const token = await den.mintMcpToken(workspace.owner, workspace.orgId)
+  const session = async () => {
+    const result = await den.request(token, "GET", "/v1/workbot/session")
+    assert.equal(result.status, 200, summary(result))
+    assert.equal(field(result.body, "enabled"), true)
+    return result.body
+  }
+  for (const [assistant, navigation] of [[false, false], [false, true], [true, false], [true, true]]) {
+    const assistantChanged = await den.setFeature(workspace.orgId, "workbotWorkspaceAssistant", assistant)
+    assert.equal(assistantChanged.status, 200, summary(assistantChanged))
+    const navigationChanged = await den.setFeature(workspace.orgId, "workbotGuidedNavigation", navigation)
+    assert.equal(navigationChanged.status, 200, summary(navigationChanged))
+    const body = await session()
+    assert.equal(field(body, "workspaceAssistant"), assistant)
+    assert.equal(field(body, "guidedNavigation"), assistant && navigation)
+  }
+})
+
 test("an owner always sees explicit Luna readiness and keeps an isolated organization model choice", async () => {
   const workspace = await den.createOrg(await den.signUp("Workspace Owner"), "Model workspace")
   const other = await den.createOrg(await den.signUp("Another Owner"), "Another workspace")

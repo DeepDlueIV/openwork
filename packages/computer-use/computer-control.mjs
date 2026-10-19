@@ -908,10 +908,11 @@ export function createComputerControl({ adapters, runProgram, browserTask, readR
       if (!featureEnabled || closed || resetting || !runProgram) return { ok: false, error: { code: "computer_unavailable", message: "Computer use is not enabled." } };
       if (!input || !["computer", "browser"].includes(input.surface) || typeof input.code !== "string" || input.code.length > 32_000
         || input.timeoutMs !== undefined && (!Number.isInteger(input.timeoutMs) || input.timeoutMs < 1000 || input.timeoutMs > 60_000)) return { ok: false, error: { code: "invalid_arguments", message: "Provide a surface, bounded code and a timeout from 1000 to 60000 milliseconds." } };
+      // Before any await: an off/on toggle while the grant resolves must still stop this program.
+      const generation = featureGeneration;
       const grant = await grantFor(input.sessionId);
       if (!grant.enabled) return { ok: false, error: { code: "computer_stopped", message: "Computer use stopped for this turn. Continue with the person's next message." } };
       if (programs.has(grant.sessionId)) return { ok: false, error: { code: "program_busy", message: "A program is already running in this chat." } };
-      const generation = featureGeneration;
       const revision = grant.revision;
       const remote = input.surface === "computer" && targetFor(grant).placement === "remote";
       const remoteRevision = remoteGeneration;

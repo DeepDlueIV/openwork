@@ -31,6 +31,15 @@ def command(*args):
     return subprocess.run(["xdotool", *map(str, args)], check=True, capture_output=True, text=True, timeout=3).stdout.strip()
 
 
+def focused_windows():
+    # getactivewindow needs a window manager; getwindowfocus works on bare X.
+    found = set()
+    for query in ["getwindowfocus", "getactivewindow"]:
+        try: found.add(int(command(query)))
+        except (ValueError, subprocess.SubprocessError): pass
+    return found
+
+
 def check(event, deadline):
     if event.is_set() or time.monotonic() >= deadline:
         raise RuntimeError("Input stopped before the remaining steps")
@@ -47,6 +56,15 @@ def run_actions(request, event):
         check(event, deadline)
         attempted = True
         return command(*args)
+    def send_keys(*args):
+        # X11 delivers keys to whichever client has focus. Another window can
+        # take focus after computer_act focused the approved one, so check
+        # before every chunk and stop instead of typing into it.
+        if request.get("windowId") is not None:
+            check(event, deadline)
+            if int(request["windowId"]) not in focused_windows():
+                raise RuntimeError("Another window took focus; no further keys were sent")
+        return send(*args)
     def move(point):
         position = ["mousemove"]
         if request.get("windowId") is not None:
@@ -60,13 +78,13 @@ def run_actions(request, event):
                 text = action.get("text", "")
                 # Local chunks bound cancellation latency without provider round trips.
                 for offset in range(0, len(text), 32):
-                    send("type", "--delay", "1", "--", text[offset:offset + 32])
+                    send_keys("type", "--delay", "1", "--", text[offset:offset + 32])
             elif kind == "key":
                 key = KEYS.get(action["key"].lower(), action["key"])
                 if key.startswith("-") or not re.fullmatch(r"[A-Za-z0-9_+.-]{1,24}", key):
                     raise RuntimeError("Unsupported key; use type for ordinary text")
                 chord = "+".join([MODIFIERS[m] for m in action.get("modifiers", [])] + [key])
-                send("key", "--clearmodifiers", chord)
+                send_keys("key", "--clearmodifiers", chord)
             elif kind == "wait":
                 until = min(deadline, time.monotonic() + min(3, max(0, action.get("ms", 0) / 1000)))
                 while time.monotonic() < until:

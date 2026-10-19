@@ -75,10 +75,28 @@ Names and defaults are from [celld's docs](https://celld.dev/docs) (v0.6.2):
 - At least 2 nodes, for failover.
 - A supervisor that always restarts, with no attempt limit: a node that loses its lease exits, and only a restart
   brings it back.
-- Versioning on the celld bucket and the files bucket, replicated to a second bucket. Replication alone copies bad
-  writes and deletes; versioning keeps the earlier copies. Expire noncurrent versions after a while, or epoch GC frees
-  no space.
+- A backup outside the live bucket. celld's replication copies bad writes and deletes too. On S3, use versioning plus
+  replication to a second bucket (expire noncurrent versions, or epoch GC frees no space). R2 has no versioning: use
+  dated snapshots in a second bucket ([Backups and restore](#backups-and-restore)).
 - `HEADLESS_COMPUTER=off` until the computer is verified on celld (see [Check it](#check-it)).
+
+## Backups and restore
+
+`.github/workflows/celld-backup.yml` copies the whole bucket (celld cells under `fleet/`, kept files under
+`sessions/`, not `ci/`) once a day into `s3://$CELLD_BACKUP_BUCKET/snapshots/<UTC time>/`, with a `_snapshot.json`
+recording object counts. The backup bucket's lifecycle rule deletes snapshots after 15 days, which bounds how long a
+deleted conversation survives in backups. Configure it on the `celld-backup` environment: secrets
+`CELLD_BACKUP_R2_ACCESS_KEY_ID` / `CELLD_BACKUP_R2_SECRET_ACCESS_KEY` (an R2 token that reads the live bucket and
+writes the backup bucket, nothing else) and variables `CELLD_BACKUP_BUCKET` / `CELLD_BACKUP_S3_ENDPOINT`.
+
+A snapshot is copied from a running fleet, so it is consistent per object, not at one instant. To restore:
+
+1. Stop every node (scale the service to 0) so no cell writes while the bucket changes.
+2. Copy the chosen snapshot back over the live bucket's `fleet/` and `sessions/`
+   (`aws s3 sync s3://<backup>/snapshots/<time>/fleet s3://<live>/fleet --delete`, same for `sessions`).
+3. Start the nodes. Cells restore from the restored change chains; writes after the snapshot are lost.
+
+Rehearse a restore into a throwaway bucket prefix before relying on it.
 
 ## Deploying the runner
 

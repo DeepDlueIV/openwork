@@ -268,6 +268,16 @@
               ],
               "description": "Workbot: workspace assistant: Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar. Renders DEN_FEATURE_WORKBOT_WORKSPACE_ASSISTANT."
             },
+            "workbotGuidedNavigation": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: show me in the workspace: Workbot offers to open the documents it mentions, and the conversation stays open beside the document. Needs the workspace assistant. Renders DEN_FEATURE_WORKBOT_GUIDED_NAVIGATION."
+            },
             "automationCalendar": {
               "enum": [
                 "",

@@ -156,3 +156,30 @@ test("a member handles a document request needing sign-in without replacing its 
     await user.screenshot();
   });
 });
+
+test("a Google Sheet opens and saves in place instead of as an Excel copy", async ({ world, user, probe, step, evidence }) => {
+  await user.resizeViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+  await step("before: a Google Sheet sits among the member's Drive files", async () => {
+    await user.navigate(`${world.url}documents?assistant=off`);
+    await user.see({ role: "button", label: "Trigger phrases" });
+    await user.screenshot();
+  });
+  await step("after: the sheet opens in place with Open in Google Sheets and no Excel copy", async () => {
+    await user.click({ role: "button", label: "Trigger phrases" });
+    await user.see({ role: "textbox", label: "A1" }, { value: "Trigger phrase" });
+    await user.see({ role: "link", label: "Open in Google Sheets" });
+    await user.notSee({ text: /Excel copy|Save creates a new file/ });
+    expect(world.officeRequests()).toHaveLength(0);
+    evidence.recordAssertionEvidence("Google files never reach the Office editor", "The sheet opens from the Google Sheets API with zero Office editor requests", world.officeRequests().length === 0);
+    await user.screenshot();
+  });
+  await step("after: saving writes the change to the original sheet", async () => {
+    await user.type({ role: "textbox", label: "A2" }, "schedule a call", { replace: true });
+    await user.see({ text: "Unsaved changes" });
+    await user.click({ role: "button", label: "Save to Drive" });
+    await user.see({ text: "Saved to Drive" });
+    expect(world.documentWrites()).toEqual(["file_sheet"]);
+    evidence.recordAssertionEvidence("A save updates the original file", "One in-place write to the sheet, no new file and no Office request", world.documentWrites().length === 1 && world.officeRequests().length === 0);
+    await user.screenshot();
+  });
+});

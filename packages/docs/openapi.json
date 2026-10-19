@@ -2460,6 +2460,7 @@
               "workbotInlineConnect",
               "workbotDocuments",
               "workbotWorkspaceAssistant",
+              "workbotGuidedNavigation",
               "automationCalendar",
               "permissions",
               "teamRoles",
@@ -2730,6 +2731,9 @@
                     "workbotWorkspaceAssistant": {
                       "type": "boolean"
                     },
+                    "workbotGuidedNavigation": {
+                      "type": "boolean"
+                    },
                     "automationCalendar": {
                       "type": "boolean"
                     },
@@ -2826,6 +2830,7 @@
                     "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
+                    "workbotGuidedNavigation",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -4253,6 +4258,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotGuidedNavigation": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "automationCalendar": {
                       "type": "object",
                       "properties": {
@@ -5456,6 +5517,7 @@
                     "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
+                    "workbotGuidedNavigation",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -5921,6 +5983,9 @@
                     "workbotWorkspaceAssistant": {
                       "type": "boolean"
                     },
+                    "workbotGuidedNavigation": {
+                      "type": "boolean"
+                    },
                     "automationCalendar": {
                       "type": "boolean"
                     },
@@ -6017,6 +6082,7 @@
                     "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
+                    "workbotGuidedNavigation",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -7444,6 +7510,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotGuidedNavigation": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "automationCalendar": {
                       "type": "object",
                       "properties": {
@@ -8647,6 +8769,7 @@
                     "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
+                    "workbotGuidedNavigation",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -30257,6 +30380,9 @@
           "workspaceAssistant": {
             "type": "boolean"
           },
+          "guidedNavigation": {
+            "type": "boolean"
+          },
           "teamLinks": {
             "type": "object",
             "properties": {
@@ -32849,6 +32975,9 @@
                         "workbotWorkspaceAssistant": {
                           "type": "boolean"
                         },
+                        "workbotGuidedNavigation": {
+                          "type": "boolean"
+                        },
                         "automationCalendar": {
                           "type": "boolean"
                         },
@@ -32945,6 +33074,7 @@
                         "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
+                        "workbotGuidedNavigation",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -34372,6 +34502,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotGuidedNavigation": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "automationCalendar": {
                           "type": "object",
                           "properties": {
@@ -35575,6 +35761,7 @@
                         "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
+                        "workbotGuidedNavigation",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -35789,6 +35976,9 @@
                         "workbotWorkspaceAssistant": {
                           "type": "boolean"
                         },
+                        "workbotGuidedNavigation": {
+                          "type": "boolean"
+                        },
                         "automationCalendar": {
                           "type": "boolean"
                         },
@@ -35885,6 +36075,7 @@
                         "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
+                        "workbotGuidedNavigation",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -37312,6 +37503,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotGuidedNavigation": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "automationCalendar": {
                           "type": "object",
                           "properties": {
@@ -38515,6 +38762,7 @@
                         "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
+                        "workbotGuidedNavigation",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",

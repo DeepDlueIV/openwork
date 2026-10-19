@@ -94,6 +94,8 @@ const EnvSchema = z.object({
   DEN_DOCUMENTS_COLLABORA_URL: z.string().url().optional(),
   DEN_DOCUMENTS_HOST_ORIGIN: z.string().url().optional(),
   DEN_DOCUMENTS_CALLBACK_BASE_URL: z.string().url().optional(),
+  DEN_DOCUMENTS_EDITOR: z.enum(["fixed", "cloud-worker"]).optional(),
+  DEN_DOCUMENTS_WORKER_EDITOR_PORT: z.string().optional(),
   DEN_API_VERSION: z.string().optional(),
   RENDER_GIT_COMMIT: z.string().optional(),
   OPENWORK_INSTALLER_ARTIFACTS_DIR: z.string().optional(),
@@ -766,6 +768,10 @@ export const env = {
   port,
   corsOrigins,
   documentsOffice: {
+    // `fixed` uses one operator-run editor; `cloud-worker` runs it in each
+    // member's Cloud worker. Unset keeps the fixed editor when one is configured.
+    mode: parsed.DEN_DOCUMENTS_EDITOR ?? (optionalString(parsed.DEN_DOCUMENTS_COLLABORA_URL) ? "fixed" : null),
+    workerPort: Number(parsed.DEN_DOCUMENTS_WORKER_EDITOR_PORT ?? "9980"),
     serverUrl: optionalString(parsed.DEN_DOCUMENTS_COLLABORA_URL),
     hostOrigin: optionalString(parsed.DEN_DOCUMENTS_HOST_ORIGIN),
     callbackBaseUrl: optionalString(parsed.DEN_DOCUMENTS_CALLBACK_BASE_URL) ?? apiPublicUrl,

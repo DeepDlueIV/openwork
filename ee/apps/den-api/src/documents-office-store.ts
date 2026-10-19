@@ -18,6 +18,32 @@ function decrypt(value: string) {
   const bytes = new Uint8Array(Buffer.from(value, "base64")); const cipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, 12)); cipher.setAuthTag(bytes.subarray(-16))
   return Buffer.concat([new Uint8Array(cipher.update(bytes.subarray(12, -16))), new Uint8Array(cipher.final())]).toString("utf8")
 }
+// A Cloud worker that serves an open Office session is busy, so Den's idle stop and
+// image updates wait. Editor traffic renews the lease; a closed or abandoned file lets it lapse.
+const WORKER_LEASE_MS = 20 * 60 * 1000
+const workerKey = (workerId: string) => `documents:office:worker:${workerId}`
+
+export async function holdOfficeWorker(workerId: string, sessionId: string) {
+  if (!redis) return
+  try {
+    await redis.zadd(workerKey(workerId), Date.now() + WORKER_LEASE_MS, sessionId)
+    await redis.pexpire(workerKey(workerId), WORKER_LEASE_MS)
+  } catch { /* Best effort: editing continues; the worker's own activity still counts. */ }
+}
+
+export async function releaseOfficeWorker(workerId: string, sessionId: string) {
+  if (!redis) return
+  await redis.zrem(workerKey(workerId), sessionId).catch(() => 0)
+}
+
+export async function workerHasOpenOfficeSession(workerId: string) {
+  if (!redis) return false
+  try {
+    await redis.zremrangebyscore(workerKey(workerId), "-inf", Date.now())
+    return await redis.zcard(workerKey(workerId)) > 0
+  } catch { return false }
+}
+
 const store: OfficeStore | null = redis ? {
   async get(id) {
     const value = await redis.get(`documents:office:${id}`)

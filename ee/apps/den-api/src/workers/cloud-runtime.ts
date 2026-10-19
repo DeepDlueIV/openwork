@@ -96,6 +96,19 @@ async function workerEnginePolicy(workerId: string) {
   }
 }
 
+/** Workers run the document editor only when Den places it there. */
+export function documentsEditorForWorkers() {
+  const config = env.documentsOffice
+  if (config.mode !== "cloud-worker" || !config.hostOrigin || !config.callbackBaseUrl) return null
+  const wopi = new URL(config.callbackBaseUrl)
+  return {
+    port: config.workerPort,
+    // The engine matches its WOPI allowlist with an explicit port.
+    wopiHost: `${wopi.protocol}//${wopi.hostname}:${wopi.port || (wopi.protocol === "https:" ? "443" : "80")}`,
+    frameAncestor: new URL(config.hostOrigin).origin,
+  }
+}
+
 export function cloudRuntimeOrchestratorConfig(): CloudRuntimeOrchestratorConfig {
   const runtime = env.daytona
   return {
@@ -128,6 +141,7 @@ export function cloudRuntimeOrchestratorConfig(): CloudRuntimeOrchestratorConfig
     healthcheckTimeoutMs: runtime.healthcheckTimeoutMs,
     pollIntervalMs: runtime.pollIntervalMs,
     activityHeartbeatUrl: workerActivityHeartbeatUrl,
+    documentsEditor: documentsEditorForWorkers() ?? undefined,
     bootstrap: {
       imageDescription: "Daytona runtime image",
       rebuildHint: "rebuild and republish the Daytona snapshot",

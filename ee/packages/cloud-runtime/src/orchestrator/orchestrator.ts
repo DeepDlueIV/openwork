@@ -5,6 +5,7 @@ import {
   renderRestoreMarkerExistsCommand,
   type OpenWorkBootstrapConfig,
   type OpenWorkCheckpointConfig,
+  type OpenWorkDocumentsEditorConfig,
 } from "../bootstrap/openwork-runtime"
 import { runtimeProviderErrorCode } from "@openwork/sandbox"
 import type {
@@ -75,6 +76,8 @@ export type CloudRuntimeOrchestratorConfig = {
   /** Bound for the best-effort checkpoint flush before a running instance is stopped for recovery. */
   stopFlushTimeoutMs?: number
   activityHeartbeatUrl: (workerId: string) => string
+  /** Start the image's document editor beside the server; absent leaves it off. */
+  documentsEditor?: OpenWorkDocumentsEditorConfig
   bootstrap: {
     imageDescription: string
     rebuildHint: string
@@ -115,6 +118,8 @@ export interface CloudRuntimeOrchestrator {
   flushCheckpoint(workerId: string): Promise<boolean>
   inspect(workerId: string): Promise<RuntimeInstanceInspection | null>
   refreshEndpoint(workerId: string): Promise<RuntimeInstanceRecord | null>
+  /** A fresh signed endpoint for another port on the live instance; not stored. */
+  portEndpoint(workerId: string, port: number, ttlSeconds: number): Promise<{ url: string; expiresAt: Date | null } | null>
   getRecord(workerId: string): Promise<RuntimeInstanceRecord | null>
 }
 
@@ -190,6 +195,7 @@ export function createCloudRuntimeOrchestrator(deps: CloudRuntimeOrchestratorDep
       runtimeProvider: provider.id,
       imageDescription: config.bootstrap.imageDescription,
       rebuildHint: config.bootstrap.rebuildHint,
+      ...(config.documentsEditor ? { documentsEditor: config.documentsEditor } : {}),
       ...await config.bootstrap.enginePolicy?.(input.workerId),
     }
   }
@@ -721,6 +727,20 @@ export function createCloudRuntimeOrchestrator(deps: CloudRuntimeOrchestratorDep
     return { ...record, ...update }
   }
 
+  async function portEndpoint(workerId: string, port: number, ttlSeconds: number) {
+    const record = await store.get(workerId)
+    if (!record) {
+      return null
+    }
+
+    const handle = await requireLiveHandle(record)
+    if (handle.state !== "running") {
+      return null
+    }
+    const endpoint = await provider.endpoint(handle, port, { ttlSeconds: Math.max(1, Math.min(ttlSeconds, maxEndpointTtlSeconds)) })
+    return { url: endpoint.url, expiresAt: endpoint.expiresAt }
+  }
+
   async function eraseWorkerData(workerId: string) {
     let volume: VolumeRef
     try {
@@ -777,6 +797,7 @@ export function createCloudRuntimeOrchestrator(deps: CloudRuntimeOrchestratorDep
     flushCheckpoint,
     inspect,
     refreshEndpoint,
+    portEndpoint,
     getRecord: (workerId) => store.get(workerId),
   }
 }

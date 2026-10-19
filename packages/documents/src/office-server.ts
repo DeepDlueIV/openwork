@@ -44,6 +44,8 @@ export const officeDraftSchema = z.object({
   saveRequestId: z.string().uuid().optional(),
   wopiLock: z.object({ value: z.string(), expiresAt: z.number() }).optional(),
   savedFileId: z.string().optional(), error: z.string().optional(), uncertain: z.boolean().optional(),
+  /** The editor serving this session when hosts place it per person; otherwise their configured service. */
+  editorUrl: z.string().url().optional(), workerId: z.string().optional(),
 })
 export type OfficeDraft = z.infer<typeof officeDraftSchema>
 /** Hosts provide shared, encrypted temporary storage and cross-process serialization. */

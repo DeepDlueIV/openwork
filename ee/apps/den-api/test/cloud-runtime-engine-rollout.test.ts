@@ -156,3 +156,17 @@ test("cached orchestrator re-resolves policy on fresh launch, wake, and restored
   assert.deepEqual(resolvedWorkers, Array(5).fill(provisionInput.workerId))
   assert.equal(scripts.length, 5)
 })
+
+test("bootstrap starts the document editor only when Den places it in the worker", () => {
+  assert.doesNotMatch(renderOpenWorkBootstrapScript(bootstrap), /coolwsd/)
+  const script = renderOpenWorkBootstrapScript({ ...bootstrap, documentsEditor: { port: 9980, wopiHost: "https://api.example.com:443", frameAncestor: "https://workbot.example.com" } })
+  // Den is the only WOPI host; Workbot is the only embedder; no admin console, macros or remote UNO.
+  assert.match(script, /runuser -u cool -- env aliasgroup1='https:\/\/api\.example\.com:443' coolwsd/)
+  assert.match(script, /'--o:net\.frame_ancestors=https:\/\/workbot\.example\.com'/)
+  for (const option of ["admin_console.enable=false", "security.enable_macros_execution=false", "security.enable_websocket_urp=false", "port=9980"]) {
+    assert.ok(script.includes(`'--o:${option}'`), option)
+  }
+  // An older image without the engine still serves OpenWork.
+  assert.match(script, /if command -v coolwsd >\/dev\/null 2>&1; then/)
+  assert.ok(script.indexOf("documents_editor_loop &") < script.indexOf("\nattempt=0"))
+})

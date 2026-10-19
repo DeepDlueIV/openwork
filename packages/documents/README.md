@@ -157,6 +157,21 @@ DEN_DOCUMENTS_CALLBACK_BASE_URL=https://api.example.com
 DATABASE_REDIS_URL=rediss://<private shared Redis>
 ```
 
+### In each member's Cloud worker
+
+With `DEN_DOCUMENTS_EDITOR=cloud-worker`, OpenWork Cloud runs no shared editor.
+Den resolves the member's Cloud worker the way OpenWork Web, remote sessions and
+Cloud Automations do: it creates or wakes it when the organization has OpenWork
+Web, and otherwise offers Open in Drive. The worker snapshot
+(`ee/apps/den-worker-runtime/Dockerfile.daytona-snapshot`) installs the unbranded
+CODE packages with this integration; its bootstrap starts the engine as the `cool`
+user with Den as the only WOPI host, Workbot as the only embedder, and macros and
+the admin console off. Each session uses its own signed preview URL for the editor
+port, valid for the session. While the engine starts, Den answers `office_starting`
+and the tab retries for about two minutes. An open session marks the worker busy,
+so idle stop and image updates wait until the file closes or its editor traffic
+stops for 20 minutes. `DEN_DOCUMENTS_COLLABORA_URL` is not used in this mode.
+
 The callback origin defaults to `DEN_API_PUBLIC_URL`. All origins are operator
 configuration, never a request Host header or file metadata. Collabora must reach
 Den; browsers and Den must reach Collabora. The discovery action must use that

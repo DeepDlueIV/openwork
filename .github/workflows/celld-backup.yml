@@ -59,7 +59,21 @@ jobs:
           stamp="$(date -u +%Y-%m-%dT%H%MZ)"
           target="s3://$BACKUP_BUCKET/snapshots/$stamp"
           # ci/ holds throwaway deploy preflights; everything else (fleet/, sessions/) is kept.
-          aws s3 sync "s3://$SOURCE_BUCKET" "$target" --endpoint-url "$S3_ENDPOINT" --exclude "ci/*" --only-show-errors
+          # The fleet keeps running while this copies, so celld can delete an object between the listing and its copy
+          # (old epochs it cleans up, leases of nodes that left): those fail with NoSuchKey and are skipped. Any other
+          # copy failure fails the backup.
+          set +e
+          aws s3 sync "s3://$SOURCE_BUCKET" "$target" --endpoint-url "$S3_ENDPOINT" --exclude "ci/*" --only-show-errors > "$RUNNER_TEMP/sync.log" 2>&1
+          sync_status=$?
+          set -e
+          gone="$(grep -c 'NoSuchKey' "$RUNNER_TEMP/sync.log" || true)"
+          other="$(grep -v 'NoSuchKey' "$RUNNER_TEMP/sync.log" | grep -c . || true)"
+          if [ "$sync_status" -ne 0 ] && [ "$other" -gt 0 ]; then
+            grep -v 'NoSuchKey' "$RUNNER_TEMP/sync.log" | tail -20
+            echo "::error::The copy failed for reasons other than objects celld deleted meanwhile"
+            exit 1
+          fi
+          [ "$gone" -gt 0 ] && echo "$gone object(s) were deleted by celld while copying and are not in this snapshot (expected)"
           source_count="$(aws s3 ls "s3://$SOURCE_BUCKET" --recursive --endpoint-url "$S3_ENDPOINT" | grep -vc ' ci/' || true)"
           copied_count="$(aws s3 ls "$target/" --recursive --endpoint-url "$S3_ENDPOINT" | wc -l | tr -d ' ')"
           echo "Snapshot $stamp: $copied_count objects copied ($source_count in the source, outside ci/)"

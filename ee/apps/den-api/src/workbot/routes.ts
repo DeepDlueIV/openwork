@@ -58,6 +58,8 @@ const sessionSchema = z.object({
   /** Connected document browsing; off on older Dens. */
   documents: z.boolean().optional(),
   workspaceAssistant: z.boolean().optional(),
+  /** Offers to open mentioned documents and keeps the chat beside them; needs the workspace assistant. */
+  guidedNavigation: z.boolean().optional(),
   /** Team controls are hints only; Den's destination routes still enforce permissions. */
   teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
   /** The person can start side chats next to their main chat (while Workbot is on). */
@@ -321,6 +323,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         calendar: features.workbot,
         documents: features.workbot && features.workbotDocuments,
         workspaceAssistant: features.workbot && features.workbotWorkspaceAssistant,
+        guidedNavigation: features.workbot && features.workbotWorkspaceAssistant && features.workbotGuidedNavigation,
         sideChats: features.workbot,
         teamLinks,
         model,

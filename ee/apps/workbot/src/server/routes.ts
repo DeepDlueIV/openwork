@@ -140,6 +140,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       calendar: who.enabled && who.calendar === true,
       documents: who.enabled && who.documents === true,
       workspaceAssistant: who.enabled && who.workspaceAssistant,
+      guidedNavigation: who.enabled && who.workspaceAssistant && who.guidedNavigation,
       teamLinks: who.enabled ? who.teamLinks : undefined,
       canSchedule: who.enabled && who.canSchedule,
       sideChats: who.enabled && who.sideChats,

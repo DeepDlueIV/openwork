@@ -83,7 +83,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
             identityReads.push(identityStatus);
             identityScopes.push({ principalId, organizationId, status: identityStatus });
             if (identityStatus !== 200) return json({ error: identityStatus === 401 ? "unauthorized" : "identity_unavailable" }, identityStatus);
-            return json({ name: "Alex", email: "alex@example.test", userId: principalId, organizationId, organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, canSchedule: false, sideChats: referring.searchParams.get("sideChats") === "on", denUrl: "https://workspace.example.test" });
+            return json({ name: "Alex", email: "alex@example.test", userId: principalId, organizationId, organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, guidedNavigation: referring.searchParams.get("guided") === "on", canSchedule: false, sideChats: referring.searchParams.get("sideChats") === "on", denUrl: "https://workspace.example.test" });
           }
           const expectedUser = req.headers["x-openwork-client-user"];
           const expectedOrganization = req.headers["x-openwork-client-organization"];

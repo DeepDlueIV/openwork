@@ -228,6 +228,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotGuidedNavigation: {
+    label: "Workbot: show me in the workspace",
+    description: "Workbot offers to open the documents it mentions, and the conversation stays open beside the document. Needs the workspace assistant.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   automationCalendar: {
     label: "Calendar: desktop app",
     description: "Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar.",

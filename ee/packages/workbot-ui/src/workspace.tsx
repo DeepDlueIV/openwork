@@ -24,6 +24,21 @@ export function WorkspaceLink({ href, children }: { href: string; children: Reac
   }}>{children}</a>;
 }
 
+/** Guided navigation: the first documents a reply links to, as explicit Open actions under it. */
+export function DocumentOffers({ links }: { links: Array<{ fileId: string; label: string }> }) {
+  const open = useContext(WorkspaceNavigationContext);
+  if (!open || !workbotHost().guidedNavigation || links.length === 0) return null;
+  return <ul className="flex flex-wrap gap-2 pl-1 pt-2" data-workbot-document-offers>
+    {links.slice(0, 2).map(link => <li key={link.fileId} className="min-w-0">
+      <button type="button" onClick={() => open(link.fileId)} title={`Open ${link.label} in Documents`}
+        className="flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-[var(--wb-surface)] px-3 text-[13px] text-[var(--wb-text)] shadow-[0_0_0_1px_var(--wb-ring)] transition-shadow duration-150 hover:shadow-[0_0_0_1px_var(--wb-disabled)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
+        data-testid="workbot-document-offer">
+        <FileText size={14} strokeWidth={1.5} aria-hidden className="shrink-0" /><span className="truncate">Open {link.label}</span>
+      </button>
+    </li>)}
+  </ul>;
+}
+
 /** One navigation drawer, backed by the signed-in member's Drive metadata. */
 export function WorkspaceMenu({ page, onPage, onDocument, onChats, drafts }: { page: WorkspacePage; onPage(page: WorkspacePage): void; onDocument(fileId: string): void; onChats?: () => void; drafts: boolean }) {
   const host = workbotHost();
@@ -69,11 +84,14 @@ export function SentContext({ context }: { context?: WorkbotViewContext }) {
 }
 
 /** The composer stays in the workspace; the conversation is disclosed through an anchored Base UI popover. */
-export function WorkspaceAssistant({ name, context, includeContext, onIncludeContext, composer, conversation, onDocument, unavailable, active }: { active: boolean; name: string; context: WorkbotViewContext | null; includeContext: boolean; onIncludeContext(value: boolean): void; composer: ReactNode; conversation: ReactNode; onDocument(fileId: string): void; unavailable: boolean }) {
+export function WorkspaceAssistant({ name, context, includeContext, onIncludeContext, composer, conversation, onDocument, unavailable, active, reveal = 0, stayOpen = false }: { active: boolean; name: string; context: WorkbotViewContext | null; includeContext: boolean; onIncludeContext(value: boolean): void; composer: ReactNode; conversation: ReactNode; onDocument(fileId: string): void; unavailable: boolean; /** Increments when chat navigation should leave the conversation open beside the document. */ reveal?: number; /** Guided navigation keeps the conversation open while a document opens behind it. */ stayOpen?: boolean }) {
   const [open, setOpen] = useState(false);
   const surface = useRetainedSurface(open);
   const anchor = useRef<HTMLDivElement>(null);
   useEffect(() => { if (!active) setOpen(false); }, [active]);
+  // Only a new request reveals the conversation; coming back to Documents later keeps the person's own choice.
+  const revealed = useRef(reveal);
+  useEffect(() => { if (active && reveal !== revealed.current) { revealed.current = reveal; setOpen(true); } }, [reveal, active]);
   return <div ref={anchor} className="fixed bottom-3 right-3 z-30 w-[min(26rem,calc(100vw-1.5rem))] sm:bottom-5 sm:right-5" data-workbot-workspace-assistant>
     <Popover.Root open={surface.open} onOpenChange={(next, details) => {
       if (surface.blocked) return;
@@ -94,7 +112,7 @@ export function WorkspaceAssistant({ name, context, includeContext, onIncludeCon
         <Popover.Positioner anchor={anchor} side="top" align="end" sideOffset={8} collisionPadding={12} className="z-40 max-w-[var(--available-width)]">
           <Popover.Popup initialFocus={false} className="workbot flex h-[min(34rem,var(--available-height))] w-[min(30rem,var(--available-width))] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[var(--dls-radius,16px)] bg-[var(--wb-surface)] shadow-[var(--wb-panel-shadow)] outline-none" data-workbot-workspace-chat>
             <div className="flex h-10 shrink-0 items-center justify-between px-3"><Popover.Title className="text-[13px] font-medium text-[var(--wb-text)]">{name}</Popover.Title><Popover.Close className={control} aria-label="Hide workspace chat"><X size={15} strokeWidth={1.5} aria-hidden /></Popover.Close></div>
-            <WorkspaceNavigationContext.Provider value={fileId => { setOpen(false); onDocument(fileId); }}>
+            <WorkspaceNavigationContext.Provider value={fileId => { if (!stayOpen) setOpen(false); onDocument(fileId); }}>
               {unavailable ? <p className="p-4 text-[13px] text-[var(--wb-muted)]" role="status">Chat is unavailable. Open Home to try again.</p> : conversation}
             </WorkspaceNavigationContext.Provider>
           </Popover.Popup>

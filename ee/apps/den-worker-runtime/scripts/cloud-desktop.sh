@@ -20,6 +20,34 @@ as_browser() {
     USER=openwork-browser LOGNAME=openwork-browser LANG=C.UTF-8 \
     DISPLAY="$display" XAUTHORITY="$XAUTHORITY" LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe runuser -u openwork-browser -- "$@"
 }
+# Agent-driven pages and desktop apps must not reach this VM's worker, other
+# private-network hosts or cloud metadata. Only new connections from the
+# desktop user are refused; replies on the worker's CDP and VNC links remain.
+guard_desktop_egress() {
+  uid=$(id -u openwork-browser)
+  tools=iptables
+  if command -v ip6tables >/dev/null && ip6tables -w -S OUTPUT >/dev/null 2>&1; then tools="iptables ip6tables"; fi
+  for tool in $tools; do
+    "$tool" -w -N OPENWORK_DESKTOP_EGRESS 2>/dev/null || "$tool" -w -F OPENWORK_DESKTOP_EGRESS
+    "$tool" -w -C OUTPUT -m owner --uid-owner "$uid" -j OPENWORK_DESKTOP_EGRESS 2>/dev/null \
+      || "$tool" -w -I OUTPUT 1 -m owner --uid-owner "$uid" -j OPENWORK_DESKTOP_EGRESS
+    "$tool" -w -A OPENWORK_DESKTOP_EGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+  done
+  for nameserver in $(awk '/^nameserver/ { print $2 }' /etc/resolv.conf); do
+    nameserver=${nameserver%%%*}
+    case "$nameserver" in *:*) tool=ip6tables ;; *) tool=iptables ;; esac
+    case " $tools " in *" $tool "*) ;; *) continue ;; esac
+    for protocol in udp tcp; do "$tool" -w -A OPENWORK_DESKTOP_EGRESS -d "$nameserver" -p "$protocol" --dport 53 -j RETURN; done
+  done
+  for range in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16; do
+    iptables -w -A OPENWORK_DESKTOP_EGRESS -d "$range" -j REJECT
+  done
+  case " $tools " in *" ip6tables "*)
+    for range in ::1/128 ::ffff:0:0/96 fc00::/7 fe80::/10; do ip6tables -w -A OPENWORK_DESKTOP_EGRESS -d "$range" -j REJECT; done ;;
+  esac
+}
+command -v iptables >/dev/null || { echo "The desktop network guard needs iptables" >&2; exit 1; }
+guard_desktop_egress
 umask 077
 if [ ! -s "$XAUTHORITY" ]; then
   touch "$XAUTHORITY"

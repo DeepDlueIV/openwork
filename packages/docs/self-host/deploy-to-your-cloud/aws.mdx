@@ -28,13 +28,13 @@ For exact CLI commands, values, DNS/TLS choices, migration troubleshooting, veri
 
 ## ECS Fargate with Terraform
 
-These instructions and contract-v1 results apply to **direct Terraform users**.
-The managed-deployments installer is decoupled onto its own frozen pre-contract
-module. Its separate TLS-only update verifies RDS certificates with the public
-regional CA, with CA-first rollout ordering and retained API/web revisions;
-it does not adopt direct migration orchestration, write-only secret mode or AWS
-IAM changes. Existing AWS/random/archive pins remain; only the HTTP CA-fetch
-provider is added.
+These instructions and historical contract-v1 live results apply to **direct
+Terraform users**. The managed AWS installer now consumes the same module with
+explicit legacy state-backed secrets, a maintenance-first runner fence and
+separate customer IAM re-approval. It does not silently convert existing keys to
+write-only mode. Its real version-increasing Update/fresh-install/destroy proof
+is a separate gate, not certified by the direct-user results below. See the
+[managed installer upgrade notes](https://github.com/different-ai/openwork/blob/dev/infra/managed-deployments/README.md#aws-shared-module-adoption).
 
 ### What it deploys
 
@@ -69,7 +69,7 @@ The table records the tested core only, not production load, backup restoration,
 legacy handover, or every optional component. Complete your review before pinning a source commit.
 The [module](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-aws-ecs)
 and its deployment-contract improvements are available on `dev` in **beta**;
-the managed installer remains separate.
+the managed installer has separate approval and live-verification gates.
 See the [shared module contract](https://github.com/different-ai/openwork/blob/dev/infra/terraform/MODULE_CONTRACT.md)
 for baseline checks and known limits.
 
@@ -81,7 +81,7 @@ Existing inputs remain, including the deprecated nested `database.deletion_prote
 
 ### State guidance
 
-Use Terraform or OpenTofu **>= 1.11, < 2.0** with encrypted, access-controlled remote state. An S3 root backend should set `encrypt = true` and `use_lockfile = true`; do not create a new DynamoDB locking table. The reusable module configures neither a provider nor a backend and ships no cross-registry lock file. Generate and retain the root lock with your chosen tool. This direct-user module uses the live-tested AWS `~> 6.69` provider line and random `~> 3.9`; the previous cross-major compatibility exception is no longer needed. The managed AWS installer instead uses a frozen pre-contract module with original AWS/random/archive pins and a separate strict-TLS/CA exception. It does not inherit the direct migration or secret lifecycle. Packaging, bootstrap permissions/re-approval, legacy maintenance fencing and version semantics for future contract adoption require separate work and owner review.
+Use Terraform or OpenTofu **>= 1.11, < 2.0** with encrypted, access-controlled remote state. An S3 root backend should set `encrypt = true` and `use_lockfile = true`; do not create a new DynamoDB locking table. The reusable module configures neither a provider nor a backend and ships no cross-registry lock file. Generate and retain the root lock with your chosen tool. This direct-user module uses the live-tested AWS `~> 6.69` provider line and random `~> 3.9`; the previous cross-major compatibility exception is no longer needed. The managed AWS root now locks AWS 6.69.1 and random 3.9.1 and explicitly retains legacy state-backed secrets/current strict SecretVersion. Its updated bootstrap grants only deployment-scoped migration Lambda, role and log permissions and requires customer re-approval plus a maintenance window. The runner drains old tasks before migration and verifies completed strict deployments; retained legacy revisions must never be started manually. Synthetic state tests do not replace a real provider-upgrade proof or managed-deployments owner review.
 
 For new installs, use `write_only_secrets = true` with persistent core values supplied through the ephemeral `secret_values_wo` input: RDS and Secrets Manager write-only fields keep those values out of new state snapshots. Write-only mode is the new default. Existing installations must explicitly set `write_only_secrets = false` before upgrading to retain their current keys/state, or securely preserve and supply the **exact existing** keys and DB password before converting. Missing ephemeral values fail validation before changes, rather than silently regenerating auth/encryption keys. Never regenerate an encryption key during an infrastructure upgrade. Optional integration secrets retain their state-backed compatibility path; restrict state history accordingly. Secret settings belong in `extra_secrets`, not plain `extra_environment`.
 

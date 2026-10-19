@@ -4,16 +4,17 @@ import { workbotSettingsRoles } from "../worlds/workbot-settings-roles.ts";
 
 const test = spec.world(workbotSettingsRoles, { timeout: 600_000, needs: { placement: "local" }, resources: { surfaces: ["web"], services: ["den"] } });
 
-test("a model manager can open Workbot settings while viewers remain read only and ordinary members stay outside", async ({ world, user, probe, step, evidence }) => {
-  const manager = user.on(world.web), viewer = user.on(world.viewer), member = user.on(world.member), owner = user.on(world.owner);
-  const managerProbe = probe.on(world.web), viewerProbe = probe.on(world.viewer), memberProbe = probe.on(world.member), ownerProbe = probe.on(world.owner);
+test("a self-hosted model manager gets Workbot settings without rollout overrides while other members keep their access boundaries", async ({ world, user, probe, step, evidence }) => {
+  const manager = user.on(world.web), viewer = user.on(world.viewer), member = user.on(world.member);
+  const managerProbe = probe.on(world.web), viewerProbe = probe.on(world.viewer), memberProbe = probe.on(world.member);
   await step("a manage-only member opens the Luna settings without View permission", async () => {
     await manager.see({ role: "combobox", label: "Default model" }, { value: "Default: GPT-6 Luna" });
     await manager.see({ role: "button", label: "Save model" });
     await manager.see({ role: "button", label: "Test default model" });
+    await manager.see({ testId: "workbot-default-readiness" }, { text: "GPT-6 Luna available" });
     const open = (await managerProbe.dom('[data-testid="workbot-settings-screen"]')).elements.length === 1;
     expect(open).toBe(true);
-    evidence.recordAssertionEvidence("Manage already includes safe settings reads", "The manage-only member sees Workbot settings and its authorized controls", open);
+    evidence.recordAssertionEvidence("Manage already includes safe settings reads", "Self-hosted Den has no capability overrides; the manage-only member sees Workbot settings, Luna readiness and authorized controls", open);
     await manager.screenshot();
   });
   await step("a view-only member reads the same settings without write or paid-test access", async () => {
@@ -35,24 +36,21 @@ test("a model manager can open Workbot settings while viewers remain read only a
     evidence.recordAssertionEvidence("No admin model controls are mounted for an ordinary member", "The member returns to their dashboard without settings or paid-test controls", hidden);
     await member.screenshot();
   });
-  await step("turning off Luna preserves manager and viewer reads without granting ordinary members access", async () => {
-    await owner.click({ role: "link", label: "Features" });
-    await owner.click({ testId: "admin-capability-workbotLunaDefault" });
-    await ownerProbe.eventually(async () => (await ownerProbe.dom('[data-testid="admin-capability-workbotLunaDefault"][aria-checked="false"]:not([disabled])')).elements.length === 1, { within: 10_000, until: value => value, label: "Luna rollout disabled" });
+  await step("reopening generally available settings preserves role boundaries without a paid request", async () => {
     await manager.reload();
     await viewer.reload();
     await member.navigate(world.settingsUrl);
-    await manager.see({ role: "combobox", label: "Default model" }, { value: "Default (Another model)" });
+    await manager.see({ role: "combobox", label: "Default model" }, { value: "Default: GPT-6 Luna" });
     await manager.see({ role: "button", label: "Save model" });
-    await manager.notSee({ role: "button", label: "Test default model" });
-    await viewer.see({ role: "combobox", label: "Default model" }, { value: "Default (Another model)" });
+    await manager.see({ role: "button", label: "Test default model" });
+    await viewer.see({ role: "combobox", label: "Default model" }, { value: "Default: GPT-6 Luna" });
     await viewer.notSee({ role: "button", label: "Save model" });
     await member.see({ testId: "member-dashboard" });
     await member.notSee({ testId: "workbot-settings-screen" });
     const states = [(await managerProbe.dom('[data-testid="workbot-settings-screen"]')).elements.length, (await viewerProbe.dom('[data-testid="workbot-settings-screen"]')).elements.length, (await memberProbe.dom('[data-testid="workbot-settings-screen"]')).elements.length];
     expect(states).toEqual([1, 1, 0]);
     expect(world.completionCount()).toBe(0);
-    evidence.recordAssertionEvidence("The Luna kill does not change the shared settings permission contract", `manager/viewer/ordinary settings=${states.join("/")}; paid completion calls=${world.completionCount()}`, states.join("/") === "1/1/0" && world.completionCount() === 0);
+    evidence.recordAssertionEvidence("General availability does not change the settings permission contract", `manager/viewer/ordinary settings=${states.join("/")}; paid completion calls=${world.completionCount()}`, states.join("/") === "1/1/0" && world.completionCount() === 0);
     await manager.screenshot();
     await viewer.screenshot();
     await member.screenshot();

@@ -26,7 +26,7 @@ export const workbotModelOptionSchema = z.object({ id: z.string(), name: z.strin
 export type WorkbotModelOption = z.infer<typeof workbotModelOptionSchema>
 
 export const workbotSettingsSchema = z.object({
-  /** The model the admin chose; null uses the default (explicit Luna for Workbot while workbotLunaDefault is on). */
+  /** The model the admin chose; null uses the explicit Luna default for Workbot. */
   model: z.string().nullable(),
   /** The effective default for Workbot; legacy mode returns the runner's default or null when unreachable. */
   defaultModel: z.string().nullable(),

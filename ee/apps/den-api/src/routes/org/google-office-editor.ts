@@ -46,7 +46,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
   // Each session keeps the editor it opened on: the operator's service or the member's Cloud worker.
   const serviceFor = (serverUrl: string) => createCollaboraService({ serverUrl: validOrigin(serverUrl), ...origins! })
   const draftEditor = (draft: OfficeDraft) => draft.editorUrl ?? env.documentsOffice.serverUrl
-  const enabled = async (id: string) => await organizationFeatureEnabled(id, "workbotDocuments") && await organizationFeatureEnabled(id, "workbot")
+  const enabled = async (id: string) => await organizationFeatureEnabled(id, "workbotDocuments")
   const guard: MiddlewareHandler<{ Variables: OrgRouteVariables }> = async (c, next) => {
     const context = c.get("organizationContext")
     if (!context || !await enabled(context.organization.id)) return c.json({ error: "feature_disabled", message: "Documents is off for this workspace." }, 403)

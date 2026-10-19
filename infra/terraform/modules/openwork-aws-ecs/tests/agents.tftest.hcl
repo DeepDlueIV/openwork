@@ -112,7 +112,8 @@ run "runner_workbot_and_slack" {
       local.environment.DEN_FEATURE_SLACK_ASSISTANT == "true",
       local.environment.DEN_AUTOMATIONS_RUNTIME_ENABLED == "true",
       local.environment.DEN_WORKBOT_URL == "https://chat.openwork.example.com",
-      local.environment.DEN_FEATURE_WORKBOT == "true",
+      # Workbot is generally available; service configuration is still required.
+      !contains(keys(local.environment), "DEN_FEATURE_WORKBOT"),
     ])
     error_message = "Den must be pointed at the runner and Workbot, with their features on."
   }

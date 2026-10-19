@@ -75,7 +75,7 @@ test("an admin navigates organizations and member usage without loading every de
     const tabs = await adminProbe.dom('nav[aria-label="Organization sections"] [aria-current="page"]');
     const traffic = await world.traffic("admin");
     const location = await world.location();
-    const blocked = await adminProbe.dom('[data-testid="admin-capability-appBuildProgress"][disabled]');
+    const blocked = await adminProbe.dom('[data-testid="admin-capability-offlineRecovery"][disabled]');
     const ok = location.pathname === `${world.detailPath}/features` && tabs.elements[0]?.text === "Features"
       && traffic.features === 1 && traffic.organizationUsage === 0 && traffic.organizationInsights === 0 && blocked.elements.length === 1;
     evidence.recordAssertionEvidence("The Features tab loads only this organization's flags and keeps the global kill switch locked", `${JSON.stringify(location)}; feature reads=${traffic.features}; locked controls=${blocked.elements.length}`, ok);
@@ -99,13 +99,13 @@ test("an admin navigates organizations and member usage without loading every de
 
   await step("long feature names, descriptions and reset actions fit a phone", async () => {
     await admin.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
-    await admin.see({ testId: "admin-capability-reset-slackWorkbotReplies" });
+    await admin.see({ testId: "admin-capability-reset-workbotDocuments" });
     const phone = await adminProbe.dom('[data-testid="admin-organization-features"] li, [data-testid="admin-organization-features"] label, [data-testid="admin-organization-features"] button');
     const phoneFits = phone.documentWidth <= phone.viewportWidth && phone.elements.every((entry) => entry.rect.left >= 0 && entry.rect.left + entry.rect.width <= phone.viewportWidth);
     expect(phoneFits).toBe(true);
     await admin.screenshot();
     await admin.resizeViewport({ width: 320, height: 740, deviceScaleFactor: 1 });
-    await admin.see({ testId: "admin-capability-slackWorkbotReplies" });
+    await admin.see({ testId: "admin-capability-workbotDocuments" });
     const compact = await adminProbe.dom('[data-testid="admin-organization-features"] li, [data-testid="admin-organization-features"] label, [data-testid="admin-organization-features"] button, nav[aria-label="Organization sections"] a');
     const ok = compact.documentWidth <= compact.viewportWidth && compact.elements.length > 0 && compact.elements.every((entry) => entry.rect.left >= 0 && entry.rect.left + entry.rect.width <= compact.viewportWidth);
     evidence.recordAssertionEvidence("Feature text, full-size switches, reset actions and tabs stay inside 390px and 320px screens", `390px document=${phone.documentWidth}; 320px document=${compact.documentWidth}; checked elements=${compact.elements.length}`, phoneFits && ok);

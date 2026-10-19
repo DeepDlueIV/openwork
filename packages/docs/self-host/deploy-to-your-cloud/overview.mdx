@@ -52,9 +52,9 @@ module release or production qualification.
 ## Managed installation from hosted OpenWork
 
 The default-off **Deployments** rollout lets workspace owners approve an AWS
-installer in their own account and track health and approved updates. The GCP
-implementation additionally uses the default-off `managedDeploymentsGcp`
-rollout and customer-approved Google Cloud Shell. It requires a dedicated
+installer in their own account and track health and approved updates. AWS, GCP
+and deployment agent tools share the cloud-only, default-off `managedDeployments`
+rollout. GCP uses customer-approved Google Cloud Shell and requires a dedicated
 billing-enabled project, public Cloud DNS, and an operator-published immutable
 installer release. Local tests are not a live deployment receipt; the GCP
 rollout must stay off until a real release and approved installation are verified.

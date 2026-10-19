@@ -3,7 +3,8 @@
 OpenWork installed in a customer's own cloud account, launched and monitored
 from hosted OpenWork. AWS uses CloudFormation/CodeBuild; GCP adds a
 customer-approved Cloud Shell installer and Cloud Run platform behind the
-default-off `managedDeploymentsGcp` rollout. Azure remains unsupported.
+default-off `managedDeployments` rollout, shared with AWS and the deployment
+agent tools. Azure remains unsupported.
 GCP offline validation is not a live-install or publication receipt; do not
 roll it out before those gates pass.
 

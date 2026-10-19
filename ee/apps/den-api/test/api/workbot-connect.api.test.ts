@@ -32,7 +32,6 @@ test("a Workbot grant connects only its own organization; scope, grants, permiss
   assert.equal((await den.request(null, "POST", route("google-workspace"), { body: body() })).status, 401)
   assert.equal((await den.request(member.token, "POST", route("google-workspace"), { orgId, body: body() })).status, 401)
   assert.equal((await den.request(token, "POST", route("google-workspace"), { body: body() })).status, 404)
-  await den.setFeature(orgId, "workbot", true)
   assert.equal((await den.request(token, "POST", route("google-workspace"), { body: body() })).status, 404)
   await den.setFeature(orgId, "workbotInlineConnect", true)
   const readGrant = await den.request(member.token, "POST", "/v1/mcp/token", { orgId, body: { scopes: ["mcp:read"] } })
@@ -81,7 +80,6 @@ test("a Workbot grant connects only its own organization; scope, grants, permiss
 
 test("denied, forged, expired, incomplete and reconnect callbacks never claim an unverified connection", async () => {
   const { owner, orgId } = await den.createOrg(await den.signUp("Connect Example"), "Recovery workspace")
-  await den.setFeature(orgId, "workbot", true)
   await den.setFeature(orgId, "workbotInlineConnect", true)
   const token = await den.mintMcpToken(owner, orgId)
   await den.as(owner, orgId)("POST", "/v1/oauth-providers/google-workspace/client", { clientId: "fixture-client", clientSecret: "fixture-secret", features: ["driveRead"] })
@@ -130,7 +128,6 @@ test("denied, forged, expired, incomplete and reconnect callbacks never claim an
 
 test("external member OAuth preserves issuer, replay and Workbot return binding", async () => {
   const { owner, orgId } = await den.createOrg(await den.signUp("External Example"), "External workspace")
-  await den.setFeature(orgId, "workbot", true)
   await den.setFeature(orgId, "workbotInlineConnect", true)
   const member = await den.newMember(owner, orgId, "External Member")
   const token = await den.mintMcpToken(member, orgId)

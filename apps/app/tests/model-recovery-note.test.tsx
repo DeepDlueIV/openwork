@@ -3,7 +3,6 @@ import { afterAll, afterEach, expect, mock, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import * as features from "../src/react-app/domains/cloud/use-org-feature";
 import * as den from "../src/app/lib/den";
 import { ModelRecoveryNote } from "../src/react-app/domains/session/surface/composer/model-recovery-note";
 import { modelRecoveryChatKey, useModelRecoveryStore } from "../src/react-app/domains/session/surface/model-recovery-store";
@@ -26,8 +25,7 @@ afterAll(async () => {
   if (ownedDom) await GlobalRegistrator.unregister();
 });
 
-async function mount(options: { enabled?: boolean; sessionId?: string; model?: typeof replacement } = {}) {
-  spyOn(features, "useOrgFeature").mockReturnValue(options.enabled !== false);
+async function mount(options: { sessionId?: string; model?: typeof replacement } = {}) {
   const onChange = mock(() => {});
   const onSwitchBack = mock(() => {});
   const host = document.createElement("div");
@@ -57,10 +55,13 @@ test("confirmed removal names both models and Change opens the composer picker",
   expect(view.onSwitchBack).not.toHaveBeenCalled();
 });
 
-test("the default-off rollout hides the note without undoing the selected model", async () => {
+test("recovery renders signed out without requesting feature state", async () => {
   record();
-  const view = await mount({ enabled: false });
-  expect(view.host.textContent).toBe("");
+  spyOn(den, "readDenSettings").mockReturnValue({ ...den.readDenSettings(), authToken: null, activeOrgId: null });
+  const fetch = spyOn(globalThis, "fetch");
+  const view = await mount();
+  expect(view.host.textContent).toContain("was removed by your organization");
+  expect(fetch).not.toHaveBeenCalled();
   expect(view.onSwitchBack).not.toHaveBeenCalled();
 });
 

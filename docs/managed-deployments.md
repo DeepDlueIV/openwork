@@ -2,9 +2,9 @@
 
 A workspace owner installs OpenWork in their own cloud from hosted OpenWork,
 approves it in the provider console or Cloud Shell, and then sees its status
-checks and available updates in **Manage › Deployments**. AWS is behind
-`managedDeployments`; Google Cloud additionally requires `managedDeploymentsGcp`
-(both cloud only, off by default). GCP remains an unverified rollout until a real
+checks and available updates in **Manage › Deployments**. AWS, Google Cloud and
+the deployment agent tools share `managedDeployments` (cloud only, off by
+default). GCP remains unverified until a real
 published release and approved customer-project install pass. Design and contract:
 `infra/managed-deployments/README.md`.
 
@@ -54,7 +54,7 @@ published release and approved customer-project install pass. Design and contrac
 
 ## From an agent (MCP)
 
-With `managedDeploymentsMcp` also on for the organization (cloud only, off by
+With `managedDeployments` on for the organization (cloud only, off by
 default), agents connected to the OpenWork MCP gateway can drive the same flow
 through `search_capabilities` / `execute_capability`:
 
@@ -73,8 +73,8 @@ through `search_capabilities` / `execute_capability`:
 Agents cannot remove deployment records or call the installer's enrollment,
 milestone or health endpoints. The routes keep their permissions
 (`deployments.view` / `deployments.manage`) and feature checks; turning
-`managedDeploymentsMcp` off hides the capabilities without affecting the page,
-running installs or health reports.
+`managedDeployments` off hides the capabilities and blocks new launches without
+affecting running installs or authenticated enrollment and health reports.
 
 ## Status checks
 

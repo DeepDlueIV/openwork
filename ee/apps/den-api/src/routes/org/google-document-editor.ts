@@ -74,7 +74,7 @@ export function registerGoogleDocumentEditorRoutes<T extends { Variables: OrgRou
   const app = new Hono<{ Variables: OrgRouteVariables }>()
   const guard: MiddlewareHandler<{ Variables: OrgRouteVariables }> = async (c, next) => {
     const context = c.get("organizationContext")
-    if (!context || !(await organizationFeatureEnabled(context.organization.id, "workbotDocuments")) || !(await organizationFeatureEnabled(context.organization.id, "workbot"))) return c.json({ error: "feature_disabled", message: "Documents is off for this workspace." }, 403)
+    if (!context || !(await organizationFeatureEnabled(context.organization.id, "workbotDocuments"))) return c.json({ error: "feature_disabled", message: "Documents is off for this workspace." }, 403)
     await next()
   }
   const description = (operationId: string, summary: string, schema: z.ZodType) => { const options: DescribeRouteOptions & { "x-mcp": false } = { operationId, tags: ["Documents"], "x-mcp": false, summary, description: "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.", responses: { 200: jsonResponse("Document result.", schema), 400: jsonResponse("Unsupported edit.", errorSchema), 409: jsonResponse("Reconnect or reload the changed file.", errorSchema) } }; return describeRoute(options) }

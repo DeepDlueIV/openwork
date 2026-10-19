@@ -366,7 +366,7 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
     describeRoute({
       tags: ["Users"],
       summary: "Get current user's desktop config",
-      description: "Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on, and the model new chats start with (defaultModel, applied by OpenCode v2 desktops only) when the organization has the default model feature on and has chosen one the caller can use.",
+      description: "Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules and the model new chats start with (defaultModel, applied by OpenCode v2 desktops only) when the organization has chosen one the caller can use.",
       responses: {
         200: jsonResponse("Current user desktop config returned successfully.", meDesktopConfigResponseSchema),
         401: jsonResponse("The caller must be signed in to read desktop config.", unauthorizedSchema),
@@ -382,11 +382,9 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
         orgMemberId: currentMember.id,
       })
       const features = await getOrganizationFeatures(organization.id)
-      const agentPermissions = features.agentPermissions
-        ? { rules: await readAgentPermissionRulesForMember({ organizationId: organization.id, orgMemberId: currentMember.id }) }
-        : undefined
+      const agentPermissions = { rules: await readAgentPermissionRulesForMember({ organizationId: organization.id, orgMemberId: currentMember.id }) }
       // The model new chats start with; only v2 desktops apply it. A failure leaves desktops on their own default.
-      const defaultModel = await desktopConfigDefaultModel({ organizationId: organization.id, memberId: currentMember.id, featureOn: features.orgDefaultModel })
+      const defaultModel = await desktopConfigDefaultModel({ organizationId: organization.id, memberId: currentMember.id })
 
       return c.json({
         ...desktopPolicy,
@@ -395,7 +393,7 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
         // Compatibility field for published desktops: Connect is always on.
         connectEnabled: true,
         liveProviderSync: features.liveProviderSync,
-        ...(agentPermissions ? { agentPermissions } : {}),
+        agentPermissions,
         ...(defaultModel ? { defaultModel } : {}),
         ...(Array.isArray(metadata.allowedDesktopVersions)
           ? { allowedDesktopVersions: metadata.allowedDesktopVersions }

@@ -8,12 +8,10 @@ const catalogSchema = z.object({
     description: z.string(),
     url: z.string().startsWith("skill://").optional(),
     capability: z.string().regex(/^(?:skill:[^:]+|plugin:[^:]+:[^:]+)$/),
-    modelDiscovery: z.boolean().optional(),
     pluginName: z.string().optional(),
     digest: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
     setup: z.object({ status: z.string(), message: z.string() }).optional(),
   })),
-  delivery: z.enum(["native"]).optional(),
 });
 type Catalog = z.infer<typeof catalogSchema>;
 type CatalogSkill = Catalog["skills"][number];
@@ -32,8 +30,6 @@ export type CloudSkillContext = {
 
 export const CLOUD_SKILL_ID_PREFIX = "openwork-cloud-";
 const MAX_SKILLS = 150;
-const DISCOVERY_BUDGET_CHARS = 24_000;
-const DISCOVERY_DESCRIPTION_CHARS = 200;
 // Native entries carry Den's full description (at most 1,024 characters), the
 // same cap Claude Code applies to a skill listing.
 const NATIVE_BUDGET_CHARS = 64_000;
@@ -83,23 +79,14 @@ function budgeted(skills: CatalogSkill[], budget: number, descriptionChars: numb
   return result;
 }
 
-/** Discovery mode: metadata only. Never cache a Cloud skill body or access
- * decision here: even an old model snapshot must retrieve the body from Den,
- * which rechecks member access on every get_skill call. */
-export function discoverySkills(value: unknown): NativeSkill[] {
-  const catalog = catalogSchema.parse(value);
-  return budgeted(catalog.skills.filter(skill => skill.modelDiscovery === true),
-    DISCOVERY_BUDGET_CHARS, DISCOVERY_DESCRIPTION_CHARS, discoveryContent);
-}
-
 /**
- * Native mode (Den's nativeCloudSkills rollout): each skill is a native skill
+ * Each organization skill is a native skill
  * with its full description and its authorized SKILL.md, verified against the
  * digest Den published. A skill whose body could not be read or verified keeps
  * the discovery note, so it still works through get_skill.
  */
 export function nativeSkills(catalog: Catalog, contents: ReadonlyMap<string, string>): NativeSkill[] {
-  return budgeted(catalog.skills.filter(skill => skill.modelDiscovery === true), NATIVE_BUDGET_CHARS, NATIVE_DESCRIPTION_CHARS, skill => {
+  return budgeted(catalog.skills, NATIVE_BUDGET_CHARS, NATIVE_DESCRIPTION_CHARS, skill => {
     if (skill.setup) return setupContent(skill, skill.setup);
     const body = skill.digest ? contents.get(skill.digest) : undefined;
     return body ?? discoveryContent(skill);
@@ -145,14 +132,11 @@ export function mentionedSkillIds(text: string, skills: ReadonlyArray<Pick<Nativ
   return ids;
 }
 
-/** Setup only starts background discovery, not a network dependency. Do not
- * touch the native registry until opted-in metadata arrives: the off path must
- * leave local skill discovery alone, including its cold initialization.
- * No storage, configuration rewrite, watcher, or admission hook is involved
- * until Den turns native delivery on. */
+/** Setup starts background discovery without making Cloud a dependency of
+ * chatting or local skill discovery. Only authorized catalog entries and
+ * digest-verified bodies are added to the native registry. */
 export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
   let skills: NativeSkill[] = [];
-  let native = false;
   let fingerprint = "[]";
   let closed = false;
   let refreshing = false;
@@ -187,7 +171,7 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
   const ensurePromptHook = async () => {
     if (promptHook || !context.session) return;
     promptHook = await context.session.hook("prompt", event => {
-      if (!native || skills.length === 0) return;
+      if (skills.length === 0) return;
       const attached = new Set((event.prompt.skills ?? []).map(skill => skill.id));
       const mentioned = mentionedSkillIds(event.prompt.text, skills).filter(id => !attached.has(id));
       if (mentioned.length === 0) return;
@@ -202,14 +186,9 @@ export async function registerCloudSkillDiscovery(context: CloudSkillContext) {
       const value = await call("openwork_skills", {});
       if (value === null) return;
       const catalog = catalogSchema.parse(value);
-      native = catalog.delivery === "native";
-      if (native) {
-        await loadContents(catalog);
-        await ensurePromptHook();
-      } else {
-        contents.clear();
-      }
-      const next = native ? nativeSkills(catalog, contents) : discoverySkills(catalog);
+      await loadContents(catalog);
+      await ensurePromptHook();
+      const next = nativeSkills(catalog, contents);
       const key = JSON.stringify(next);
       if (closed || key === fingerprint) return;
       skills = next;

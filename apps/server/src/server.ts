@@ -848,7 +848,7 @@ export async function startServer(
     config,
     env,
     liveProviderSync: async () => {
-      // The same signed-in desktop-config hydration as orgDefaultModel. A
+      // The same signed-in desktop-config hydration as organization defaults. A
       // missing field/older Den is off; never infer this from org metadata.
       await engineV2Preview.setLiveProviderSync(await resolveLiveProviderSync());
       return engineV2Preview.status().liveProviderSync;

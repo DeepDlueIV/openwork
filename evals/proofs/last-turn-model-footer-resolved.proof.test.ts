@@ -17,24 +17,19 @@ test("a member sees the last reply's verified model below the answer without rep
   const topLabels = async () => (await probe.dom(`${normal} [data-testid="completed-work-rail"] [data-testid="reply-model"]`)).elements;
 
   await user.resizeViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
-  await step("before: the disabled rollout names the verified model only above each answer", async () => {
+  await step("given: the member opens two completed answers without a footer feature override", async () => {
     await user.click({ text: "Model footer" });
     await user.reload();
     await user.see({ text: world.latest.reply });
     await user.see({ text: world.older.reply });
-    await user.hover("composer");
-    const found = await probe.eventually(topLabels, { within: 15_000, label: "both original model labels", until: values => values.length === 2 });
-    expect(await world.featureEnabled()).toBe(false);
+    const found = await probe.eventually(labels, { within: 15_000, label: "both verified model labels", until: values => values.length === 2 });
     expect(world.fixtureReads).toBeGreaterThan(0);
-    expect(await labels()).toHaveLength(2);
     expect(found.every(value => value.text.includes(world.modelName))).toBe(true);
-    expect((await probe.dom(`${normal} [data-testid="reply-model"] .sr-only`)).elements).toHaveLength(0);
-    evidence.recordAssertionEvidence("The disabled rollout keeps both verified names above the answers", `top labels=${found.length}; footer labels=0; model=${world.modelName}`, found.length === 2);
+    evidence.recordAssertionEvidence("Both completed answers retain their verified model identity", `history reads=${world.fixtureReads}; labels=${found.length}; model=${world.modelName}`, world.fixtureReads > 0 && found.length === 2);
     await user.screenshot();
   });
 
   await step("after: the latest answer keeps its model visible below the reply while actions stay quiet", async () => {
-    await world.setRollout(true);
     await user.reload();
     await user.see({ text: world.latest.reply });
     await user.hover("composer");
@@ -131,15 +126,14 @@ test("a member sees the last reply's verified model below the answer without rep
     await user.screenshot();
   });
 
-  await step("turning the rollout off restores the original model placement without changing the reply", async () => {
-    await world.setRollout(false);
+  await step("reopening the conversation preserves the Auto model footer and answer", async () => {
     await user.reload();
     await user.see({ text: world.autoReply.reply });
-    const found = await probe.eventually(() => probe.dom(`${auto} [data-testid="completed-work-rail"] [data-testid="reply-model"]`), {
-      within: 15_000, label: "the restored Auto work-rail label", until: value => value.elements.length === 1,
-    });
-    expect((await probe.dom(`${auto} [data-testid="reply-model"] .sr-only`)).elements).toHaveLength(0);
-    evidence.recordAssertionEvidence("Rollback restores the verified model above the same answer", `top labels=${found.elements.length}; footer prefixes=0; reply preserved`, found.elements.length === 1);
+    await user.see({ testId: "reply-model" });
+    const found = (await probe.dom(`${auto} [data-testid="reply-model"]`)).elements;
+    expect(found.map(value => value.text)).toEqual([`Replied with ${world.autoModelName}`]);
+    expect((await probe.dom(`${auto} [data-testid="completed-work-rail"] [data-testid="reply-model"]`)).elements).toHaveLength(0);
+    evidence.recordAssertionEvidence("Reload retains one footer rather than restoring a duplicate above the answer", `footer labels=${found.length}; reply preserved; model=${world.autoModelName}`, found.length === 1);
     await user.screenshot();
   });
 });

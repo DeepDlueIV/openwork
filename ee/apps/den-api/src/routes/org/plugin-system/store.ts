@@ -6735,7 +6735,6 @@ async function buildConnectorAutomationContext(input: { connectorInstance: Conne
   const memberPermissions = await resolvePermissionsForMember({
     organizationId: organization.id,
     memberId: member.id,
-    featureEnabled: features.permissions,
   })
 
   return {

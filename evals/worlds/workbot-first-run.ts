@@ -1,5 +1,4 @@
 import { isolatedRedis } from "./isolated-redis.ts";
-import { denFetch } from "@openwork/behaviors";
 import { personDefaults, queryDenDatabase, type Seed } from "@openwork/env";
 import { bootWorkbot } from "../../worlds/lib/workbot.ts";
 
@@ -17,14 +16,6 @@ export async function workbotFirstRun(seed: Seed) {
       // Deployment cache keys cannot be shared across other local worlds' disposable MySQL databases.
       denEnv: { DATABASE_REDIS_URL: redis.url, DEN_ORG_MODE: "multi_org", DEN_REQUIRE_EMAIL_VERIFICATION: "true", DEN_FEATURE_WORKBOT_FIRST_RUN: "true" },
     });
-    const rollout = await denFetch(world.den.admin, "/v1/admin/features/workbot", {
-      method: "PUT", headers: { authorization: `Bearer ${world.den.admin.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ enabled: true }),
-    });
-    const feature = isRecord(rollout.body) ? rollout.body.feature : null;
-    if (!rollout.response.ok || !isRecord(feature) || feature.enabled !== true || feature.killed === true || feature.lock === false) {
-      throw new Error(`Local Workbot rollout is not enabled: HTTP ${rollout.response.status}`);
-    }
     const runId = `${Date.now().toString(36)}${process.pid.toString(36)}`;
     const person = personDefaults("first-workbot", undefined, runId);
     const web = await seed.web({ den: world.den, headless: true, viewport: { width: 1440, height: 1000 } });

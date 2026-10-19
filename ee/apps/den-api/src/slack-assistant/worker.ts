@@ -10,7 +10,6 @@ import {
 import { z } from "zod"
 import { appLogger } from "../observability/logger.js"
 import { openworkYourConnectionsUrl } from "../mcp/connection-navigation.js"
-import { organizationFeatureEnabled } from "../features.js"
 import {
   buildSlackEnvelope,
   buildSlackPrompt,
@@ -293,7 +292,7 @@ export async function processSlackEvent(event: EventRow, suppliedDeps: WorkerDep
     // Quiet by default: Slack's working status, then the answer. Admins can turn on live steps and notes.
     cp.live = installation.progressUpdates
     // Chosen once per message, so turning the feature off never changes a reply half-way.
-    cp.workbot = await organizationFeatureEnabled(installation.organizationId, "slackWorkbotReplies")
+    cp.workbot = true
     cp.recipientUserId = event.slackUserId
     cp.recipientTeamId = event.teamId
     cp.privateReply =
@@ -397,7 +396,6 @@ export async function processSlackEvent(event: EventRow, suppliedDeps: WorkerDep
 async function watchSlackEvent(event: EventRow, installation: InstallationRow, slack: SlackCall, deps: WorkerDeps, cp: Checkpoint) {
   const stop = () => checkpointEvent(event, { status: "done" })
   if (event.cancelled || !installation.enabled || !slackRunnerAvailable()) return stop()
-  if (!(await organizationFeatureEnabled(installation.organizationId, "slackWorkbotReplies"))) return stop()
   if (!(await slackAssistantEnabledForInstallation(installation))) return stop()
   const actor = await resolveSlackActor(installation, event.slackUserId)
   if (!actor) return stop()

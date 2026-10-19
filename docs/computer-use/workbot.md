@@ -139,6 +139,10 @@ Both are sockets, not loopback ports, because the desktop egress guard refuses
 loopback for that user. Each Blender script is one undo step, so the person can
 press Ctrl+Z. LibreOffice edits stay unsaved in the open window unless the call
 passes `save: true`; a file with no open window is edited headlessly and saved.
+Cell strings are always stored as text, so content copied from a page or file
+is never evaluated. Formulas are explicit `{formula}` cells and are refused if
+they fetch or link outside the workbook (`WEBSERVICE`, `DDE`, `HYPERLINK`,
+`INDIRECT` or external references), because the desktop can reach public sites.
 
 Scripts keep the trust boundary of the apps and `bash`: they run as
 `openwork-browser` inside the same egress guard, behind the same `computerUse`

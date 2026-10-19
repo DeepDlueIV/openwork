@@ -48,8 +48,8 @@ function observePage(id, query = null) {
     const sensitive = element.matches('input[type="password"]') || autofill.some(token => token === "one-time-code" || token.startsWith("cc-"));
     const role = element.getAttribute("role");
     /** @type {{ tag: string, role: string | null, name: string, disabled: boolean, sensitive: boolean, required: boolean, readOnly: boolean,
-     * type?: string, value?: string, valueTruncated?: boolean, checked?: boolean | "mixed", expanded?: boolean, selected?: boolean,
-     * multiple?: boolean, options?: { value: string, label: string, selected: boolean, disabled: boolean }[], optionsTruncated?: boolean,
+     * type?: string, value?: string, valueTruncated?: boolean, filled?: boolean, valueWithheld?: boolean, checked?: boolean | "mixed", expanded?: boolean, selected?: boolean,
+     * multiple?: boolean, options?: { value: string, label: string, selected?: boolean, disabled: boolean }[], optionsTruncated?: boolean,
      * selectedValues?: string[], valid?: boolean, validationMessage?: string, description?: string }} */
     const state = {
       tag: element.tagName.toLowerCase(), role: role || (input ? ["checkbox", "radio"].includes(element.type) ? element.type : ["button", "submit", "reset"].includes(element.type) ? "button" : element.type === "search" ? "searchbox" : "textbox" :

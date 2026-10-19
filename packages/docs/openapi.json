@@ -2430,6 +2430,9 @@
           "key": {
             "type": "string",
             "enum": [
+              "modelRemovalRecovery",
+              "lastTurnModelFooter",
+              "liveProviderSync",
               "googleDocumentTools",
               "offlineRecovery",
               "rememberLastOrganization",
@@ -2446,6 +2449,10 @@
               "slackAssistant",
               "slackWorkbotReplies",
               "workbot",
+              "workbotTeamLinks",
+              "workbotLunaDefault",
+              "workbotFirstRun",
+              "workbotInlineConnect",
               "workbotDocuments",
               "workbotWorkspaceAssistant",
               "automationCalendar",
@@ -2453,6 +2460,7 @@
               "teamRoles",
               "sharedRoles",
               "agentPermissions",
+              "engineV2ForceUpgrade",
               "engineV2Upgrade",
               "remoteSessionEvents",
               "backgroundShellTasks",
@@ -2464,6 +2472,8 @@
               "browserFloatingView",
               "remoteComputers",
               "inviteLinkVerifiesEmail",
+              "nativeCloudSkills",
+              "mcpSkillsExtension",
               "remoteSessionSubagents"
             ]
           },
@@ -2639,6 +2649,15 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "modelRemovalRecovery": {
+                      "type": "boolean"
+                    },
+                    "lastTurnModelFooter": {
+                      "type": "boolean"
+                    },
+                    "liveProviderSync": {
+                      "type": "boolean"
+                    },
                     "googleDocumentTools": {
                       "type": "boolean"
                     },
@@ -2687,6 +2706,18 @@
                     "workbot": {
                       "type": "boolean"
                     },
+                    "workbotTeamLinks": {
+                      "type": "boolean"
+                    },
+                    "workbotLunaDefault": {
+                      "type": "boolean"
+                    },
+                    "workbotFirstRun": {
+                      "type": "boolean"
+                    },
+                    "workbotInlineConnect": {
+                      "type": "boolean"
+                    },
                     "workbotDocuments": {
                       "type": "boolean"
                     },
@@ -2706,6 +2737,9 @@
                       "type": "boolean"
                     },
                     "agentPermissions": {
+                      "type": "boolean"
+                    },
+                    "engineV2ForceUpgrade": {
                       "type": "boolean"
                     },
                     "engineV2Upgrade": {
@@ -2739,6 +2773,12 @@
                       "type": "boolean"
                     },
                     "inviteLinkVerifiesEmail": {
+                      "type": "boolean"
+                    },
+                    "nativeCloudSkills": {
+                      "type": "boolean"
+                    },
+                    "mcpSkillsExtension": {
                       "type": "boolean"
                     },
                     "remoteSessionSubagents": {
@@ -2752,6 +2792,9 @@
                     }
                   },
                   "required": [
+                    "modelRemovalRecovery",
+                    "lastTurnModelFooter",
+                    "liveProviderSync",
                     "googleDocumentTools",
                     "offlineRecovery",
                     "rememberLastOrganization",
@@ -2768,6 +2811,10 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
+                    "workbotTeamLinks",
+                    "workbotLunaDefault",
+                    "workbotFirstRun",
+                    "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -2775,6 +2822,7 @@
                     "teamRoles",
                     "sharedRoles",
                     "agentPermissions",
+                    "engineV2ForceUpgrade",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks",
@@ -2786,6 +2834,8 @@
                     "browserFloatingView",
                     "remoteComputers",
                     "inviteLinkVerifiesEmail",
+                    "nativeCloudSkills",
+                    "mcpSkillsExtension",
                     "remoteSessionSubagents",
                     "gatewayDashboard"
                   ]
@@ -2793,6 +2843,174 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "modelRemovalRecovery": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "lastTurnModelFooter": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "liveProviderSync": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "googleDocumentTools": {
                       "type": "object",
                       "properties": {
@@ -3689,6 +3907,230 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotTeamLinks": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "workbotLunaDefault": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "workbotFirstRun": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "workbotInlineConnect": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "workbotDocuments": {
                       "type": "object",
                       "properties": {
@@ -4026,6 +4468,62 @@
                       ]
                     },
                     "agentPermissions": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "engineV2ForceUpgrade": {
                       "type": "object",
                       "properties": {
                         "enabled": {
@@ -4697,6 +5195,118 @@
                         "overrideApplies"
                       ]
                     },
+                    "nativeCloudSkills": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "mcpSkillsExtension": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "remoteSessionSubagents": {
                       "type": "object",
                       "properties": {
@@ -4755,6 +5365,9 @@
                     }
                   },
                   "required": [
+                    "modelRemovalRecovery",
+                    "lastTurnModelFooter",
+                    "liveProviderSync",
                     "googleDocumentTools",
                     "offlineRecovery",
                     "rememberLastOrganization",
@@ -4771,6 +5384,10 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
+                    "workbotTeamLinks",
+                    "workbotLunaDefault",
+                    "workbotFirstRun",
+                    "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -4778,6 +5395,7 @@
                     "teamRoles",
                     "sharedRoles",
                     "agentPermissions",
+                    "engineV2ForceUpgrade",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks",
@@ -4789,6 +5407,8 @@
                     "browserFloatingView",
                     "remoteComputers",
                     "inviteLinkVerifiesEmail",
+                    "nativeCloudSkills",
+                    "mcpSkillsExtension",
                     "remoteSessionSubagents"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -5159,6 +5779,15 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "modelRemovalRecovery": {
+                      "type": "boolean"
+                    },
+                    "lastTurnModelFooter": {
+                      "type": "boolean"
+                    },
+                    "liveProviderSync": {
+                      "type": "boolean"
+                    },
                     "googleDocumentTools": {
                       "type": "boolean"
                     },
@@ -5207,6 +5836,18 @@
                     "workbot": {
                       "type": "boolean"
                     },
+                    "workbotTeamLinks": {
+                      "type": "boolean"
+                    },
+                    "workbotLunaDefault": {
+                      "type": "boolean"
+                    },
+                    "workbotFirstRun": {
+                      "type": "boolean"
+                    },
+                    "workbotInlineConnect": {
+                      "type": "boolean"
+                    },
                     "workbotDocuments": {
                       "type": "boolean"
                     },
@@ -5226,6 +5867,9 @@
                       "type": "boolean"
                     },
                     "agentPermissions": {
+                      "type": "boolean"
+                    },
+                    "engineV2ForceUpgrade": {
                       "type": "boolean"
                     },
                     "engineV2Upgrade": {
@@ -5259,6 +5903,12 @@
                       "type": "boolean"
                     },
                     "inviteLinkVerifiesEmail": {
+                      "type": "boolean"
+                    },
+                    "nativeCloudSkills": {
+                      "type": "boolean"
+                    },
+                    "mcpSkillsExtension": {
                       "type": "boolean"
                     },
                     "remoteSessionSubagents": {
@@ -5272,6 +5922,9 @@
                     }
                   },
                   "required": [
+                    "modelRemovalRecovery",
+                    "lastTurnModelFooter",
+                    "liveProviderSync",
                     "googleDocumentTools",
                     "offlineRecovery",
                     "rememberLastOrganization",
@@ -5288,6 +5941,10 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
+                    "workbotTeamLinks",
+                    "workbotLunaDefault",
+                    "workbotFirstRun",
+                    "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -5295,6 +5952,7 @@
                     "teamRoles",
                     "sharedRoles",
                     "agentPermissions",
+                    "engineV2ForceUpgrade",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks",
@@ -5306,6 +5964,8 @@
                     "browserFloatingView",
                     "remoteComputers",
                     "inviteLinkVerifiesEmail",
+                    "nativeCloudSkills",
+                    "mcpSkillsExtension",
                     "remoteSessionSubagents",
                     "gatewayDashboard"
                   ]
@@ -5313,6 +5973,174 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "modelRemovalRecovery": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "lastTurnModelFooter": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "liveProviderSync": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "googleDocumentTools": {
                       "type": "object",
                       "properties": {
@@ -6209,6 +7037,230 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotTeamLinks": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "workbotLunaDefault": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "workbotFirstRun": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "workbotInlineConnect": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "workbotDocuments": {
                       "type": "object",
                       "properties": {
@@ -6546,6 +7598,62 @@
                       ]
                     },
                     "agentPermissions": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "engineV2ForceUpgrade": {
                       "type": "object",
                       "properties": {
                         "enabled": {
@@ -7217,6 +8325,118 @@
                         "overrideApplies"
                       ]
                     },
+                    "nativeCloudSkills": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "mcpSkillsExtension": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "remoteSessionSubagents": {
                       "type": "object",
                       "properties": {
@@ -7275,6 +8495,9 @@
                     }
                   },
                   "required": [
+                    "modelRemovalRecovery",
+                    "lastTurnModelFooter",
+                    "liveProviderSync",
                     "googleDocumentTools",
                     "offlineRecovery",
                     "rememberLastOrganization",
@@ -7291,6 +8514,10 @@
                     "slackAssistant",
                     "slackWorkbotReplies",
                     "workbot",
+                    "workbotTeamLinks",
+                    "workbotLunaDefault",
+                    "workbotFirstRun",
+                    "workbotInlineConnect",
                     "workbotDocuments",
                     "workbotWorkspaceAssistant",
                     "automationCalendar",
@@ -7298,6 +8525,7 @@
                     "teamRoles",
                     "sharedRoles",
                     "agentPermissions",
+                    "engineV2ForceUpgrade",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks",
@@ -7309,6 +8537,8 @@
                     "browserFloatingView",
                     "remoteComputers",
                     "inviteLinkVerifiesEmail",
+                    "nativeCloudSkills",
+                    "mcpSkillsExtension",
                     "remoteSessionSubagents"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -8118,6 +9348,9 @@
             "type": "boolean"
           },
           "connectEnabled": {
+            "type": "boolean"
+          },
+          "liveProviderSync": {
             "type": "boolean"
           },
           "onboardingPrompts": {
@@ -14168,6 +15401,10 @@
               ]
             }
           },
+          "modelAssignmentsComplete": {
+            "type": "boolean",
+            "description": "True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal."
+          },
           "authorizationRequests": {
             "type": "array",
             "items": {
@@ -14747,6 +15984,7 @@
           "updatedAt",
           "providerConfig",
           "models",
+          "modelAssignmentsComplete",
           "authorizationRequests",
           "settings",
           "modelGroups",
@@ -14902,6 +16140,10 @@
               ]
             }
           },
+          "modelAssignmentsComplete": {
+            "type": "boolean",
+            "description": "True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal."
+          },
           "authorizationRequests": {
             "type": "array",
             "items": {
@@ -15024,6 +16266,7 @@
           "updatedAt",
           "providerConfig",
           "models",
+          "modelAssignmentsComplete",
           "authorizationRequests"
         ]
       },
@@ -28415,6 +29658,78 @@
           }
         ]
       },
+      "WorkbotModelTest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "answered"
+              },
+              "errorCode": {
+                "type": "null"
+              },
+              "requestedModel": {
+                "type": "string"
+              },
+              "reportedModel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "errorCode",
+              "requestedModel",
+              "reportedModel"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "failed"
+              },
+              "errorCode": {
+                "type": "string",
+                "enum": [
+                  "model_unavailable",
+                  "runner_unavailable",
+                  "credentials_unavailable",
+                  "authentication_failed",
+                  "payment_required",
+                  "provider_unavailable",
+                  "timed_out",
+                  "invalid_response",
+                  "busy"
+                ]
+              },
+              "requestedModel": {
+                "type": "string"
+              },
+              "reportedModel": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "status",
+              "errorCode",
+              "requestedModel",
+              "reportedModel"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "WorkbotSettings": {
         "type": "object",
         "properties": {
@@ -28461,6 +29776,14 @@
           },
           "runnerReachable": {
             "type": "boolean"
+          },
+          "defaultReadiness": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable",
+              "unverified"
+            ]
           }
         },
         "required": [
@@ -28785,6 +30108,12 @@
           "enabled": {
             "type": "boolean"
           },
+          "firstRun": {
+            "type": "boolean"
+          },
+          "canEnableWorkbot": {
+            "type": "boolean"
+          },
           "canSchedule": {
             "type": "boolean"
           },
@@ -28800,6 +30129,25 @@
           "workspaceAssistant": {
             "type": "boolean"
           },
+          "teamLinks": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "settings": {
+                "type": "boolean"
+              },
+              "apps": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled",
+              "settings",
+              "apps"
+            ]
+          },
           "sideChats": {
             "type": "boolean"
           },
@@ -28812,6 +30160,9 @@
                 "type": "null"
               }
             ]
+          },
+          "verifyModel": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -29014,6 +30365,17 @@
                 "type": "null"
               }
             ]
+          },
+          "enginePolicy": {
+            "type": "object",
+            "properties": {
+              "upgrade": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "upgrade"
+            ]
           }
         },
         "required": [
@@ -29022,7 +30384,8 @@
           "isActiveRecently",
           "openSessionCount",
           "lastHeartbeatAt",
-          "lastActiveAt"
+          "lastActiveAt",
+          "enginePolicy"
         ]
       },
       "WorkerInstance": {
@@ -31280,6 +32643,15 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "modelRemovalRecovery": {
+                          "type": "boolean"
+                        },
+                        "lastTurnModelFooter": {
+                          "type": "boolean"
+                        },
+                        "liveProviderSync": {
+                          "type": "boolean"
+                        },
                         "googleDocumentTools": {
                           "type": "boolean"
                         },
@@ -31328,6 +32700,18 @@
                         "workbot": {
                           "type": "boolean"
                         },
+                        "workbotTeamLinks": {
+                          "type": "boolean"
+                        },
+                        "workbotLunaDefault": {
+                          "type": "boolean"
+                        },
+                        "workbotFirstRun": {
+                          "type": "boolean"
+                        },
+                        "workbotInlineConnect": {
+                          "type": "boolean"
+                        },
                         "workbotDocuments": {
                           "type": "boolean"
                         },
@@ -31347,6 +32731,9 @@
                           "type": "boolean"
                         },
                         "agentPermissions": {
+                          "type": "boolean"
+                        },
+                        "engineV2ForceUpgrade": {
                           "type": "boolean"
                         },
                         "engineV2Upgrade": {
@@ -31380,6 +32767,12 @@
                           "type": "boolean"
                         },
                         "inviteLinkVerifiesEmail": {
+                          "type": "boolean"
+                        },
+                        "nativeCloudSkills": {
+                          "type": "boolean"
+                        },
+                        "mcpSkillsExtension": {
                           "type": "boolean"
                         },
                         "remoteSessionSubagents": {
@@ -31393,6 +32786,9 @@
                         }
                       },
                       "required": [
+                        "modelRemovalRecovery",
+                        "lastTurnModelFooter",
+                        "liveProviderSync",
                         "googleDocumentTools",
                         "offlineRecovery",
                         "rememberLastOrganization",
@@ -31409,6 +32805,10 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
+                        "workbotTeamLinks",
+                        "workbotLunaDefault",
+                        "workbotFirstRun",
+                        "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -31416,6 +32816,7 @@
                         "teamRoles",
                         "sharedRoles",
                         "agentPermissions",
+                        "engineV2ForceUpgrade",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks",
@@ -31427,6 +32828,8 @@
                         "browserFloatingView",
                         "remoteComputers",
                         "inviteLinkVerifiesEmail",
+                        "nativeCloudSkills",
+                        "mcpSkillsExtension",
                         "remoteSessionSubagents",
                         "gatewayDashboard"
                       ]
@@ -31434,6 +32837,174 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "modelRemovalRecovery": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "lastTurnModelFooter": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "liveProviderSync": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "googleDocumentTools": {
                           "type": "object",
                           "properties": {
@@ -32330,6 +33901,230 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotTeamLinks": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "workbotLunaDefault": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "workbotFirstRun": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "workbotInlineConnect": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "workbotDocuments": {
                           "type": "object",
                           "properties": {
@@ -32667,6 +34462,62 @@
                           ]
                         },
                         "agentPermissions": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "engineV2ForceUpgrade": {
                           "type": "object",
                           "properties": {
                             "enabled": {
@@ -33338,6 +35189,118 @@
                             "overrideApplies"
                           ]
                         },
+                        "nativeCloudSkills": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "mcpSkillsExtension": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "remoteSessionSubagents": {
                           "type": "object",
                           "properties": {
@@ -33396,6 +35359,9 @@
                         }
                       },
                       "required": [
+                        "modelRemovalRecovery",
+                        "lastTurnModelFooter",
+                        "liveProviderSync",
                         "googleDocumentTools",
                         "offlineRecovery",
                         "rememberLastOrganization",
@@ -33412,6 +35378,10 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
+                        "workbotTeamLinks",
+                        "workbotLunaDefault",
+                        "workbotFirstRun",
+                        "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -33419,6 +35389,7 @@
                         "teamRoles",
                         "sharedRoles",
                         "agentPermissions",
+                        "engineV2ForceUpgrade",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks",
@@ -33430,6 +35401,8 @@
                         "browserFloatingView",
                         "remoteComputers",
                         "inviteLinkVerifiesEmail",
+                        "nativeCloudSkills",
+                        "mcpSkillsExtension",
                         "remoteSessionSubagents"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -33549,6 +35522,15 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "modelRemovalRecovery": {
+                          "type": "boolean"
+                        },
+                        "lastTurnModelFooter": {
+                          "type": "boolean"
+                        },
+                        "liveProviderSync": {
+                          "type": "boolean"
+                        },
                         "googleDocumentTools": {
                           "type": "boolean"
                         },
@@ -33597,6 +35579,18 @@
                         "workbot": {
                           "type": "boolean"
                         },
+                        "workbotTeamLinks": {
+                          "type": "boolean"
+                        },
+                        "workbotLunaDefault": {
+                          "type": "boolean"
+                        },
+                        "workbotFirstRun": {
+                          "type": "boolean"
+                        },
+                        "workbotInlineConnect": {
+                          "type": "boolean"
+                        },
                         "workbotDocuments": {
                           "type": "boolean"
                         },
@@ -33616,6 +35610,9 @@
                           "type": "boolean"
                         },
                         "agentPermissions": {
+                          "type": "boolean"
+                        },
+                        "engineV2ForceUpgrade": {
                           "type": "boolean"
                         },
                         "engineV2Upgrade": {
@@ -33649,6 +35646,12 @@
                           "type": "boolean"
                         },
                         "inviteLinkVerifiesEmail": {
+                          "type": "boolean"
+                        },
+                        "nativeCloudSkills": {
+                          "type": "boolean"
+                        },
+                        "mcpSkillsExtension": {
                           "type": "boolean"
                         },
                         "remoteSessionSubagents": {
@@ -33662,6 +35665,9 @@
                         }
                       },
                       "required": [
+                        "modelRemovalRecovery",
+                        "lastTurnModelFooter",
+                        "liveProviderSync",
                         "googleDocumentTools",
                         "offlineRecovery",
                         "rememberLastOrganization",
@@ -33678,6 +35684,10 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
+                        "workbotTeamLinks",
+                        "workbotLunaDefault",
+                        "workbotFirstRun",
+                        "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -33685,6 +35695,7 @@
                         "teamRoles",
                         "sharedRoles",
                         "agentPermissions",
+                        "engineV2ForceUpgrade",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks",
@@ -33696,6 +35707,8 @@
                         "browserFloatingView",
                         "remoteComputers",
                         "inviteLinkVerifiesEmail",
+                        "nativeCloudSkills",
+                        "mcpSkillsExtension",
                         "remoteSessionSubagents",
                         "gatewayDashboard"
                       ]
@@ -33703,6 +35716,174 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "modelRemovalRecovery": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "lastTurnModelFooter": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "liveProviderSync": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "googleDocumentTools": {
                           "type": "object",
                           "properties": {
@@ -34599,6 +36780,230 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotTeamLinks": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "workbotLunaDefault": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "workbotFirstRun": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "workbotInlineConnect": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "workbotDocuments": {
                           "type": "object",
                           "properties": {
@@ -34936,6 +37341,62 @@
                           ]
                         },
                         "agentPermissions": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "engineV2ForceUpgrade": {
                           "type": "object",
                           "properties": {
                             "enabled": {
@@ -35607,6 +38068,118 @@
                             "overrideApplies"
                           ]
                         },
+                        "nativeCloudSkills": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "mcpSkillsExtension": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "remoteSessionSubagents": {
                           "type": "object",
                           "properties": {
@@ -35665,6 +38238,9 @@
                         }
                       },
                       "required": [
+                        "modelRemovalRecovery",
+                        "lastTurnModelFooter",
+                        "liveProviderSync",
                         "googleDocumentTools",
                         "offlineRecovery",
                         "rememberLastOrganization",
@@ -35681,6 +38257,10 @@
                         "slackAssistant",
                         "slackWorkbotReplies",
                         "workbot",
+                        "workbotTeamLinks",
+                        "workbotLunaDefault",
+                        "workbotFirstRun",
+                        "workbotInlineConnect",
                         "workbotDocuments",
                         "workbotWorkspaceAssistant",
                         "automationCalendar",
@@ -35688,6 +38268,7 @@
                         "teamRoles",
                         "sharedRoles",
                         "agentPermissions",
+                        "engineV2ForceUpgrade",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks",
@@ -35699,6 +38280,8 @@
                         "browserFloatingView",
                         "remoteComputers",
                         "inviteLinkVerifiesEmail",
+                        "nativeCloudSkills",
+                        "mcpSkillsExtension",
                         "remoteSessionSubagents"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -64059,6 +66642,170 @@
         ]
       }
     },
+    "/v1/inference-providers/inventory/revision": {
+      "get": {
+        "operationId": "getV1InferenceProvidersInventoryRevision",
+        "tags": [
+          "Inference Providers"
+        ],
+        "summary": "Read the caller's inference inventory revision",
+        "description": "Opaque revision covering the usable-provider list and connect payloads, including model configuration, access, team membership, credential readiness and the caller's gateway key. Read-only. Requires liveProviderSync and a signed-in user session.",
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Current inventory revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "revision": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or liveProviderSync disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Inventory unavailable; reconnect with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/inference-providers/inventory/events": {
+      "get": {
+        "operationId": "getV1InferenceProvidersInventoryEvents",
+        "tags": [
+          "Inference Providers"
+        ],
+        "summary": "Watch the caller's inference inventory",
+        "description": "SSE inventory.changed events with JSON {revision}, immediately on connect and whenever persisted inventory changes. Checks the shared database every two seconds and sends heartbeat comments. Session expiry, membership removal, rollout revocation or failed checks close the stream. Requires liveProviderSync and a signed-in user session; never sends credentials or inventory data.",
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Inventory revision event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found or liveProviderSync disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "At most four inventory streams per member per replica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Inventory unavailable; reconnect with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/inference-providers/usage": {
       "get": {
         "operationId": "getV1InferenceProvidersUsage",
@@ -72468,6 +75215,10 @@
                             ]
                           }
                         },
+                        "modelAssignmentsComplete": {
+                          "type": "boolean",
+                          "description": "True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal."
+                        },
                         "authorizationRequests": {
                           "type": "array",
                           "items": {
@@ -72602,6 +75353,7 @@
                         "updatedAt",
                         "providerConfig",
                         "models",
+                        "modelAssignmentsComplete",
                         "authorizationRequests",
                         "apiKey",
                         "apiKeys"
@@ -104539,6 +107291,125 @@
         ]
       }
     },
+    "/v1/org/workbot-settings/test-default-model": {
+      "post": {
+        "operationId": "postV1OrgWorkbotSettingsTestDefaultModel",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Test Workbot's default model",
+        "description": "Runs one bounded synthetic completion on the server-resolved organization default with the runner's configured key. No member content, tools, files, MCP access or conversation is used. May consume paid inference. Returns only status, a safe error code and requested/provider-reported model IDs. Requires a genuine user session, recent sign-in, Manage OpenWork Models, Workbot and workbotLunaDefault. Limited durably to three checks per organization and three per member in a ten-minute inactivity-reset window. Never exposed to MCP.",
+        "x-mcp": false,
+        "responses": {
+          "200": {
+            "description": "Synthetic completion result; catalog availability alone never means answered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbotModelTest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Only an empty request body is accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A genuine recent user sign-in and Manage OpenWork Models are required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The organization was not found, or Workbot is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "feature_disabled"
+                    },
+                    "feature": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "feature"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The durable diagnostic request limit was reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "rate_limited"
+                    },
+                    "retryAfterSeconds": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "retryAfterSeconds"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/org/workbot-settings": {
       "get": {
         "operationId": "getV1OrgWorkbotSettings",
@@ -104546,7 +107417,7 @@
           "Organizations"
         ],
         "summary": "Get Workbot settings",
-        "description": "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires the View OpenWork Models settings permission and Workbot.",
+        "description": "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. With workbotLunaDefault on, Workbot's null choice means explicit GPT-6 Luna, defaultModel identifies that default and defaultReadiness reports authenticated catalog availability; Slack and Automations keep their existing default policy. Requires View OpenWork Models settings or Manage OpenWork Models, and Workbot.",
         "responses": {
           "200": {
             "description": "Workbot settings returned.",
@@ -104569,7 +107440,7 @@
             }
           },
           "403": {
-            "description": "The caller lacks the View OpenWork Models settings permission.",
+            "description": "The caller lacks both View OpenWork Models settings and Manage OpenWork Models.",
             "content": {
               "application/json": {
                 "schema": {
@@ -104617,7 +107488,7 @@
           "Organizations"
         ],
         "summary": "Set Workbot's default model",
-        "description": "Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.",
+        "description": "Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default, except Workbot uses explicit GPT-6 Luna while workbotLunaDefault is on. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.",
         "responses": {
           "200": {
             "description": "Workbot settings saved.",
@@ -106147,6 +109018,184 @@
         ]
       }
     },
+    "/v1/workbot/telemetry": {
+      "post": {
+        "operationId": "recordWorkbotTelemetry",
+        "tags": [
+          "Workbot"
+        ],
+        "x-mcp": false,
+        "summary": "Record content-free Workbot service facts",
+        "description": "Server-to-server only: requires the runner service credential and a live member MCP token. Org and member are resolved from the token. No text or caller-supplied identity is accepted. Telemetry storage failure never fails a user flow.",
+        "responses": {
+          "204": {
+            "description": "Accepted, including best-effort storage failures."
+          },
+          "401": {
+            "description": "Service or member credentials are invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "const": "signed_in"
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,128}$"
+                      },
+                      "timestamp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "const": "accepted"
+                      },
+                      "sessionId": {
+                        "type": "string",
+                        "pattern": "^hs_wbs?_[a-f0-9]{40}$"
+                      },
+                      "messageId": {
+                        "type": "string",
+                        "pattern": "^(?:wb_hello|wb_[A-Za-z0-9_-]{8,64})$"
+                      },
+                      "timestamp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "attachmentCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20
+                      },
+                      "hasContext": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "sessionId",
+                      "messageId",
+                      "timestamp",
+                      "model",
+                      "attachmentCount",
+                      "hasContext"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "event": {
+                        "type": "string",
+                        "enum": [
+                          "completed",
+                          "failed",
+                          "aborted"
+                        ]
+                      },
+                      "sessionId": {
+                        "type": "string",
+                        "pattern": "^hs_wbs?_[a-f0-9]{40}$"
+                      },
+                      "messageId": {
+                        "type": "string",
+                        "pattern": "^(?:wb_hello|wb_[A-Za-z0-9_-]{8,64})$"
+                      },
+                      "timestamp": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "attempt": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "modelSource": {
+                        "default": "configured",
+                        "type": "string",
+                        "enum": [
+                          "response",
+                          "configured"
+                        ]
+                      },
+                      "errorCode": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "event",
+                      "sessionId",
+                      "messageId",
+                      "timestamp",
+                      "attempt",
+                      "model",
+                      "errorCode"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/workbot/session": {
       "get": {
         "operationId": "getWorkbotSession",
@@ -106237,6 +109286,24 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "nativeProviderKey": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "connectMode": {
+                            "type": "string",
+                            "enum": [
+                              "inline",
+                              "external",
+                              "admin"
+                            ]
                           }
                         },
                         "required": [
@@ -106288,6 +109355,168 @@
             }
           }
         },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/workbot/connections/{connectionId}/connect/start": {
+      "post": {
+        "operationId": "startWorkbotConnection",
+        "tags": [
+          "Workbot"
+        ],
+        "x-mcp": false,
+        "summary": "Connect the member's assigned account from Workbot",
+        "description": "Requires a live Workbot OAuth grant with write scope and active membership. Re-enters the existing connection start as that member in the token's organization; the same connection grants and permissions apply. Only a path on the configured Workbot origin can be signed into OAuth state.",
+        "responses": {
+          "200": {
+            "description": "Provider consent URL and its callback origin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizeUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "callbackOrigin": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "authorizeUrl",
+                    "callbackOrigin"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid connection or return path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token or membership is no longer valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The grant or connection permission is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The feature or connection is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "returnPath": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "returnPath",
+                  "requestId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "connectionId",
+            "required": true
+          }
+        ],
         "security": [
           {
             "denApiKey": []

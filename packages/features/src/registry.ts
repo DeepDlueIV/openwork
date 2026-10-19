@@ -53,6 +53,27 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  modelRemovalRecovery: {
+    label: "Model removal recovery",
+    description: "Keep a chat on its chosen model until removal is verified, then offer a nearby model with a quiet, reversible note.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  lastTurnModelFooter: {
+    label: "Last reply model footer",
+    description: "Show the model that replied quietly below the latest answer instead of above the turn.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  liveProviderSync: {
+    label: "Live provider sync",
+    description: "Keep desktop OpenCode v2 models up to date with the organization's AI Gateway in real time.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   googleDocumentTools: {
     label: "Google Docs: focused reading and edits",
     description: "Connected assistants inspect document tabs and headings, read or search bounded passages, and replace text against the revision they read.",
@@ -165,6 +186,34 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotTeamLinks: {
+    label: "Workbot: team settings links",
+    description: "Members with team management access can open their organization's Workbot settings and app connections from Workbot.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  workbotLunaDefault: {
+    label: "Workbot: GPT-6 Luna default",
+    description: "Workbot uses GPT-6 Luna when no organization model is chosen. Admins can check availability and test a bounded synthetic completion without silently switching providers.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  workbotFirstRun: {
+    label: "Workbot: first sign-in",
+    description: "People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  workbotInlineConnect: {
+    label: "Workbot: connect accounts",
+    description: "Members connect their assigned apps directly from Workbot and return to the same view after consent.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   workbotDocuments: {
     label: "Workbot Documents",
     description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",
@@ -210,6 +259,13 @@ export const FEATURES = defineFeatures({
   agentPermissions: {
     label: "Agent permissions",
     description: "Organization admins choose what agents can do on members' computers: run commands, edit files, open websites and use local skills and MCP servers, for everyone or per team.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  engineV2ForceUpgrade: {
+    label: "Upgrade everyone to OpenCode v2",
+    description: "Desktop and web instances copy chats with a backup and switch to OpenCode v2 automatically when idle, without asking for consent.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -290,6 +346,20 @@ export const FEATURES = defineFeatures({
   inviteLinkVerifiesEmail: {
     label: "Invite links verify the invited email",
     description: "Creating an account from an invitation link, emailed or shared by an admin, counts as verifying that email, so the invited person joins without entering an emailed code.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  nativeCloudSkills: {
+    label: "Desktop: organization skills load like local skills",
+    description: "In the desktop app (OpenCode v2), organization and plugin skills are listed next to local skills with their full description and load with their full instructions in one step, and a skill a message names loads before the agent starts.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  mcpSkillsExtension: {
+    label: "MCP: skill index and standard skills listing",
+    description: "MCP clients connected to OpenWork (Claude Code, Codex, Cursor and others) get a short list of the member's skills when they connect, and clients that support the MCP Skills Extension can list and load those skills directly.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

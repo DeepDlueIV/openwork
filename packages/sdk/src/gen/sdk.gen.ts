@@ -364,6 +364,11 @@ import type {
   GetV1InferenceProvidersByInferenceProviderIdOauthStartResponses,
   GetV1InferenceProvidersByInferenceProviderIdResponses,
   GetV1InferenceProvidersErrors,
+  GetV1InferenceProvidersInventoryEventsErrors,
+  GetV1InferenceProvidersInventoryEventsResponse,
+  GetV1InferenceProvidersInventoryEventsResponses,
+  GetV1InferenceProvidersInventoryRevisionErrors,
+  GetV1InferenceProvidersInventoryRevisionResponses,
   GetV1InferenceProvidersMemberConnectionsErrors,
   GetV1InferenceProvidersMemberConnectionsResponses,
   GetV1InferenceProvidersModelManagementErrors,
@@ -884,6 +889,8 @@ import type {
   PostV1OrgsInvitationsAcceptResponses,
   PostV1OrgWebOriginsErrors,
   PostV1OrgWebOriginsResponses,
+  PostV1OrgWorkbotSettingsTestDefaultModelErrors,
+  PostV1OrgWorkbotSettingsTestDefaultModelResponses,
   PostV1PermissionsSetsErrors,
   PostV1PermissionsSetsResponses,
   PostV1PluginsByPluginIdAccessErrors,
@@ -1009,6 +1016,8 @@ import type {
   ReadGoogleDocumentTextResponses,
   ReadGoogleDriveDocumentContentErrors,
   ReadGoogleDriveDocumentContentResponses,
+  RecordWorkbotTelemetryErrors,
+  RecordWorkbotTelemetryResponses,
   RemoteSessionStatusRequest,
   RenamePermissionSetBody,
   ReplaceGoogleDocumentTextErrors,
@@ -1025,6 +1034,8 @@ import type {
   SendGmailDraftResponses,
   SendMicrosoft365MailDraftErrors,
   SendMicrosoft365MailDraftResponses,
+  StartWorkbotConnectionErrors,
+  StartWorkbotConnectionResponses,
   TeamPermissionSetBody,
   TrashGmailMessageErrors,
   TrashGmailMessageResponses,
@@ -6698,6 +6709,36 @@ export class DenClient extends HeyApiClient {
       ...options,
       ...params,
     });
+  }
+
+  /**
+   * Read the caller's inference inventory revision
+   *
+   * Opaque revision covering the usable-provider list and connect payloads, including model configuration, access, team membership, credential readiness and the caller's gateway key. Read-only. Requires liveProviderSync and a signed-in user session.
+   */
+  public getV1InferenceProvidersInventoryRevision<ThrowOnError extends boolean = false>(
+    options?: Options<never, ThrowOnError>,
+  ) {
+    return (options?.client ?? this.client).get<
+      GetV1InferenceProvidersInventoryRevisionResponses,
+      GetV1InferenceProvidersInventoryRevisionErrors,
+      ThrowOnError
+    >({ url: "/v1/inference-providers/inventory/revision", ...options });
+  }
+
+  /**
+   * Watch the caller's inference inventory
+   *
+   * SSE inventory.changed events with JSON {revision}, immediately on connect and whenever persisted inventory changes. Checks the shared database every two seconds and sends heartbeat comments. Session expiry, membership removal, rollout revocation or failed checks close the stream. Requires liveProviderSync and a signed-in user session; never sends credentials or inventory data.
+   */
+  public getV1InferenceProvidersInventoryEvents<ThrowOnError extends boolean = false>(
+    options?: Options<never, ThrowOnError, GetV1InferenceProvidersInventoryEventsResponse>,
+  ) {
+    return (options?.client ?? this.client).sse.get<
+      GetV1InferenceProvidersInventoryEventsResponses,
+      GetV1InferenceProvidersInventoryEventsErrors,
+      ThrowOnError
+    >({ url: "/v1/inference-providers/inventory/events", ...options });
   }
 
   /**
@@ -16074,9 +16115,39 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Test Workbot's default model
+   *
+   * Runs one bounded synthetic completion on the server-resolved organization default with the runner's configured key. No member content, tools, files, MCP access or conversation is used. May consume paid inference. Returns only status, a safe error code and requested/provider-reported model IDs. Requires a genuine user session, recent sign-in, Manage OpenWork Models, Workbot and workbotLunaDefault. Limited durably to three checks per organization and three per member in a ten-minute inactivity-reset window. Never exposed to MCP.
+   */
+  public postV1OrgWorkbotSettingsTestDefaultModel<ThrowOnError extends boolean = false>(
+    parameters: {
+      body: {
+        [key: string]: never;
+      };
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }]);
+    return (options?.client ?? this.client).post<
+      PostV1OrgWorkbotSettingsTestDefaultModelResponses,
+      PostV1OrgWorkbotSettingsTestDefaultModelErrors,
+      ThrowOnError
+    >({
+      url: "/v1/org/workbot-settings/test-default-model",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
    * Get Workbot settings
    *
-   * Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires the View OpenWork Models settings permission and Workbot.
+   * Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. With workbotLunaDefault on, Workbot's null choice means explicit GPT-6 Luna, defaultModel identifies that default and defaultReadiness reports authenticated catalog availability; Slack and Automations keep their existing default policy. Requires View OpenWork Models settings or Manage OpenWork Models, and Workbot.
    */
   public getV1OrgWorkbotSettings<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -16089,7 +16160,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Set Workbot's default model
    *
-   * Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.
+   * Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default, except Workbot uses explicit GPT-6 Luna while workbotLunaDefault is on. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.
    */
   public putV1OrgWorkbotSettings<ThrowOnError extends boolean = false>(
     parameters: {
@@ -16388,6 +16459,58 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Record content-free Workbot service facts
+   *
+   * Server-to-server only: requires the runner service credential and a live member MCP token. Org and member are resolved from the token. No text or caller-supplied identity is accepted. Telemetry storage failure never fails a user flow.
+   */
+  public recordWorkbotTelemetry<ThrowOnError extends boolean = false>(
+    parameters: {
+      body:
+        | {
+            event: "signed_in";
+            id: string;
+            timestamp?: number;
+          }
+        | {
+            event: "accepted";
+            sessionId: string;
+            messageId: string;
+            timestamp: number;
+            model: string;
+            attachmentCount: number;
+            hasContext: boolean;
+          }
+        | {
+            event: "completed" | "failed" | "aborted";
+            sessionId: string;
+            messageId: string;
+            timestamp: number;
+            attempt: number;
+            model: string;
+            modelSource?: "response" | "configured";
+            errorCode: string | null;
+          };
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }]);
+    return (options?.client ?? this.client).post<
+      RecordWorkbotTelemetryResponses,
+      RecordWorkbotTelemetryErrors,
+      ThrowOnError
+    >({
+      url: "/v1/workbot/telemetry",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
    * Who is signed in to Workbot
    *
    * For the Workbot app only. With the access token a person got by signing in to Workbot through Den, returns who they are, the workspace they chose, and whether Workbot is on for it.
@@ -16410,6 +16533,47 @@ export class DenClient extends HeyApiClient {
       ListWorkbotConnectionsErrors,
       ThrowOnError
     >({ url: "/v1/workbot/connections", ...options });
+  }
+
+  /**
+   * Connect the member's assigned account from Workbot
+   *
+   * Requires a live Workbot OAuth grant with write scope and active membership. Re-enters the existing connection start as that member in the token's organization; the same connection grants and permissions apply. Only a path on the configured Workbot origin can be signed into OAuth state.
+   */
+  public startWorkbotConnection<ThrowOnError extends boolean = false>(
+    parameters: {
+      connectionId: string;
+      returnPath: string;
+      requestId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "connectionId" },
+            { in: "body", key: "returnPath" },
+            { in: "body", key: "requestId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      StartWorkbotConnectionResponses,
+      StartWorkbotConnectionErrors,
+      ThrowOnError
+    >({
+      url: "/v1/workbot/connections/{connectionId}/connect/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
   }
 
   /**

@@ -613,6 +613,7 @@ export type SessionSurfaceProps = {
   modelPickerOpen: boolean;
   modelUnavailable?: boolean;
   modelUnavailableMessage?: string | null;
+  modelRecoveryScope?: string;
   /**
    * Resolves availability for one provider/model identity against the active
    * workspace's settled catalogs. Each surface validates its OWN effective
@@ -3648,6 +3649,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
         ]}
         modelUnavailable={sessionModelUnavailable}
         modelUnavailableMessage={sessionModelUnavailable ? props.modelUnavailableMessage : null}
+        modelRecoveryScope={props.modelRecoveryScope}
         organizationModelsEmpty={props.organizationModelsEmpty}
         statusLabel={statusLabel(liveStatus, chatStreaming)}
         modelPickerOpen={modelPickerOpen}

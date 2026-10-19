@@ -14,6 +14,8 @@ import { DenTable } from "../../_components/ui/table";
 import { getAiGatewayLimitRoute, getAiGatewayLimitsRoute, getAiGatewayPersonRoute, getNewAiGatewayLimitRoute, type DenOrgMember, type DenOrgTeam } from "../../_lib/den-org";
 import { useGatewayAccessProviders } from "./gateway-subject-access-data";
 import { describeWho } from "./gateway-limit-editor-screen";
+import { providerLimitLabel } from "./provider-limit-scope";
+export { providerLimitLabel } from "./provider-limit-scope";
 import { formatLimitMoney, timeframeLabels, timeframePeriods, useGatewayLimitsMutation, useGatewayMembers, useGatewayPolicies, type GatewayUsageMember } from "./gateway-usage-limits-data";
 
 type Directory = { teams: DenOrgTeam[]; members: DenOrgMember[] };
@@ -216,7 +218,7 @@ function DeletedLimitNote({ orgId, orgSlug, policy }: { orgId: string; orgSlug: 
   return (
     <div role="status" className="flex flex-wrap items-center gap-2 text-[13px] text-gray-700" data-testid="gateway-limit-deleted">
       <span className="h-1.5 w-1.5 rounded-full bg-gray-400" aria-hidden="true" />
-      <span>Deleted {policy.name}. It no longer applies to anyone.</span>
+      <span>Removed {policy.name}. It no longer applies to anyone.</span>
       <DenButton variant="ghost" size="sm" className="h-auto px-1 py-0 text-[13px] underline underline-offset-4" loading={mutation.isPending}
         data-testid="gateway-limit-undo"
         onClick={() => mutation.mutate({ type: "restore", policy: { id: policy.id, revision: policy.revision } }, { onSuccess: () => router.replace(getAiGatewayLimitsRoute(orgSlug)) })}>
@@ -235,13 +237,6 @@ function PersonLookup({ orgId, orgSlug }: { orgId: string; orgSlug: OrgSlug }) {
       <MemberSearch orgId={orgId} label="Find a person" onSelect={(member) => router.push(getAiGatewayPersonRoute(orgSlug, member.id))} />
     </section>
   );
-}
-
-/** Name of the provider a limit is for, or "All providers" for a default limit. */
-export function providerLimitLabel(providerId: string | null | undefined, providers: { id: string; name: string }[] | undefined): string {
-  if (!providerId) return "All providers";
-  if (!providers) return "One provider";
-  return providers.find((provider) => provider.id === providerId)?.name ?? "Removed provider";
 }
 
 /** One spend limit: who it applies to, its provider, amounts, what happens at the limit, and Edit. */
@@ -263,7 +258,7 @@ export function GatewayLimitRow({ policy, orgSlug, teams, members, providerColum
       </span>
       {providerColumn ? (
         <span className="flex w-36 shrink-0 flex-col" data-testid="gateway-limit-provider-label">
-          <span className="truncate text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers)}</span>
+          <span className="text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers, providerLimits)}</span>
           {policy.providerId && !providerLimits ? <span className="text-[11px] text-gray-500">Not enforced while off</span> : null}
         </span>
       ) : null}

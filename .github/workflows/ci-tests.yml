@@ -84,6 +84,8 @@ jobs:
         uses: ./.github/actions/setup-tests
       - name: Check Den web hook order
         run: pnpm --filter @openwork-ee/den-web lint
+      - name: Build the shared headless protocol
+        run: pnpm --filter @openwork-ee/headless-protocol build
       - name: Typecheck the headless runner
         run: pnpm --filter @openwork-ee/headless-runner typecheck
       - name: Test shared headless computer and configuration
@@ -96,6 +98,8 @@ jobs:
         run: |
           pnpm --filter @openwork-ee/headless-runner test:conversation
           pnpm --filter @openwork-ee/headless-runner test:transfer
+      - name: Test Workbot sign-in and adoption boundary
+        run: pnpm --filter @openwork-ee/workbot test:auth
       - name: Test opt-in error reporting (runner and Workbot)
         run: |
           pnpm --filter @openwork-ee/headless-runner test:error-reporting
@@ -115,6 +119,8 @@ jobs:
           pnpm --filter @openwork/computer-use build
           node --test apps/desktop/electron/computer-control.test.mjs apps/desktop/electron/computer-remote.test.mjs packages/computer-use/cloud.test.mjs apps/desktop/electron/computer-program.test.mjs
           pnpm --dir evals exec vitest run --config vitest.config.ts --project pr ../apps/server/test/computer-use-tools.vitest.test.ts ../apps/server/test/cloud-computer-lifecycle.vitest.test.ts
+      - name: Test default-setup CodeQL coverage accounting
+        run: node --test scripts/ci/check-codeql-results.test.mjs
       - name: Test packaged smoke engine diagnosis and kept logs
         run: |
           node --test apps/desktop/test/engine-diagnosis.test.mjs

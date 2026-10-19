@@ -157,11 +157,12 @@ Nothing on celld changes, so pointing the URLs back is the rollback.
 | Variable | Default | |
 |---|---|---|
 | `HEADLESS_API_TOKEN` | required | Service token for callers, ≥32 chars |
-| `HEADLESS_MODEL_PROTOCOL` | required | `anthropic` or `openai` |
+| `HEADLESS_MODEL_PROTOCOL` | required | `anthropic`, `openai` (Chat Completions) or `openai-responses` (Responses API; for OpenAI models that only take tools there) |
 | `HEADLESS_MODEL_BASE_URL` | required | e.g. `https://gateway.openworklabs.com/api/v1/providers/ipr_…` |
 | `HEADLESS_MODEL` | required | Default model alias (`gwm_…`) |
 | `HEADLESS_MODEL_API_KEY` | unset | Fallback key for single-tenant use; callers normally send their own |
-| `HEADLESS_MCP_URL` | unset | e.g. `https://api.openworklabs.com/mcp/agent` |
+| `HEADLESS_MCP_URL` | unset | e.g. `https://api.openworklabs.com/mcp/agent`; never used as a telemetry destination |
+| `HEADLESS_WORKBOT_DEN_API_URL` | unset | Explicit trusted Den API origin for Workbot telemetry (both Node and cells). HTTPS; loopback HTTP for development only. No credentials/path/query/fragment; redirects refused. Unset disables runner admission/outcome telemetry. See [adoption deployment checks](../../../docs/workbot-adoption.md#deploy-before-the-rollout) |
 | `HEADLESS_MCP_TOOL_ALLOWLIST` | all | Comma-separated MCP tool names |
 | `HEADLESS_DB_PATH` | `./data/headless.sqlite` | Put it on a persistent volume |
 | `HEADLESS_PORT` | `8795` | |

@@ -1,10 +1,12 @@
 import { timingSafeEqual } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { routePath } from "hono/route"
+import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { loadConfig, type Config } from "../config.js"
 import { createErrorReporter, type ErrorReporter } from "../error-reporting.js"
 import { createRuntime, gatewayModelCatalog } from "../runtime.js"
+import { createModelProbe, modelProbeResponse, type ModelProbe } from "../model-probe.js"
 import { Store } from "../store.js"
 import { durableObjectSql } from "./sql.js"
 
@@ -146,6 +148,16 @@ router.get("/v1/models", async (c) => {
     catalogs.set(config, catalog)
   }
   return c.json(await catalog())
+})
+const modelProbes = new WeakMap<Config, ModelProbe>()
+router.post("/v1/model-probe", bodyLimit({ maxSize: 512 }), (c) => {
+  const config = configFor(c.env)
+  let probe = modelProbes.get(config)
+  if (!probe) {
+    probe = createModelProbe(config, (input, init) => fetch(input, init))
+    modelProbes.set(config, probe)
+  }
+  return modelProbeResponse(c.req.raw, probe)
 })
 // Conversations only leave cells: they are imported into a Node runner (README: Move conversations to Node).
 router.post("/v1/sessions/:id/import", (c) => c.json({ error: "import_not_supported" }, 405))

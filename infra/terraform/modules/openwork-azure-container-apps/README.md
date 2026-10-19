@@ -28,7 +28,14 @@ Workbot, runners, Slack and OpenWork Web are not deployed. Existing product flag
 
 ## Support level
 
-**Experimental.** Pin the module to a reviewed commit. Custom domains, private registries, Key Vault references and bring-your-own infrastructure have mocked coverage, not new live certification. This module does not implement application migration locking, interruption markers or schema compatibility manifests.
+> OpenWork's Terraform modules are **beta**. If you hit an issue:
+> - **Customers with a support agreement:** contact your OpenWork team through your usual support channel.
+> - **Everyone else:** [open a GitHub issue](https://github.com/different-ai/openwork/issues/new/choose).
+> - **Security issues:** report them privately ([SECURITY.md](https://github.com/different-ai/openwork/blob/dev/SECURITY.md)).
+
+The module is available on `dev` in **beta**. Follow the shared
+[module contract](../../MODULE_CONTRACT.md) and pin the module to a reviewed commit.
+Custom domains, private registries, Key Vault references and bring-your-own infrastructure have mocked coverage, not new live certification. This module does not implement application migration locking, interruption markers or schema compatibility manifests.
 
 The migration **starts natively**, but terminal completion observation currently requires Python 3 and an already authenticated Azure CLI on the Terraform runner. AzAPI's ARM start long-running operation completes on acceptance, not migration success. A read-only `external` data source polls the returned execution's ARM status, bounded by the Job deadline plus 120 seconds, failing closed on errors. It never starts, retries or stops a Job. This is an explicit portability limitation, not a claim of a provider-native terminal waiter; replace it when AzureRM/AzAPI provides that waiter. Automation runners must support Azure CLI authentication as well as provider authentication.
 

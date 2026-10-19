@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto"
+import { telemetryFailureCode, telemetryModelId } from "@openwork-ee/headless-protocol"
 import type { ErrorReporter } from "./error-reporting.js"
+import { isWorkbotTurn, type WorkbotTurnFact } from "./workbot-telemetry.js"
 import type { SessionEvents } from "./events.js"
 import { FILE_TOOLS, FILE_TOOL_NAMES, runFileTool } from "./files.js"
 import type { McpConnector, ToolSession } from "./mcp.js"
@@ -110,6 +112,8 @@ export type RunnerOptions = {
   computer?: SessionComputer
   /** Turns that end `failed` are reported here (codes and ids only); without it, nothing is reported. */
   errors?: ErrorReporter
+  /** Server-side adoption outcomes, even when no browser is watching. Never a turn dependency. */
+  workbotTelemetry?: (fact: WorkbotTurnFact, token: string) => Promise<void>
   now?: () => number
   /** Waits between repeated steps; tests pass a fake. Rejects with the signal's reason when the turn is stopped. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>
@@ -330,7 +334,28 @@ export class Runner {
   /** Conversations being named right now (see nameConversation), so one answer names a conversation once. */
   private readonly naming = new Set<string>()
 
+  private readonly pendingTelemetry = new Set<Promise<void>>()
+
   constructor(private readonly options: RunnerOptions) {}
+
+  private reportWorkbot(fact: WorkbotTurnFact, token: string | undefined, modelApiKey?: string) {
+    if (!token || !this.options.workbotTelemetry || !isWorkbotTurn(fact.sessionId, fact.messageId)) return
+    const privateValues = [this.options.defaultModelApiKey, modelApiKey, token].filter((value): value is string => typeof value === "string")
+    const model = telemetryModelId(fact.model, privateValues)
+    const safeFact: WorkbotTurnFact = fact.event === "accepted" ? { ...fact, model: model ?? "unreported" }
+      : { ...fact, model: model ?? "unreported", modelSource: model ? fact.modelSource : "configured" }
+    const report = Promise.resolve().then(() => this.options.workbotTelemetry?.(safeFact, token)).catch(() => undefined).then(() => undefined)
+    this.pendingTelemetry.add(report)
+    void report.finally(() => this.pendingTelemetry.delete(report))
+  }
+
+  private reportWorkbotOutcome(turn: Turn | null, token: string | undefined, answeredModel?: string, modelApiKey?: string) {
+    if (!turn || !["completed", "failed", "aborted"].includes(turn.status) || (turn.messageId !== "wb_hello" && turn.status !== "completed")) return
+    const event = turn.status === "completed" ? "completed" : turn.status === "aborted" ? "aborted" : "failed"
+    this.reportWorkbot({ event, sessionId: turn.sessionId, messageId: turn.messageId, timestamp: turn.updatedAt, attempt: turn.createdAt,
+      model: answeredModel ?? turn.model ?? this.options.defaultModel, modelSource: answeredModel ? "response" : "configured",
+      errorCode: turn.error ? telemetryFailureCode(turn.error) : null }, token, modelApiKey)
+  }
 
   /**
    * Names a conversation that asked for it (Session.autoTitle) once it has an answer: a few words from the model,
@@ -395,6 +420,9 @@ export class Runner {
     }
     const turn = store.getTurn(input.sessionId, input.messageId)
     if (!turn) throw new Error("turn_missing_after_admission")
+    if (state === "accepted") this.reportWorkbot({ event: "accepted", sessionId: input.sessionId, messageId: input.messageId,
+      timestamp: turn.createdAt, model: turn.model ?? this.options.defaultModel, attachmentCount: input.attachments?.length ?? 0,
+      hasContext: input.messageId !== "wb_hello" && input.credentials.readOnly === true }, input.credentials.mcpToken, input.credentials.modelApiKey)
     if (input.interrupt && turn.kind === undefined) this.supersede(input.sessionId, input.messageId)
     // Resuming a task or a report keeps it in its lane.
     this.enqueue({ sessionId: input.sessionId, messageId: input.messageId, kind: turn.kind ?? "message" }, { credentials: input.credentials, at: Date.now() })
@@ -424,8 +452,10 @@ export class Runner {
       const job = this.queue[index]
       if (!matches(job)) continue
       this.queue.splice(index, 1)
+      const credentials = this.credentials.get(`${job.sessionId}:${job.messageId}`)?.credentials
       this.credentials.delete(`${job.sessionId}:${job.messageId}`)
       this.options.store.setTurnStatus(job.sessionId, job.messageId, "aborted")
+      this.reportWorkbotOutcome(this.options.store.getTurn(job.sessionId, job.messageId), credentials?.mcpToken, undefined, credentials?.modelApiKey)
       stopped = true
     }
     // A task paused for fresh credentials is in neither place; stopping it means it won't be resumed.
@@ -453,6 +483,7 @@ export class Runner {
   /** Resolves when every queued and running turn has settled. */
   async idle() {
     while (this.running.size || this.queue.length) await Promise.all([...this.running])
+    await Promise.all([...this.pendingTelemetry])
   }
 
   /** Stops accepting work and interrupts in-flight turns so they can be resumed later. */
@@ -462,6 +493,7 @@ export class Runner {
     }
     for (const { controller } of this.controllers.values()) controller.abort(new Error("shutdown"))
     await Promise.all([...this.running])
+    await Promise.all([...this.pendingTelemetry])
   }
 
   private runningTasks(sessionId: string) {
@@ -563,6 +595,7 @@ export class Runner {
     const issuedAt = held?.at ?? startedAt
     const credentialsAt = inherited ? issuedAt : startedAt
     let steps = 0
+    let answeredModel: string | undefined
     let toolCalls = 0
     let lastStep = ""
     let identicalSteps = 0
@@ -749,6 +782,7 @@ export class Runner {
         } finally {
           if (running) running.onSupersede = undefined
         }
+        answeredModel = result.model
         modelStep += 1
         steps += 1
         toolCalls += result.toolCalls.length
@@ -862,6 +896,7 @@ export class Runner {
         console.error("[headless-runner] turn failed", { sessionId, messageId, error: error instanceof Error ? error.message : "unknown" })
       }
     } finally {
+      this.reportWorkbotOutcome(store.getTurn(sessionId, messageId), credentials.mcpToken, answeredModel, credentials.modelApiKey)
       clearTimeout(timeout)
       await tools?.close()
       // A no-op for conversations whose computer never started; pauses one that did, even if since switched off.

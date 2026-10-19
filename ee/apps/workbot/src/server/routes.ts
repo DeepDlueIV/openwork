@@ -14,7 +14,7 @@ import type { Context, Hono, MiddlewareHandler } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import { streamSSE } from "hono/streaming"
 import { z } from "zod"
-import { workbotContextPrompt, workbotViewContextSchema } from "@openwork/types/workbot-context"
+import { workbotContextPrompt, workbotViewContextSchema, WORKBOT_MAX_MESSAGE_CHARS } from "@openwork/types/workbot-context"
 import type { AppEnv, Member } from "./auth.js"
 import type { Config } from "./config.js"
 import type { Den } from "./den.js"
@@ -28,7 +28,7 @@ import { observedRunnerFetch, reportError } from "./error-reporting.js"
 
 const fileIdSchema = z.string().regex(/^fl_[a-f0-9]{32}$/)
 /** The runner's own limit on one message; anything longer goes as a file. */
-const MAX_MESSAGE_CHARS = 100_000
+const MAX_MESSAGE_CHARS = WORKBOT_MAX_MESSAGE_CHARS
 const sendSchema = z
   .object({
     id: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
@@ -98,6 +98,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       desktop: member.den.computer,
       canSchedule: async () => member.den.canSchedule,
       model: async () => member.den.model,
+      verifyModel: member.den.verifyModel,
       workspaceAssistant: async () => member.den.workspaceAssistant,
     })
 
@@ -136,10 +137,13 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       email: who.user.email,
       organizationName: who.organization.name,
       enabled: who.enabled,
+      firstRun: who.firstRun === true,
+      canEnableWorkbot: who.canEnableWorkbot === true,
       calendar: who.enabled && who.calendar === true,
       documents: who.enabled && who.documents === true,
       computer: who.enabled && who.computer,
       workspaceAssistant: who.enabled && who.workspaceAssistant,
+      teamLinks: who.enabled ? who.teamLinks : undefined,
       canSchedule: who.enabled && who.canSchedule,
       sideChats: who.enabled && who.sideChats,
       denUrl: config.denWebUrl ?? (await den.webUrl().catch(() => null)),
@@ -272,12 +276,20 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     }
   })
 
-  /** The everyday apps to connect on the welcome screen; connecting happens in Den, in a new tab. */
+  /** Provider consent starts server-to-server; browser requests keep Workbot's same-origin/CSRF guard. */
+  app.post("/v1/workbot/connections/:connectionId/connect/start", bodyLimit({ maxSize: 4096 }), async (c) => {
+    if (!enabled(c)) return c.json({ error: "workbot_not_enabled" }, 409)
+    const member = c.get("member")
+    const { status, payload } = await den.connect(member.accessToken, c.req.param("connectionId"), await c.req.json().catch(() => null))
+    return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
+  })
+
+  /** The everyday apps to connect on the welcome screen and workspace recovery actions. */
   app.get("/v1/workbot/connections", async (c) => {
     if (!enabled(c)) return c.json({ error: "workbot_not_enabled" }, 409)
     const member = c.get("member")
     const connections = await den.connections(member.accessToken).catch(() => null)
-    if (!connections) return c.json({ connections: [] })
+    if (!connections) return c.json({ error: "connections_unavailable", message: "Couldn't verify your connections. Try again." }, 502)
     const denWeb = config.denWebUrl ?? (await den.webUrl().catch(() => null))
     return c.json({
       connections: connections.map((connection) => ({
@@ -317,6 +329,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     if (retryAfter !== null) return c.json({ error: "rate_limited" as const, retryAfter }, 429)
     try {
       const result = await workbotFor(member).send(actorOf(member), { ...body.data, chat: scope.chat })
+      if (!result.ok && result.code === "message_too_long") return c.json(messageTooLong, 400)
       if (!result.ok) return c.json({ error: result.code }, result.code === "unknown_file" ? 400 : 429)
       return c.json({ ok: true as const }, 202)
     } catch (error) {
@@ -374,7 +387,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     }
   })
 
-  /** Edits one of the person's messages: what came after it is replaced by Workbot's answer to the edit. */
+  /** Appends a correction with an authoritative reference to the original message; earlier turns stay. */
   app.post("/v1/workbot/messages/:id/edit", async (c) => {
     const body = editSchema.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return c.json(tooLong(body.error) ? messageTooLong : { error: "invalid_request" }, 400)
@@ -389,8 +402,9 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     if (retryAfter !== null) return c.json({ error: "rate_limited" as const, retryAfter }, 429)
     try {
       const result = await workbotFor(member).editMessage(actorOf(member), { id: c.req.param("id"), ...body.data, chat: scope.chat })
+      if (!result.ok && result.code === "message_too_long") return c.json(messageTooLong, 400)
       if (!result.ok) {
-        const status = result.code === "busy" ? 409 : result.code === "unknown_message" ? 404 : result.code === "unknown_file" ? 400 : 429
+        const status = result.code === "unknown_message" ? 404 : result.code === "unknown_file" ? 400 : 429
         return c.json({ error: result.code }, status)
       }
       return c.json({ ok: true as const }, 202)

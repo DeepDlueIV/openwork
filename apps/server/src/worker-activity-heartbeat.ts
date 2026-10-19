@@ -30,6 +30,16 @@ export type WorkerActivityHeartbeatPayload = {
   openSessionCount: number;
 };
 
+export type EngineForcePolicy = { upgrade: boolean };
+
+/** Missing policy means an older Den, not an instruction to clear local policy. */
+export function readEngineForcePolicy(response: unknown): EngineForcePolicy | undefined {
+  if (!isRecord(response) || !isRecord(response.enginePolicy)) return undefined;
+  const policy = response.enginePolicy;
+  if (typeof policy.upgrade !== "boolean") return undefined;
+  return { upgrade: policy.upgrade };
+}
+
 type HeartbeatEnv = Record<string, string | undefined>;
 type HeartbeatFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -120,6 +130,7 @@ export async function postWorkerActivityHeartbeat(input: {
   sessions: readonly unknown[];
   fetchImpl?: HeartbeatFetch;
   now?: () => number;
+  onEnginePolicy?: (policy: EngineForcePolicy) => void | Promise<void>;
 }): Promise<WorkerActivityHeartbeatPayload | null> {
   if (!input.config.enabled) return null;
 
@@ -139,6 +150,11 @@ export async function postWorkerActivityHeartbeat(input: {
   });
 
   if (!response.ok) throw new Error(`heartbeat_failed:${response.status}`);
+  // Older Dens may return an empty body. An explicit false clears forced
+  // upgrade policy; a missing policy leaves bootstrap flags unchanged.
+  const body: unknown = await response.json().catch(() => undefined);
+  const policy = readEngineForcePolicy(body);
+  if (policy) await input.onEnginePolicy?.(policy);
   return payload;
 }
 
@@ -165,6 +181,7 @@ export function startWorkerActivityHeartbeat(
     fetchImpl?: HeartbeatFetch;
     listSessions?: () => Promise<readonly unknown[]>;
     now?: () => number;
+    onEnginePolicy?: (policy: EngineForcePolicy) => void | Promise<void>;
   },
 ): WorkerActivityHeartbeatHandle | null {
   const heartbeatConfig = resolveWorkerActivityHeartbeatConfig(options?.env);
@@ -177,20 +194,26 @@ export function startWorkerActivityHeartbeat(
   });
 
   const listSessions = options?.listSessions ?? (() => listOpenSessions(config));
-  const runHeartbeat = () => {
-    void listSessions()
+  let inFlight: Promise<void> | undefined;
+  const runHeartbeat = (): Promise<void> => {
+    if (inFlight) return inFlight;
+    inFlight = Promise.resolve().then(listSessions)
       .then((sessions) => postWorkerActivityHeartbeat({
         config: heartbeatConfig,
         sessions,
         fetchImpl: options?.fetchImpl,
         now: options?.now,
+        onEnginePolicy: options?.onEnginePolicy,
       }))
+      .then(() => undefined)
       .catch((error) => {
         logger.log("warn", "Worker activity heartbeat failed", { error: errorMessage(error) });
-      });
+      })
+      .finally(() => { inFlight = undefined; });
+    return inFlight;
   };
 
-  runHeartbeat();
-  const interval = setInterval(runHeartbeat, heartbeatConfig.intervalMs);
+  void runHeartbeat();
+  const interval = setInterval(() => void runHeartbeat(), heartbeatConfig.intervalMs);
   return { stop: () => clearInterval(interval) };
 }

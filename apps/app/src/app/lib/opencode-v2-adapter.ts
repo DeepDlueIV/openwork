@@ -1900,7 +1900,7 @@ function translateV2Events(
   fetchSession: (sessionID: string, signal: AbortSignal) => Promise<Session | null>,
   taskSessions: TaskSessionAssociations,
   directory?: string,
-  onCatalogChanged?: (directory: string | undefined) => void,
+  onCatalogChanged?: (directory: string | undefined, reason?: "native") => void,
 ): AsyncGenerator<OpencodeEvent> {
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
@@ -2003,7 +2003,15 @@ function translateV2Events(
             continue;
           }
           const eventDirectory = isRecord(event) ? readString(readRecord(event, "location") ?? {}, "directory") : undefined;
+          // Native catalog changes may be global. Consumers only act on
+          // these new notifications when the server confirms live ownership.
+          if (isRecord(event) && (event.type === "provider.updated" || event.type === "model.updated")) {
+            if (directory && eventDirectory && normalizeDirectoryPath(directory) !== normalizeDirectoryPath(eventDirectory)) continue;
+            onCatalogChanged?.(eventDirectory ?? directory, "native");
+            continue;
+          }
           if (directory && (!eventDirectory || normalizeDirectoryPath(directory) !== normalizeDirectoryPath(eventDirectory))) continue;
+          // Preserve the legacy catalog.updated filtering and refresh path.
           if (isRecord(event) && event.type === "catalog.updated") {
             onCatalogChanged?.(eventDirectory);
             continue;
@@ -2860,11 +2868,14 @@ export function createClientV2(
           Object.assign(error, { status: response.status, response });
           throw error;
         }
+        // V2 SSE is volatile and has no replay cursor. A reconnect can miss
+        // any number of catalog mutations, so reconcile after every open.
+        dispatchProviderCatalogChanged({ baseUrl, directory, reason: "reconnect" });
         return {
           stream: translateV2Events(response, options?.signal, async (sessionID, signal) => {
             const result = await request("GET", `/api/session/${encodeURIComponent(sessionID)}`, undefined, signal);
             return result.response.ok ? mapV2Session(result.payload, undefined) : null;
-          }, taskSessions, directory, (eventDirectory) => dispatchProviderCatalogChanged({ baseUrl, directory: eventDirectory ?? directory })),
+          }, taskSessions, directory, (eventDirectory, reason) => dispatchProviderCatalogChanged({ baseUrl, directory: eventDirectory ?? directory, ...(reason ? { reason } : {}) })),
         };
       },
     },

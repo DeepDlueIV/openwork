@@ -1,9 +1,11 @@
-import { readWorkbotModel, withWorkbotModel, workbotSettingsInputSchema, workbotSettingsSchema } from "@openwork/types/den/workbot-settings"
+import { readWorkbotModel, withWorkbotModel, workbotModelTestSchema, workbotSettingsInputSchema, workbotSettingsSchema } from "@openwork/types/den/workbot-settings"
 import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
-import { requireFeature } from "../../features.js"
-import { jsonValidator, orgMemberRoute, requireOrgPermission } from "../../middleware/index.js"
+import { organizationFeatureEnabled, requireFeature } from "../../features.js"
+import { jsonValidator, orgMemberRoute, requireOrgPermission, userSessionRoute } from "../../middleware/index.js"
+import { checkRateLimit } from "../../utils/rate-limit.js"
+import { testOrganizationWorkbotModel } from "../../workbot/model-test.js"
 import { forbiddenSchema, invalidRequestSchema, jsonResponse, unauthorizedSchema } from "../../openapi.js"
 import { updateOrganizationMetadata } from "../../organization-metadata.js"
 import {
@@ -13,7 +15,7 @@ import {
   readOrganizationDefaultModel,
   workbotSettingsView,
 } from "../../workbot/model.js"
-import type { OrgRouteVariables } from "./shared.js"
+import { memberPermissionsForRequest, type OrgRouteVariables } from "./shared.js"
 
 const workbotSettingsDocumentSchema = workbotSettingsSchema.meta({ ref: "WorkbotSettings" })
 const workbotSettingsInputDocumentSchema = workbotSettingsInputSchema.meta({ ref: "WorkbotSettingsInput" })
@@ -28,33 +30,78 @@ export const RUNNER_UNAVAILABLE_MESSAGE = "Workbot's models can't be checked rig
 
 const notFound = jsonResponse("The organization was not found, or Workbot is off.", featureDisabledSchema)
 
+const requireWorkbotSettingsRead: ReturnType<typeof requireOrgPermission> = async (c, next) => {
+  if ((await memberPermissionsForRequest(c))?.has("inference.manage")) return next()
+  return requireOrgPermission("inference.view")(c, next)
+}
+
 /**
  * Manage › Workbot: the organization's default model for its cloud agents (Workbot, the Slack assistant, and cloud
  * Automations set to the cloud default). Admins choose it from the models the headless runner serves.
  */
 export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
+  app.post(
+    "/v1/org/workbot-settings/test-default-model",
+    describeRoute({
+      tags: ["Organizations"],
+      summary: "Test Workbot's default model",
+      description: "Runs one bounded synthetic completion on the server-resolved organization default with the runner's configured key. No member content, tools, files, MCP access or conversation is used. May consume paid inference. Returns only status, a safe error code and requested/provider-reported model IDs. Requires a genuine user session, recent sign-in, Manage OpenWork Models, Workbot and workbotLunaDefault. Limited durably to three checks per organization and three per member in a ten-minute inactivity-reset window. Never exposed to MCP.",
+      ...{ "x-mcp": false },
+      responses: {
+        200: jsonResponse("Synthetic completion result; catalog availability alone never means answered.", workbotModelTestSchema.meta({ ref: "WorkbotModelTest" })),
+        400: jsonResponse("Only an empty request body is accepted.", invalidRequestSchema),
+        401: jsonResponse("Authentication required.", unauthorizedSchema),
+        403: jsonResponse("A genuine recent user sign-in and Manage OpenWork Models are required.", forbiddenSchema),
+        404: notFound,
+        429: jsonResponse("The durable diagnostic request limit was reached.", z.object({ error: z.literal("rate_limited"), retryAfterSeconds: z.number() })),
+      },
+    }),
+    orgMemberRoute(),
+    requireFeature("workbot"),
+    requireFeature("workbotLunaDefault"),
+    userSessionRoute(),
+    requireOrgPermission("inference.manage"),
+    jsonValidator(z.strictObject({})),
+    async (c) => {
+      c.header("Cache-Control", "no-store")
+      const context = c.get("organizationContext")
+      const windowMs = 10 * 60_000
+      for (const key of [`workbot-model-test:org:${context.organization.id}`, `workbot-model-test:member:${context.currentMember.id}`]) {
+        const retryAfterSeconds = await checkRateLimit(key, 3, windowMs, Date.now())
+        if (retryAfterSeconds !== null) {
+          c.header("Retry-After", String(retryAfterSeconds))
+          return c.json({ error: "rate_limited", retryAfterSeconds }, 429)
+        }
+      }
+      return c.json(await testOrganizationWorkbotModel(context.organization.id))
+    },
+  )
+
   app.get(
     "/v1/org/workbot-settings",
     describeRoute({
       tags: ["Organizations"],
       summary: "Get Workbot settings",
       description:
-        "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires the View OpenWork Models settings permission and Workbot.",
+        "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. With workbotLunaDefault on, Workbot's null choice means explicit GPT-6 Luna, defaultModel identifies that default and defaultReadiness reports authenticated catalog availability; Slack and Automations keep their existing default policy. Requires View OpenWork Models settings or Manage OpenWork Models, and Workbot.",
       responses: {
         200: jsonResponse("Workbot settings returned.", workbotSettingsDocumentSchema),
         401: jsonResponse("Authentication required.", unauthorizedSchema),
-        403: jsonResponse("The caller lacks the View OpenWork Models settings permission.", forbiddenSchema),
+        403: jsonResponse("The caller lacks both View OpenWork Models settings and Manage OpenWork Models.", forbiddenSchema),
         404: notFound,
       },
     }),
     orgMemberRoute(),
     requireFeature("workbot"),
-    requireOrgPermission("inference.view"),
+    requireWorkbotSettingsRead,
     async (c) => {
       c.header("Cache-Control", "no-store")
       const organizationId = c.get("organizationContext").organization.id
       const chosen = await readOrganizationDefaultModel(organizationId)
-      return c.json(workbotSettingsView(chosen, await headlessModelCatalog()))
+      const lunaDefault = await organizationFeatureEnabled(organizationId, "workbotLunaDefault")
+      // An admin's refresh checks current readiness rather than reusing Den's per-turn cache.
+      if (lunaDefault) forgetHeadlessModelCatalog()
+      return c.json(workbotSettingsView(chosen, await headlessModelCatalog(), lunaDefault))
     },
   )
 
@@ -64,7 +111,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
       tags: ["Organizations"],
       summary: "Set Workbot's default model",
       description:
-        "Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.",
+        "Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default, except Workbot uses explicit GPT-6 Luna while workbotLunaDefault is on. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.",
       responses: {
         200: jsonResponse("Workbot settings saved.", workbotSettingsDocumentSchema),
         400: jsonResponse("The model is not one the runner serves, or the request was invalid.", z.union([unknownModelSchema, invalidRequestSchema])),
@@ -85,11 +132,12 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
       // Checked against a fresh catalog, so a model added to the runner a moment ago can be chosen.
       if (model !== null) forgetHeadlessModelCatalog()
       const catalog = await headlessModelCatalog()
-      const choice = checkWorkbotModelChoice(model, catalog)
+      const lunaDefault = await organizationFeatureEnabled(organizationId, "workbotLunaDefault")
+      const choice = checkWorkbotModelChoice(model, catalog, lunaDefault)
       if (choice === "runner_unavailable") return c.json({ error: "workbot_runner_unavailable" as const, message: RUNNER_UNAVAILABLE_MESSAGE }, 503)
       if (choice === "unknown_model") return c.json({ error: "unknown_model" as const, message: UNKNOWN_MODEL_MESSAGE }, 400)
       const metadata = await updateOrganizationMetadata(organizationId, (current) => withWorkbotModel(current, model))
-      return c.json(workbotSettingsView(readWorkbotModel(metadata), catalog))
+      return c.json(workbotSettingsView(readWorkbotModel(metadata), catalog, lunaDefault))
     },
   )
 }

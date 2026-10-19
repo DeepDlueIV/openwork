@@ -7,7 +7,8 @@ import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { nativeOfficeFormats, officeFileTypeSchema, officeFormats, officeSessionSchema, officeStatusSchema } from "@openwork/documents/office-engine"
 import { createCollaboraService, officeTicketMatches, validateOfficePackage, officeBytes, OFFICE_TTL_SECONDS, type OfficeDraft } from "@openwork/documents/office-server"
 import { documentIdSchema } from "@openwork/documents/model"
-import { configuredOfficeStore } from "../../documents-office-store.js"
+import { OFFICE_EDITOR_STARTING, placeOfficeEditor } from "../../documents-office-editor.js"
+import { configuredOfficeStore, holdOfficeWorker, releaseOfficeWorker } from "../../documents-office-store.js"
 import { env } from "../../env.js"
 import { getOrganizationContextForUser } from "../../orgs.js"
 import { beginAuditRequest } from "../../audit/request-capture.js"
@@ -32,21 +33,24 @@ function validOrigin(value: string) {
   if (url.username || url.password || url.pathname !== "/" || url.search || url.hash || !(url.protocol === "https:" || (url.protocol === "http:" && ["127.0.0.1", "localhost", "host.docker.internal"].includes(url.hostname)))) throw new Error("Documents requires HTTPS service origins (HTTP is limited to local development).")
   return url.origin
 }
-function configuredService() {
+function configuredOrigins() {
   const config = env.documentsOffice
-  if (!config.serverUrl || !config.hostOrigin || !config.callbackBaseUrl) return null
-  return createCollaboraService({ serverUrl: validOrigin(config.serverUrl), callbackBaseUrl: validOrigin(config.callbackBaseUrl), hostOrigin: validOrigin(config.hostOrigin) })
+  if (!config.mode || !config.hostOrigin || !config.callbackBaseUrl) return null
+  return { callbackBaseUrl: validOrigin(config.callbackBaseUrl), hostOrigin: validOrigin(config.hostOrigin) }
 }
 
 export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRouteVariables }>(routeApp: Hono<T>, deps: GoogleWorkspaceActionDependencies) {
   const app = new Hono<{ Variables: OrgRouteVariables }>()
   const store = configuredOfficeStore()
-  const service = configuredService()
+  const origins = configuredOrigins()
+  // Each session keeps the editor it opened on: the operator's service or the member's Cloud worker.
+  const serviceFor = (serverUrl: string) => createCollaboraService({ serverUrl: validOrigin(serverUrl), ...origins! })
+  const draftEditor = (draft: OfficeDraft) => draft.editorUrl ?? env.documentsOffice.serverUrl
   const enabled = async (id: string) => await organizationFeatureEnabled(id, "workbotDocuments") && await organizationFeatureEnabled(id, "workbot")
   const guard: MiddlewareHandler<{ Variables: OrgRouteVariables }> = async (c, next) => {
     const context = c.get("organizationContext")
     if (!context || !await enabled(context.organization.id)) return c.json({ error: "feature_disabled", message: "Documents is off for this workspace." }, 403)
-    if (!store || !service) return c.json({ error: "office_not_configured", message: "Full document editing is not set up for this workspace. An administrator can enable the document editor. You can open this file in Drive." }, 503)
+    if (!store || !origins) return c.json({ error: "office_not_configured", message: "Full document editing is not set up for this workspace. An administrator can enable the document editor. You can open this file in Drive." }, 503)
     c.header("cache-control", "no-store")
     await next()
   }
@@ -55,6 +59,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     return describeRoute(options)
   }
   const failure = (c: GoogleContext, message: string) => c.json({ error: "office_unavailable", message }, 409)
+  const starting = (c: GoogleContext, message: string) => c.json({ error: "office_starting", message }, 503, { "retry-after": "5" })
   const selected = async (c: GoogleContext, connectionId?: string) => {
     const context = c.get("organizationContext")
     if (!context) throw new Error("Sign in to your workspace.")
@@ -86,9 +91,13 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
   }
 
   app.post(ROOT, description("openGoogleDriveOfficeEditor", "Open a document, spreadsheet or presentation editor", officeSessionSchema), orgMemberRoute(), guard, bodyLimit({ maxSize: 1024 }), paramValidator(params), async c => {
-    if (!store || !service) return failure(c, "The document editor is unavailable.")
+    if (!store || !origins) return failure(c, "The document editor is unavailable.")
     try {
       const { fileId } = c.req.valid("param"); const auth = await selected(c); if (!auth.ok) return auth.reply
+      const member = c.get("organizationContext")!
+      const placement = await placeOfficeEditor({ organizationId: member.organization.id, userId: member.currentMember.userId })
+      if (placement.status === "starting") return starting(c, placement.message)
+      if (placement.status === "unavailable") return failure(c, placement.message)
       const meta = await metadata(c, auth.deps, fileId); if (!meta.ok) return meta.reply
       const native = Object.hasOwn(nativeOfficeFormats, meta.file.mimeType) ? nativeOfficeFormats[meta.file.mimeType] : null
       const fileType = native ?? officeFileTypeSchema.options.find(type => officeFormats[type].mimeType === meta.file.mimeType)
@@ -105,9 +114,15 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
         fileId, revision: meta.file.version, name: native ? `${meta.file.name}.${fileType}` : meta.file.name, mimeType: officeFormats[fileType].mimeType, fileType,
         canEdit: canWrite && (native !== null || meta.file.capabilities?.canEdit === true), saveAsCopy: native !== null,
         expiresAt: Date.now() + OFFICE_TTL_SECONDS * 1000, ticket: randomBytes(32).toString("base64url"), source: Buffer.from(bytes).toString("base64"), draftVersion: 0,
+        ...(placement.workerId ? { editorUrl: placement.serverUrl, workerId: placement.workerId } : {}),
       }
+      // Ask the editor first: a worker that just woke may still be starting it.
+      let session: Awaited<ReturnType<ReturnType<typeof serviceFor>["session"]>>
+      try { session = await serviceFor(placement.serverUrl).session(draft) }
+      catch (error) { if (placement.workerId) return starting(c, OFFICE_EDITOR_STARTING); throw error }
       await store.lock(`member:${draft.organizationId}:${draft.memberId}`, () => store.put(draft))
-      return c.json(await service.session(draft))
+      if (draft.workerId) await holdOfficeWorker(draft.workerId, draft.id)
+      return c.json(session)
     } catch (error) { return failure(c, error instanceof Error ? error.message : "Couldn't open the full editor.") }
   })
 
@@ -160,6 +175,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     try {
       const input = c.req.valid("param"); const draft = await owned(c, input.sessionId, input.fileId)
       await store.lock(draft.id, () => store.remove(draft))
+      if (draft.workerId) await releaseOfficeWorker(draft.workerId, draft.id)
       return c.json({ ok: true })
     } catch { return failure(c, "This editing session is already closed or expired.") }
   })
@@ -167,7 +183,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
   const wopiDraft = async (c: Parameters<MiddlewareHandler<{ Variables: OrgRouteVariables }>>[0], write = false) => {
     const id = z.string().uuid().parse(c.req.param("sessionId")); const draft = await store?.get(id)
     const bearer = c.req.header("authorization")?.replace(/^Bearer /i, "")
-    if (!draft || !service || !officeTicketMatches(draft, c.req.query("access_token") ?? bearer) || !await serviceAuthorized(c, draft)) return null
+    if (!draft || !origins || !draftEditor(draft) || !officeTicketMatches(draft, c.req.query("access_token") ?? bearer) || !await serviceAuthorized(c, draft)) return null
     if (write) {
       const auth = await selected(c, draft.connectionId)
       if (!draft.canEdit || !auth.ok || !canWriteDriveDocument(auth.token.account.scopes, auth.token.enabledScopes)) return null
@@ -176,6 +192,8 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     }
     const blocked = await beginAuditRequest(c); if (blocked) throw blocked
     c.header("cache-control", "no-store"); c.header("x-content-type-options", "nosniff")
+    // Editor traffic (loads, autosaves, lock refreshes) keeps the member's worker awake.
+    if (draft.workerId) await holdOfficeWorker(draft.workerId, draft.id)
     return draft
   }
   // Storage/lock failures are temporary, not revoked credentials. A 403 makes
@@ -186,8 +204,8 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
   app.get(SERVICE, description("getOfficeFileInfo", "Read metadata for one temporary editor session", z.unknown(), []), tokenRoute, async c => {
     try {
       const draft = await wopiDraft(c)
-      if (!draft || !service) return c.json({ error: "not_found" }, 403)
-      return c.json(service.fileInfo(draft, Buffer.byteLength(draft.draft ?? draft.source, "base64")))
+      if (!draft) return c.json({ error: "not_found" }, 403)
+      return c.json(serviceFor(draftEditor(draft)!).fileInfo(draft, Buffer.byteLength(draft.draft ?? draft.source, "base64")))
     } catch (error) { return wopiFailure(c, error) }
   })
   app.get(`${SERVICE}/contents`, description("getOfficeFileContents", "Read one temporary editor file", z.unknown(), []), tokenRoute, async c => {
@@ -232,6 +250,8 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
         if (!requested || (lock && lock !== previous) || (action !== "LOCK" && lock !== requested)) return lockConflict(c, lock)
         current.wopiLock = action === "UNLOCK" ? undefined : { value: requested, expiresAt: Date.now() + 30 * 60 * 1000 }
         await store.put(current)
+        // The editor unlocks when it closes the file, including after the tab is gone.
+        if (action === "UNLOCK" && current.workerId) await releaseOfficeWorker(current.workerId, current.id)
         return c.json({ ok: true })
       })
     } catch (error) { return wopiFailure(c, error) }

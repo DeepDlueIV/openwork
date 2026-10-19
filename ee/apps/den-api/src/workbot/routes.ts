@@ -16,13 +16,22 @@ import { DEN_MCP_READ_SCOPE, DEN_MCP_WRITE_SCOPE } from "../mcp/scopes.js"
 import { jsonResponse, unauthorizedSchema } from "../openapi.js"
 import { getOrganizationFeatures, organizationFeatureEnabled } from "../features.js"
 import { jsonValidator, tokenRoute } from "../middleware/index.js"
+import { isPlatformAdminUserId } from "../middleware/admin.js"
 import { checkRateLimit } from "../utils/rate-limit.js"
 import { openworkYourConnectionsUrl } from "../mcp/connection-navigation.js"
 import { createInternalMcpPrincipalHeader } from "../session.js"
 import { getOrganizationContextForUser, listTeamsForMember } from "../orgs.js"
 import { listMemberUsableConnectionFacts } from "../routes/org/mcp-connections.js"
 import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
-import { organizationDefaultModel } from "./model.js"
+import { headlessModelCatalog, organizationDefaultModel } from "./model.js"
+import { explicitWorkbotModel } from "./readiness.js"
+import { recordWorkbotTelemetry, workbotTelemetrySchema, workbotTelemetryServiceAuthorized } from "./telemetry.js"
+import { resolvePermissionsForMember } from "../permissions/resolve.js"
+import { workbotOrigin } from "./config.js"
+import { workbotConnectRequestSchema } from "./connect-return-schema.js"
+import { resolvePublicApiBaseUrl } from "../capability-sources/generic-oauth.js"
+import { env } from "../env.js"
+import { getNativeOAuthProvider } from "../capability-sources/provider-registry.js"
 
 /**
  * What Den tells the Workbot app (ee/apps/workbot) about a signed-in person. Workbot calls these server-to-server
@@ -39,6 +48,9 @@ const sessionSchema = z.object({
   memberId: z.string(),
   /** A platform admin turned Workbot on for this organization. */
   enabled: z.boolean(),
+  /** First-sign-in recovery presentation; older deployments omit both fields. */
+  firstRun: z.boolean().optional(),
+  canEnableWorkbot: z.boolean().optional(),
   /** Workbot may set up recurring work: the organization runs Automations on the headless runner. */
   canSchedule: z.boolean(),
   computer: z.boolean().optional(),
@@ -47,6 +59,8 @@ const sessionSchema = z.object({
   /** Connected document browsing; off on older Dens. */
   documents: z.boolean().optional(),
   workspaceAssistant: z.boolean().optional(),
+  /** Team controls are hints only; Den's destination routes still enforce permissions. */
+  teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
   /** The person can start side chats next to their main chat (while Workbot is on). */
   sideChats: z.boolean(),
   /**
@@ -54,6 +68,8 @@ const sessionSchema = z.object({
    * omitted by older Dens, means the headless runner's default.
    */
   model: z.string().nullable().optional(),
+  /** Require an authenticated runner catalog before new turns; older Dens omit this. Reads remain available. */
+  verifyModel: z.boolean().optional(),
 }).meta({ ref: "WorkbotSession" })
 
 const runTokenSchema = z.object({ token: z.string(), expiresAt: z.iso.datetime() }).meta({ ref: "WorkbotRunToken" })
@@ -96,6 +112,8 @@ const workbotConnectionsSchema = z.object({
     app: z.enum(["gmail", "googleCalendar", "slack", "microsoft"]),
     ready: z.boolean(),
     connectUrl: z.string().nullable(),
+    nativeProviderKey: z.string().nullable().optional(),
+    connectMode: z.enum(["inline", "external", "admin"]).optional(),
   })),
 })
 
@@ -205,6 +223,39 @@ const providerNamesSchema = z.object({
 })
 
 export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono<T>) {
+  app.post(
+    "/v1/workbot/telemetry",
+    describeWorkbotRoute({
+      tags: ["Workbot"], operationId: "recordWorkbotTelemetry", "x-mcp": false,
+      summary: "Record content-free Workbot service facts",
+      description: "Server-to-server only: requires the runner service credential and a live member MCP token. Org and member are resolved from the token. No text or caller-supplied identity is accepted. Telemetry storage failure never fails a user flow.",
+      responses: { 204: { description: "Accepted, including best-effort storage failures." }, 401: jsonResponse("Service or member credentials are invalid.", unauthorizedSchema) },
+    }),
+    tokenRoute,
+    bodyLimit({ maxSize: 4096 }),
+    async (c, next) => {
+      if (!workbotTelemetryServiceAuthorized(c.req.header("x-openwork-workbot-service"))) return c.json({ error: "unauthorized" }, 401)
+      await next()
+    },
+    jsonValidator(workbotTelemetrySchema),
+    async (c) => {
+      const resolved = await resolve(c.req.raw.headers)
+      if (resolved instanceof Response) return resolved
+      const auditBlocked = await attributeWorkbot(c, resolved)
+      if (auditBlocked) return auditBlocked
+      const event = c.req.valid("json")
+      // Completion still records if the owner kills Workbot while the greeting is running.
+      await recordWorkbotTelemetry({ organizationId: resolved.organization.id, memberId: resolved.memberId }, event, async () => {
+        const organizationContext = await getOrganizationContextForUser({ userId: normalizeDenTypeId("user", resolved.principal.userId), organizationId: resolved.organization.id })
+        if (!organizationContext) return null
+        const memberTeams = await listTeamsForMember({ organizationId: resolved.organization.id, memberId: normalizeDenTypeId("member", resolved.memberId) })
+        const facts = await listMemberUsableConnectionFacts({ context: { organizationContext, memberTeams, session: null } })
+        return facts.filter((fact) => !fact.setupRequired && fact.connectedForMe && !fact.needsReconnect).length
+      })
+      return c.body(null, 204)
+    },
+  )
+
   app.get(
     "/v1/workbot/session",
     describeWorkbotRoute({
@@ -228,23 +279,39 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       const { organization, user, memberId } = resolved
       const canSchedule = (await cloudAutomationRuntime(organization.id).catch(() => "web")) === "headless"
       const features = await getOrganizationFeatures(organization.id)
-      // A failed read must not sign anyone out of Workbot: it answers on the runner's default instead.
-      const model = await organizationDefaultModel(organization.id, {
-        features: async () => features,
-        chosenModel: async () => readWorkbotModel(organization.metadata),
-      }).catch(() => null)
+      const permissions = features.workbot && resolved.scopes.has(DEN_MCP_READ_SCOPE)
+        ? await resolvePermissionsForMember({ organizationId: organization.id, memberId: normalizeDenTypeId("member", memberId) })
+        : null
+      const teamLinks = {
+        enabled: features.workbot && features.workbotTeamLinks,
+        settings: permissions?.has("inference.view") === true || permissions?.has("inference.manage") === true,
+        // Den's management list requires View all connections as well as the write permission.
+        apps: permissions?.has("connections.manage") === true && permissions.has("connections.view"),
+      }
+      const verifyModel = features.workbot && features.workbotLunaDefault
+      // Explicit routing applies only to Workbot. Slack and Automations retain their existing policy.
+      const model = verifyModel
+        ? explicitWorkbotModel(readWorkbotModel(organization.metadata), await headlessModelCatalog())
+        : await organizationDefaultModel(organization.id, {
+          features: async () => features,
+          chosenModel: async () => readWorkbotModel(organization.metadata),
+        }).catch(() => null)
       return c.json({
         user,
         organization: { id: organization.id, name: organization.name, brandAppName: readBrandAppName(organization.metadata) },
         memberId,
         enabled: features.workbot,
+        firstRun: features.workbotFirstRun,
+        canEnableWorkbot: features.workbotFirstRun && !features.workbot && await isPlatformAdminUserId(user.id),
         computer: features.workbot && features.computerUse && features.remoteComputers,
         canSchedule,
         calendar: features.workbot,
         documents: features.workbot && features.workbotDocuments,
         workspaceAssistant: features.workbot && features.workbotWorkspaceAssistant,
         sideChats: features.workbot,
+        teamLinks,
         model,
+        ...(verifyModel ? { verifyModel: true } : {}),
       })
     },
   )
@@ -275,15 +342,59 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       if (!organizationContext) return c.json({ connections: [] })
       const memberTeams = await listTeamsForMember({ organizationId: resolved.organization.id, memberId: normalizeDenTypeId("member", resolved.memberId) })
       const facts = await listMemberUsableConnectionFacts({ context: { organizationContext, memberTeams, session: null } })
+      const inline = Boolean(workbotOrigin()) && await organizationFeatureEnabled(resolved.organization.id, "workbotInlineConnect")
       const connections = facts.flatMap((fact) => {
         const app = everydayApp(fact)
         if (!app) return []
         // Set up by an admin but not finished there: not something the member can do anything about yet.
-        if (fact.setupRequired === true) return []
+        if (fact.setupRequired === true && !inline) return []
         const ready = fact.connectedForMe && !fact.needsReconnect
-        return [{ id: fact.id, name: fact.name, app, ready, connectUrl: ready ? null : openworkYourConnectionsUrl(fact.id) }]
+        const connectMode: "admin" | "inline" | "external" = fact.setupRequired === true ? "admin" : inline ? "inline" : "external"
+        return [{ id: fact.id, name: fact.name, app, ready, connectUrl: ready ? null : openworkYourConnectionsUrl(fact.id), nativeProviderKey: fact.nativeProviderKey, connectMode }]
       })
       return c.json({ connections })
+    },
+  )
+
+  app.post(
+    "/v1/workbot/connections/:connectionId/connect/start",
+    describeWorkbotRoute({
+      tags: ["Workbot"], operationId: "startWorkbotConnection", "x-mcp": false,
+      summary: "Connect the member's assigned account from Workbot",
+      description: "Requires a live Workbot OAuth grant with write scope and active membership. Re-enters the existing connection start as that member in the token's organization; the same connection grants and permissions apply. Only a path on the configured Workbot origin can be signed into OAuth state.",
+      responses: {
+        200: jsonResponse("Provider consent URL and its callback origin.", z.object({ authorizeUrl: z.string().nullable(), status: z.string().optional(), callbackOrigin: z.string() })),
+        400: jsonResponse("Invalid connection or return path.", signedOutSchema),
+        401: jsonResponse("The token or membership is no longer valid.", unauthorizedSchema),
+        403: jsonResponse("The grant or connection permission is missing.", signedOutSchema),
+        404: jsonResponse("The feature or connection is unavailable.", signedOutSchema),
+      },
+    }),
+    tokenRoute,
+    bodyLimit({ maxSize: 4096 }),
+    jsonValidator(workbotConnectRequestSchema),
+    async (c) => {
+      c.header("cache-control", "no-store")
+      const resolved = await resolve(c.req.raw.headers)
+      if (resolved instanceof Response) return resolved
+      const auditBlocked = await attributeWorkbot(c, resolved)
+      if (auditBlocked) return auditBlocked
+      const features = await getOrganizationFeatures(resolved.organization.id)
+      if (!features.workbot || !features.workbotInlineConnect || !workbotOrigin()) return c.json({ error: "feature_disabled", message: "Connect from your workspace connections page instead." }, 404)
+      if (!resolved.scopes.has(DEN_MCP_WRITE_SCOPE)) return c.json({ error: "insufficient_scope", message: "Sign in again with permission to connect accounts." }, 403)
+      const input = c.req.valid("json")
+      const connectionId = c.req.param("connectionId")
+      if (!getNativeOAuthProvider(connectionId)) {
+        try { normalizeDenTypeId("externalMcpConnection", connectionId) } catch { return c.json({ error: "invalid_request" }, 400) }
+      }
+      const query = new URLSearchParams({ workbotReturnPath: input.returnPath, workbotRequestId: input.requestId })
+      const headers = new Headers({ accept: "application/json", "x-den-internal-mcp-principal": createInternalMcpPrincipalHeader({ userId: resolved.principal.userId, organizationId: resolved.principal.organizationId, credentialId: resolved.credentialId }) })
+      const base = resolvePublicApiBaseUrl(c.req.raw, env.apiPublicUrl)
+      const response = await app.fetch(new Request(new URL(`/v1/mcp-connections/${encodeURIComponent(connectionId)}/connect/start?${query}`, c.req.url), { headers }))
+      const payload: unknown = await response.json().catch(() => null)
+      const started = z.object({ authorizeUrl: z.string().nullable(), status: z.string().optional() }).safeParse(payload)
+      if (response.ok && started.success) return c.json({ ...started.data, callbackOrigin: new URL(base).origin })
+      return new Response(JSON.stringify(payload), { status: response.status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
     },
   )
 

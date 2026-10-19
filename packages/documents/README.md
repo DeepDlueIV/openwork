@@ -14,8 +14,21 @@ provider/editor contracts without embedding Workbot.
   Closing a dirty file or leaving Documents asks whether to keep/discard edits.
   Page unload uses the browser's unsaved-changes protection.
 - Missing/expired Drive access shows Connect/Reconnect through Den's existing
-  connections page. Returning to the page rechecks the listing.
+  connections page. Parent sign-in revalidation retains the document owners,
+  masked, instead of unmounting them. A different person or organization cannot
+  reveal a retained draft even when they can read the same file.
+- Directory denial remains latched even with no open tabs and after later
+  outages. Only a fresh identity and authorized directory read clear it.
+- Each locked file has a non-extending 15-minute recovery deadline. Files are
+  checked independently: an allowed draft can return while another stays
+  locked, retryable or individually discardable. Hosts must implement
+  `verifyScope`; without it recovery remains locked. A full page refresh does
+  not restore memory-only drafts.
 - Explicit Save to Drive writes to the original file; no background writes.
+
+The Office recovery peer in these browser tests proves owner/session lifecycle,
+not engine fidelity or survival of edits still buffered inside Collabora.
+Representative engine and received-snapshot recovery require their own proofs.
 
 | File | Inline experience | Save path |
 | --- | --- | --- |
@@ -143,6 +156,24 @@ DEN_DOCUMENTS_HOST_ORIGIN=https://workbot.example.com
 DEN_DOCUMENTS_CALLBACK_BASE_URL=https://api.example.com
 DATABASE_REDIS_URL=rediss://<private shared Redis>
 ```
+
+### In each member's Cloud worker
+
+With `DEN_DOCUMENTS_EDITOR=cloud-worker`, OpenWork Cloud runs no shared editor.
+Den resolves the member's Cloud worker the way OpenWork Web, remote sessions and
+Cloud Automations do: it creates or wakes it when the organization has OpenWork
+Web, and otherwise offers Open in Drive. The worker snapshot
+(`ee/apps/den-worker-runtime/Dockerfile.daytona-snapshot`) installs the unbranded
+CODE packages with this integration; its bootstrap starts the engine as the `cool`
+user with Den as the only WOPI host, Workbot as the only embedder, and macros and
+the admin console off. The engine listens on loopback behind a small proxy
+(`ee/apps/den-worker-runtime/documents-editor-proxy.mjs`) that restores the
+signed public host from `X-Forwarded-Host`; the provider's preview proxy rewrites
+`Host`, and the engine builds its editor and websocket URLs from it. Each session
+uses its own signed preview URL for the editor port, valid for the session. While the engine starts, Den answers `office_starting`
+and the tab retries for about two minutes. An open session marks the worker busy,
+so idle stop and image updates wait until the file closes or its editor traffic
+stops for 20 minutes. `DEN_DOCUMENTS_COLLABORA_URL` is not used in this mode.
 
 The callback origin defaults to `DEN_API_PUBLIC_URL`. All origins are operator
 configuration, never a request Host header or file metadata. Collabora must reach

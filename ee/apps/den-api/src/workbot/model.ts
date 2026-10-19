@@ -5,6 +5,7 @@ import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
 import { db } from "../db.js"
 import { getOrganizationFeatures, type FeatureMap } from "../features.js"
 import { createHeadlessRunnerClient, defaultHeadlessRunnerDeps, type HeadlessModelCatalog } from "../headless-runner/client.js"
+import { explicitWorkbotModel, workbotDefaultReadiness } from "./readiness.js"
 
 /**
  * The organization's default model for its cloud agents on the headless runner: Workbot, the Slack assistant, and
@@ -66,10 +67,11 @@ export function servableModel(chosen: string | null, catalog: HeadlessModelCatal
 }
 
 /** What the admin page shows: the saved model, whether the runner still serves it, and what can be chosen. */
-export function workbotSettingsView(chosen: string | null, catalog: HeadlessModelCatalog | null) {
+export function workbotSettingsView(chosen: string | null, catalog: HeadlessModelCatalog | null, lunaDefault = false) {
   return {
     model: chosen,
-    defaultModel: catalog?.defaultModel || null,
+    defaultModel: lunaDefault ? explicitWorkbotModel(null, catalog) : catalog?.defaultModel || null,
+    ...(lunaDefault ? { defaultReadiness: workbotDefaultReadiness(catalog) } : {}),
     models: catalog?.models ?? [],
     modelAvailable: chosen === null || catalog === null || catalog.models.some((entry) => entry.id === chosen),
     runnerReachable: catalog !== null,
@@ -77,8 +79,9 @@ export function workbotSettingsView(chosen: string | null, catalog: HeadlessMode
 }
 
 /** A model may be saved only when the runner serves it right now; null (the runner's default) always may. */
-export function checkWorkbotModelChoice(model: string | null, catalog: HeadlessModelCatalog | null): "ok" | "unknown_model" | "runner_unavailable" {
+export function checkWorkbotModelChoice(model: string | null, catalog: HeadlessModelCatalog | null, requireVerified = false): "ok" | "unknown_model" | "runner_unavailable" {
   if (model === null) return "ok"
+  if (requireVerified && catalog?.verified !== true) return "runner_unavailable"
   if (!catalog) return "runner_unavailable"
   return catalog.models.some((entry) => entry.id === model) ? "ok" : "unknown_model"
 }

@@ -732,6 +732,9 @@ export type AdminDashboard = {
 
 export type AdminFeature = {
   key:
+    | "modelRemovalRecovery"
+    | "lastTurnModelFooter"
+    | "liveProviderSync"
     | "googleDocumentTools"
     | "offlineRecovery"
     | "rememberLastOrganization"
@@ -748,6 +751,10 @@ export type AdminFeature = {
     | "slackAssistant"
     | "slackWorkbotReplies"
     | "workbot"
+    | "workbotTeamLinks"
+    | "workbotLunaDefault"
+    | "workbotFirstRun"
+    | "workbotInlineConnect"
     | "workbotDocuments"
     | "workbotWorkspaceAssistant"
     | "automationCalendar"
@@ -755,6 +762,7 @@ export type AdminFeature = {
     | "teamRoles"
     | "sharedRoles"
     | "agentPermissions"
+    | "engineV2ForceUpgrade"
     | "engineV2Upgrade"
     | "remoteSessionEvents"
     | "backgroundShellTasks"
@@ -766,6 +774,8 @@ export type AdminFeature = {
     | "browserFloatingView"
     | "remoteComputers"
     | "inviteLinkVerifiesEmail"
+    | "nativeCloudSkills"
+    | "mcpSkillsExtension"
     | "remoteSessionSubagents";
   label: string;
   description: string;
@@ -805,6 +815,9 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities?: {
+      modelRemovalRecovery: boolean;
+      lastTurnModelFooter: boolean;
+      liveProviderSync: boolean;
       googleDocumentTools: boolean;
       offlineRecovery: boolean;
       rememberLastOrganization: boolean;
@@ -821,6 +834,10 @@ export type AdminOrganizationsPageResponse = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotTeamLinks: boolean;
+      workbotLunaDefault: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -828,6 +845,7 @@ export type AdminOrganizationsPageResponse = {
       teamRoles: boolean;
       sharedRoles: boolean;
       agentPermissions: boolean;
+      engineV2ForceUpgrade: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
@@ -839,6 +857,8 @@ export type AdminOrganizationsPageResponse = {
       browserFloatingView: boolean;
       remoteComputers: boolean;
       inviteLinkVerifiesEmail: boolean;
+      nativeCloudSkills: boolean;
+      mcpSkillsExtension: boolean;
       remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
@@ -851,6 +871,33 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates?: {
+      modelRemovalRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      lastTurnModelFooter: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      liveProviderSync: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       googleDocumentTools: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -995,6 +1042,42 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      workbotTeamLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotLunaDefault: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1050,6 +1133,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2ForceUpgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1149,6 +1241,24 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      nativeCloudSkills: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      mcpSkillsExtension: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1229,6 +1339,9 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      modelRemovalRecovery: boolean;
+      lastTurnModelFooter: boolean;
+      liveProviderSync: boolean;
       googleDocumentTools: boolean;
       offlineRecovery: boolean;
       rememberLastOrganization: boolean;
@@ -1245,6 +1358,10 @@ export type AdminOverviewResponse = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotTeamLinks: boolean;
+      workbotLunaDefault: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -1252,6 +1369,7 @@ export type AdminOverviewResponse = {
       teamRoles: boolean;
       sharedRoles: boolean;
       agentPermissions: boolean;
+      engineV2ForceUpgrade: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
@@ -1263,6 +1381,8 @@ export type AdminOverviewResponse = {
       browserFloatingView: boolean;
       remoteComputers: boolean;
       inviteLinkVerifiesEmail: boolean;
+      nativeCloudSkills: boolean;
+      mcpSkillsExtension: boolean;
       remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
@@ -1275,6 +1395,33 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      modelRemovalRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      lastTurnModelFooter: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      liveProviderSync: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       googleDocumentTools: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1419,6 +1566,42 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      workbotTeamLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotLunaDefault: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1474,6 +1657,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2ForceUpgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1573,6 +1765,24 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      nativeCloudSkills: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      mcpSkillsExtension: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1799,6 +2009,7 @@ export type CurrentUserDesktopConfigResponse = {
   automationsEnabled?: boolean;
   dashboardEnabled?: boolean;
   connectEnabled?: boolean;
+  liveProviderSync?: boolean;
   onboardingPrompts?: Array<string>;
   onboardingPromptDescriptions?: Array<string>;
   agentPermissions?: DenDesktopAgentPermissions;
@@ -3171,6 +3382,10 @@ export type GatewayProviderDetails = {
     credentialSetId: string;
     credentialSetName: string;
   }>;
+  /**
+   * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+   */
+  modelAssignmentsComplete: boolean;
   authorizationRequests: Array<{
     /**
      * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -3360,6 +3575,10 @@ export type GatewayProviderSummary = {
     credentialSetId: string;
     credentialSetName: string;
   }>;
+  /**
+   * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+   */
+  modelAssignmentsComplete: boolean;
   authorizationRequests: Array<{
     /**
      * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -6668,6 +6887,29 @@ export type WebOriginNotFoundError = {
 
 export type RemoveWebOriginNotFound = WebOriginNotFoundError | WebOriginOrganizationNotFoundError;
 
+export type WorkbotModelTest =
+  | {
+      status: "answered";
+      errorCode: null;
+      requestedModel: string;
+      reportedModel: string | null;
+    }
+  | {
+      status: "failed";
+      errorCode:
+        | "model_unavailable"
+        | "runner_unavailable"
+        | "credentials_unavailable"
+        | "authentication_failed"
+        | "payment_required"
+        | "provider_unavailable"
+        | "timed_out"
+        | "invalid_response"
+        | "busy";
+      requestedModel: string;
+      reportedModel: null;
+    };
+
 export type WorkbotSettings = {
   model: string | null;
   defaultModel: string | null;
@@ -6677,6 +6919,7 @@ export type WorkbotSettings = {
   }>;
   modelAvailable: boolean;
   runnerReachable: boolean;
+  defaultReadiness?: "available" | "unavailable" | "unverified";
 };
 
 export type WorkbotUnknownModelError = {
@@ -6753,13 +6996,21 @@ export type WorkbotSession = {
   };
   memberId: string;
   enabled: boolean;
+  firstRun?: boolean;
+  canEnableWorkbot?: boolean;
   canSchedule: boolean;
   computer?: boolean;
   calendar?: boolean;
   documents?: boolean;
   workspaceAssistant?: boolean;
+  teamLinks?: {
+    enabled: boolean;
+    settings: boolean;
+    apps: boolean;
+  };
   sideChats: boolean;
   model?: string | null;
+  verifyModel?: boolean;
 };
 
 export type WorkbotRunToken = {
@@ -6808,6 +7059,9 @@ export type WorkerHeartbeatResponse = {
   openSessionCount: number | null;
   lastHeartbeatAt: string;
   lastActiveAt: string | null;
+  enginePolicy: {
+    upgrade: boolean;
+  };
 };
 
 export type WorkerInstance = {
@@ -7713,6 +7967,9 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      modelRemovalRecovery: boolean;
+      lastTurnModelFooter: boolean;
+      liveProviderSync: boolean;
       googleDocumentTools: boolean;
       offlineRecovery: boolean;
       rememberLastOrganization: boolean;
@@ -7729,6 +7986,10 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotTeamLinks: boolean;
+      workbotLunaDefault: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -7736,6 +7997,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamRoles: boolean;
       sharedRoles: boolean;
       agentPermissions: boolean;
+      engineV2ForceUpgrade: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
@@ -7747,6 +8009,8 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       browserFloatingView: boolean;
       remoteComputers: boolean;
       inviteLinkVerifiesEmail: boolean;
+      nativeCloudSkills: boolean;
+      mcpSkillsExtension: boolean;
       remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
@@ -7759,6 +8023,33 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      modelRemovalRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      lastTurnModelFooter: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      liveProviderSync: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       googleDocumentTools: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7903,6 +8194,42 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      workbotTeamLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotLunaDefault: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7958,6 +8285,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2ForceUpgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8057,6 +8393,24 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      nativeCloudSkills: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      mcpSkillsExtension: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8125,6 +8479,9 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      modelRemovalRecovery: boolean;
+      lastTurnModelFooter: boolean;
+      liveProviderSync: boolean;
       googleDocumentTools: boolean;
       offlineRecovery: boolean;
       rememberLastOrganization: boolean;
@@ -8141,6 +8498,10 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotTeamLinks: boolean;
+      workbotLunaDefault: boolean;
+      workbotFirstRun: boolean;
+      workbotInlineConnect: boolean;
       workbotDocuments: boolean;
       workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
@@ -8148,6 +8509,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamRoles: boolean;
       sharedRoles: boolean;
       agentPermissions: boolean;
+      engineV2ForceUpgrade: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
@@ -8159,6 +8521,8 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       browserFloatingView: boolean;
       remoteComputers: boolean;
       inviteLinkVerifiesEmail: boolean;
+      nativeCloudSkills: boolean;
+      mcpSkillsExtension: boolean;
       remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
@@ -8171,6 +8535,33 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      modelRemovalRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      lastTurnModelFooter: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      liveProviderSync: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       googleDocumentTools: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -8315,6 +8706,42 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      workbotTeamLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotLunaDefault: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotFirstRun: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotInlineConnect: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -8370,6 +8797,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      engineV2ForceUpgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8469,6 +8905,24 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      nativeCloudSkills: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      mcpSkillsExtension: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -18122,6 +18576,88 @@ export type DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses = {
 export type DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponse =
   DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses[keyof DeleteV1LlmProvidersByLlmProviderIdAccessByAccessIdResponses];
 
+export type GetV1InferenceProvidersInventoryRevisionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference-providers/inventory/revision";
+};
+
+export type GetV1InferenceProvidersInventoryRevisionErrors = {
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization not found or liveProviderSync disabled.
+   */
+  404: NotFoundError;
+  /**
+   * Inventory unavailable; reconnect with backoff.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryRevisionError =
+  GetV1InferenceProvidersInventoryRevisionErrors[keyof GetV1InferenceProvidersInventoryRevisionErrors];
+
+export type GetV1InferenceProvidersInventoryRevisionResponses = {
+  /**
+   * Current inventory revision.
+   */
+  200: {
+    revision: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryRevisionResponse =
+  GetV1InferenceProvidersInventoryRevisionResponses[keyof GetV1InferenceProvidersInventoryRevisionResponses];
+
+export type GetV1InferenceProvidersInventoryEventsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference-providers/inventory/events";
+};
+
+export type GetV1InferenceProvidersInventoryEventsErrors = {
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization not found or liveProviderSync disabled.
+   */
+  404: NotFoundError;
+  /**
+   * At most four inventory streams per member per replica.
+   */
+  429: {
+    error: string;
+  };
+  /**
+   * Inventory unavailable; reconnect with backoff.
+   */
+  503: {
+    error: string;
+  };
+};
+
+export type GetV1InferenceProvidersInventoryEventsError =
+  GetV1InferenceProvidersInventoryEventsErrors[keyof GetV1InferenceProvidersInventoryEventsErrors];
+
+export type GetV1InferenceProvidersInventoryEventsResponses = {
+  /**
+   * Inventory revision event stream.
+   */
+  200: string;
+};
+
+export type GetV1InferenceProvidersInventoryEventsResponse =
+  GetV1InferenceProvidersInventoryEventsResponses[keyof GetV1InferenceProvidersInventoryEventsResponses];
+
 export type GetV1InferenceProvidersUsageData = {
   body?: never;
   path?: never;
@@ -20591,6 +21127,10 @@ export type GetV1InferenceProvidersByInferenceProviderIdConnectResponses = {
         credentialSetId: string;
         credentialSetName: string;
       }>;
+      /**
+       * True only when models and authorizationRequests.models represent every effective active grant's model alias within the provider universe. False for credential, catalog, or model configuration omissions, even when aggregate credentialStatus is ready. Only true permits absence to establish model removal.
+       */
+      modelAssignmentsComplete: boolean;
       authorizationRequests: Array<{
         /**
          * Den TypeID with 'gcs_' prefix and a 26-character base32 suffix.
@@ -33747,6 +34287,57 @@ export type DeleteV1OrgWebOriginsByWebOriginIdResponses = {
 export type DeleteV1OrgWebOriginsByWebOriginIdResponse =
   DeleteV1OrgWebOriginsByWebOriginIdResponses[keyof DeleteV1OrgWebOriginsByWebOriginIdResponses];
 
+export type PostV1OrgWorkbotSettingsTestDefaultModelData = {
+  body: {
+    [key: string]: never;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/org/workbot-settings/test-default-model";
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelErrors = {
+  /**
+   * Only an empty request body is accepted.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * A genuine recent user sign-in and Manage OpenWork Models are required.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization was not found, or Workbot is off.
+   */
+  404: {
+    error: "feature_disabled";
+    feature: string;
+  };
+  /**
+   * The durable diagnostic request limit was reached.
+   */
+  429: {
+    error: "rate_limited";
+    retryAfterSeconds: number;
+  };
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelError =
+  PostV1OrgWorkbotSettingsTestDefaultModelErrors[keyof PostV1OrgWorkbotSettingsTestDefaultModelErrors];
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelResponses = {
+  /**
+   * Synthetic completion result; catalog availability alone never means answered.
+   */
+  200: WorkbotModelTest;
+};
+
+export type PostV1OrgWorkbotSettingsTestDefaultModelResponse =
+  PostV1OrgWorkbotSettingsTestDefaultModelResponses[keyof PostV1OrgWorkbotSettingsTestDefaultModelResponses];
+
 export type GetV1OrgWorkbotSettingsData = {
   body?: never;
   path?: never;
@@ -33760,7 +34351,7 @@ export type GetV1OrgWorkbotSettingsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * The caller lacks the View OpenWork Models settings permission.
+   * The caller lacks both View OpenWork Models settings and Manage OpenWork Models.
    */
   403: ForbiddenError;
   /**
@@ -34451,6 +35042,55 @@ export type PostV1IntegrationsSlackByConnectionIdInteractionsResponses = {
 export type PostV1IntegrationsSlackByConnectionIdInteractionsResponse =
   PostV1IntegrationsSlackByConnectionIdInteractionsResponses[keyof PostV1IntegrationsSlackByConnectionIdInteractionsResponses];
 
+export type RecordWorkbotTelemetryData = {
+  body:
+    | {
+        event: "signed_in";
+        id: string;
+        timestamp?: number;
+      }
+    | {
+        event: "accepted";
+        sessionId: string;
+        messageId: string;
+        timestamp: number;
+        model: string;
+        attachmentCount: number;
+        hasContext: boolean;
+      }
+    | {
+        event: "completed" | "failed" | "aborted";
+        sessionId: string;
+        messageId: string;
+        timestamp: number;
+        attempt: number;
+        model: string;
+        modelSource?: "response" | "configured";
+        errorCode: string | null;
+      };
+  path?: never;
+  query?: never;
+  url: "/v1/workbot/telemetry";
+};
+
+export type RecordWorkbotTelemetryErrors = {
+  /**
+   * Service or member credentials are invalid.
+   */
+  401: UnauthorizedError;
+};
+
+export type RecordWorkbotTelemetryError = RecordWorkbotTelemetryErrors[keyof RecordWorkbotTelemetryErrors];
+
+export type RecordWorkbotTelemetryResponses = {
+  /**
+   * Accepted, including best-effort storage failures.
+   */
+  204: void;
+};
+
+export type RecordWorkbotTelemetryResponse = RecordWorkbotTelemetryResponses[keyof RecordWorkbotTelemetryResponses];
+
 export type GetWorkbotSessionData = {
   body?: never;
   path?: never;
@@ -34510,11 +35150,68 @@ export type ListWorkbotConnectionsResponses = {
       app: "gmail" | "googleCalendar" | "slack" | "microsoft";
       ready: boolean;
       connectUrl: string | null;
+      nativeProviderKey?: string | null;
+      connectMode?: "inline" | "external" | "admin";
     }>;
   };
 };
 
 export type ListWorkbotConnectionsResponse = ListWorkbotConnectionsResponses[keyof ListWorkbotConnectionsResponses];
+
+export type StartWorkbotConnectionData = {
+  body: {
+    returnPath: string;
+    requestId: string;
+  };
+  path: {
+    connectionId: string;
+  };
+  query?: never;
+  url: "/v1/workbot/connections/{connectionId}/connect/start";
+};
+
+export type StartWorkbotConnectionErrors = {
+  /**
+   * Invalid connection or return path.
+   */
+  400: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * The token or membership is no longer valid.
+   */
+  401: UnauthorizedError;
+  /**
+   * The grant or connection permission is missing.
+   */
+  403: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * The feature or connection is unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type StartWorkbotConnectionError = StartWorkbotConnectionErrors[keyof StartWorkbotConnectionErrors];
+
+export type StartWorkbotConnectionResponses = {
+  /**
+   * Provider consent URL and its callback origin.
+   */
+  200: {
+    authorizeUrl: string | null;
+    status?: string;
+    callbackOrigin: string;
+  };
+};
+
+export type StartWorkbotConnectionResponse = StartWorkbotConnectionResponses[keyof StartWorkbotConnectionResponses];
 
 export type CreateWorkbotRunTokenData = {
   body: {

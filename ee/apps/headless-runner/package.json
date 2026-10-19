@@ -20,13 +20,14 @@
     "worker:compat": "tsx scripts/compat-check.ts",
     "worker:e2e": "pnpm --filter @openwork-ee/headless-protocol build && tsx scripts/owner-cells-e2e.ts",
     "worker:e2e:celld": "pnpm --filter @openwork-ee/headless-protocol build && tsx scripts/owner-cells-e2e.ts --celld",
-    "test:conversation": "tsx --test scripts/conversation.test.ts",
+    "test:conversation": "tsx --test scripts/conversation.test.ts scripts/workbot-telemetry.test.ts",
     "test:transfer": "tsx --test scripts/transfer.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.0.12",
     "@modelcontextprotocol/client": "^2.2.0",
     "@openwork-ee/headless-computer": "workspace:*",
+    "@openwork-ee/headless-protocol": "workspace:*",
     "@openwork/workbook": "workspace:*",
     "aws4fetch": "1.0.20",
     "hono": "4.13.9",

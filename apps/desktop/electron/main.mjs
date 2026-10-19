@@ -60,6 +60,7 @@ import {
   createLinuxDesktopIntegration,
 } from "./linux-desktop-integration.mjs";
 import { automationRunnerDisabledReason, createComputerDescriber, createDesktopAutomationRunner, normalizeRunnerBaseUrl } from "./automation-runner.mjs";
+import { applyDesktopEngineForcePolicy } from "./engine-force-policy.mjs";
 import {
   desktopActivationRequired,
   enterprisePreactivationCommandAllowed,
@@ -1424,6 +1425,9 @@ const desktopAutomationRunner = createDesktopAutomationRunner({
     const server = await runtimeManager.openworkServerInfo();
     return { baseUrl: server.baseUrl, token: server.clientToken ?? server.ownerToken };
   },
+  onEnginePolicy: (policy) => applyDesktopEngineForcePolicy(policy, {
+    getServerInfo: () => runtimeManager.openworkServerInfo(),
+  }),
   // Remote-session callers choose a computer by this label, then a workspace and model.
   describeComputer: createComputerDescriber({
     platform: process.platform,

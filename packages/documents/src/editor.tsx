@@ -4,7 +4,7 @@ import { z } from "zod"
 import { EditorActions } from "./editor-actions"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ArrowRight, ExternalLink, Save, X } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { OfficeEditorTab } from "./office-editor"
 import { officeMimeTypes } from "./office-engine"
 import { columnLetters } from "@openwork/workbook"
@@ -17,7 +17,7 @@ export function DocumentEditorTab(props: Parameters<typeof BasicDocumentEditorTa
   return <BasicDocumentEditorTab {...props} />
 }
 
-function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, active, scope, connectionsHref, onDirtyChange, onSavingChange, onControlsChange, onClose }: { toolbarHost?: HTMLElement | null; item: DocumentItem; editor: DocumentsEditor; enabled: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onResourceChange?(tabId: string, resource: DocumentItem): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
+function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, active, scope, connectionsHref, renderConnect, onDirtyChange, onSavingChange, onControlsChange, onClose }: { toolbarHost?: HTMLElement | null; item: DocumentItem; editor: DocumentsEditor; enabled: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; renderConnect?(connectionId?: string, reconnect?: boolean): ReactNode; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onResourceChange?(tabId: string, resource: DocumentItem): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
   const [sheetId, setSheetId] = useState<string>()
   const [startRow, setStartRow] = useState(1)
   const [connectionId, setConnectionId] = useState<string>()
@@ -29,10 +29,12 @@ function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, active, sc
   const [saved, setSaved] = useState(false)
   const [closing, setClosing] = useState(false)
   const dirty = Object.keys(draft).length > 0
+  const accessCheck = useRef<() => Promise<void>>(async () => { throw new Error("The document is not open.") })
+  accessCheck.current = async () => { await editor.open(item.id, { sheetId, startRow, connectionId }) }
   const closeAction = useRef<() => void>(() => {})
   closeAction.current = () => { if (!saving) { if (dirty) setClosing(true); else onClose() } }
   useEffect(() => {
-    onControlsChange?.(item.id, { requestClose: () => closeAction.current() })
+    onControlsChange?.(item.id, { requestClose: () => closeAction.current(), checkAccess: () => accessCheck.current() })
     return () => onControlsChange?.(item.id, null)
   }, [item.id, onControlsChange])
   useEffect(() => { onSavingChange?.(item.id, saving); return () => onSavingChange?.(item.id, false) }, [item.id, saving, onSavingChange])
@@ -78,9 +80,9 @@ function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, active, sc
     <EditorActions active={active} host={toolbarHost}><span role="status">{saving ? "Saving to Drive…" : dirty ? "Unsaved changes" : saved ? "Saved to Drive" : data?.canEdit ? "Saved in Drive" : "Read-only"}</span>{item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer" aria-label="Open original in Drive"><ExternalLink size={16} /></a>}<button type="button" disabled={!dirty || readonly} onClick={() => void save()}><Save size={15} aria-hidden />Save to Drive</button>{!onControlsChange && <button type="button" aria-label={`Close ${item.name}`} disabled={saving} onClick={() => closeAction.current()}><X size={16} /></button>}</EditorActions>
     {closing && <div className="ow-editor-message" role="status">Keep changes to {item.name}?<button type="button" onClick={() => void save()} disabled={readonly}>Save and close</button><button type="button" onClick={() => setClosing(false)}>Keep editing</button><button type="button" onClick={onClose} disabled={saving}>Discard changes</button></div>}
     {!enabled ? <div className="ow-editor-message">Documents is off for this workspace. Your draft remains in this tab.</div>
-      : query.isError ? <div className="ow-editor-message" role="status">{query.error instanceof Error ? query.error.message : "Couldn't open this document."}{connectionsHref && query.error instanceof DocumentsError && query.error.code === "needs_connection" && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>}<button type="button" onClick={() => void query.refetch()}>Try again</button></div>
+      : query.isError ? <div className="ow-editor-message" role="status">{query.error instanceof Error ? query.error.message : "Couldn't open this document."}{query.error instanceof DocumentsError && query.error.code === "needs_connection" && (renderConnect ? renderConnect(connectionId, true) : connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>)}<button type="button" onClick={() => void query.refetch()}>Try again</button></div>
       : !data ? <div className="ow-documents-skeleton" aria-busy="true" aria-label="Opening document"><div/><div/><div/></div>
-      : <>{data.notice && <div className="ow-editor-message">{data.notice}</div>}{!data.canEdit && <div className="ow-editor-message">Read-only. Editing requires write access to this file and the connector's enabled write permission.</div>}{error && <div className="ow-editor-message" role="alert">{error}{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>}<button type="button" disabled={saving} onClick={() => { setDraft({}); setFormulas(new Set()); setError(null); void query.refetch() }}>Reload latest and discard edits</button></div>}
+      : <>{data.notice && <div className="ow-editor-message">{data.notice}</div>}{!data.canEdit && <div className="ow-editor-message">Read-only. Editing requires write access to this file and the connector's enabled write permission.</div>}{error && <div className="ow-editor-message" role="alert">{error}{needsConnection && (renderConnect ? renderConnect(connectionId, true) : connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>)}<button type="button" disabled={saving} onClick={() => { setDraft({}); setFormulas(new Set()); setError(null); void query.refetch() }}>Reload latest and discard edits</button></div>}
         {data.kind === "spreadsheet" ? <Spreadsheet data={data} draft={draft} formulas={formulas} setFormulas={setFormulas} readonly={readonly} change={change} onSheet={id => { setSheetId(id); setStartRow(1); setSaved(false) }} onPage={row => { setStartRow(row); setSaved(false) }} dirty={dirty} />
           : data.kind === "document" ? <RichDocument data={data} draft={draft} readonly={readonly} change={change} />
           : data.kind === "text" ? <textarea className="ow-editor-plain" aria-label="Document text" value={draft.text ?? data.text} readOnly={readonly} onChange={event => change("text", event.target.value, data.text)} />

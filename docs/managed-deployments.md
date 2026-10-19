@@ -96,6 +96,15 @@ bound to the exact report body; replays are rejected.
   retained state, refuses to delete or replace the database, secrets or VPC,
   applies, and re-verifies health. Customers approve every change; there are no
   automatic updates.
+- **Shared-module adoption requires a new IAM approval and a maintenance window.**
+  Review the generated CloudFormation template with `CAPABILITY_NAMED_IAM`: the
+  migration Lambda, its deployment-scoped role and logs are new grants. Existing
+  template approval is not sufficient. The runner drains old migration-capable
+  tasks before the single migration, keeps existing keys/state-backed secrets,
+  and refuses data-bearing replacement. A failed adoption stays in maintenance;
+  inspect the migration outcome before retrying. No legacy automatic rollback or
+  wildcard task-definition deregistration permission is used. See
+  `infra/managed-deployments/README.md` for exact ordering and provider-upgrade risk.
 - Deleting the installer stack does **not** delete OpenWork, its database or the
   Terraform state. Decommissioning is a manual, customer-run `terraform destroy`
   against the retained state (disable RDS deletion protection first).
@@ -105,6 +114,10 @@ bound to the exact report body; replays are rejected.
 1. Build an installer for an **already published** image version:
    `node infra/managed-deployments/tools/build-release.mjs aws <version> <dir>`
    (or run the **Managed Deployments** workflow with that version).
+   A separately approved isolated test may use a newer installer version plus
+   `--image-pins <approved-json-file>` for a registry-verified existing application
+   pair. That is a real version-increasing Update, not Retry or a fictitious image
+   tag. Never point production Den at those test-only artifacts.
 2. Publish from a dedicated release account into a versioned, encrypted S3
    bucket whose `releases/*` objects are publicly readable and nothing else:
    `node infra/managed-deployments/tools/publish-release.mjs <dir> <bucket> <account-id> <region>`.

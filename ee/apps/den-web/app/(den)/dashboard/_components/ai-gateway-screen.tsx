@@ -131,7 +131,7 @@ export function AiGatewayScreen({ providerContent, pageContent, pageTab }: { pro
   return (
     <DashboardPageTemplate
       title="AI Gateway"
-      description="Manage Providers, Models, Usage Limits and LLM Controls for your team"
+      description={null}
     >
       <div data-testid="ai-gateway-tabs" className="mb-6">
         <UnderlineTabs tabs={AI_GATEWAY_TABS} activeTab={tab} onChange={setTab} />

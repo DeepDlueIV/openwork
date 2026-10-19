@@ -190,7 +190,9 @@ export function searchModels(options: readonly ModelOption[], query: string): Mo
     // Provider words alone list that provider's models; with model words they only rank.
     if (modelWords.length === 0 && providers.length > 0 && providerHits === 0) continue;
     const complete = matched === modelWords.length;
-    score += (complete ? 1_000 : matched * 100) + providerHits * 300 - entry.title.length / 100;
+    // A model that can honour the typed options (fast, high…) ranks above one that cannot.
+    const honoured = intent.fast || intent.effort ? resolveSearchIntent(entry.option, intent).applied.length : 0;
+    score += (complete ? 1_000 : matched * 100) + providerHits * 300 + honoured * 150 - entry.title.length / 100;
     matches.push({ option: entry.option, score, complete, preferredProvider: providers.length > 0 && providerHits === providers.length });
   }
   matches.sort((a, b) => b.score - a.score);
@@ -225,13 +227,16 @@ export function resolveSearchIntent(option: Pick<ModelOption, "behaviorOptions">
   return { ...(effort ? { variant: effort } : {}), applied, missing };
 }
 
-/** What a result row will do with the typed options, e.g. "With Fast mode" or "Fast mode isn't available". */
-export function searchIntentLabel(option: Pick<ModelOption, "behaviorOptions">, intent: ModelSearchIntent): string | null {
+/** A short tag for a result row when the typed options apply to it ("Fast", "High", "Fast · High"); null when none do. */
+export function searchIntentTag(option: Pick<ModelOption, "behaviorOptions">, intent: ModelSearchIntent): string | null {
   if (!intent.fast && !intent.effort) return null;
-  const { applied, missing } = resolveSearchIntent(option, intent);
-  const parts = [
-    applied.length ? `With ${applied.join(" and ")}` : null,
-    missing.length ? `${missing.join(" and ")} ${missing.length > 1 ? "aren't" : "isn't"} available` : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(". ") : null;
+  const { applied } = resolveSearchIntent(option, intent);
+  const tags = applied.map((label) => label === "Fast mode" ? "Fast" : label.replace(/ effort$/, ""));
+  return tags.length ? tags.join(" · ") : null;
+}
+
+/** One line above the results: what the typed options will do, once, instead of on every row. */
+export function searchIntentSummary(intent: ModelSearchIntent): string | null {
+  const parts = [intent.fast ? "Fast mode" : null, intent.effort ? `${capitalize(intent.effort)} effort` : null].filter(Boolean);
+  return parts.length ? `${parts.join(" and ")} where the model offers it.` : null;
 }

@@ -5,6 +5,15 @@ import { workbotComputerWorld } from "../worlds/workbot-computer.ts";
 const test = spec.world(workbotComputerWorld, { resources: { surfaces: ["web"], services: ["den"] } });
 
 test("a member opens Workbot's Computer tab directly when the rollout is enabled", async ({ world, user, probe, step, evidence }) => {
+  // Workbot locks the page while it re-checks sign-in, so it does not poll;
+  // a changed rollout shows on the next load once the server reports it.
+  const reloadWhenComputer = async (enabled: boolean) => {
+    await probe.eventually(async () => {
+      const me = await world.call("/v1/workbot/me");
+      return me.ok ? (await me.json() as { computer?: boolean }).computer === true : null;
+    }, { within: 65_000, until: value => value === enabled });
+    await user.reload();
+  };
   await step("before: Computer is hidden and its server refuses access while the flags are off", async () => {
     await user.see({ role: "button", label: "Home" });
     await user.notSee({ role: "button", label: "Computer" });
@@ -14,7 +23,8 @@ test("a member opens Workbot's Computer tab directly when the rollout is enabled
   });
   await step("after: Computer opens with Browser and Computer views and no approval prompt", async () => {
     await world.setEnabled(true);
-    await user.see({ role: "button", label: "Computer" }, { timeoutMs: 65_000 });
+    await reloadWhenComputer(true);
+    await user.see({ role: "button", label: "Computer" });
     await user.click({ role: "button", label: "Computer" });
     await user.see({ role: "button", label: "Browser" });
     await user.see({ text: "Your computer is unavailable. Try reconnecting." }, { timeoutMs: 30_000 });
@@ -27,7 +37,12 @@ test("a member opens Workbot's Computer tab directly when the rollout is enabled
   await step("the workspace navigation also opens the same Computer view", async () => {
     await user.click({ role: "button", label: "Home" });
     await world.setEnabled(true, true);
-    await user.see({ role: "button", label: "Open workspace navigation" }, { timeoutMs: 65_000 });
+    await probe.eventually(async () => {
+      const me = await world.call("/v1/workbot/me");
+      return me.ok ? (await me.json() as { workspaceAssistant?: boolean }).workspaceAssistant === true : null;
+    }, { within: 65_000, until: value => value === true });
+    await user.reload();
+    await user.see({ role: "button", label: "Open workspace navigation" });
     await user.click({ role: "button", label: "Open workspace navigation" });
     await user.click({ role: "button", label: "Computer" });
     await user.see({ role: "button", label: "Browser" });
@@ -38,9 +53,8 @@ test("a member opens Workbot's Computer tab directly when the rollout is enabled
   await step("turning the flags off closes Computer and rejects new viewer connections", async () => {
     await world.setEnabled(false);
     await probe.eventually(async () => (await world.call("/v1/workbot/computer/viewer", { method: "POST", body: JSON.stringify({ view: "computer" }) })).status, { within: 65_000, until: value => value === 403 });
-    // The API cache and the page refresh independently. Home returns in the
-    // classic navigation once the page has observed the revoked rollouts.
-    await user.see({ role: "button", label: "Home" }, { timeoutMs: 65_000 });
+    await reloadWhenComputer(false);
+    await user.see({ role: "button", label: "Home" });
     await user.notSee({ role: "button", label: "Computer" });
     await user.screenshot();
   });

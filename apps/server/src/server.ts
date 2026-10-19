@@ -4,6 +4,7 @@ import { createNativeCloudMcpResolver, createRoutedCloudMcpRegistrar } from "./c
 import { managedDesktopPolicy } from "./managed-desktop-policy.js";
 import { createTaskRecovery, setTaskRecovery } from "./task-recovery.js";
 import { managedPolicyActionSchema } from "./managed-policy-rules.js";
+import { enterEngineMutation } from "./engine-switch-fence.js";
 import { beginOpencodeStop, opencodeSessionIsStopping } from "./opencode-stop-fence.js";
 import { readFile, realpath, writeFile, rm, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
@@ -162,7 +163,7 @@ import { buildOpenworkRuntimeConfigObject, openworkRuntimeConfigFilePath, writeO
 import { findManagedEngineWorkspace, managedEngineRootWorkspace } from "./workspaces.js";
 import { startThreadApprovalReplayer, type ThreadApprovalReplayer } from "./thread-approvals.js";
 import { CloudProviderSync, parseCloudProviderDenSession } from "./cloud-provider-sync.js";
-import { createEngineV2Preview, type EngineV2Preview } from "./engine-v2-preview.js";
+import { createEngineV2Preview, shouldSyncLiveProviderOwnerTransition, type EngineV2Preview } from "./engine-v2-preview.js";
 import pkg from "../package.json" with { type: "json" };
 import constants from "../../../constants.json" with { type: "json" };
 
@@ -774,7 +775,10 @@ export async function startServer(
   // Callers that spawn a managed engine after binding must complete startup
   // once its primary is registered; ordinary attached servers stay ready.
   options: { deferManagedEngineStartup?: boolean } = {},
-): Promise<ServeResult & { completeManagedEngineStartup: () => Promise<void> }> {
+): Promise<ServeResult & {
+  completeManagedEngineStartup: () => Promise<void>;
+  setEngineForcePolicy: EngineV2Preview["setForcePolicy"];
+}> {
   let managedEngineReady = options.deferManagedEngineStartup !== true;
   let stopped = false;
   let taskRecovery: Awaited<ReturnType<typeof createTaskRecovery>> | undefined;
@@ -815,7 +819,21 @@ export async function startServer(
     logger,
   });
   setEngineInstanceReaperForConfig(config, engineInstanceReaper);
-  const engineV2Preview = createEngineV2Preview({ config, env, deferStart: true,
+  let resolvedLiveProviderSync = false;
+  const resolveLiveProviderSync = async () => {
+    resolvedLiveProviderSync = false;
+    resolvedLiveProviderSync = (await managedDesktopPolicy(config).current())?.liveProviderSync === true;
+    return resolvedLiveProviderSync;
+  };
+  const engineV2Preview: EngineV2Preview = createEngineV2Preview({ config, env, deferStart: true,
+    resolveLiveProviderSync,
+    autoUpgradeIdle: async () => (await describeV1EngineActivity(config)).verdict === "idle",
+    autoRevertIdle: async () => {
+      if (!engineV2Preview.status().running) return true;
+      return (await describeV2EngineActivity(config, engineV2Preview.connection()))?.verdict === "idle";
+    },
+    autoUpgradeError: (error) => logger.log("warn", "Automatic engine upgrade failed; keeping v1", { error }),
+    providerSession: () => cloudProviderSync.currentSession(),
     hostReadRequest: async (path, init) => {
       // Internal dispatch retains the host credential in this process. The
       // native plugin receives only the context bridge's restricted token.
@@ -830,6 +848,12 @@ export async function startServer(
   const cloudProviderSync = new CloudProviderSync({
     config,
     env,
+    liveProviderSync: async () => {
+      // The same signed-in desktop-config hydration as orgDefaultModel. A
+      // missing field/older Den is off; never infer this from org metadata.
+      await engineV2Preview.setLiveProviderSync(await resolveLiveProviderSync());
+      return engineV2Preview.status().liveProviderSync;
+    },
     reloadEngine: async () => {
       if (engineV2Preview.status().chatRouting) {
         await engineV2Preview.refreshProviders();
@@ -871,6 +895,7 @@ export async function startServer(
     engineV2Preview,
     () => managedEngineReady,
     anonymousInference,
+    () => resolvedLiveProviderSync,
   );
 
   const serverOptions: {
@@ -1266,6 +1291,7 @@ export async function startServer(
 
   return {
     ...server,
+    setEngineForcePolicy: (policy) => engineV2Preview.setForcePolicy(policy),
     completeManagedEngineStartup: async () => {
       if (managedEngineReady) return;
       const pool = enginePoolForConfig(config);
@@ -1361,7 +1387,14 @@ async function resolveV2SessionExecutionDirectory(
   }
 }
 
-export async function proxyOpencodeV2Request(input: {
+export async function proxyOpencodeV2Request(input: Parameters<typeof forwardOpencodeV2Request>[0]) {
+  if (["GET", "HEAD"].includes(input.request.method.toUpperCase())) return forwardOpencodeV2Request(input);
+  const release = await enterEngineMutation(input.config, "v2", input.request.signal);
+  try { return await forwardOpencodeV2Request(input); }
+  finally { await release(); }
+}
+
+async function forwardOpencodeV2Request(input: {
   actor: Actor;
   config: ServerConfig;
   request: Request;
@@ -1847,7 +1880,14 @@ async function validateEngineRequestBody(request: Request): Promise<void> {
   catch { throw new ApiError(400, "invalid_request", "Expected a JSON request body."); }
 }
 
-export async function proxyOpencodeRequest(input: {
+export async function proxyOpencodeRequest(input: Parameters<typeof forwardOpencodeRequest>[0]) {
+  if (["GET", "HEAD"].includes(input.request.method.toUpperCase())) return forwardOpencodeRequest(input);
+  const release = await enterEngineMutation(input.config, "v1", input.request.signal);
+  try { return await forwardOpencodeRequest(input); }
+  finally { await release(); }
+}
+
+async function forwardOpencodeRequest(input: {
   config: ServerConfig;
   request: Request;
   url: URL;
@@ -2673,6 +2713,7 @@ function createRoutes(
   engineV2Preview: EngineV2Preview,
   isReady: () => boolean,
   anonymousInference: AnonymousInferenceService,
+  liveProviderSyncAvailable: () => boolean,
 ): Route[] {
   const routes: Route[] = [];
   addRoute(routes, "GET", "/anonymous-inference/status", "client", async () =>
@@ -3260,7 +3301,13 @@ function createRoutes(
     const session = parseCloudProviderDenSession(await readJsonBody(ctx.request));
     if (!session) throw new ApiError(400, "invalid_payload", "baseUrl, token, and orgId are required");
     anonymousInference.setMemberSession(session);
-    await managedDesktopPolicy(config).setSession(session);
+    // Revoke the old bridge identity synchronously, before policy/network work.
+    const suspended = cloudProviderSync.suspendForSession(session);
+    try {
+      await managedDesktopPolicy(config).setSession(session);
+    } finally {
+      await suspended;
+    }
     await cloudProviderSync.setSession(session);
     return new Response(null, { status: 204 });
   });
@@ -3268,8 +3315,12 @@ function createRoutes(
   addRoute(routes, "DELETE", "/den-session", "host-token", async () => {
     ensureWritable(config);
     anonymousInference.setMemberSession(null);
-    await managedDesktopPolicy(config).clearSession();
-    await cloudProviderSync.clearSession();
+    const clearing = cloudProviderSync.clearSession();
+    try {
+      await managedDesktopPolicy(config).clearSession();
+    } finally {
+      await clearing;
+    }
     await anonymousInference.initialize(config.port);
     return new Response(null, { status: 204 });
   });
@@ -3355,6 +3406,16 @@ function createRoutes(
     return response;
   });
 
+  addRoute(routes, "POST", "/experimental/engine-v2-preview/force", "host-token", async (ctx) => {
+    ensureWritable(config);
+    const body = await readJsonBody(ctx.request);
+    if (!isRecord(body) || typeof body.upgrade !== "boolean"
+      || Object.keys(body).some(key => key !== "upgrade")) {
+      throw new ApiError(400, "invalid_payload", "upgrade must be a boolean");
+    }
+    return jsonResponse(engineV2Preview.setForcePolicy({ upgrade: body.upgrade }));
+  });
+
   addRoute(routes, "POST", "/experimental/engine-v2-preview/migrate", "host-token", async (ctx) => {
     ensureWritable(config);
     const body = await readJsonBody(ctx.request);
@@ -3392,10 +3453,14 @@ function createRoutes(
     // Check before starting the v2 process, so a refused switch changes nothing.
     if (body.chatRouting === true) await engineV2Preview.requireV1HistoryCopied();
     let status = engineV2Preview.status();
+    const previouslyLiveProviderSync = status.liveProviderSync;
     // Stop routing before stopping the v2 process; enable the process before routing to it.
     if (body.chatRouting === false) status = await engineV2Preview.setChatRouting(false);
     if (typeof body.enabled === "boolean") status = await engineV2Preview.setEnabled(body.enabled);
     if (body.chatRouting === true) status = await engineV2Preview.setChatRouting(true);
+    if (shouldSyncLiveProviderOwnerTransition(previouslyLiveProviderSync, status.liveProviderSync, liveProviderSyncAvailable())) {
+      void cloudProviderSync.run("engine_routing_changed");
+    }
     return jsonResponse(status);
   });
 

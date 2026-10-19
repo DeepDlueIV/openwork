@@ -8,8 +8,12 @@ import { mediaTypeFor, SavedFiles, SAVED_FILE_TOOL_NAMES } from "./saved-files.j
 import type { Config } from "./config.js"
 import { FILE_TOOL_NAMES } from "./files.js"
 import { remoteMcpConnector } from "./mcp.js"
-import { anthropicModel, fetchGatewayModels, openAIModel, type ModelOption } from "./model.js"
+import { anthropicModel, openAIModel, openAIResponsesModel } from "./model.js"
+import { gatewayModelCatalog } from "./model-catalog.js"
+import { createModelProbe } from "./model-probe.js"
+export { gatewayModelCatalog } from "./model-catalog.js"
 import { Runner } from "./runner.js"
+import { workbotTelemetryReporter } from "./workbot-telemetry.js"
 import type { Store } from "./store.js"
 import { readToolFile } from "./tool-files.js"
 import type { SessionComputer } from "./types.js"
@@ -45,7 +49,9 @@ export async function createRuntime(config: Config, store: Store) {
     model:
       config.model.protocol === "anthropic"
         ? anthropicModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch })
-        : openAIModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch }),
+        : config.model.protocol === "openai-responses"
+          ? openAIResponsesModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch })
+          : openAIModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens, fetch: modelFetch }),
     defaultModel: config.model.model,
     defaultModelApiKey: config.model.defaultApiKey,
     mcp: config.mcp
@@ -61,27 +67,8 @@ export async function createRuntime(config: Config, store: Store) {
     files,
     computer,
     errors,
+    workbotTelemetry: workbotTelemetryReporter(config),
   })
-  const app = createApp({ store, runner, apiToken: config.apiToken, models: gatewayModelCatalog(config), events, files, computer, errors })
+  const app = createApp({ store, runner, apiToken: config.apiToken, models: gatewayModelCatalog(config), modelProbe: createModelProbe(config, modelFetch), events, files, computer, errors })
   return { app, runner, recovered, blobKind: blobs?.kind ?? "off", computer }
-}
-
-/** The Gateway's model list, cached for five minutes; on failure only the default model is offered. */
-export function gatewayModelCatalog(config: Config) {
-  let cachedModels: { at: number; models: ModelOption[] } | null = null
-  return async () => {
-    const fallback = [{ id: config.model.model, name: config.model.model }]
-    if (!config.model.defaultApiKey) return { defaultModel: config.model.model, models: fallback }
-    if (!cachedModels || Date.now() - cachedModels.at > 5 * 60_000) {
-      try {
-        cachedModels = {
-          at: Date.now(),
-          models: await fetchGatewayModels({ baseUrl: config.model.baseUrl, protocol: config.model.protocol, apiKey: config.model.defaultApiKey }),
-        }
-      } catch {
-        return { defaultModel: config.model.model, models: fallback }
-      }
-    }
-    return { defaultModel: config.model.model, models: cachedModels.models.length ? cachedModels.models : fallback }
-  }
 }

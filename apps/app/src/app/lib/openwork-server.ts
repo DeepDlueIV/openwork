@@ -160,6 +160,14 @@ export interface EngineV2PreviewStatus {
   enabled: boolean;
   running: boolean;
   chatRouting: boolean;
+  /** Effective server ownership of the live provider catalog. Older servers omit it. */
+  liveProviderSync?: boolean;
+  /** Ownership of the engine selection; older servers omit these fields. */
+  engineOrigin?: "fresh" | "manual" | "forced" | "reverted";
+  engineChangedAt?: string;
+  engineForced?: boolean;
+  /** The host is preparing a forced upgrade; engine ownership has not moved yet. */
+  forceUpgradePending?: boolean;
   version?: string;
   pid?: number;
   binSource?: string;
@@ -209,9 +217,17 @@ function parseEngineV2PreviewStatus(value: unknown): EngineV2PreviewStatus {
     migration: parseEngineV2Migration("migration" in value ? value.migration : undefined),
     ...("v1HistoryAvailable" in value && typeof value.v1HistoryAvailable === "boolean"
       ? { v1HistoryAvailable: value.v1HistoryAvailable } : {}),
+    ...("engineOrigin" in value && (value.engineOrigin === "fresh" || value.engineOrigin === "manual"
+      || value.engineOrigin === "forced" || value.engineOrigin === "reverted") ? { engineOrigin: value.engineOrigin } : {}),
+    ...("engineChangedAt" in value && typeof value.engineChangedAt === "string" ? { engineChangedAt: value.engineChangedAt } : {}),
+    ...("engineForced" in value && typeof value.engineForced === "boolean" ? { engineForced: value.engineForced } : {}),
+    ...("forceUpgradePending" in value && typeof value.forceUpgradePending === "boolean"
+      ? { forceUpgradePending: value.forceUpgradePending } : {}),
     enabled: value.enabled,
     running: value.running,
     chatRouting: "chatRouting" in value && typeof value.chatRouting === "boolean" ? value.chatRouting : false,
+    ...("liveProviderSync" in value && typeof value.liveProviderSync === "boolean"
+      ? { liveProviderSync: value.liveProviderSync } : {}),
     version: "version" in value && typeof value.version === "string" ? value.version : undefined,
     pid: "pid" in value && typeof value.pid === "number" ? value.pid : undefined,
     binSource: "binSource" in value && typeof value.binSource === "string" ? value.binSource : undefined,
@@ -1711,6 +1727,11 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
       parseEngineV2PreviewStatus(await requestJson<unknown>(baseUrl, "/experimental/engine-v2-preview/status", {
         token,
         timeoutMs: timeouts.config,
+      })),
+    /** The host owns idle checks, bounded retries, migration and forced-only revert. */
+    setEngineV2ForcePolicy: async (policy: { upgrade: boolean }): Promise<EngineV2PreviewStatus> =>
+      parseEngineV2PreviewStatus(await requestJson<unknown>(baseUrl, "/experimental/engine-v2-preview/force", {
+        token, hostToken, method: "POST", body: policy, timeoutMs: timeouts.config,
       })),
     getWorkspaceDefaultModel: async (workspaceId: string): Promise<WorkspaceDefaultModelState> =>
       parseWorkspaceDefaultModelState(await requestJson<unknown>(

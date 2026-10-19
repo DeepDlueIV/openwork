@@ -444,6 +444,36 @@ export function workbotOutputs(world: WorkbotWorld, extra: Record<string, WorldO
   };
 }
 
+/**
+ * The runner executes the previewed checkout, which may be anyone's pull request. It never
+ * receives the operator's Daytona key: only a key limited to sandboxes and their memory
+ * snapshots, which expires with the preview and is revoked when the world is torn down.
+ */
+async function createRunnerDaytonaKey(auth: { apiKey: string; apiUrl: string }, name: string) {
+  const api = auth.apiUrl.replace(/\/+$/, "");
+  const headers = { authorization: `Bearer ${auth.apiKey}`, "content-type": "application/json" };
+  const keyName = `${name}-runner`;
+  const response = await fetch(`${api}/api-keys`, {
+    method: "POST", headers, signal: AbortSignal.timeout(30_000),
+    body: JSON.stringify({
+      name: keyName,
+      permissions: ["write:sandboxes", "delete:sandboxes", "write:snapshots", "delete:snapshots"],
+      expiresAt: new Date(Date.now() + (DAYTONA_LIFETIME_MINUTES + 30) * 60_000).toISOString(),
+    }),
+  });
+  const created = response.ok ? await response.json() as { value?: unknown } : null;
+  if (typeof created?.value !== "string" || !created.value) {
+    throw new Error(`The operator's Daytona key could not create a scoped runner key (HTTP ${response.status}); it needs manage:api_keys.`);
+  }
+  return {
+    value: created.value,
+    revoke: async () => {
+      const removed = await fetch(`${api}/api-keys/${encodeURIComponent(keyName)}`, { method: "DELETE", headers, signal: AbortSignal.timeout(30_000) });
+      if (!removed.ok && removed.status !== 404) throw new Error(`Revoke the Daytona key ${keyName}; it expires on its own (HTTP ${removed.status}).`);
+    },
+  };
+}
+
 /** Starts a repository process inside a Daytona sandbox's checkout through a tiny uploaded launcher. */
 const LAUNCHER = `import { spawn } from "node:child_process";
 const args = JSON.parse(process.env.OPENWORK_LAUNCH_ARGS);
@@ -473,10 +503,12 @@ export async function bootWorkbotOnDaytona(stack: AsyncDisposableStack, place: P
     const snapshot = await client.snapshot?.get(options.computerSnapshot);
     if (snapshot?.sandboxClass !== "linux-vm") throw new Error("The desktop snapshot must be a Daytona Linux microVM.");
     desktopClient = client;
+    const runnerKey = await createRunnerDaytonaKey(auth, name);
+    stack.defer(runnerKey.revoke);
     computerEnv = {
       HEADLESS_COMPUTER: "daytona", HEADLESS_COMPUTER_CLASS: "linux-vm", HEADLESS_COMPUTER_DESKTOP: "true",
       HEADLESS_COMPUTER_SNAPSHOT: options.computerSnapshot, HEADLESS_COMPUTER_SCOPE: name, HEADLESS_COMPUTER_KEEP_DAYS: "1",
-      DAYTONA_API_KEY: auth.apiKey, DAYTONA_API_URL: auth.apiUrl, DAYTONA_TARGET: process.env.DAYTONA_TARGET ?? "us-west-3",
+      DAYTONA_API_KEY: runnerKey.value, DAYTONA_API_URL: auth.apiUrl, DAYTONA_TARGET: process.env.DAYTONA_TARGET ?? "us-west-3",
     };
     stack.defer(async () => {
       const owned: string[] = [];

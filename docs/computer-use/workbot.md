@@ -183,8 +183,10 @@ Focused checks:
 
 For a private cloud test deployment, launch the maintained Workbot world with a
 published snapshot. It enables the existing flags only for its seeded test org,
-passes the scoped Daytona key only to the runner host, and removes its computer
-VMs during teardown. The world retains its deterministic test model; this tests
+never gives the previewed checkout your Daytona key: the runner host gets a key
+limited to sandboxes and their snapshots that expires with the preview and is
+revoked at teardown (your key needs `manage:api_keys` to create it). The world
+removes its computer VMs during teardown. The world retains its deterministic test model; this tests
 desktop control without implying real model inference. Hosting sandboxes have a
 provider TTL; conversation computers have one-day idle retention as a crash backstop.
 

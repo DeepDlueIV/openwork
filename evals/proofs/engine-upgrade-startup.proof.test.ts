@@ -15,15 +15,17 @@ test("the optional chat upgrade appears when the local host starts after organiz
     expect(status).toMatchObject({ chatRouting: false, v1HistoryAvailable: true });
     await user.on(world.app).see({ testId: "engine-upgrade-notice" }, { timeoutMs: 65000 });
     await user.on(world.app).screenshot();
-    evidence.recordAssertionEvidence("The optional offer survives a delayed host startup", "An authenticated profile with persisted v1 history sees the organization-enabled notice without a renderer reload. Routing remains on v1.", true);
+    evidence.recordAssertionEvidence("The optional offer survives a delayed host startup", JSON.stringify(status), status.chatRouting === false && status.v1HistoryAvailable === true);
   });
   await step("declining the consent does not start a history copy or switch engines", async () => {
     await user.on(world.app).click({ role: "button", text: /^Upgrade$/ });
     await user.on(world.app).see({ testId: "engine-migration-consent" });
     await user.on(world.app).click({ role: "button", text: /^Cancel$/ });
     await user.on(world.app).notSee({ testId: "engine-migration-consent" });
-    expect(await world.status()).toMatchObject({ chatRouting: false, migration: { state: "idle" } });
+    const afterCancel = await world.status();
+    expect(afterCancel).toMatchObject({ chatRouting: false, migration: { state: "idle" } });
     await user.on(world.app).screenshot();
-    evidence.recordAssertionEvidence("Consent remains required", "Cancel leaves v1 routing and the idle migration unchanged; startup retry does not migrate automatically.", true);
+    const migration = afterCancel.migration;
+    evidence.recordAssertionEvidence("Consent remains required", JSON.stringify(afterCancel), afterCancel.chatRouting === false && migration !== null && typeof migration === "object" && Reflect.get(migration, "state") === "idle");
   });
 });

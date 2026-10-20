@@ -70,6 +70,49 @@ test("images are attached outside program JSON and failed input is never replaye
   assert.deepEqual(result.receipts, [{ index: 0, status: "unconfirmed" }]);
 });
 
+test("a semantic target is observed again after a confirmed refusal before input", async () => {
+  const f = browserFixture();
+  let attempts = 0;
+  const observed = [];
+  const result = await runComputerProgram({ surface: "browser", code: 'await tools.ui.click({target:{name:"Save"}}); return true;' }, {
+    ...f.host,
+    browser: async (operation, args, signal) => {
+      if (operation === "act") {
+        attempts++; observed.push(args.observationId);
+        if (attempts === 1) return { ok: false, code: "stale_observation", dispatched: false, mayHaveChangedState: false };
+      }
+      return f.host.browser(operation, args, signal);
+    },
+  }, new AbortController().signal);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(attempts, 2);
+  assert.equal(new Set(observed).size, 2);
+  assert.equal(f.state().saves, 1);
+  assert.deepEqual(result.receipts.map(receipt => receipt.status), ["failed", "dispatched"]);
+});
+
+test("target refresh is bounded and never repeats uncertain or dispatched input", async () => {
+  for (const response of [
+    { code: "stale_observation", dispatched: false, mayHaveChangedState: false, expectedAttempts: 3 },
+    { code: "stale_observation", dispatched: true, mayHaveChangedState: true, expectedAttempts: 1 },
+    { code: "stale_observation", dispatched: false, expectedAttempts: 1 },
+    { code: "disconnected", dispatched: false, mayHaveChangedState: false, expectedAttempts: 1 },
+  ]) {
+    const f = browserFixture();
+    let attempts = 0;
+    const result = await runComputerProgram({ surface: "browser", code: 'await tools.ui.click({target:{name:"Save"}}); return true;' }, {
+      ...f.host,
+      browser: async (operation, args, signal) => {
+        if (operation === "act") { attempts++; return { ok: false, ...response }; }
+        return f.host.browser(operation, args, signal);
+      },
+    }, new AbortController().signal);
+    assert.equal(result.ok, false);
+    assert.equal(attempts, response.expectedAttempts, JSON.stringify(response));
+    assert.equal(f.state().saves, 0);
+  }
+});
+
 test("native partial receipts survive a failed program without replay", async () => {
   let inputs = 0;
   const text = value => ({content:[{type:"text",text:JSON.stringify(value)}]});

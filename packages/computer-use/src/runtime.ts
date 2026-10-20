@@ -43,9 +43,9 @@ type Node = z.infer<typeof node>
 type Observation = { observationId: string; elements: Node[]; text: string; width: number; height: number; scroll?: { x: number; y: number }; truncated: boolean; progress?: string }
 
 export class ComputerProgramError extends Error {
-  constructor(readonly code: string, message: string, readonly mayHaveActed = false) { super(message) }
+  constructor(readonly code: string, message: string, readonly mayHaveActed = false, readonly canRefreshTarget = false) { super(message) }
 }
-const issue = (code: string, message: string, mayHaveActed = false): never => { throw new ComputerProgramError(code, message, mayHaveActed) }
+const issue = (code: string, message: string, mayHaveActed = false, canRefreshTarget = false): never => { throw new ComputerProgramError(code, message, mayHaveActed, canRefreshTarget) }
 const stringAt = (value: unknown, fallback = "") => typeof value === "string" ? value : fallback
 const numberAt = (value: unknown, fallback = 0) => typeof value === "number" && Number.isFinite(value) ? value : fallback
 function roleName(value: unknown, tag?: unknown) {
@@ -123,7 +123,8 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
       if (typeof result.tabId === "string") tabId = result.tabId
       const bitmap = z.object({ data: z.string(), mimeType: z.string() }).safeParse(result.image)
       if (bitmap.success) images = [{ type: "image", ...bitmap.data }]
-      if (result.ok !== true) return issue(stringAt(result.code, "browser_failed"), stringAt(result.error, "The browser operation did not complete."), result.mayHaveChangedState === true)
+      if (result.ok !== true) return issue(stringAt(result.code, "browser_failed"), stringAt(result.error, "The browser operation did not complete."), result.mayHaveChangedState === true,
+        result.code === "stale_observation" && result.dispatched === false && result.mayHaveChangedState === false)
       return result
     }
     const result = content.safeParse(raw)
@@ -211,14 +212,27 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
     }
     return element
   }
-  const click = async (target: Selector) => {
+  // Pane layout can change between observation and input. Refresh a semantic
+  // target only when the host explicitly confirms that no input was dispatched.
+  // Raw refs, uncertain receipts and already-dispatched actions are never replayed.
+  const withFreshTarget = async <T>(work: () => Promise<T>): Promise<T> => {
+    for (let attempt = 0; ; attempt++) {
+      try { return await work() }
+      catch (error) {
+        if (request.surface !== "browser" || attempt >= 2 || !(error instanceof ComputerProgramError) || !error.canRefreshTarget) throw error
+        latest = null; latestQuery = null
+        await pause(50)
+      }
+    }
+  }
+  const click = (target: Selector) => withFreshTarget(async () => {
     const element = await reveal(target)
     if (request.surface === "browser") await act({ type: "click", ref: element.ref })
     else if (element.press) await act({ type: "press", ref: element.ref })
     else { await observe(true); const fresh = ready(select(latest ?? await observe(true), target)); await act({ type: "click", ...point(fresh, latest ?? await observe(true)) }) }
     return { clicked: true }
-  }
-  const fill = async (target: Selector, text: string, append = false) => {
+  })
+  const fill = (target: Selector, text: string, append = false) => withFreshTarget(async () => {
     const element = await reveal(target)
     if (!element.editable) return issue("not_editable", "The target is not an editable control.")
     if (request.surface === "browser") {
@@ -232,7 +246,7 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
       await act({ type: "type", text })
     }
     return { filled: true }
-  }
+  })
   const waitFor = async (target: Selector, state: "visible" | "hidden" | "enabled", within: number) => {
     const until = Math.min(started + timeoutMs, performance.now() + within)
     do {
@@ -244,14 +258,14 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
     } while (performance.now() < until)
     return issue("condition_timeout", "The requested UI condition did not appear before the deadline.")
   }
-  const scroll = async (direction: "up" | "down", pages: number, container?: Selector) => {
+  const scroll = (direction: "up" | "down", pages: number, container?: Selector) => withFreshTarget(async () => {
     const view = await observe(request.surface === "computer", container)
     const region = container ? ready(select(view, container)) : null
     const at = region ? point(region, view) : { x: view.width * 0.65, y: view.height * 0.65 }
     const distance = Math.min(1200, Math.max(100, Math.round((region?.bounds.height ?? view.height) * 0.75 * pages)))
     await act(request.surface === "browser" ? { type: "scroll", ...at, deltaY: direction === "down" ? distance : -distance } : { type: "scroll", ...at, delta_x: 0, delta_y: direction === "down" ? -distance : distance })
     return { scrolled: true }
-  }
+  })
   const add = <T extends z.ZodType>(description: string, schema: T, run: (input: z.output<T>) => Promise<unknown>) => Tool.make({
     description, input: { type: "object" },
     run: (raw) => Effect.tryPromise({ try: async () => {
@@ -280,7 +294,7 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
     click: add("Resolve and activate a current control, revealing it when supported.", targetInput, ({ target }) => click(target)),
     fill: add("Replace text, or append=true, in a current editable field.", z.object({ target: selector, text: z.string().max(8000), append: z.boolean().default(false) }).strict(), ({ target, text, append }) => fill(target, text, append)),
     fillForm: add("Fill named fields in order. The program stops on the first failure without replaying earlier fields.", z.object({ fields: z.array(z.object({ target: selector, text: z.string().max(8000) }).strict()).min(1).max(20) }).strict(), async ({ fields }) => { for (const field of fields) await fill(field.target, field.text); return { filled: fields.length } }),
-    setChecked: add("Set a checkbox to the requested state; do nothing if already correct.", z.object({ target: selector, checked: z.boolean() }).strict(), async ({ target, checked }) => {
+    setChecked: add("Set a checkbox to the requested state; do nothing if already correct.", z.object({ target: selector, checked: z.boolean() }).strict(), ({ target, checked }) => withFreshTarget(async () => {
       const current = ready(await find(target))
       if (current.checked === undefined) return issue("state_unavailable", "This control exposes no checked state.")
       if (current.checked !== checked) {
@@ -290,8 +304,8 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
       await pause(50)
       if ((await find(target, true, true))?.checked !== checked) return issue("state_not_confirmed", "The requested checkbox state was not confirmed; do not toggle it again blindly.", true)
       return { checked }
-    }),
-    select: add("Choose an option by its visible label in a browser select or native menu.", z.object({ target: selector, option: z.string().min(1).max(300) }).strict(), async ({ target, option }) => {
+    })),
+    select: add("Choose an option by its visible label in a browser select or native menu.", z.object({ target: selector, option: z.string().min(1).max(300) }).strict(), ({ target, option }) => withFreshTarget(async () => {
       if (request.surface === "browser") {
         const element = await reveal(target)
         const options = element.options?.filter(value => !value.disabled && value.label === option) ?? []
@@ -300,7 +314,7 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
       }
       else { await click(target); await waitFor({ role: "menuitem", name: option }, "enabled", 3000); await click({ role: "menuitem", name: option }) }
       return { selected: option }
-    }),
+    })),
     key: add("Send one key/shortcut, refreshing focus before input. Native key names follow computer_discover.", z.object({ key: z.string().min(1).max(24), modifiers: z.array(z.enum(["command", "control", "shift", "option"])).max(4).default([]) }).strict(), async ({ key, modifiers }) => {
       if (request.surface === "browser" && modifiers.length) return issue("unsupported_shortcut", "Use browser semantic controls or findText for browser commands.")
       await observe(false)

@@ -36,7 +36,7 @@ function fixture(options = {}) {
           }
           return text({ ok: true, ...(name === "computer_observe" ? { observation_id: "observation" } : {}) });
         },
-        notifyUi: async (value) => { selected.push(value); if (["approve", "deny"].includes(value.action)) opened.resolve(); },
+        notifyUi: async (value) => { selected.push(value); if (value.action === "approve" || value.action === "deny") opened.resolve(); },
         close: async () => { calls.push("close"); opened.resolve(); onClose(); },
       };
     },

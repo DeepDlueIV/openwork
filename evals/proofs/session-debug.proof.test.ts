@@ -8,7 +8,7 @@ const test = spec.world(sessionDebug, {
   needs: { commands: ["bun"] },
 });
 
-test("a developer can inspect, move, resize and dismiss session diagnostics without leaving the conversation", async ({ user, probe, step, evidence }) => {
+test("a developer can inspect, move, resize and dismiss session diagnostics without leaving the conversation", async ({ world, user, probe, step, evidence }) => {
   const panel = '[data-testid="session-debug-panel"]';
   const rect = async () => (await probe.dom(panel)).elements[0]!.rect;
 
@@ -23,7 +23,8 @@ test("a developer can inspect, move, resize and dismiss session diagnostics with
   });
 
   await step("after: developer mode shows versions, waiting state and measured connection health", async () => {
-    await user.press("Meta+k");
+    await user.press(world.paletteShortcut);
+    await user.see({ role: "combobox" });
     await user.type({ role: "combobox" }, "Enable Developer Mode");
     await user.click({ text: "Enable Developer Mode" });
     await user.see({ testId: "session-debug-panel" });

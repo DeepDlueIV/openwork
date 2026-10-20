@@ -16,7 +16,7 @@ import sys
 import threading
 import time
 
-SOCKET = sys.argv[1]
+SOCKET = sys.argv[1] if __name__ == "__main__" else None
 os.umask(0o077)
 LOCK = threading.Lock()
 STATE = threading.Lock()
@@ -78,13 +78,13 @@ def run_actions(request, event):
         attempted = True
         return command(*args)
     def send_keys(*args):
-        # X11 delivers keys to whichever client has focus. Another window can
-        # take focus after computer_act focused the approved one, so check
-        # before every chunk and stop instead of typing into it.
+        # Bind delivery to the selected client as well as checking focus. A
+        # separate focus check cannot prevent a client stealing it before send.
         if request.get("windowId") is not None:
             check(event, deadline)
             if int(request["windowId"]) not in focused_windows():
                 raise RuntimeError("Another window took focus; no further keys were sent")
+            args = (args[0], "--window", str(request["windowId"]), *args[1:])
         return send(*args)
     def send_pointer(*args):
         # Buttons and wheel clicks go to whichever window is under the pointer.
@@ -390,11 +390,16 @@ def idle_shutdown(server):
                 return
 
 
-try:
-    with Server(SOCKET, Handler) as server:
-        server.timeout = 1
-        threading.Thread(target=idle_shutdown, args=(server,), daemon=True).start()
-        server.serve_forever(poll_interval=0.1)
-finally:
-    try: os.unlink(SOCKET)
-    except FileNotFoundError: pass
+def main():
+    try:
+        with Server(SOCKET, Handler) as server:
+            server.timeout = 1
+            threading.Thread(target=idle_shutdown, args=(server,), daemon=True).start()
+            server.serve_forever(poll_interval=0.1)
+    finally:
+        try: os.unlink(SOCKET)
+        except FileNotFoundError: pass
+
+
+if __name__ == "__main__":
+    main()

@@ -35,6 +35,13 @@ guard_desktop_egress() {
     case " $tools " in *" ip6tables "*) ;; *) echo "The app network guard needs IPv6 filtering" >&2; exit 1 ;; esac
   fi
   for tool in $tools; do
+    # The model's shell has public networking, but cannot bypass the guest's
+    # authorization via local CDP, VNC or guest-control listeners.
+    if id openwork-command >/dev/null 2>&1; then
+      command_uid=$(id -u openwork-command)
+      "$tool" -w -C OUTPUT -m owner --uid-owner "$command_uid" -m addrtype --dst-type LOCAL -p tcp -m multiport --dports 5900:5903,6080,9222 -j REJECT 2>/dev/null \
+        || "$tool" -w -I OUTPUT 1 -m owner --uid-owner "$command_uid" -m addrtype --dst-type LOCAL -p tcp -m multiport --dports 5900:5903,6080,9222 -j REJECT
+    fi
     # Native app code (including Blender Python and visible terminals) has no
     # network access. Its Unix-domain app bridges and X display still work.
     if id openwork-app >/dev/null 2>&1; then

@@ -6,13 +6,14 @@ import type { ComputerPresentation } from "@openwork/types/desktop-ipc"
 
 import { desktopBridge } from "@/app/lib/desktop"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 type Observation = Omit<ComputerPresentation, "phase" | "frame"> & {
   phase: ComputerPresentation["phase"] | "unavailable" | "stopping"
   frame?: NonNullable<ComputerPresentation["frame"]> & { key: string }
 }
-type Interaction = "takeover" | "resume"
+type Interaction = "approve" | "deny" | "takeover" | "resume"
 const inputLabels: Record<string, string> = { move: "Moving", click: "Click", double_click: "Double click", triple_click: "Triple click", drag: "Dragging", scroll: "Scrolling", key: "Key press", type: "Typing", press: "Press", set_value: "Editing" }
 const pausedPhases = ["paused", "person_interacting", "ready_to_continue", "requery_required"]
 
@@ -60,6 +61,7 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
   const presentation: Observation | null = observed ?? (readFailed ? { id: "", phase: "unavailable", inputs: [] } : null)
   const [actionError, setActionError] = useState("")
   const [busy, setBusy] = useState<Interaction | null>(null)
+  const [windowChoice, setWindowChoice] = useState<{ id: string; windowId: number } | null>(null)
   const [minimized, setMinimized] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [now, setNow] = useState(Date.now)
@@ -233,7 +235,7 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
 
   async function interact(action: Interaction, windowId?: number) {
     const current = latest.current
-    if (!current || acting.current || controlsBusy || !enabled || readFailed || cleanupPending) return
+    if (!current || current.id !== presentation?.id || acting.current || controlsBusy || !enabled || readFailed || cleanupPending) return
     acting.current = true
     const actionScope = scope.current
     monitor.current.revision += 1
@@ -260,8 +262,10 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
   const unavailable = readFailed || presentation.phase === "unavailable"
   const frame = !minimized && !unavailable && !stopPending && !paused && presentation.frame?.key !== failedFrame ? presentation.frame : undefined
   const live = !minimized && document.visibilityState === "visible" && presentation.phase === "working" && frame && loadedFrame === frame.key && now - frame.capturedAt >= 0 && now - frame.capturedAt < 1_500
-  const status = unavailable || failedFrame !== null ? "View unavailable" : paused ? "Paused" : live ? "Live" : "Connecting"
+  const status = choosing ? "Choose a window" : unavailable || failedFrame !== null ? "View unavailable" : paused ? "Paused" : live ? "Live" : "Connecting"
   const disabled = controlsBusy || busy !== null || unavailable || cleanupPending || !enabled
+  const selectedWindow = presentation.windows?.find((window) => windowChoice?.id === presentation.id && window.id === windowChoice.windowId)
+    ?? presentation.windows?.[0]
   const maxX = Math.max(12, bounds.width - cardSize.width - 12)
   const maxY = Math.max(12, bounds.height - cardSize.height - 12)
   const shown = { x: Math.min(maxX, Math.max(12, position.x)), y: Math.min(maxY, Math.max(12, position.y)) }
@@ -283,7 +287,18 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
   const title = `Computer${presentation.appName ? ` · ${presentation.appName}` : ""}`
 
   const screen = choosing ? (
-    <p className="px-4 py-4 text-xs text-muted-foreground">Opening the app window…</p>
+    <div className="space-y-3 px-4 py-4 text-xs" data-testid="session-computer-window-approval">
+      <p>{presentation.mode === "observe" ? "Read" : "Use"} one {presentation.appName || "app"} window for this task. Its content may be sent to your selected model provider.</p>
+      {presentation.task ? <p className="text-muted-foreground">{presentation.task}</p> : null}
+      <Select value={selectedWindow?.id ?? null} disabled={disabled} onValueChange={(value) => { if (typeof value === "number") setWindowChoice({ id: presentation.id, windowId: value }) }}>
+        <SelectTrigger aria-label="Window to allow" className="w-full"><SelectValue>{selectedWindow?.title || "Untitled window"}</SelectValue></SelectTrigger>
+        <SelectContent>{presentation.windows?.map((window) => <SelectItem key={window.id} value={window.id}>{window.title || "Untitled window"}</SelectItem>)}</SelectContent>
+      </Select>
+      <div className="flex justify-end gap-2">
+        <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={() => void interact("deny")}>Not now</Button>
+        <Button type="button" size="sm" disabled={disabled || !selectedWindow} data-testid="session-computer-window-allow" onClick={() => { if (selectedWindow) void interact("approve", selectedWindow.id) }}>Allow this window</Button>
+      </div>
+    </div>
   ) : (
     <div
       ref={setViewport}
@@ -330,7 +345,7 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
     <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-3 py-2">
       <div className="min-w-0 flex-1 basis-24 text-xs text-muted-foreground">
         <p className="truncate" title={presentation.windowTitle}>{presentation.windowTitle || presentation.appName || "This Mac"}</p>
-        <p className="mt-0.5">{stopPending ? "Stop not yet confirmed" : paused ? presentation.canContinue ? "Ready when you are" : "Waiting for your input to finish" : "Watch only"}</p>
+        <p className="mt-0.5">{choosing ? "No window approved" : stopPending ? "Stop not yet confirmed" : paused ? presentation.canContinue ? "Ready when you are" : "Waiting for your input to finish" : "Watch only"}</p>
       </div>
       {!choosing && !stopPending ? <Button
         size="sm"

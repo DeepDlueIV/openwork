@@ -92,7 +92,8 @@ export async function providerConfigTemplates(seed: Seed) {
     while (Date.now() < deadline) {
       const status = await call("/experimental/engine-v2-preview/status");
       const mirrored = Array.isArray(status.mirroredProviderIds) ? status.mirroredProviderIds : [];
-      if (status.running === true && ids.every(id => mirrored.includes(id))) break;
+      const skipped = Array.isArray(status.skippedProviderIds) ? status.skippedProviderIds : [];
+      if (status.running === true && ids.every(id => mirrored.includes(id) || skipped.includes(id))) break;
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     return {

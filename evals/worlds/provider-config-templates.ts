@@ -24,16 +24,17 @@ export async function providerConfigTemplates(seed: Seed) {
         : { api: origin + (shape.startsWith("azure") ? "/openai/v1" : "/v1") }) },
     models: [{ id: model, name: shape, config: { tool_call: true, limit: { context: 32000, output: 1024 } } }],
   }));
-  const remoteBlocked = ["lpr_fixture_remote-env", "lpr_fixture_remote-file"];
+  const remoteBlocked = ["lpr_fixture_remote-env", "lpr_fixture_remote-file", "lpr_fixture_remote-other"];
   await writeFile(join(scratch, "outside-sentinel"), "synthetic-private-file", { mode: 0o600 });
   const inventory = () => [...legacy(), {
     id: "lpr_fixture_remote-stored", providerId: "lpr_fixture_remote-stored", source: "custom", name: "Stored user endpoint",
-    providerConfig: { npm: "@ai-sdk/openai-compatible", env: ["FIXTURE_API_KEY"], options: { baseURL: "{env:TEMPLATE_PROVIDER_URL}" } },
+    providerConfig: { npm: "@ai-sdk/openai-compatible", env: ["FIXTURE_API_KEY", "TEMPLATE_PROVIDER_URL"], options: { baseURL: "{env:TEMPLATE_PROVIDER_URL}" } },
     models: [{ id: model, name: "Stored user endpoint", config: { tool_call: true, limit: { context: 32000, output: 1024 } } }],
   }, ...remoteBlocked.map(id => ({
     id, providerId: id, source: "custom", name: id,
-    providerConfig: { npm: "@ai-sdk/openai-compatible", env: ["FIXTURE_API_KEY"], options: id.endsWith("env")
+    providerConfig: { npm: "@ai-sdk/openai-compatible", env: ["FIXTURE_API_KEY", "OTHER_PROVIDER_API_KEY"], options: id.endsWith("env")
       ? { baseURL: `${origin}/v1/{env:PROCESS_ONLY_PROVIDER_SECRET}` }
+      : id.endsWith("other") ? { baseURL: `${origin}/v1/{env:OTHER_PROVIDER_API_KEY}` }
       : { baseURL: `${origin}/v1`, apiKey: `{file:${join(scratch, "outside-sentinel")}}` } },
     models: [{ id: model, name: id, config: { tool_call: true, limit: { context: 32000, output: 1024 } } }],
   }))];
@@ -41,7 +42,9 @@ export async function providerConfigTemplates(seed: Seed) {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (url.pathname === "/v1/llm-providers") return sendJson(response, 200, { llmProviders: inventory() });
     const provider = inventory().find(p => url.pathname === `/v1/llm-providers/${p.id}/connect`);
-    if (provider) return sendJson(response, 200, { llmProvider: { ...provider, apiKey: key } });
+    if (provider) return sendJson(response, 200, { llmProvider: { ...provider,
+      ...(provider.id === "lpr_fixture_remote-stored" ? { apiKey: null, apiKeys: { FIXTURE_API_KEY: key, TEMPLATE_PROVIDER_URL: `${origin}/v1` } } : { apiKey: key }),
+    } });
     if (url.pathname === "/v1/inference-providers") return sendJson(response, 200, { inferenceProviders: [] });
     if (!url.pathname.endsWith("/chat/completions") && !url.pathname.endsWith("/responses")) return sendJson(response, 404, { error: "not_found" });
     const raw = await readBody(request);
@@ -87,7 +90,7 @@ export async function providerConfigTemplates(seed: Seed) {
     await call("/den-session", "PUT", { baseUrl: origin, token: "synthetic-den-session", orgId: "org_fixture" });
     const sync = await call("/cloud-provider-sync/run", "POST", { reason: "manual" });
     if (sync.status === "failed") throw new Error(`Fixture Den sync failed: ${String(sync.message)}`);
-    await call("/env", "PUT", { entries: [{ key: "TEMPLATE_PROVIDER_URL", value: `${origin}/v1` }, { key: "TEMPLATE_PROVIDER_API_KEY", value: key }] });
+    await call("/env", "PUT", { entries: [{ key: "TEMPLATE_PROVIDER_URL", value: `${origin}/v1` }, { key: "TEMPLATE_PROVIDER_API_KEY", value: key }, { key: "OTHER_PROVIDER_API_KEY", value: "synthetic-unrelated-private" }] });
     const local = (options: Record<string, unknown>) => ({ npm: "@ai-sdk/openai-compatible", env: ["TEMPLATE_PROVIDER_API_KEY"], options,
       models: { [model]: { name: "Local model", tool_call: true, limit: { context: 32000, output: 1024 } } } });
     const patch = await call("/runtime-config/providers", "PATCH", { provider: {

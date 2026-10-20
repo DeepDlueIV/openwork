@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -5,8 +6,28 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 export interface ProviderConfigTemplateError {
   providerId: string;
   field: string;
-  code: "missing_environment_variable" | "invalid_environment_variable" | "unreadable_file_reference" | "disallowed_file_reference";
+  code: "missing_environment_variable" | "invalid_environment_variable" | "disallowed_environment_variable" | "unreadable_file_reference" | "disallowed_file_reference";
   message: string;
+}
+
+/** Only the value delivered by this provider is an approved remote binding.
+ * A reused env name must not expose another provider's later replacement key. */
+export function approvedProviderEnvironmentNames(
+  ownership: unknown,
+  environment: ReadonlyMap<string, string>,
+): Map<string, Set<string>> {
+  const approved = new Map<string, Set<string>>();
+  if (ownership === null || typeof ownership !== "object" || Array.isArray(ownership)) return approved;
+  for (const [providerId, bindings] of Object.entries(ownership)) {
+    if (bindings === null || typeof bindings !== "object" || Array.isArray(bindings)) continue;
+    const names = new Set<string>();
+    for (const [name, expected] of Object.entries(bindings)) {
+      const value = environment.get(name);
+      if (typeof expected === "string" && value !== undefined && createHash("sha256").update(value).digest("hex") === expected) names.add(name);
+    }
+    approved.set(providerId, names);
+  }
+  return approved;
 }
 
 /** V1 substitutes env first, then trimmed file contents. Remote definitions are
@@ -21,6 +42,7 @@ export async function resolveProviderConfigTemplates(
     environment: ReadonlyMap<string, string>;
     /** Only machine-declared, non-managed runtime providers may use local sources. */
     localProviderIds: ReadonlySet<string>;
+    remoteEnvironmentNames: ReadonlyMap<string, ReadonlySet<string>>;
     inheritedEnvironment?: NodeJS.ProcessEnv;
     home?: string;
     readText?: (path: string) => Promise<string>;
@@ -43,6 +65,10 @@ export async function resolveProviderConfigTemplates(
       const expanded = value.replace(/\{env:([^}]+)\}/g, (_token, name: string) => {
         if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
           errors.push({ providerId, field, code: "invalid_environment_variable", message: `Provider ${providerId}: ${field} references an invalid environment variable name.` });
+          return "";
+        }
+        if (!local && !options.remoteEnvironmentNames.get(providerId)?.has(name)) {
+          errors.push({ providerId, field, code: "disallowed_environment_variable", message: `Provider ${providerId}: ${field} references environment variable ${name}, which is not an approved credential binding for this provider. Reconnect the provider with its own credentials.` });
           return "";
         }
         // The managed v1 child removes this server-only secret too. Remote

@@ -30,6 +30,7 @@ test("a member's environment and file configured providers answer on V2 without 
     expect(JSON.stringify(status)).not.toContain(world.key);
     expect(JSON.stringify(status)).not.toContain("synthetic-process-private");
     expect(JSON.stringify(status)).not.toContain("synthetic-private-file");
+    expect(JSON.stringify(status)).not.toContain("synthetic-unrelated-private");
     for (const id of world.remoteBlocked) expect(status.skippedProviderIds).toContain(id);
     evidence.recordAssertionEvidence("Missing references are actionable and remote definitions cannot export process values or files", String(status.lastError), !JSON.stringify(status).includes(world.key) && String(status.lastError).includes("MISSING_PROVIDER_ENDPOINT"));
   });

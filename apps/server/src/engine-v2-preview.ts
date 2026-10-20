@@ -40,7 +40,7 @@ import {
 import type { EnvService } from "./env-file.js";
 import { selectPrimaryCredentialEnvName } from "./managed-provider-auth.js";
 import type { ServerConfig } from "./types.js";
-import { resolveProviderConfigTemplates } from "./provider-config-templates.js";
+import { approvedProviderEnvironmentNames, resolveProviderConfigTemplates } from "./provider-config-templates.js";
 import { readOpenworkWorkspaceConfig } from "./openwork-workspace-config-store.js";
 
 /**
@@ -879,6 +879,7 @@ export function createEngineV2Preview(options: {
       !managedIds.has(id) && !/^(?:lpr_|ipr_|openwork$)/i.test(id)));
     const templates = await resolveProviderConfigTemplates(providerMap, {
       directory: runtimeStorageDir(config), environment: credentials, localProviderIds,
+      remoteEnvironmentNames: approvedProviderEnvironmentNames(ownership.providerEnvHashes, credentials),
     });
     const mapped = mapRuntimeProvidersToV2Specs(templates.providers, credentials, localKeys, new Set(Object.keys(configured)));
     const specs = mapped.specs.filter((spec) => !disabled.has(spec.id));

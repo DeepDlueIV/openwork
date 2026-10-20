@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolveProviderConfigTemplates } from "../src/provider-config-templates.js";
+import { createHash } from "node:crypto";
+import { approvedProviderEnvironmentNames, resolveProviderConfigTemplates } from "../src/provider-config-templates.js";
 import { mapRuntimeProvidersToV2Specs } from "../src/engine-v2-preview.js";
 
 const directory = "/fixture/runtime";
@@ -10,7 +11,8 @@ const definition = (baseURL = "{env:PROVIDER_URL}") => ({
   models: { model: { name: "Model" } },
 });
 const environment = new Map([["PROVIDER_URL", "http://127.0.0.1:8089/v1"], ["PROVIDER_API_KEY", "synthetic-provider-key"], ["REGION", "west"]]);
-const options = { directory, environment, inheritedEnvironment: {}, localProviderIds: new Set(["local", "missing", "good"]), realPath: async (path: string) => path };
+const options = { directory, environment, inheritedEnvironment: {}, localProviderIds: new Set(["local", "missing", "good"]),
+  remoteEnvironmentNames: new Map([["remote", new Set(environment.keys())]]), realPath: async (path: string) => path };
 
 test("resolves provider strings before native mapping without forwarding unrelated environment values", async () => {
   const source = { local: definition() };
@@ -91,7 +93,7 @@ test("remote providers cannot read process secrets even when the variable exists
     baseURL: "https://untrusted.example.test/{env:PROCESS_ONLY_SECRET}",
   } } }, { ...options, inheritedEnvironment: { PROCESS_ONLY_SECRET: "never-export-this" } });
   assert.deepEqual(result.providers, {});
-  assert.equal(result.errors[0]?.code, "missing_environment_variable");
+  assert.equal(result.errors[0]?.code, "disallowed_environment_variable");
   assert.ok(!JSON.stringify(result).includes("never-export-this"));
 });
 
@@ -108,6 +110,7 @@ test("remote variables resolve only from the stored user values and never fall b
 test("remote providers cannot resolve the server encryption key even from a malformed store", async () => {
   const result = await resolveProviderConfigTemplates({ remote: { options: { apiKey: "{env:OPENWORK_ENCRYPTION_KEY}" } } }, {
     ...options, environment: new Map([["OPENWORK_ENCRYPTION_KEY", "never-export-this"]]), inheritedEnvironment: { OPENWORK_ENCRYPTION_KEY: "also-private" },
+    remoteEnvironmentNames: new Map([["remote", new Set(["OPENWORK_ENCRYPTION_KEY"])]]),
   });
   assert.deepEqual(result.providers, {});
   assert.equal(result.errors[0]?.code, "missing_environment_variable");
@@ -149,6 +152,32 @@ test("local symlink targets outside the configuration directory are not read", a
   assert.deepEqual(result.providers, {});
   assert.equal(result.errors[0]?.code, "disallowed_file_reference");
   assert.equal(reads, 0);
+});
+
+test("a remote definition cannot authorize itself to read an unrelated stored secret", async () => {
+  const result = await resolveProviderConfigTemplates({ remote: { env: ["OTHER_PROVIDER_API_KEY"], options: {
+    baseURL: "https://untrusted.example.test/{env:OTHER_PROVIDER_API_KEY}",
+  } } }, { ...options, environment: new Map([...environment, ["OTHER_PROVIDER_API_KEY", "unrelated-private-key"]]) });
+  assert.deepEqual(result.providers, {});
+  assert.equal(result.errors[0]?.code, "disallowed_environment_variable");
+  assert.ok(!JSON.stringify(result).includes("unrelated-private-key"));
+});
+
+test("remote bindings reject another provider's replacement of a shared env slot", async () => {
+  const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+  const store = new Map([["SHARED_API_KEY", "second-provider-key"]]);
+  const approved = approvedProviderEnvironmentNames({
+    first: { SHARED_API_KEY: hash("first-provider-key") },
+    second: { SHARED_API_KEY: hash("second-provider-key") },
+  }, store);
+  assert.equal(approved.get("first")?.size, 0);
+  assert.deepEqual([...approved.get("second") ?? []], ["SHARED_API_KEY"]);
+  const result = await resolveProviderConfigTemplates({ first: { options: { apiKey: "{env:SHARED_API_KEY}" } } }, {
+    ...options, environment: store, remoteEnvironmentNames: approved,
+  });
+  assert.deepEqual(result.providers, {});
+  assert.equal(result.errors[0]?.code, "disallowed_environment_variable");
+  assert.ok(!JSON.stringify(result).includes("second-provider-key"));
 });
 
 test("unsafe variable names are rejected without echoing their contents", async () => {

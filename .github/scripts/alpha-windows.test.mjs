@@ -22,7 +22,9 @@ function fixture(body) {
   const receipt = join(directory, "receipt.jsonl");
   const dist = join(directory, "apps/desktop/dist-electron");
   const version = "0.20.1-alpha.123.1+abcdef0";
-  const installer = `openwork-win-x64-${version}.exe`;
+  // Electron Builder strips semver +build metadata from ${version} filenames.
+  const artifactVersion = version.split("+")[0];
+  const installer = `openwork-win-x64-${artifactVersion}.exe`;
   mkdirSync(dist, { recursive: true });
   mkdirSync(join(directory, "scripts/release"), { recursive: true });
   writeFileSync(join(directory, "scripts/release/check-windows-alpha-version.mjs"), readFileSync(new URL("../../scripts/release/check-windows-alpha-version.mjs", import.meta.url)));
@@ -46,7 +48,7 @@ if (args[1] === 'upload' && !args.some(arg => arg.endsWith('/latest.yml'))) proc
     GITHUB_OUTPUT: join(directory, "github-output"),
     ALPHA_COMMIT: "abcdef0",
     ALPHA_BUILD_STARTED_AT: "2026-10-20T12:00:00Z",
-    ALPHA_VERSION: version,
+    ALPHA_VERSION: artifactVersion,
     ALPHA_RELEASE_NAME: "OpenWork Alpha (Windows x64)",
   };
   const run = (script, overrides = {}) => spawnSync("bash", ["-c", script], {
@@ -155,6 +157,9 @@ test("Windows uses x64 sidecars and signed bytes, retaining build-only dispatch 
   assert.match(windows, /inputs.platform != 'macos-arm64'/);
   assert.match(workflow, /inputs.platform != 'windows-x64'/);
   assert.match(windows, /GITHUB_RUN_NUMBER\}\.\$\{GITHUB_RUN_ATTEMPT/);
+  assert.match(windows, /echo "artifact_version=\$\{version\}"/);
+  assert.equal(windows.match(/ALPHA_VERSION: \$\{\{ steps.alpha-version.outputs.artifact_version \}\}/g)?.length, 2);
+  assert.equal(windows.match(/ALPHA_VERSION: \$\{\{ steps.alpha-version.outputs.alpha_version \}\}/g)?.length, 1);
   assert.match(windows, /steps.publish-windows.outputs.published == 'true'/);
   assert.match(windows, /--protect-run "\$GITHUB_RUN_NUMBER"/);
   assert.match(workflow, /group: alpha-macos-\$\{\{ inputs.channel_tag/);

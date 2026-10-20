@@ -1,0 +1,121 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { dirname, join } from "node:path";
+import type { Seed } from "@openwork/env";
+import { bootManagedOpenworkServer, close, isRecord, listen, readBody, sendJson, sendStream } from "./openwork-server-cli.ts";
+
+const key = "synthetic-template-provider-key";
+const answer = "The configured provider answered.";
+const model = "fixture-model";
+const legacyShapes = ["compatible-options", "compatible-api", "azure-options", "azure-api"];
+
+/** Real managed V2, real local env/config APIs, deterministic Den legacy wire
+ * inventory and inference. No renderer state, paid provider or engine config stub. */
+export async function providerConfigTemplates(seed: Seed) {
+  const scratch = seed.tmpPath("provider-config-templates");
+  const workspace = join(scratch, "workspace");
+  await mkdir(workspace, { recursive: true });
+  const requests: { path: string; bearer: boolean; azure: boolean; model: unknown }[] = [];
+  let origin = "";
+  const legacy = () => legacyShapes.map(shape => ({
+    id: `lpr_fixture_${shape.replaceAll("-", "_")}`, providerId: shape, source: "custom", name: shape,
+    providerConfig: { npm: shape.startsWith("azure") ? "@ai-sdk/azure" : "@ai-sdk/openai-compatible", env: ["FIXTURE_API_KEY"],
+      ...(shape.endsWith("options") ? { options: { baseURL: origin + (shape.startsWith("azure") ? "/openai/v1" : "/v1") } }
+        : { api: origin + (shape.startsWith("azure") ? "/openai/v1" : "/v1") }) },
+    models: [{ id: model, name: shape, config: { tool_call: true, limit: { context: 32000, output: 1024 } } }],
+  }));
+  const mock = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === "/v1/llm-providers") return sendJson(response, 200, { llmProviders: legacy() });
+    const provider = legacy().find(p => url.pathname === `/v1/llm-providers/${p.id}/connect`);
+    if (provider) return sendJson(response, 200, { llmProvider: { ...provider, apiKey: key } });
+    if (url.pathname === "/v1/inference-providers") return sendJson(response, 200, { inferenceProviders: [] });
+    const raw = await readBody(request);
+    const body: unknown = raw ? JSON.parse(raw) : {};
+    const selectedModel = isRecord(body) ? body.model : undefined;
+    requests.push({ path: url.pathname, bearer: request.headers.authorization === `Bearer ${key}`, azure: request.headers["api-key"] === key, model: selectedModel });
+    if (url.pathname.endsWith("/chat/completions")) return sendStream(response, [
+      { id: "chatcmpl-fixture", object: "chat.completion.chunk", model: selectedModel, choices: [{ index: 0, delta: { role: "assistant", content: answer }, finish_reason: null }] },
+      { id: "chatcmpl-fixture", object: "chat.completion.chunk", model: selectedModel, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } },
+    ]);
+    if (url.pathname.endsWith("/responses")) {
+      const item = { id: "msg_fixture", type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: answer, annotations: [] }] };
+      const completed = { id: "resp_fixture", object: "response", created_at: 1, status: "completed", model: selectedModel, output: [item], usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } };
+      response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+      for (const [sequence_number, event] of [
+        { type: "response.created", response: { ...completed, status: "in_progress", output: [] } },
+        { type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", content: [] } },
+        { type: "response.content_part.added", item_id: item.id, output_index: 0, content_index: 0, part: { type: "output_text", text: "", annotations: [] } },
+        { type: "response.output_text.delta", item_id: item.id, output_index: 0, content_index: 0, delta: answer },
+        { type: "response.output_text.done", item_id: item.id, output_index: 0, content_index: 0, text: answer },
+        { type: "response.output_item.done", output_index: 0, item }, { type: "response.completed", response: completed },
+      ].entries()) response.write(`event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`);
+      response.end(); return;
+    }
+    sendJson(response, 404, { error: "unexpected_fixture_request" });
+  });
+  origin = await listen(mock);
+  let managed: Awaited<ReturnType<typeof bootManagedOpenworkServer>> | undefined;
+  const token = "fixture-local-owner";
+  try {
+    managed = await bootManagedOpenworkServer({ scratch, workspace, token, sink: () => undefined,
+      env: { OPENWORK_ENGINE_V2_PREVIEW: "chat", OPENWORK_DISABLE_FREE_INFERENCE: "1",
+        ...(process.env.OPENWORK_TEST_OPENCODE2 ? { OPENWORK_OPENCODE2_BIN: process.env.OPENWORK_TEST_OPENCODE2 } : {}) } });
+    const call = async (path: string, method = "GET", body?: unknown) => {
+      const response = await fetch(`${managed?.base}${path}`, { method,
+        headers: { authorization: `Bearer ${token}`, "x-openwork-host-token": `${token}-host`, "content-type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(90_000) });
+      const text = await response.text();
+      if (!response.ok) throw new Error(`Provider fixture ${method} ${path}: HTTP ${response.status}`);
+      const json: unknown = text ? JSON.parse(text) : {};
+      return isRecord(json) ? json : {};
+    };
+    await call("/den-session", "PUT", { baseUrl: origin, token: "synthetic-den-session", orgId: "org_fixture" });
+    await call("/cloud-provider-sync/run", "POST", { reason: "manual" });
+    await call("/env", "PUT", { entries: [{ key: "TEMPLATE_PROVIDER_URL", value: `${origin}/v1` }, { key: "TEMPLATE_PROVIDER_API_KEY", value: key }] });
+    const local = (options: Record<string, unknown>) => ({ npm: "@ai-sdk/openai-compatible", env: ["TEMPLATE_PROVIDER_API_KEY"], options,
+      models: { [model]: { name: "Local model", tool_call: true, limit: { context: 32000, output: 1024 } } } });
+    const patch = await call("/runtime-config/providers", "PATCH", { provider: {
+      "fixture-env": local({ baseURL: "{env:TEMPLATE_PROVIDER_URL}", apiKey: "{env:TEMPLATE_PROVIDER_API_KEY}" }),
+      "fixture-missing": local({ baseURL: "{env:MISSING_PROVIDER_ENDPOINT}", apiKey: "{env:TEMPLATE_PROVIDER_API_KEY}" }),
+    } });
+    if (typeof patch.runtimeConfigPath !== "string") throw new Error("Missing runtime config path");
+    const configDirectory = dirname(patch.runtimeConfigPath);
+    await writeFile(join(configDirectory, "fixture-endpoint"), `${origin}/v1\n`, { mode: 0o600 });
+    await writeFile(join(configDirectory, "fixture-key"), `${key}\n`, { mode: 0o600 });
+    await call("/runtime-config/providers", "PATCH", { provider: {
+      "fixture-file": local({ baseURL: "{file:fixture-endpoint}", apiKey: "{file:fixture-key}" }),
+    } });
+    const mount = `/workspace/${managed.workspaceId}/opencode2/api`;
+    const ids = ["fixture-env", "fixture-file", ...legacy().map(p => p.id)];
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      const status = await call("/experimental/engine-v2-preview/status");
+      const mirrored = Array.isArray(status.mirroredProviderIds) ? status.mirroredProviderIds : [];
+      if (status.running === true && ids.every(id => mirrored.includes(id))) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return {
+      ids, model, answer, key,
+      status: () => call("/experimental/engine-v2-preview/status"),
+      catalog: () => call(`${mount}/model`),
+      async chat(providerId: string) {
+        const before = requests.length;
+        const created = await call(`${mount}/session`, "POST", { title: "Configured model" });
+        const id = isRecord(created.data) && typeof created.data.id === "string" ? created.data.id : null;
+        if (!id) throw new Error("Native session was not created");
+        await call(`${mount}/session/${id}/model`, "POST", { model: { providerID: providerId, id: model } });
+        await call(`${mount}/session/${id}/prompt`, "POST", { text: "Say hello" });
+        let messages = await call(`${mount}/session/${id}/message`);
+        const until = Date.now() + 30_000;
+        while (Date.now() < until && !JSON.stringify(messages).includes(answer) && !JSON.stringify(messages).includes('"outcome":"failed"')) {
+          await new Promise(resolve => setTimeout(resolve, 100)); messages = await call(`${mount}/session/${id}/message`);
+        }
+        return { messages, requests: requests.slice(before), answered: JSON.stringify(messages).includes(answer) };
+      },
+      async [Symbol.asyncDispose]() { await managed?.stop(); await close(mock); await rm(scratch, { recursive: true, force: true }); },
+    };
+  } catch (error) {
+    await managed?.stop(); await close(mock); await rm(scratch, { recursive: true, force: true }); throw error;
+  }
+}

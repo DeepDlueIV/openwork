@@ -40,6 +40,7 @@ import {
 import type { EnvService } from "./env-file.js";
 import { selectPrimaryCredentialEnvName } from "./managed-provider-auth.js";
 import type { ServerConfig } from "./types.js";
+import { resolveProviderConfigTemplates } from "./provider-config-templates.js";
 
 /**
  * A stable id for this OpenWork app's engine config. Each desktop app gives
@@ -869,7 +870,13 @@ export function createEngineV2Preview(options: {
     const providerMap = Object.fromEntries(Object.entries(combinedProviders)
       .filter(([id]) => !ownsGateway() || !/^ipr_/i.test(id)));
     const credentials = new Map((await options.env?.list() ?? []).map((entry) => [entry.key, entry.value]));
-    const mapped = mapRuntimeProvidersToV2Specs(providerMap, credentials, localKeys, new Set(Object.keys(configured)));
+    // V1 reads this provider map from runtime-opencode-config.json and expands
+    // config variables before building its catalog. Do the same before V2 URL
+    // validation, without inheriting all server secrets into the V2 process.
+    const templates = await resolveProviderConfigTemplates(providerMap, {
+      directory: runtimeStorageDir(config), environment: credentials,
+    });
+    const mapped = mapRuntimeProvidersToV2Specs(templates.providers, credentials, localKeys, new Set(Object.keys(configured)));
     const specs = mapped.specs.filter((spec) => !disabled.has(spec.id));
     if (ownsGateway()) mirroredSpecs = specs;
     discovered();
@@ -884,14 +891,14 @@ export function createEngineV2Preview(options: {
     mirroredSpecs = specs.filter(spec => !ownsGateway() || !/^ipr_/i.test(spec.id));
     workspaceReadiness.clear();
     mirroredProviderIds = nextMirroredProviderIds.filter(id => !ownsGateway() || !/^ipr_/i.test(id));
-    skippedProviderIds = [...mapped.skippedProviderIds];
+    skippedProviderIds = [...new Set([...mapped.skippedProviderIds, ...templates.errors.map(error => error.providerId)])].sort();
     lastMirroredAt = new Date().toISOString();
     pushed();
     // Re-check folders already in use now, so their next prompt pays nothing.
     for (const directory of mcpLocations.keys()) void ensureWorkspaceReady(directory).catch(() => undefined);
     const catalog = await waitForEngineV2Catalog(active, workspaceDir, specs, CATALOG_MIRROR_TIMEOUT_MS, ownsGateway);
     currentCatalogModelIds = catalog.modelIds;
-    lastError = catalog.lastError;
+    lastError = [...templates.errors.map(error => error.message), ...(catalog.lastError ? [catalog.lastError] : [])].join("\n") || undefined;
   }
 
   function scheduleMirror(): void {

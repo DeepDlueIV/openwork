@@ -34,6 +34,7 @@ RUN bash /tmp/install-desktop-apps.sh && rm /tmp/install-desktop-apps.sh
 COPY ee/packages/headless-computer/src/scripting/ /usr/local/share/openwork-desktop/scripting/
 RUN chmod 0755 /usr/local/share/openwork-desktop/scripting && chmod 0644 /usr/local/share/openwork-desktop/scripting/*
 COPY --from=desktop-bridge-builder /src/ee/packages/headless-computer/dist/desktop-guest.mjs /usr/local/share/openwork-desktop/guest.mjs
+COPY --from=desktop-bridge-builder /src/ee/packages/headless-computer/dist/desktop-guest.version /usr/local/share/openwork-desktop/guest.version
 COPY ee/apps/den-worker-runtime/scripts/cloud-desktop.sh /usr/local/share/openwork-desktop/start.sh
 COPY ee/packages/headless-computer/scripts/desktop-bridge.py /usr/local/sbin/openwork-desktop-bridge
 RUN chmod 0755 /usr/local/sbin/openwork-desktop-bridge \

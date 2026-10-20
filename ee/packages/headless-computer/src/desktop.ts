@@ -26,12 +26,9 @@ export class Desktop {
   private async prepare(box: SandboxHandle) {
     const { run } = this.provider.blocks ?? {}
     if (!run || this.provider.describe().platform?.os !== "linux") throw new Error("Desktop access needs a configured Linux computer.")
-    const [guest, helper] = await Promise.all([
-      readFile(new URL("../dist/desktop-guest.mjs", import.meta.url)),
-      readFile(new URL("../dist/cloud-desktop.sh", import.meta.url)),
-    ])
+    const identity = await readFile(new URL("../dist/desktop-guest.version", import.meta.url))
     const privateBrowsing = this.options.privateBrowsing === true
-    const version = createHash("sha256").update(guest).update(helper).update(privateBrowsing ? "private-browsing" : "").digest("hex")
+    const version = createHash("sha256").update(identity).update(privateBrowsing ? "private-browsing" : "").digest("hex")
     const ready = await this.call(box, "/health", {}).catch(() => null)
     if (z.object({ version: z.literal(version) }).safeParse(ready).success) return
     const result = await run(box, {

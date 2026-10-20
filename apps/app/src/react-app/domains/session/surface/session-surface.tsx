@@ -3737,7 +3737,10 @@ export function SessionSurface(props: SessionSurfaceProps) {
         model={model} client={props.client} workspaceId={props.workspaceId}
         opencodeBaseUrl={props.opencodeBaseUrl} openworkToken={props.openworkToken}
         status={liveStatus.type} messageCount={renderedMessages.length} todoCount={props.todos?.length ?? 0}
-        modelLabel={props.modelLabel}
+        modelLabel={sessionModel.modelLabel}
+        workspaceRoot={props.workspaceRoot} threadTitle={snapshot?.session.title ?? "Focused thread"}
+        selectedModel={sessionModel.selectedModel} variant={sessionModel.modelVariant} historyComplete={hasFullHistory}
+        resolveAvailability={props.resolveModelAvailability} onCopyThread={handleCopyTranscript}
         waitingOn={props.activePermission ? "Permission" : props.activeQuestion ? "Your answer" : attachmentsUploading ? "Attachment upload" : preparingCloudTools ? "Connected tools" : sending ? "Send acknowledgement" : snapshotQuery.isFetching || openingHistory.openingLoading ? "Session history" : liveStatus.type === "retry" ? "Retry backoff" : liveStatus.type === "busy" ? "Assistant" : "Nothing"}
         activity={[
           { label: "Conversation history", state: snapshotQuery.isError || openingHistory.openingError ? "Failed" : snapshotQuery.isFetching || openingHistory.openingLoading || openingHistory.pages.loading ? "Loading" : "Loaded" },

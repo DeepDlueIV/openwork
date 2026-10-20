@@ -4,13 +4,16 @@ import { sessionDebug } from "../worlds/session-debug.ts";
 
 const test = spec.world(sessionDebug, {
   timeout: 300_000,
-  resources: { surfaces: ["appWeb"], services: [] },
+  resources: { surfaces: ["appWeb"], services: ["mock"] },
   needs: { commands: ["bun"] },
 });
 
-test("a developer can inspect, move, resize and dismiss session diagnostics without leaving the conversation", async ({ world, user, probe, step, evidence }) => {
+test("a developer inspects provider routing and copies the focused thread from session diagnostics", async ({ world, user, probe, step, evidence }) => {
   const panel = '[data-testid="session-debug-panel"]';
   const rect = async () => (await probe.dom(panel)).elements[0]!.rect;
+  const copied = (until: (text: string) => boolean) => probe.eventually(world.readClipboard, {
+    within: 5_000, label: "the focused copy action reaches the real clipboard", until,
+  });
 
   await user.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   await step("before: conversation diagnostics stay hidden until developer mode is enabled", async () => {
@@ -62,6 +65,76 @@ test("a developer can inspect, move, resize and dismiss session diagnostics with
     expect(loaded).toContain("Loaded");
     await user.click({ role: "tab", label: "Overview" });
     await user.see({ text: /^Connected$/ });
+  });
+
+  await step("Providers distinguishes configured models from observed replies", async () => {
+    await user.click({ role: "tab", label: "Providers" });
+    await user.see({ testId: "session-debug-providers" });
+    const before = await probe.eventually(async () => (await probe.dom('[data-testid="session-debug-providers"]')).elements[0]?.text ?? "", {
+      within: 15_000, label: "the focused thread has configuration but no response evidence", until: text => text.includes("Configured") && text.includes("No response in recent history"),
+    });
+    expect(before).toContain("Not reported");
+    expect(before).not.toContain("Response observed");
+    evidence.recordAssertionEvidence("Configuration alone never claims a working provider response", before, before.includes("Configured") && !before.includes("Response observed"));
+    await user.screenshot();
+  });
+
+  await step("after: a real round trip appears in the focused thread's provider details", async () => {
+    await user.type("composer", world.prompt);
+    await user.press("Enter");
+    await user.see({ text: world.reply }, { timeoutMs: 60_000 });
+    await user.click({ role: "button", label: "Refresh provider details" });
+    const after = await probe.eventually(async () => (await probe.dom('[data-testid="session-debug-providers"]')).elements[0]?.text ?? "", {
+      within: 15_000, label: "the response is observed for the focused thread", until: text => text.includes("Response observed"),
+    });
+    const requests = await world.providerReplies();
+    expect(requests.some(request => request.kind === "final")).toBe(true);
+    await user.click({ role: "button", label: "Copy thread" });
+    const transcript = await copied(text => text.includes(world.reply));
+    expect(transcript).toContain(world.prompt);
+    expect(transcript).toContain(world.reply);
+    await user.click({ role: "button", label: "Copy provider details" });
+    const diagnostics = await copied(text => text.includes(world.session.sessionId));
+    expect(diagnostics).toContain(world.session.sessionId);
+    expect(diagnostics).not.toContain(world.prompt);
+    expect(diagnostics).not.toContain(world.reply);
+    expect(diagnostics).not.toContain("synthetic-key");
+    expect(diagnostics).not.toContain("baseURL");
+    evidence.recordAssertionEvidence("A witnessed model response is scoped to this thread and its two copy actions", `${requests.length} model requests; ${after}; transcript includes this prompt and reply, while diagnostic export omits them and credentials`, requests.some(request => request.kind === "final") && after.includes("Response observed"));
+    await user.screenshot();
+  });
+
+  await step("inspecting another provider does not change the thread's model or borrow its response evidence", async () => {
+    await user.click({ role: "combobox", label: "Inspect provider" });
+    await user.click({ role: "option", label: "Secondary provider" });
+    const inspected = await probe.eventually(async () => (await probe.dom('[data-testid="session-debug-providers"]')).elements[0]?.text ?? "", {
+      within: 10_000, label: "secondary provider has its own configuration and no responses", until: text => text.includes("Secondary model") && text.includes("No response in recent history"),
+    });
+    expect(inspected).not.toContain("Response observed");
+    await user.click({ role: "button", label: "Copy provider details" });
+    const diagnostics = await copied(text => text.includes('"inspectedProvider": "debug-secondary"'));
+    expect(diagnostics).toContain('"inspectedProvider": "debug-secondary"');
+    expect(diagnostics).toContain('"Thread model": "opencode / big-pickle"');
+    evidence.recordAssertionEvidence("Provider inspection is read-only and response evidence never crosses provider identities", inspected, diagnostics.includes('"Thread model": "opencode / big-pickle"') && !inspected.includes("Response observed"));
+    await user.screenshot();
+  });
+
+  await step("focusing another conversation resets provider inspection and copies only that thread", async () => {
+    await user.click({ text: /^Independent conversation$/ });
+    await user.click({ role: "tab", label: "Providers" });
+    await user.see({ testId: "session-debug-providers" });
+    await user.click({ role: "button", label: "Copy provider details" });
+    const diagnostics = await copied(text => text.includes(world.otherSession.sessionId));
+    expect(diagnostics).toContain(world.otherSession.sessionId);
+    expect(diagnostics).not.toContain(world.session.sessionId);
+    expect(diagnostics).toContain('"inspectedProvider": "opencode"');
+    await user.click({ role: "button", label: "Copy thread" });
+    const transcript = await copied(text => text === "");
+    expect(transcript).not.toContain(world.prompt);
+    expect(transcript).not.toContain(world.reply);
+    evidence.recordAssertionEvidence("Focused-thread diagnostics and clipboard exclude the other conversation", `thread=${world.otherSession.sessionId}; previous thread and conversation text absent`, !diagnostics.includes(world.session.sessionId) && !transcript.includes(world.reply));
+    await user.screenshot();
+    await user.click({ role: "tab", label: "Overview" });
   });
 
   await step("the panel moves and resizes using its keyboard-accessible handles", async () => {

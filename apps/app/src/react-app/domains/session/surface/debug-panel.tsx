@@ -15,6 +15,9 @@ import type { OpenworkServerClient } from "@/app/lib/openwork-server";
 import { useWorkspaceSyncStreamStore, workspaceSyncStreamKey } from "../sync/session-sync";
 import type { SessionRenderModel } from "../sync/transition-controller";
 import { DebugResources, useDebugResources, type DebugActivity } from "./debug-resources";
+import { DebugProviders } from "./debug-providers";
+import type { ModelRef } from "@/app/types";
+import type { ModelAvailabilityResolver } from "./model-availability";
 
 type PanelBounds = { left: number; top: number; width: number; height: number };
 
@@ -55,12 +58,19 @@ export function SessionDebugPanel(props: {
   modelLabel: string;
   waitingOn: string;
   activity: readonly DebugActivity[];
+  workspaceRoot: string;
+  threadTitle: string;
+  selectedModel: ModelRef;
+  variant: string | null;
+  historyComplete: boolean;
+  resolveAvailability?: ModelAvailabilityResolver;
+  onCopyThread: () => Promise<void>;
 }) {
   const [dismissed, setDismissed] = useState(false);
   const [tab, setTab] = useState("overview");
   const [copied, setCopied] = useState(false);
   const [bounds, setBounds] = useState(() => fitInViewport({
-    left: window.innerWidth - 396, top: window.innerHeight - 472, width: 380, height: 392,
+    left: window.innerWidth - 396, top: window.innerHeight - 512, width: 380, height: 432,
   }));
   const interaction = useRef<{ kind: "move" | "resize"; x: number; y: number; bounds: PanelBounds } | null>(null);
   const streamKey = workspaceSyncStreamKey({ workspaceId: props.workspaceId, baseUrl: props.opencodeBaseUrl });
@@ -207,10 +217,11 @@ export function SessionDebugPanel(props: {
         </Button>
         <Button variant="ghost" size="icon-sm" aria-label="Dismiss session debug" title="Dismiss" onClick={() => setDismissed(true)}><X className="size-4" /></Button>
       </header>
-      <Tabs value={tab} onValueChange={value => setTab(value === "resources" ? "resources" : "overview")} className="min-h-0 flex-1 gap-0 overflow-hidden">
+      <Tabs value={tab} onValueChange={value => setTab(value === "providers" ? "providers" : value === "resources" ? "resources" : "overview")} className="min-h-0 flex-1 gap-0 overflow-hidden">
         <TabsList aria-label="Session debug views" variant="line" className="w-full shrink-0 justify-start border-b border-dls-border px-3">
           <TabsTrigger value="overview" className="flex-none px-2 text-xs">Overview</TabsTrigger>
           <TabsTrigger value="resources" className="flex-none px-2 text-xs">Resources</TabsTrigger>
+          <TabsTrigger value="providers" className="flex-none px-2 text-xs">Providers</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="min-h-0 overflow-y-auto px-3 py-1">
           <DiagnosticTable rows={rows} />
@@ -223,6 +234,13 @@ export function SessionDebugPanel(props: {
         </TabsContent>
         <TabsContent value="resources" className="min-h-0 overflow-y-auto px-3 py-1 [overflow-anchor:none]">
           <DebugResources resources={resources} activity={props.activity} waitingOn={props.waitingOn} />
+        </TabsContent>
+        <TabsContent value="providers" className="min-h-0 overflow-y-auto px-3 py-1 [overflow-anchor:none]">
+          {tab === "providers" ? <DebugProviders key={`${props.workspaceId}:${props.model.intendedSessionId}`}
+            workspaceId={props.workspaceId} workspaceRoot={props.workspaceRoot} sessionId={props.model.intendedSessionId}
+            threadTitle={props.threadTitle} baseUrl={props.opencodeBaseUrl} token={props.openworkToken}
+            selectedModel={props.selectedModel} variant={props.variant} status={props.status} messageCount={props.messageCount}
+            historyComplete={props.historyComplete} resolveAvailability={props.resolveAvailability} onCopyThread={props.onCopyThread} /> : null}
         </TabsContent>
       </Tabs>
       <footer className="shrink-0 border-t border-dls-border px-3 py-2 text-[11px]">

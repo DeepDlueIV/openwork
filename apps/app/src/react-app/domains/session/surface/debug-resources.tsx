@@ -17,6 +17,7 @@ type Resource = {
 const resourceLabels: Record<string, string> = {
   "react-session-debug-health": "Connection health",
   "react-session-debug-build": "Desktop build",
+  "react-session-debug-thread": "Provider thread details",
   "react-session-latest": "Latest messages",
   "react-session-snapshot": "Session history",
   "react-session-transcript": "Conversation messages",

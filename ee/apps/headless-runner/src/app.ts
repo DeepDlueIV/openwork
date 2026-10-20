@@ -5,6 +5,7 @@ import { routePath } from "hono/route"
 import { streamSSE } from "hono/streaming"
 import type { ErrorReporter } from "./error-reporting.js"
 import type { SessionEvents } from "./events.js"
+import { serviceHealthResponse, type ServiceHealthConfig } from "./service-health.js"
 import { SavedFileLimitError, type SavedFiles } from "./saved-files.js"
 import { formatBytes } from "./tool-files.js"
 import { z } from "zod"
@@ -126,6 +127,8 @@ export function createApp(input: {
   store: Store
   runner: Runner
   apiToken: string
+  /** Validated deployment settings, used only for the authenticated configuration-presence check. */
+  healthConfig?: ServiceHealthConfig
   /** Models a caller may pick per turn; without it only the default is listed. */
   models?: (modelAccess?: HeadlessModelAccess) => Promise<ModelCatalog>
   /** Bounded synthetic completion with scoped access or the deployment key; no conversation is created. */
@@ -151,6 +154,7 @@ export function createApp(input: {
   app.get("/health", (c) => c.json({ ok: true }))
 
   app.use("/v1/*", async (c, next) => {
+    if (c.req.path === "/v1/health") c.header("Cache-Control", "no-store")
     const match = /^Bearer\s+(\S+)$/i.exec(c.req.header("authorization") ?? "")
     if (!match || !tokenMatches(match[1])) return c.json({ error: "unauthorized" }, 401)
     await next()
@@ -162,6 +166,7 @@ export function createApp(input: {
     return c.json({ error: "internal_error" }, 500)
   })
 
+  app.get("/v1/health", (c) => serviceHealthResponse(c.req.raw, input.healthConfig))
   app.get("/v1/models", async (c) => c.json(input.models ? await input.models() : { defaultModel: "", models: [] }))
   app.post("/v1/models", bodyLimit({ maxSize: 8192 }), (c) => scopedCatalogResponse(c.req.raw, input.models))
   app.post("/v1/model-probe", bodyLimit({ maxSize: 8192 }), (c) => modelProbeResponse(c.req.raw, input.modelProbe))

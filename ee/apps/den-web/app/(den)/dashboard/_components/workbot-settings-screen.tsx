@@ -7,10 +7,12 @@ import { WORKBOT_DEFAULT_MODEL_NAME, type WorkbotModelTest, type WorkbotSettings
 import {
   getBrandAppearanceRoute,
   getOrgAccessFlags,
+  orgFeatureEnabled,
   parseOrganizationMetadata,
   permissionLockReason,
 } from "../../_lib/den-org";
 import { DenButton } from "../../_components/ui/button";
+import { ServiceReadinessNotice } from "../../_components/service-readiness-notice";
 import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-template";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
@@ -149,6 +151,7 @@ export function WorkbotSettingsScreen() {
         description={null}
       >
         <div className="grid gap-4">
+          <ServiceReadinessNotice capabilities={orgContext?.deploymentCapabilities} enabled={orgFeatureEnabled(orgContext, "serviceReadiness")} />
           {settings && !settings.runnerReachable ? (
             <DenNotice
               tone="error"

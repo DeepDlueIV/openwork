@@ -2429,12 +2429,170 @@
           "organizations"
         ]
       },
+      "DeploymentServiceStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "database",
+              "gateway",
+              "headlessRunner",
+              "workbot",
+              "slack",
+              "durableTurns",
+              "email"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_configured",
+              "misconfigured",
+              "unreachable",
+              "unknown"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_checked",
+              "not_configured",
+              "missing_configuration",
+              "invalid_configuration",
+              "health_verified",
+              "database_verified",
+              "authentication_failed",
+              "unexpected_response",
+              "request_failed",
+              "timeout",
+              "dependency_unavailable",
+              "configuration_only",
+              "provider_access_unverified",
+              "organization_setup_required",
+              "callback_unverified",
+              "delivery_unverified",
+              "incompatible_service"
+            ]
+          },
+          "missingSettings": {
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{0,95}$"
+            }
+          },
+          "dependencies": {
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "database",
+                "gateway",
+                "headlessRunner",
+                "workbot",
+                "slack",
+                "durableTurns",
+                "email"
+              ]
+            }
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSuccessAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "required",
+          "configured",
+          "state",
+          "reason",
+          "missingSettings",
+          "dependencies",
+          "checkedAt",
+          "lastSuccessAt",
+          "stale"
+        ],
+        "additionalProperties": false
+      },
+      "DeploymentServiceReadiness": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checking": {
+            "type": "boolean"
+          },
+          "services": {
+            "maxItems": 7,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentServiceStatus"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "checkedAt",
+          "checking",
+          "services"
+        ],
+        "additionalProperties": false
+      },
       "AdminFeature": {
         "type": "object",
         "properties": {
           "key": {
             "type": "string",
             "enum": [
+              "serviceReadiness",
               "cloudAgentGateway",
               "liveProviderSync",
               "offlineRecovery",
@@ -2630,6 +2788,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "serviceReadiness": {
+                      "type": "boolean"
+                    },
                     "cloudAgentGateway": {
                       "type": "boolean"
                     },
@@ -2701,6 +2862,7 @@
                     }
                   },
                   "required": [
+                    "serviceReadiness",
                     "cloudAgentGateway",
                     "liveProviderSync",
                     "offlineRecovery",
@@ -2728,6 +2890,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "serviceReadiness": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "cloudAgentGateway": {
                       "type": "object",
                       "properties": {
@@ -3906,6 +4124,7 @@
                     }
                   },
                   "required": [
+                    "serviceReadiness",
                     "cloudAgentGateway",
                     "liveProviderSync",
                     "offlineRecovery",
@@ -4296,6 +4515,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "serviceReadiness": {
+                      "type": "boolean"
+                    },
                     "cloudAgentGateway": {
                       "type": "boolean"
                     },
@@ -4367,6 +4589,7 @@
                     }
                   },
                   "required": [
+                    "serviceReadiness",
                     "cloudAgentGateway",
                     "liveProviderSync",
                     "offlineRecovery",
@@ -4394,6 +4617,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "serviceReadiness": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "cloudAgentGateway": {
                       "type": "object",
                       "properties": {
@@ -5572,6 +5851,7 @@
                     }
                   },
                   "required": [
+                    "serviceReadiness",
                     "cloudAgentGateway",
                     "liveProviderSync",
                     "offlineRecovery",
@@ -8356,6 +8636,147 @@
           "email"
         ]
       },
+      "OrganizationServiceReadiness": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "const": 1
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checking": {
+            "type": "boolean"
+          },
+          "services": {
+            "maxItems": 7,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "database",
+                    "gateway",
+                    "headlessRunner",
+                    "workbot",
+                    "slack",
+                    "durableTurns",
+                    "email"
+                  ]
+                },
+                "configured": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "ready",
+                    "not_configured",
+                    "misconfigured",
+                    "unreachable",
+                    "unknown"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "not_checked",
+                    "not_configured",
+                    "missing_configuration",
+                    "invalid_configuration",
+                    "health_verified",
+                    "database_verified",
+                    "authentication_failed",
+                    "unexpected_response",
+                    "request_failed",
+                    "timeout",
+                    "dependency_unavailable",
+                    "configuration_only",
+                    "provider_access_unverified",
+                    "organization_setup_required",
+                    "callback_unverified",
+                    "delivery_unverified",
+                    "incompatible_service"
+                  ]
+                },
+                "dependencies": {
+                  "maxItems": 6,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "database",
+                      "gateway",
+                      "headlessRunner",
+                      "workbot",
+                      "slack",
+                      "durableTurns",
+                      "email"
+                    ]
+                  }
+                },
+                "checkedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "lastSuccessAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "configured",
+                "state",
+                "reason",
+                "dependencies",
+                "checkedAt",
+                "lastSuccessAt",
+                "stale"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "version",
+          "checkedAt",
+          "checking",
+          "services"
+        ],
+        "additionalProperties": false
+      },
       "OrganizationContextResponse": {
         "type": "object",
         "properties": {
@@ -8496,6 +8917,9 @@
               },
               "aiGateway": {
                 "type": "boolean"
+              },
+              "serviceReadiness": {
+                "$ref": "#/components/schemas/OrganizationServiceReadiness"
               }
             },
             "required": [
@@ -28677,6 +29101,176 @@
         ]
       }
     },
+    "/v1/admin/services": {
+      "get": {
+        "operationId": "getV1AdminServices",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Read cached deployment service readiness",
+        "x-mcp": false,
+        "description": "Fixed deployment diagnostics only, not inference or delivery verification. Never waits for an outbound health probe. A stale snapshot remains explicitly stale.",
+        "responses": {
+          "200": {
+            "description": "Cached deployment readiness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentServiceReadiness"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Platform admin access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service readiness is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Diagnostic admission is unavailable; no upstream detail is exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "service_readiness_unavailable"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/admin/services/check": {
+      "post": {
+        "operationId": "postV1AdminServicesCheck",
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Queue a deployment service readiness check",
+        "x-mcp": false,
+        "description": "Queues bounded, read-only service probes. Active checks and matching-configuration results completed within 30 seconds coalesce without changing timestamps or spending admission. Durable global admission limits new probes across replicas. Never sends email, calls a model, provisions credentials or initiates Slack events.",
+        "responses": {
+          "202": {
+            "description": "Check queued, already in progress, or completed recently with matching configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentServiceReadiness"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Platform admin access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service readiness is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "No recent matching snapshot is available and another replica recently admitted a check; Retry-After indicates the admission window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentServiceReadiness"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Diagnostic admission is unavailable; no upstream detail is exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "service_readiness_unavailable"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/admin/admins": {
       "post": {
         "operationId": "postV1AdminAdmins",
@@ -29817,6 +30411,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "serviceReadiness": {
+                          "type": "boolean"
+                        },
                         "cloudAgentGateway": {
                           "type": "boolean"
                         },
@@ -29888,6 +30485,7 @@
                         }
                       },
                       "required": [
+                        "serviceReadiness",
                         "cloudAgentGateway",
                         "liveProviderSync",
                         "offlineRecovery",
@@ -29915,6 +30513,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "serviceReadiness": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "cloudAgentGateway": {
                           "type": "object",
                           "properties": {
@@ -31093,6 +31747,7 @@
                         }
                       },
                       "required": [
+                        "serviceReadiness",
                         "cloudAgentGateway",
                         "liveProviderSync",
                         "offlineRecovery",
@@ -31232,6 +31887,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "serviceReadiness": {
+                          "type": "boolean"
+                        },
                         "cloudAgentGateway": {
                           "type": "boolean"
                         },
@@ -31303,6 +31961,7 @@
                         }
                       },
                       "required": [
+                        "serviceReadiness",
                         "cloudAgentGateway",
                         "liveProviderSync",
                         "offlineRecovery",
@@ -31330,6 +31989,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "serviceReadiness": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "cloudAgentGateway": {
                           "type": "object",
                           "properties": {
@@ -32508,6 +33223,7 @@
                         }
                       },
                       "required": [
+                        "serviceReadiness",
                         "cloudAgentGateway",
                         "liveProviderSync",
                         "offlineRecovery",
@@ -38695,6 +39411,47 @@
             }
           }
         }
+      }
+    },
+    "/v1/org/service-readiness": {
+      "get": {
+        "operationId": "getV1OrgServiceReadiness",
+        "tags": [
+          "Organization"
+        ],
+        "summary": "Read minimal cached deployment service readiness",
+        "x-mcp": false,
+        "description": "Member-safe deployment facts only. Does not inspect organization or member credentials, start a probe, or alter access decisions. Missing deployment settings and required-service policy are withheld.",
+        "responses": {
+          "200": {
+            "description": "Cached service readiness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationServiceReadiness"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service readiness is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/org/activity": {

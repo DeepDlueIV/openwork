@@ -57,6 +57,7 @@ const SEAT_SYNC = "stripe (seat/web/inference quantity sync via runPostOrganizat
 const DOMAIN = (area: string) => `audit/domain/${area}.ts`
 
 export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
+  member("GET", "/v1/org/service-readiness", "tenant_read", "service_readiness.read", "service.readiness", "service_readiness", null, { notes: "Minimal cached deployment facts, never settings or tenant credentials. Does not initiate probes." }),
   // API keys
   member("GET", "/v1/api-keys", "tenant_read", "api_key.list", "api_key.management", "api_key", null),
   member("POST", "/v1/api-keys", "tenant_change", "api_key.create", "api_key.management", "api_key", null, { changeEvidence: DOMAIN("api-keys"), notes: "Legacy organization.api_key.created. better-auth createApiKey write: after-snapshot appended in a fresh tx; plaintext key only in the response, never captured." }),

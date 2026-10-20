@@ -103,6 +103,12 @@ jobs:
         run: |
           pnpm --filter @openwork-ee/headless-runner test:error-reporting
           pnpm --filter @openwork-ee/workbot test:error-reporting
+      - name: Test service health authentication and readiness presentation
+        run: |
+          pnpm --filter @openwork-ee/headless-runner test:service-health
+          pnpm --filter @openwork-ee/workbot test:service-readiness
+          pnpm --dir ee/apps/den-web exec tsx --test 'components/admin/services/*.test.ts' 'components/admin/services/*.test.tsx' 'app/(den)/_lib/service-readiness.test.ts'
+          bun test apps/app/tests/deployment-service-readiness.test.ts
       - name: Boot the app provider tree
         run: pnpm test:boot
       - name: Check desktop links open real Den pages

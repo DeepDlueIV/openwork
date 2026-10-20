@@ -16,6 +16,7 @@ import { db } from "../../db.js"
 import { checkEntitlement, getOrganizationEntitlements, parseOrganizationPlan } from "../../entitlements.js"
 import { env } from "../../env.js"
 import { deploymentCapabilities } from "../../gateway-deployment.js"
+import { cachedOrganizationServiceReadiness } from "../../service-readiness-runtime.js"
 import { findEnterpriseAuthRequirementForEmailDomain, resolveNonSsoSignInMethodForEmail } from "../../enterprise-auth-requirement.js"
 import { jsonValidator, memberPermissionsForOrganizationContext, orgMemberRoute, orgPermissionRoute, publicRoute, queryValidator, resolveMemberPermissionsMiddleware, resolveMemberTeamsMiddleware, userSessionRoute } from "../../middleware/index.js"
 import { sortedPermissionKeys } from "../../permissions/effective.js"
@@ -703,6 +704,7 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
           .limit(1),
       ])
       const owner = directory.members.find((member) => member.isOwner) ?? null
+      const serviceReadiness = await cachedOrganizationServiceReadiness(features.serviceReadiness)
 
       return c.json({
         ...payload,
@@ -725,7 +727,10 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
             : null,
         },
         currentMemberTeams: c.get("memberTeams") ?? [],
-        deploymentCapabilities: deploymentCapabilities(),
+        deploymentCapabilities: {
+          ...deploymentCapabilities(),
+          ...(serviceReadiness ? { serviceReadiness } : {}),
+        },
         plan: parseOrganizationPlan(currentOrganization.metadata),
         entitlements: getOrganizationEntitlements(currentOrganization.metadata),
         features,

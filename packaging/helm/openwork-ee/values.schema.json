@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "serviceReadiness": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Deployment service readiness: Deployment administrators can verify optional services and see what is missing; organization screens share the same safe readiness status without blocking core work. Renders DEN_FEATURE_SERVICE_READINESS."
+            },
             "cloudAgentGateway": {
               "enum": [
                 "",

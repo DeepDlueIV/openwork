@@ -37,13 +37,14 @@ const failure = (code, message, extra = {}) => text({ ok: false, code, message, 
 const base64 = (bytes) => Buffer.from(bytes).toString("base64");
 
 /**
- * @param {{ id: string, label: string, driver: ComputerDriver, now?: () => number }} options
+ * @param {{ id: string, label: string, driver: ComputerDriver, windowApproval?: "person" | "conversation", now?: () => number }} options
  */
-export function createRemoteComputerAdapter({ id, label, driver, now = Date.now }) {
+export function createRemoteComputerAdapter({ id, label, driver, windowApproval = "person", now = Date.now }) {
   return {
     id,
     label,
     placement: /** @type {"remote"} */ ("remote"),
+    windowApproval,
     protocol: COMPUTER_PROTOCOL,
     async readiness() {
       return driver.describe();
@@ -169,7 +170,7 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
             purpose: args.purpose, generation: 0, window: null, paused: false, closed: false, expiresAt: now() + SESSION_SECONDS * 1000, actions: 0,
             observations: new Map(), receipts: new Map(), decide: null };
           const current = session;
-          // The broker selects the window automatically under the rollout.
+          // The broker presents a window choice; conversation-scoped VMs may select it directly.
           let abort;
           const decision = await new Promise((resolve, reject) => {
             current.decide = resolve;

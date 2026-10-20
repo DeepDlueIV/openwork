@@ -42,7 +42,7 @@ function fixture(options = {}) {
     },
   };
   /** @type {import("@openwork/computer-use/computer-control").ComputerAdapter} */
-  const remote = { ...adapter, id: "vm", label: "VM", placement: "remote" };
+  const remote = { ...adapter, id: "vm", label: "VM", placement: "remote", windowApproval: options.conversationScoped ? "conversation" : "person" };
   const control = createComputerControl({ adapters: options.remote ? [adapter, remote] : [adapter], readRemoteFeatureEnabled: options.authority, onRequest: (_sessionId, value) => { requests.push(value); } });
   return { control, calls, requests, selected, approvalReady };
 }
@@ -80,13 +80,27 @@ test("a local app stays unapproved until the person explicitly chooses a window"
 });
 
 test("a dedicated remote VM can open directly under its resolved rollout", async (t) => {
-  const f = fixture({ remote: true, authority: async () => true }); t.after(() => f.control.reset(true));
+  const f = fixture({ remote: true, conversationScoped: true, authority: async () => true }); t.after(() => f.control.reset(true));
   await f.control.setFeatureEnabled(true);
   await f.control.setRemoteEnabled(true);
   await f.control.choose({ sessionId: "chat", targetId: "vm" });
   const result = await f.control.execute({ sessionId: "chat", name: "computer_open", args: { app_id: "editor", mode: "control", purpose: "Edit this VM's draft" } });
   assert.equal(payload(result).ok, true);
   assert.deepEqual(f.selected, [{ id: "view", action: "approve", windowId: 17 }]);
+});
+
+test("a configured remote desktop also waits for the person's window choice", async (t) => {
+  const f = fixture({ remote: true, authority: async () => true }); t.after(() => f.control.reset(true));
+  await f.control.setFeatureEnabled(true);
+  await f.control.setRemoteEnabled(true);
+  await f.control.choose({ sessionId: "chat", targetId: "vm" });
+  const opening = f.control.execute({ sessionId: "chat", name: "computer_open", args: { app_id: "editor", mode: "control", purpose: "Edit the draft" } });
+  await f.approvalReady.promise;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.selected, []);
+  assert.ok(!f.calls.includes("computer_observe"));
+  await f.control.interact({ sessionId: "chat", id: "view", action: "approve", windowId: 17 });
+  assert.equal(payload(await opening).ok, true);
 });
 
 test("Stop ends the current task and the next turn works without asking again", async (t) => {

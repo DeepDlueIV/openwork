@@ -84,6 +84,7 @@ function deadline(ms) {
  *   id: string,
  *   label: string,
  *   placement: "local" | "remote",
+ *   windowApproval?: "person" | "conversation",
  *   protocol: string,
  *   readiness: () => Promise<{ readiness: string, detail: string, permissions?: { accessibility: boolean, screenRecording: boolean } }>,
  *   setup?: (permission: "accessibility" | "screenRecording") => Promise<{ setupId: string }>,
@@ -119,6 +120,8 @@ export function createComputerControl({ adapters, runProgram, browserTask, readR
   for (const candidate of Array.isArray(adapters) ? adapters : []) {
     if (!candidate || typeof candidate.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(candidate.id) || targets.has(candidate.id)
       || typeof candidate.label !== "string" || !candidate.label.trim() || !["local", "remote"].includes(candidate.placement)
+      || candidate.windowApproval !== undefined && !["person", "conversation"].includes(candidate.windowApproval)
+      || candidate.windowApproval === "conversation" && candidate.placement !== "remote"
       || candidate.protocol !== COMPUTER_PROTOCOL || ["readiness", "connect"].some((name) => typeof candidate[name] !== "function")) {
       throw new Error("Computer adapters need a unique id, a label, a placement, the supported protocol, readiness and connect.");
     }
@@ -293,7 +296,7 @@ export function createComputerControl({ adapters, runProgram, browserTask, readR
     await current.transport.notifyUi({ id: presentation.id, action: "approve", windowId });
     // Dedicated VMs can reuse the last window title; local requests always need a new explicit choice.
     const title = presentation.windows.find((window) => window.id === windowId)?.title;
-    if (title && current.grant.adapter.placement === "remote") current.grant.windows.set(opening.args.app_id, title);
+    if (title && current.grant.adapter.windowApproval === "conversation") current.grant.windows.set(opening.args.app_id, title);
   }
   function receiveUi(current, value) {
     try { assertUiActive(current); } catch { clearPresentation(current); return; }
@@ -337,7 +340,7 @@ export function createComputerControl({ adapters, runProgram, browserTask, readR
       current.presentation = next;
       // A dedicated remote VM is already scoped to this conversation. Local
       // apps share the person's computer and require an explicit window choice.
-      if (value.phase === "approval" && current.grant.adapter.placement === "remote" && !current.opening?.decisionSent) {
+      if (value.phase === "approval" && current.grant.adapter.windowApproval === "conversation" && !current.opening?.decisionSent) {
         const previous = current.grant.windows.get(value.appID);
         const selected = next.windows.find((window) => window.title === previous) ?? next.windows[0];
         void approveWindow(current, next, selected.id).catch(() => { disable(current.grant); void cleanup(current); });

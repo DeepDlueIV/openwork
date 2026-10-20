@@ -12,6 +12,7 @@ bash /usr/local/share/openwork-desktop/configure-files.sh
 ln -sfn /workspace/files /home/openwork-app/Uploads
 ln -sfn /workspace/out /home/openwork-app/Outputs
 ln -sfn /workspace/out /home/openwork-app/Downloads
+ln -sfn /workspace/out /home/openwork-browser/Downloads
 # Prepare a normal persistent Blender profile without its first-run splash.
 env -i PATH=/usr/sbin:/usr/bin:/bin HOME=/home/openwork-app LIBGL_ALWAYS_SOFTWARE=1 \
   runuser -u openwork-app -- blender --background --factory-startup --python-expr \

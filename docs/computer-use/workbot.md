@@ -83,7 +83,8 @@ membership and flags again. An already-open connection can outlive a flag change
 for the 30-second membership cache plus its remaining 60-second connection.
 Provider API keys and sandbox-wide preview tokens never enter the page.
 
-VNC listeners bind to loopback. Watching uses x11vnc's server-side read-only
+Each viewer gets a private stdio connection to its own x11vnc process, with no
+shared VNC TCP listener. Watching uses x11vnc's server-side read-only
 mode; noVNC's `viewOnly` setting also disables accidental input. Both manual
 streams and structured tools operate the same broad desktop. Browser processes
 run as an unprivileged account with Chromium's sandbox and a protected X cookie.

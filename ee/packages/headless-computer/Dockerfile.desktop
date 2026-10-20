@@ -35,6 +35,7 @@ COPY --from=desktop-bridge-builder /src/ee/packages/headless-computer/dist/deskt
 COPY --from=desktop-bridge-builder /src/ee/packages/headless-computer/dist/desktop-guest.version /usr/local/share/openwork-desktop/guest.version
 COPY ee/apps/den-worker-runtime/scripts/cloud-desktop.sh /usr/local/share/openwork-desktop/start.sh
 COPY ee/packages/headless-computer/scripts/desktop-bridge.py /usr/local/sbin/openwork-desktop-bridge
+COPY ee/packages/headless-computer/scripts/vnc-stdio.py /usr/local/share/openwork-desktop/vnc-stdio.py
 RUN chmod 0755 /usr/local/sbin/openwork-desktop-bridge \
     && chown -R root:root /usr/local/share/openwork-desktop /usr/local/sbin/openwork-desktop-bridge \
     && chmod -R go-w /usr/local/share/openwork-desktop

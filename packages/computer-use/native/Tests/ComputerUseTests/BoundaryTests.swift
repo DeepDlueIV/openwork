@@ -261,6 +261,17 @@ final class BoundaryTests: XCTestCase {
         XCTAssertTrue(AppIdentity.isAllowed(bundleID: "com.apple.TextEdit"))
     }
 
+    func testUnknownAXChildrenNeverCompleteThePrivacyScan() {
+        for role in [nil, "AXWindow", "AXGroup", "AXUnknown", "AXWebArea", "AXTextField", "AXComboBox"] as [String?] {
+            XCTAssertThrowsError(try AXChildScan.requireKnownLeaf(role))
+        }
+        for role in ["AXStaticText", "AXImage", "AXCheckBox"] {
+            XCTAssertNoThrow(try AXChildScan.requireKnownLeaf(role))
+        }
+        let incomplete = WindowState(records: [], visited: 1, truncated: true, protectedFrames: [], privacyIssue: "privacy_incomplete")
+        XCTAssertThrowsError(try incomplete.requireCapture())
+    }
+
     @MainActor
     func testEmbeddedPolicyDoesNotChangeDesktopSchemaOrObservationShape() throws {
         func schema(_ name: String, _ policy: RuntimePolicy) throws -> [String: Any] {

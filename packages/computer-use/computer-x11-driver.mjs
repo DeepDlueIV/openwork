@@ -18,6 +18,15 @@ const TOOLS = ["xdotool", "import", "python3"];
 export function createX11Driver({ machine, display = ":99", timeoutMs = 20_000 }) {
   const validDisplay = /^:\d{1,3}(\.\d)?$/.test(display);
   const directory = `/tmp/openwork-computer-${randomUUID()}`;
+  const privateDirectory = `python3 -c ${quote(`import os, stat
+path = ${JSON.stringify(directory)}
+try: os.mkdir(path, 0o700)
+except FileExistsError: pass
+fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    if os.fstat(fd).st_uid != os.geteuid(): raise PermissionError("The computer directory has another owner")
+    os.fchmod(fd, 0o700)
+finally: os.close(fd)`)} `;
   const run = (script, ms = timeoutMs) => {
     if (!validDisplay) throw new Error("Use an X display such as :99.");
     return machine.run(`export DISPLAY=${display}; ${script}`, ms);
@@ -30,9 +39,8 @@ export function createX11Driver({ machine, display = ":99", timeoutMs = 20_000 }
       // before build artifacts exist. Resolve embedded bytes only on first use.
       const { computerWorkerSource } = await import("./dist/worker.js");
       const workerSource = Buffer.from(computerWorkerSource).toString("base64");
-      return run(`python3 -c ${quote(`import base64, os, pathlib, socket, subprocess, time
+      return run(`${privateDirectory} && python3 -c ${quote(`import base64, os, pathlib, socket, subprocess, time
 root = pathlib.Path(${JSON.stringify(directory)})
-root.mkdir(mode=0o700, exist_ok=True)
 source = root / "worker.py"
 source.write_bytes(base64.b64decode(${JSON.stringify(workerSource)}))
 os.chmod(source, 0o600)
@@ -168,14 +176,14 @@ print(json.dumps(windows))
       if (result.exitCode !== 0) throw new Error("The selected window could not be focused.");
     },
     async screenshot(region, { maxWidth, windowId: targetId } = {}) {
-      const file = `${directory}/shot-${randomUUID().slice(0, 8)}.png`;
+      const file = `${directory}/shot-${randomUUID()}.png`;
       const resize = maxWidth && region.width > maxWidth ? ` -resize ${integer(maxWidth)}x` : "";
       const geometry = `${integer(region.width)}x${integer(region.height)}+${integer(region.x)}+${integer(region.y)}`;
       // Never use -screen for an approved window: it includes overlapping windows.
       // Unavailable/occluded drawable pixels may be blank, which is safe to withhold.
       const drawable = targetId === undefined ? "root" : windowId(targetId);
       try {
-        const result = await run(`mkdir -p ${quote(directory)} && import -silent -window ${drawable} -crop ${geometry} +repage${resize} png:${quote(file)} && identify -format '%w %h' ${quote(file)}`);
+        const result = await run(`umask 077; ${privateDirectory} && import -silent -window ${drawable} -crop ${geometry} +repage${resize} png:${quote(file)} && chmod 0600 ${quote(file)} && identify -format '%w %h' ${quote(file)}`);
         if (result.exitCode !== 0) throw new Error(result.stderr.trim().slice(0, 300) || "The screenshot failed.");
         const [width, height] = result.stdout.trim().split(/\s+/).map(Number);
         if (![width, height].every((value) => Number.isSafeInteger(value) && value > 0 && value <= 8192)) throw new Error("The VM returned an invalid screenshot size.");

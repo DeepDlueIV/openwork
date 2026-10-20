@@ -71,6 +71,33 @@ test("Computer access uses the signed-in member's conversation and refuses a cal
   const revoked = await open({ view: "computer" })
   assert.equal(revoked.status, 403)
   assert.deepEqual(await revoked.json(), { error: "feature_disabled" })
+  for (const action of ["continue", "pause", "resume"]) {
+    calls.length = 0
+    const response = await app.request("/v1/workbot/computer/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) })
+    assert.equal(response.status, 403)
+    assert.equal(calls.length, 0, "revoked access must not wake or modify the computer")
+  }
+})
+
+test("Computer actions recheck access after resolving a cold session", async t => {
+  const signed = member("alice")
+  const calls: string[] = []
+  t.mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
+    const parsed = new URL(url instanceof Request ? url.url : url)
+    calls.push(parsed.pathname)
+    return new Response(JSON.stringify({ id: workbotSessionId("org", "alice"), turns: [], messages: [], finalAssistantText: "" }), { headers: { "content-type": "application/json" } })
+  })
+  let checks = 0
+  const app = new Hono<AppEnv>()
+  registerWorkbotRoutes(app, {
+    config, den: { ...createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl }), session: async () => ++checks === 1 ? signed.den : member("alice", false).den },
+    member: async (c, next) => { c.set("member", signed); await next() }, sameOrigin: async (_c, next) => next(),
+  })
+  const response = await app.request("/v1/workbot/computer/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resume" }) })
+  assert.equal(response.status, 403)
+  assert.equal(checks, 2)
+  assert.ok(calls.some(path => path.includes("/sessions/")))
+  assert.ok(!calls.some(path => path.endsWith("/desktop/action")))
 })
 
 test("Computer follows the member's existing session cell after chat storage migrates", async t => {

@@ -122,12 +122,7 @@ if [ "${WORKBOT_DESKTOP_VNC:-0}" = 1 ]; then
   command -v x11vnc >/dev/null
   window=$(xdotool search --onlyvisible --class chromium | head -n 1)
   [ -n "$window" ] || { echo "The browser window is unavailable" >&2; exit 1; }
-  for port in 5900 5901 5902 5903; do
-    if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', $port), 0.2).close()" >/dev/null 2>&1; then
-      case "$port" in 5901|5903) set -- -id "$window" ;; *) set -- ;; esac
-      case "$port" in 5902|5903) set -- "$@" -viewonly ;; esac
-      as_browser setsid -f x11vnc -display "$display" -auth "$XAUTHORITY" -localhost -rfbport "$port" \
-        -nopw -forever -shared -noxdamage -quiet "$@" >"$state/vnc-$port.log" 2>&1 < /dev/null
-    fi
-  done
+  # Root's guest starts one inetd-mode viewer over private stdio. A process
+  # binding a local VNC port can never substitute itself for that transport.
+  printf '%s\n' "$window" > "$1/browser-window"
 fi

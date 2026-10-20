@@ -102,6 +102,18 @@ struct WindowTarget {
     let frame: CGRect
 }
 
+enum AXChildScan {
+    // These roles represent leaves in the AX contract. Containers and custom
+    // controls need an explicit child count before a privacy scan is complete.
+    static let leafRoles: Set<String> = ["AXStaticText", "AXImage", "AXCheckBox", "AXRadioButton", "AXSlider",
+        "AXProgressIndicator", "AXLevelIndicator", "AXValueIndicator", "AXScrollBar", "AXSplitter", "AXSeparator"]
+    static func requireKnownLeaf(_ role: String?) throws {
+        guard let role, leafRoles.contains(role) else {
+            throw UseError("privacy_incomplete", "Accessible descendants could not be verified. No screenshot can be captured.", next: "observe")
+        }
+    }
+}
+
 struct ElementRecord {
     let ref: String
     let element: AXUIElement
@@ -537,7 +549,10 @@ final class MacAccessibility {
     private func children(_ element: AXUIElement, limit: Int, budget: AXReadBudget, check: () throws -> Void) async throws -> (elements: [AXUIElement], truncated: Bool) {
         try prepare(element, budget)
         var total = 0
-        guard try accepted(AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &total), budget) else { return ([], false) }
+        guard try accepted(AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &total), budget) else {
+            try AXChildScan.requireKnownLeaf(checkedString(element, kAXRoleAttribute, budget))
+            return ([], false)
+        }
         guard total >= 0 else { throw UseError("accessibility_unavailable", "The accessible child count is invalid.", next: "observe") }
         let count = min(total, max(0, limit))
         var elements: [AXUIElement] = []

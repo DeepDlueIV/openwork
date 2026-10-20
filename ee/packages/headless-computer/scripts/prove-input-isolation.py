@@ -18,7 +18,11 @@ spec.loader.exec_module(worker)
 
 # The command account keeps ordinary local previews, but cannot bypass the
 # broker through CDP, any VNC variant, or the guest HTTP listener.
-for port in [5900, 5901, 5902, 5903, 6080, 9222]:
+vnc = []
+for port in [5900, 5901, 5902, 5903]:
+    listener = socket.socket(); listener.bind(('127.0.0.1', port)); listener.listen(4)
+    vnc.append(listener)
+for port in [6080, 9222]:
     with socket.create_connection(('127.0.0.1', port), 1):
         pass
 preview = socket.socket(); preview.bind(('127.0.0.1', 0)); preview.listen(4)
@@ -37,6 +41,7 @@ s.close()
     subprocess.run(['runuser', '-u', 'openwork-command', '--', 'python3', '-c', probe], check=True)
 finally:
     preview.close(); ipv6.close()
+    for listener in vnc: listener.close()
 
 
 class Key(C.Structure):

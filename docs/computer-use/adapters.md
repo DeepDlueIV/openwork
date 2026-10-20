@@ -12,7 +12,7 @@ or Daytona Linux VM. Each chat picks one in the Computer popover and keeps it.
 | Broker | `apps/desktop/electron/computer-control.mjs` | Rollout-controlled access, one session at a time, handoff, receipts, post-action observations, the in-chat request |
 | Adapter contract | `ComputerAdapter` in the broker | `id`, `label`, `placement` (`local`/`remote`), `readiness()`, optional `setup()`, `connect()` returning a transport for the seven native tools plus `openwork/ui` notifications |
 | This Mac | `computer-local.mjs` + `packages/computer-use` | macOS permissions, the Swift helper |
-| Remote runtime | `computer-remote.mjs` | Turns a small driver into the full contract: sessions, automatic window selection, observation ids, at-most-once receipts, batched actions, zoom, take over/continue, watch frames |
+| Remote runtime | `computer-remote.mjs` | Turns a small driver into the full contract: sessions, window approval, observation ids, at-most-once receipts, batched actions, zoom, take over/continue, watch frames |
 | Linux driver | `computer-x11-driver.mjs` | xdotool and ImageMagick over two VM primitives: run a command, read a file |
 | Provider bindings | `computer-targets.mjs` | How to reach a VM through `@openwork/sandbox` (`blocks.run`, `blocks.files`) |
 
@@ -71,7 +71,7 @@ Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -auth "$HOME/.Xauthority"
 Run the desktop apps and remote commands as that same account, with access to
 its authority file. Display access control stays enabled and TCP listening is
 disabled. Existing Freestyle worlds use their configured display on `:99`.
-Readiness reports what is missing. The Computer popover lists configured VMs beside this Mac. Dedicated VM app windows are selected under the remote rollout. A local Mac app waits for the person to choose and allow a window before any observation or input. On Linux and Windows, an available VM is the default target when no computer was previously chosen.
+Readiness reports what is missing. The Computer popover lists configured VMs beside this Mac. Only dedicated conversation VM app windows are selected under the remote rollout. Local Mac apps and manually configured remote desktops wait for the person to choose and allow a window before any observation or input. On Linux and Windows, an available VM is the default target when no computer was previously chosen.
 
 ## Differences from this Mac
 

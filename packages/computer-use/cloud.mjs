@@ -40,7 +40,7 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
   };
   const driver = createX11Driver({ machine: localMachine, display });
   const control = createComputerControl({
-    adapters: [createRemoteComputerAdapter({ id: "cloud-computer", label: "Cloud computer", driver })],
+    adapters: [createRemoteComputerAdapter({ id: "cloud-computer", label: "Cloud computer", driver, windowApproval: "conversation" })],
     readRemoteFeatureEnabled: async () => verified,
   });
   function assertActive() {

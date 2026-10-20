@@ -1,39 +1,54 @@
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export interface ProviderConfigTemplateError {
   providerId: string;
   field: string;
-  code: "missing_environment_variable" | "unreadable_file_reference";
+  code: "missing_environment_variable" | "invalid_environment_variable" | "unreadable_file_reference" | "disallowed_file_reference";
   message: string;
 }
 
-/** V1 substitutes env first, then trimmed UTF-8 file contents relative to the
- * declaring config file. Resolve only referenced values, never forward the
- * server's environment to the native engine or include resolved values in errors.
- * Source: anomalyco/opencode v1.18.30, config/variable.ts.
+/** V1 substitutes env first, then trimmed file contents. Remote definitions are
+ * less trusted than local config: they can reference stored user variables only
+ * and never host files. Local files must remain inside the declaring directory.
+ * Neither resolved values nor substituted file paths belong in diagnostics.
  */
 export async function resolveProviderConfigTemplates(
   providers: Record<string, unknown>,
   options: {
     directory: string;
     environment: ReadonlyMap<string, string>;
+    /** Only machine-declared, non-managed runtime providers may use local sources. */
+    localProviderIds: ReadonlySet<string>;
     inheritedEnvironment?: NodeJS.ProcessEnv;
     home?: string;
     readText?: (path: string) => Promise<string>;
+    realPath?: (path: string) => Promise<string>;
   },
 ): Promise<{ providers: Record<string, unknown>; errors: ProviderConfigTemplateError[] }> {
   const errors: ProviderConfigTemplateError[] = [];
   const resolved: Record<string, unknown> = {};
   const inherited = options.inheritedEnvironment ?? process.env;
   const readText = options.readText ?? ((path: string) => readFile(path, "utf8"));
+  const canonical = options.realPath ?? realpath;
+  const within = (directory: string, path: string) => {
+    const child = relative(directory, path);
+    return child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child);
+  };
   for (const [providerId, provider] of Object.entries(providers)) {
+    const local = options.localProviderIds.has(providerId);
     const before = errors.length;
     const string = async (value: string, field: string): Promise<string> => {
       const expanded = value.replace(/\{env:([^}]+)\}/g, (_token, name: string) => {
-        // The managed v1 child explicitly removes this server-only secret.
-        const replacement = name === "OPENWORK_ENCRYPTION_KEY" ? undefined : inherited[name] ?? options.environment.get(name);
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          errors.push({ providerId, field, code: "invalid_environment_variable", message: `Provider ${providerId}: ${field} references an invalid environment variable name.` });
+          return "";
+        }
+        // The managed v1 child removes this server-only secret too. Remote
+        // definitions must never consult the server process, even as a fallback.
+        const replacement = name.toUpperCase() === "OPENWORK_ENCRYPTION_KEY" ? undefined
+          : local ? inherited[name] ?? options.environment.get(name) : options.environment.get(name);
         if (!replacement) {
           errors.push({ providerId, field, code: "missing_environment_variable", message: `Provider ${providerId}: ${field} references missing environment variable ${name}. Set it in Settings > Environment and apply the changes.` });
         }
@@ -44,13 +59,20 @@ export async function resolveProviderConfigTemplates(
       for (const match of expanded.matchAll(/\{file:([^}]+)\}/g)) {
         output += expanded.slice(cursor, match.index);
         const reference = match[1];
-        const path = reference.startsWith("~/") ? join(options.home ?? homedir(), reference.slice(2))
-          : isAbsolute(reference) ? reference : resolve(options.directory, reference);
-        try { output += (await readText(path)).trim(); }
-        catch {
-          // File paths can themselves contain substituted credentials. Never
-          // expose the path, OS error, contents, or the original template here.
-          errors.push({ providerId, field, code: "unreadable_file_reference", message: `Provider ${providerId}: ${field} references a file that could not be read. Check the file reference relative to the provider configuration.` });
+        const path = reference.startsWith("~/") ? join(options.home ?? homedir(), reference.slice(2)) : resolve(options.directory, reference);
+        const blocked = () => errors.push({ providerId, field, code: "disallowed_file_reference", message: `Provider ${providerId}: ${field} uses a file reference that is not allowed. File references require a local provider and a file inside its configuration directory.` });
+        if (!local || reference.split(/[\\/]/).includes("..") || !within(options.directory, path)) {
+          blocked();
+        } else {
+          try {
+            const directory = await canonical(options.directory);
+            const file = await canonical(path);
+            if (!within(directory, file)) blocked();
+            else output += (await readText(file)).trim();
+          } catch {
+            // OS errors and file paths may contain substituted credentials.
+            errors.push({ providerId, field, code: "unreadable_file_reference", message: `Provider ${providerId}: ${field} references a file that could not be read. Check the file reference inside the provider configuration directory.` });
+          }
         }
         cursor = match.index + match[0].length;
       }

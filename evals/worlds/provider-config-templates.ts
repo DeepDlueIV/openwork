@@ -24,10 +24,23 @@ export async function providerConfigTemplates(seed: Seed) {
         : { api: origin + (shape.startsWith("azure") ? "/openai/v1" : "/v1") }) },
     models: [{ id: model, name: shape, config: { tool_call: true, limit: { context: 32000, output: 1024 } } }],
   }));
+  const remoteBlocked = ["lpr_fixture_remote-env", "lpr_fixture_remote-file"];
+  await writeFile(join(scratch, "outside-sentinel"), "synthetic-private-file", { mode: 0o600 });
+  const inventory = () => [...legacy(), {
+    id: "lpr_fixture_remote-stored", providerId: "lpr_fixture_remote-stored", source: "custom", name: "Stored user endpoint",
+    providerConfig: { npm: "@ai-sdk/openai-compatible", env: ["FIXTURE_API_KEY"], options: { baseURL: "{env:TEMPLATE_PROVIDER_URL}" } },
+    models: [{ id: model, name: "Stored user endpoint", config: { tool_call: true, limit: { context: 32000, output: 1024 } } }],
+  }, ...remoteBlocked.map(id => ({
+    id, providerId: id, source: "custom", name: id,
+    providerConfig: { npm: "@ai-sdk/openai-compatible", env: ["FIXTURE_API_KEY"], options: id.endsWith("env")
+      ? { baseURL: `${origin}/v1/{env:PROCESS_ONLY_PROVIDER_SECRET}` }
+      : { baseURL: `${origin}/v1`, apiKey: `{file:${join(scratch, "outside-sentinel")}}` } },
+    models: [{ id: model, name: id, config: { tool_call: true, limit: { context: 32000, output: 1024 } } }],
+  }))];
   const mock = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    if (url.pathname === "/v1/llm-providers") return sendJson(response, 200, { llmProviders: legacy() });
-    const provider = legacy().find(p => url.pathname === `/v1/llm-providers/${p.id}/connect`);
+    if (url.pathname === "/v1/llm-providers") return sendJson(response, 200, { llmProviders: inventory() });
+    const provider = inventory().find(p => url.pathname === `/v1/llm-providers/${p.id}/connect`);
     if (provider) return sendJson(response, 200, { llmProvider: { ...provider, apiKey: key } });
     if (url.pathname === "/v1/inference-providers") return sendJson(response, 200, { inferenceProviders: [] });
     if (!url.pathname.endsWith("/chat/completions") && !url.pathname.endsWith("/responses")) return sendJson(response, 404, { error: "not_found" });
@@ -60,7 +73,7 @@ export async function providerConfigTemplates(seed: Seed) {
   const token = "fixture-local-owner";
   try {
     managed = await bootManagedOpenworkServer({ scratch, workspace, token, sink: () => undefined,
-      env: { OPENWORK_ENGINE_V2_PREVIEW: "chat", OPENWORK_DISABLE_FREE_INFERENCE: "1",
+      env: { OPENWORK_ENGINE_V2_PREVIEW: "chat", OPENWORK_DISABLE_FREE_INFERENCE: "1", PROCESS_ONLY_PROVIDER_SECRET: "synthetic-process-private",
         ...(process.env.OPENWORK_TEST_OPENCODE2 ? { OPENWORK_OPENCODE2_BIN: process.env.OPENWORK_TEST_OPENCODE2 } : {}) } });
     const call = async (path: string, method = "GET", body?: unknown) => {
       const response = await fetch(`${managed?.base}${path}`, { method,
@@ -72,7 +85,8 @@ export async function providerConfigTemplates(seed: Seed) {
       return isRecord(json) ? json : {};
     };
     await call("/den-session", "PUT", { baseUrl: origin, token: "synthetic-den-session", orgId: "org_fixture" });
-    await call("/cloud-provider-sync/run", "POST", { reason: "manual" });
+    const sync = await call("/cloud-provider-sync/run", "POST", { reason: "manual" });
+    if (sync.status === "failed") throw new Error(`Fixture Den sync failed: ${String(sync.message)}`);
     await call("/env", "PUT", { entries: [{ key: "TEMPLATE_PROVIDER_URL", value: `${origin}/v1` }, { key: "TEMPLATE_PROVIDER_API_KEY", value: key }] });
     const local = (options: Record<string, unknown>) => ({ npm: "@ai-sdk/openai-compatible", env: ["TEMPLATE_PROVIDER_API_KEY"], options,
       models: { [model]: { name: "Local model", tool_call: true, limit: { context: 32000, output: 1024 } } } });
@@ -88,7 +102,7 @@ export async function providerConfigTemplates(seed: Seed) {
       "fixture-file": local({ baseURL: "{file:fixture-endpoint}", apiKey: "{file:fixture-key}" }),
     } });
     const mount = `/workspace/${managed.workspaceId}/opencode2/api`;
-    const ids = ["fixture-env", "fixture-file", ...legacy().map(p => p.id)];
+    const ids = ["fixture-env", "fixture-file", "lpr_fixture_remote-stored", ...legacy().map(p => p.id)];
     const deadline = Date.now() + 90_000;
     while (Date.now() < deadline) {
       const status = await call("/experimental/engine-v2-preview/status");
@@ -98,7 +112,7 @@ export async function providerConfigTemplates(seed: Seed) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     return {
-      ids, model, answer, key,
+      ids, model, answer, key, remoteBlocked, legacyIds: legacy().map(provider => provider.id),
       status: () => call("/experimental/engine-v2-preview/status"),
       catalog: () => call(`${mount}/model`),
       async chat(providerId: string) {
@@ -115,7 +129,7 @@ export async function providerConfigTemplates(seed: Seed) {
         }
         const status = await call("/experimental/engine-v2-preview/status");
         const skipped = Array.isArray(status.skippedProviderIds) && status.skippedProviderIds.includes(providerId);
-        return { messages, requests: requests.slice(before), answered: JSON.stringify(messages).includes(answer), skipped };
+        return { messages, requests: requests.slice(before), answered: JSON.stringify(messages).includes(answer), skipped, diagnostic: status.lastError, mirrored: status.mirroredProviderIds };
       },
       async [Symbol.asyncDispose]() { await managed?.stop(); await close(mock); await rm(scratch, { recursive: true, force: true }); },
     };

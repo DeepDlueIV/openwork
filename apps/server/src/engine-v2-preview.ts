@@ -41,6 +41,7 @@ import type { EnvService } from "./env-file.js";
 import { selectPrimaryCredentialEnvName } from "./managed-provider-auth.js";
 import type { ServerConfig } from "./types.js";
 import { resolveProviderConfigTemplates } from "./provider-config-templates.js";
+import { readOpenworkWorkspaceConfig } from "./openwork-workspace-config-store.js";
 
 /**
  * A stable id for this OpenWork app's engine config. Each desktop app gives
@@ -870,11 +871,14 @@ export function createEngineV2Preview(options: {
     const providerMap = Object.fromEntries(Object.entries(combinedProviders)
       .filter(([id]) => !ownsGateway() || !/^ipr_/i.test(id)));
     const credentials = new Map((await options.env?.list() ?? []).map((entry) => [entry.key, entry.value]));
-    // V1 reads this provider map from runtime-opencode-config.json and expands
-    // config variables before building its catalog. Do the same before V2 URL
-    // validation, without inheriting all server secrets into the V2 process.
+    // Persisted cloud ownership is written before managed runtime rows. Do not
+    // treat a Den-pushed definition as local merely because it is in that map.
+    const ownership = await readOpenworkWorkspaceConfig(config, "__cloud_provider_ownership__");
+    const managedIds = new Set(Array.isArray(ownership.providerIds) ? ownership.providerIds : []);
+    const localProviderIds = new Set(Object.keys(configured).filter(id =>
+      !managedIds.has(id) && !/^(?:lpr_|ipr_|openwork$)/i.test(id)));
     const templates = await resolveProviderConfigTemplates(providerMap, {
-      directory: runtimeStorageDir(config), environment: credentials,
+      directory: runtimeStorageDir(config), environment: credentials, localProviderIds,
     });
     const mapped = mapRuntimeProvidersToV2Specs(templates.providers, credentials, localKeys, new Set(Object.keys(configured)));
     const specs = mapped.specs.filter((spec) => !disabled.has(spec.id));

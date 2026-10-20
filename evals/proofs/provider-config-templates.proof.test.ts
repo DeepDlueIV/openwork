@@ -14,6 +14,12 @@ test("a member's environment and file configured providers answer on V2 without 
       expect(result.answered).toBe(true);
       expect(result.skipped).toBe(false);
       expect(result.requests).toEqual(expect.arrayContaining([expect.objectContaining({ path: "/v1/chat/completions", bearer: true, azure: false, model: world.model })]));
+      if (id === "fixture-env") {
+        const remote = await world.chat("lpr_fixture_remote-stored");
+        expect(remote.answered, JSON.stringify(remote)).toBe(true);
+        expect(remote.skipped).toBe(false);
+        expect(remote.requests).toEqual(expect.arrayContaining([expect.objectContaining({ path: "/v1/chat/completions", bearer: true, azure: false, model: world.model })]));
+      }
     });
   }
   await step("a missing endpoint variable identifies the affected provider without exposing credentials", async () => {
@@ -22,7 +28,10 @@ test("a member's environment and file configured providers answer on V2 without 
     expect(status.lastError).toContain("MISSING_PROVIDER_ENDPOINT");
     expect(status.lastError).toContain("Settings > Environment");
     expect(JSON.stringify(status)).not.toContain(world.key);
-    evidence.recordAssertionEvidence("Missing variables are actionable and secret-safe", String(status.lastError), !JSON.stringify(status).includes(world.key) && String(status.lastError).includes("MISSING_PROVIDER_ENDPOINT"));
+    expect(JSON.stringify(status)).not.toContain("synthetic-process-private");
+    expect(JSON.stringify(status)).not.toContain("synthetic-private-file");
+    for (const id of world.remoteBlocked) expect(status.skippedProviderIds).toContain(id);
+    evidence.recordAssertionEvidence("Missing references are actionable and remote definitions cannot export process values or files", String(status.lastError), !JSON.stringify(status).includes(world.key) && String(status.lastError).includes("MISSING_PROVIDER_ENDPOINT"));
   });
   await step("environment and relative-file endpoints appear in the real model catalog", async () => {
     const catalog = await world.catalog();
@@ -31,9 +40,10 @@ test("a member's environment and file configured providers answer on V2 without 
       expect(rows).toEqual(expect.arrayContaining([expect.objectContaining({ providerID: providerId, id: world.model })]));
     }
     expect(JSON.stringify(catalog)).not.toContain("fixture-missing");
+    for (const id of world.remoteBlocked) expect(JSON.stringify(catalog)).not.toContain(id);
     evidence.recordAssertionEvidence("Each working provider has its own native model", world.ids.join(", ") + "; missing-variable provider absent", rows.length >= world.ids.length && !JSON.stringify(catalog).includes("fixture-missing"));
   });
-  for (const id of world.ids.filter(id => id.startsWith("lpr_"))) {
+  for (const id of world.legacyIds) {
     await step(`the legacy ${id.replace("lpr_fixture_", "").replaceAll("_", " ")} endpoint still answers`, async () => {
       const result = await world.chat(id);
       const azure = id.includes("azure");

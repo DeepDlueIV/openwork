@@ -55,7 +55,7 @@ const everywhere = ["cloud", "self_hosted"] as const
 export const FEATURES = defineFeatures({
   serviceReadiness: {
     label: "Deployment service readiness",
-    description: "Deployment administrators can verify optional services and see what is missing; organization screens share the same safe readiness status without blocking core work.",
+    description: "Self-hosted installation operators can check optional services from Settings; internal platform diagnostics and minimal member readiness share the same checker without blocking core work.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -144,6 +144,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotDocumentEditing: {
+    label: "Workbot Documents: editing",
+    description: "Members choose Edit from a document preview. Full Office editing starts their Cloud workspace only when requested. Requires Workbot Documents.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   workbotWorkspaceAssistant: {
     label: "Workbot: workspace assistant",
     description: "Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar.",
@@ -226,6 +233,20 @@ export const FEATURES = defineFeatures({
   headlessStepTurns: {
     label: "Workbot: answers aren't cut off by updates",
     description: "Workbot, Slack and Automations answers keep going through OpenWork updates instead of restarting their current step.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  headlessSessionCells: {
+    label: "Workbot: each chat in its own space",
+    description: "Each Workbot chat is stored on its own, so long histories stay fast to open and move during updates.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  headlessSessionIndex: {
+    label: "Workbot: chat overview for admins",
+    description: "OpenWork keeps a content-free list of Workbot, Slack and Automation chats (sizes, activity, state) for admin views and retention.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

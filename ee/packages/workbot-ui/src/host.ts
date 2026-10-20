@@ -27,6 +27,8 @@ export type WorkbotHost = {
   documents?: boolean
   /** Shared browser and computer desktop, enabled by the organization flags. */
   computer?: boolean
+  /** Explicit document editing is enabled; omitted means preview only. */
+  documentEditing?: boolean
   /** Contextual chat and workspace navigation. Omitted means off. */
   workspaceAssistant?: boolean
   /** Offers to open documents a reply mentions and keeps the chat open beside them. Needs workspaceAssistant. */

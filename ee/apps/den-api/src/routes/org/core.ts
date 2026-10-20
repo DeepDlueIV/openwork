@@ -17,6 +17,7 @@ import { checkEntitlement, getOrganizationEntitlements, parseOrganizationPlan } 
 import { env } from "../../env.js"
 import { deploymentCapabilities } from "../../gateway-deployment.js"
 import { cachedOrganizationServiceReadiness } from "../../service-readiness-runtime.js"
+import { canManageDeploymentServices } from "../../middleware/admin.js"
 import { findEnterpriseAuthRequirementForEmailDomain, resolveNonSsoSignInMethodForEmail } from "../../enterprise-auth-requirement.js"
 import { jsonValidator, memberPermissionsForOrganizationContext, orgMemberRoute, orgPermissionRoute, publicRoute, queryValidator, resolveMemberPermissionsMiddleware, resolveMemberTeamsMiddleware, userSessionRoute } from "../../middleware/index.js"
 import { sortedPermissionKeys } from "../../permissions/effective.js"
@@ -185,6 +186,7 @@ const organizationContextResponseSchema = z.object({
    * A key missing here means an older server: treat it as off.
    */
   features: z.record(z.string(), z.boolean()).meta({ description: "Effective on/off for every OpenWork feature in this organization. Treat a missing key as off." }),
+  canManageDeploymentServices: z.boolean().meta({ description: "Whether this signed-in caller may manage deployment services: an allowlisted self-hosted operator with serviceReadiness enabled for both this organization and the deployment. Organization ownership and permissions never grant it. False for API keys, hosted deployments, disabled or killed rollout, and capability lookup failures." }),
   deploymentCapabilities: deploymentCapabilitiesSchema,
   entitlements: z.object({ sso: z.boolean(), desktopPolicies: z.boolean(), orgControls: z.boolean(), analytics: z.boolean(), auditLogs: z.boolean() }),
 }).passthrough().meta({ ref: "OrganizationContextResponse" })
@@ -727,6 +729,9 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
             : null,
         },
         currentMemberTeams: c.get("memberTeams") ?? [],
+        // Caller-specific operator authority is queried only here, not by the
+        // shared org context loader used by unrelated organization requests.
+        canManageDeploymentServices: await canManageDeploymentServices({ user: c.get("user"), session: c.get("session"), apiKey: c.get("apiKey") }, features.serviceReadiness),
         deploymentCapabilities: {
           ...deploymentCapabilities(),
           ...(serviceReadiness ? { serviceReadiness } : {}),

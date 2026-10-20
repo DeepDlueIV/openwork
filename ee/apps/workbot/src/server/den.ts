@@ -33,6 +33,7 @@ export const denSessionSchema = z.object({
   /** Workbot's Calendar tab is on (while Workbot is on). Older Dens omit it: off. */
   calendar: z.boolean().optional(),
   documents: z.boolean().default(false),
+  documentEditing: z.boolean().default(false),
   workspaceAssistant: z.boolean().default(false),
   guidedNavigation: z.boolean().default(false),
   teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
@@ -45,12 +46,16 @@ export const denSessionSchema = z.object({
   gatewayModels: z.boolean().default(false),
   /** Turns run one step at a time on the runner (`headlessStepTurns`). A Den from before it doesn't say: off. */
   stepTurns: z.boolean().default(false),
+  /** New chats get their own session cell on the runner (`headlessSessionCells`). A Den from before it doesn't say: off. */
+  sessionCells: z.boolean().default(false),
 })
 
 const runTokenSchema = z.object({
   token: z.string(),
   resumeGrant: z.string().optional(),
   modelAccess: headlessModelAccessSchema.optional(),
+  /** Where the session index is on (`headlessSessionIndex`): passed to the runner with the turn, never to the browser. */
+  indexCapability: z.string().optional(),
 })
 export type DenSession = z.infer<typeof denSessionSchema>
 

@@ -26,6 +26,7 @@ import {
   getBillingRoute,
   getDesktopPoliciesRoute,
   getDiagnosticsRoute,
+  getServicesRoute,
   getDeploymentsRoute,
   getLibraryRoute,
   getMarketplacesRoute,
@@ -88,6 +89,8 @@ export type BuildDashboardNavSectionsInput = {
   /** The managedDeployments feature is on for this organization. */
   managedDeployments?: boolean;
   desktopPolicyScreenRemoved?: boolean;
+  /** Explicit server capability, independent of organization role permissions. */
+  canManageDeploymentServices?: boolean;
 };
 
 export function buildDashboardNavSections({
@@ -98,6 +101,7 @@ export function buildDashboardNavSections({
   libraryNeedsSignIn = 0,
   managedDeployments = false,
   desktopPolicyScreenRemoved = false,
+  canManageDeploymentServices = false,
 }: BuildDashboardNavSectionsInput): DashboardNavSection[] {
   const workflowsEnabled = capabilities.workflows;
   const showWeb = runtimeConfigLoaded && capabilities.openworkWeb;
@@ -122,7 +126,7 @@ export function buildDashboardNavSections({
   ];
 
   // Admin-area entries appear only where the member holds the page's permission.
-  const canOpen = (href: string) => canOpenAdminRoute(href, access);
+  const canOpen = (href: string) => canOpenAdminRoute(href, access, canManageDeploymentServices);
   const manageItems: DashboardNavItem[] = orgSlug
     ? [
         { href: getPluginsRoute(orgSlug), label: "Plugins", icon: Box },
@@ -151,6 +155,7 @@ export function buildDashboardNavSections({
         ...[
           { href: getOrgSettingsRoute(orgSlug), label: "General" },
           { href: getDiagnosticsRoute(orgSlug), label: "Diagnostics" },
+          { href: getServicesRoute(orgSlug), label: "Services" },
           { href: getBillingRoute(orgSlug), label: "Billing" },
           { href: getApiKeysRoute(orgSlug), label: "API Keys" },
         ].filter((item) => canOpen(item.href)),
@@ -219,6 +224,7 @@ const PAGE_KEYWORDS: Record<string, string[]> = {
   Plugins: ["skills", "commands", "plugin directory"],
   SCIM: ["provisioning", "directory", "users"],
   Settings: ["organization", "workspace"],
+  Services: ["deployment", "readiness", "health", "check"],
   SSO: ["single sign on", "saml", "oidc"],
   "Tool Tester": ["tools", "test", "mcp"],
   Workbot: ["model", "default model", "assistant", "slack", "automations"],

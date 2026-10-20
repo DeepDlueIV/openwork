@@ -15,6 +15,7 @@ import { LEGACY_ORG_PROXY_HEADER } from "../../middleware/user-organizations.js"
 import type { OrgRouteVariables } from "./shared.js"
 import { registerOrgCoreRoutes } from "./core.js"
 import { registerOrgServiceReadinessRoutes } from "./service-readiness.js"
+import { registerOrgDeploymentServiceRoutes } from "./deployment-services.js"
 import { registerOrgMcpAppCatalogRoutes } from "./mcp-app-catalog.js"
 import { registerDeleteOrganizationRoutes } from "./delete-organization.js"
 import { registerOrgDesktopPolicyRoutes } from "./desktop-policies.js"
@@ -27,6 +28,7 @@ import { registerOrgInferenceProviderRoutes } from "./inference-providers.js"
 import { registerOrgInferenceRoutes } from "./inference.js"
 import { registerModelsAnalyticsRoutes } from "./models-analytics.js"
 import { registerLibraryUsageRoutes } from "./library-usage.js"
+import { registerOrgHeadlessSessionRoutes } from "./headless-sessions.js"
 import { registerModelsAnalyticsExportRoutes } from "../../models-analytics-export.js"
 import { registerOrgLlmProviderRoutes } from "./llm-providers.js"
 import { registerOrgMemberRoutes } from "./members.js"
@@ -71,6 +73,7 @@ function extractLegacyOrgProxyTarget(pathname: string) {
 export function registerOrgRoutes<T extends { Variables: OrgRouteVariables & RequestIdVariables }>(app: Hono<T>) {
   registerOrgCoreRoutes(app)
   registerOrgServiceReadinessRoutes(app)
+  registerOrgDeploymentServiceRoutes(app)
   registerOrgActivityRoutes(app)
   registerOrgInventoryRevisionRoutes(app)
   registerManagedDeploymentRoutes(app)
@@ -88,6 +91,7 @@ export function registerOrgRoutes<T extends { Variables: OrgRouteVariables & Req
   registerOrgInferenceRoutes(app)
   registerModelsAnalyticsRoutes(app)
   registerLibraryUsageRoutes(app)
+  registerOrgHeadlessSessionRoutes(app)
   registerModelsAnalyticsExportRoutes(app)
   registerOrgScimRoutes(app)
   registerOrgSsoRoutes(app)

@@ -5,6 +5,8 @@ import type { MiddlewareHandler } from "hono"
 import { ensureAdminAllowlistSeeded } from "../admin-allowlist.js"
 import { beginAuditRequest } from "../audit/request-capture.js"
 import { db } from "../db.js"
+import { env } from "../env.js"
+import { deploymentFeatureEnabled } from "../features.js"
 import type { AuthContextVariables } from "../session.js"
 
 function normalizeEmail(value: string | null | undefined) {
@@ -45,6 +47,50 @@ export async function isPlatformAdminUserId(value: string): Promise<boolean> {
     .limit(1))[0]
 
   return isAdminEmailAllowed(user?.email)
+}
+
+/**
+ * Deployment diagnostics authority is the local operator allowlist, never an
+ * organization role, ownership or permission. Setup writes this same allowlist
+ * in completeInitialAdminBootstrapSignup; DEN_BOOTSTRAP_ADMIN_EMAILS is only an
+ * additional seeding mechanism. Never consult the allowlist on hosted Den.
+ */
+export async function isLocalDeploymentOperatorUserId(userId: string): Promise<boolean> {
+  if (env.features.deployment !== "self_hosted") return false
+  return isPlatformAdminUserId(userId)
+}
+
+/** Authority only; route feature guards separately enforce both rollout scopes. */
+export async function hasLocalDeploymentOperatorSessionAuthority(principal: AuthContextVariables): Promise<boolean> {
+  if (principal.apiKey || !principal.user?.id || !principal.session?.id || !principal.session.token) return false
+  try {
+    normalizeDenTypeId("session", principal.session.id)
+  } catch {
+    return false
+  }
+  return isLocalDeploymentOperatorUserId(principal.user.id)
+}
+
+/**
+ * Full caller-specific capability for GET /v1/org only. Mirrors the routes'
+ * session/operator authority + organization requireFeature snapshot + current
+ * deploymentServicesEnabled rollout check. Advisory failures must not block core.
+ */
+export async function canManageDeploymentServices(principal: AuthContextVariables, organizationServiceReadinessEnabled: boolean): Promise<boolean> {
+  if (env.features.deployment !== "self_hosted" || !organizationServiceReadinessEnabled) return false
+  try {
+    if (!await hasLocalDeploymentOperatorSessionAuthority(principal)) return false
+    return await deploymentFeatureEnabled("serviceReadiness")
+  } catch {
+    return false
+  }
+}
+
+export const requireLocalDeploymentOperatorMiddleware: MiddlewareHandler<{ Variables: AuthContextVariables }> = async (c, next) => {
+  if (!await hasLocalDeploymentOperatorSessionAuthority({ user: c.get("user"), session: c.get("session"), apiKey: c.get("apiKey") })) {
+    return c.json({ error: "forbidden" }, 403)
+  }
+  await next()
 }
 
 export const requireAdminMiddleware: MiddlewareHandler<{ Variables: AuthContextVariables }> = async (c, next) => {

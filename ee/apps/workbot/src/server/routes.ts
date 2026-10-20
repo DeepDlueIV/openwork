@@ -3,8 +3,6 @@ import {
   createWorkbot,
   toWorkbotPageEvent,
   workbotOwner,
-  workbotSessionId,
-  workbotSideChatSessionId,
   WORKBOT_CHAT_ID,
   WorkbotFilesUnavailableError,
   WorkbotUnavailableError,
@@ -121,6 +119,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       workspaceAssistant: async () => member.den.workspaceAssistant,
       // `headlessStepTurns`: turns run one step at a time; off (or an older Den) sends them as before.
       stepTurns: member.den.stepTurns,
+      // `headlessSessionCells`: new chats in their own session cells; off (or an older Den) creates them as before.
+      sessionCells: member.den.sessionCells,
     })
 
   const enabled = (c: Context<AppEnv>) => c.get("member").den.enabled
@@ -163,6 +163,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       calendar: who.enabled && who.calendar === true,
       documents: who.enabled && who.documents === true,
       computer: who.enabled && who.computer,
+      documentEditing: who.enabled && who.documents === true && who.documentEditing,
       workspaceAssistant: who.enabled && who.workspaceAssistant,
       guidedNavigation: who.enabled && who.workspaceAssistant && who.guidedNavigation,
       teamLinks: who.enabled ? who.teamLinks : undefined,
@@ -185,10 +186,10 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     if (operation === "viewer" ? !viewer.success : !action.success) return c.json({ error: "invalid_request" }, 400)
     const workbot = workbotFor(member)
     const client = runnerClientFor(member)
-    const sessionId = workbotSessionId(member.den.organization.id, member.den.memberId)
     try {
+      let sessionId = await workbot.sessionIdOf(actorOf(member))
       const existing = await client.readSession(sessionId, { turns: 1, limit: 1, outputs: "none" })
-      if (!existing.ok && existing.status === 404) await workbot.ensureComputer(actorOf(member))
+      if (!existing.ok && existing.status === 404) sessionId = await workbot.ensureComputer(actorOf(member))
       else {
         if (!existing.ok) return c.json({ error: "desktop_unavailable" }, 409)
         const updated = await client.putSession(sessionId, { computer: true, desktop: true })
@@ -243,6 +244,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const office = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/office(?:\/[0-9a-f-]{36}(?:\/(save|close))?)?$/.exec(path)
     const method = c.req.method === "POST" ? "POST" : "GET"
     if (!(method === "GET" && path === "/v1/capabilities/google-workspace/drive-files") && !(editor && (method === "GET" || editor[1] === "editor")) && !(office && (method === "GET" ? !office[1] && /\/[0-9a-f-]{36}$/.test(path) : path.endsWith("/office") || !!office[1]))) return c.json({ error: "not_found" }, 404)
+    if (method === "POST" && !path.endsWith("/close") && !member.den.documentEditing) return c.json({ error: "feature_disabled", message: "Document editing is off for this workspace." }, 403)
     if (editor?.[1] === "content") {
       const response = await den.documentContent(member.accessToken, `${path}${url.search}`)
       return new Response(response.body, { status: response.status, headers: { "content-type": response.headers.get("content-type") ?? "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" } })
@@ -468,9 +470,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const resting = socketRest.get(owner)
     if (resting !== undefined && resting > now) return null
     socketRest.delete(owner)
-    const { organization, memberId } = member.den
-    const sessionId = chat ? workbotSideChatSessionId(organization.id, memberId, chat) : workbotSessionId(organization.id, memberId)
-    const socket = await runnerClientFor(member).openEventsSocket(sessionId, signal).catch(() => null)
+    const sessionId = await workbotFor(member).sessionIdOf(actorOf(member), chat).catch(() => null)
+    const socket = sessionId ? await runnerClientFor(member).openEventsSocket(sessionId, signal).catch(() => null) : null
     if (!socket) rest(owner)
     return socket ? { owner, events: socket, openedAt: now } : null
   }

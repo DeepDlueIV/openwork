@@ -782,6 +782,7 @@ export type AdminFeature = {
     | "workbotFirstRun"
     | "workbotInlineConnect"
     | "workbotDocuments"
+    | "workbotDocumentEditing"
     | "workbotWorkspaceAssistant"
     | "workbotGuidedNavigation"
     | "automationCalendar"
@@ -793,7 +794,9 @@ export type AdminFeature = {
     | "remoteComputers"
     | "remoteSessionSubagents"
     | "headlessDurableTurns"
-    | "headlessStepTurns";
+    | "headlessStepTurns"
+    | "headlessSessionCells"
+    | "headlessSessionIndex";
   label: string;
   description: string;
   since: string;
@@ -845,6 +848,7 @@ export type AdminOrganizationsPageResponse = {
       workbotFirstRun: boolean;
       workbotInlineConnect: boolean;
       workbotDocuments: boolean;
+      workbotDocumentEditing: boolean;
       workbotWorkspaceAssistant: boolean;
       workbotGuidedNavigation: boolean;
       automationCalendar: boolean;
@@ -857,6 +861,8 @@ export type AdminOrganizationsPageResponse = {
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
       headlessStepTurns: boolean;
+      headlessSessionCells: boolean;
+      headlessSessionIndex: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -985,6 +991,15 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      workbotDocumentEditing: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1093,6 +1108,24 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      headlessSessionCells: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionIndex: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
     };
     [key: string]: unknown;
   }>;
@@ -1169,6 +1202,7 @@ export type AdminOverviewResponse = {
       workbotFirstRun: boolean;
       workbotInlineConnect: boolean;
       workbotDocuments: boolean;
+      workbotDocumentEditing: boolean;
       workbotWorkspaceAssistant: boolean;
       workbotGuidedNavigation: boolean;
       automationCalendar: boolean;
@@ -1181,6 +1215,8 @@ export type AdminOverviewResponse = {
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
       headlessStepTurns: boolean;
+      headlessSessionCells: boolean;
+      headlessSessionIndex: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -1309,6 +1345,15 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      workbotDocumentEditing: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1409,6 +1454,24 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       headlessStepTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionCells: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionIndex: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -2156,6 +2219,10 @@ export type OrganizationContextResponse = {
   features: {
     [key: string]: boolean;
   };
+  /**
+   * Whether this signed-in caller may manage deployment services: an allowlisted self-hosted operator with serviceReadiness enabled for both this organization and the deployment. Organization ownership and permissions never grant it. False for API keys, hosted deployments, disabled or killed rollout, and capability lookup failures.
+   */
+  canManageDeploymentServices: boolean;
   deploymentCapabilities: {
     version: 1;
     aiGateway: boolean;
@@ -2617,6 +2684,27 @@ export type LibraryUsageReport = {
   days: number;
   trackingSince: string | null;
   items: Array<LibraryUsageRow>;
+};
+
+export type HeadlessSessionIndexEntry = {
+  sessionId: string;
+  memberId: string | null;
+  kind: "workbot" | "slack" | "automation";
+  createdAt: string;
+  updatedAt: string;
+  hotBytes: number;
+  segmentCount: number;
+  totalBytes: number;
+  activeTurnSince: string | null;
+  deletedAt: string | null;
+  retentionClass: string | null;
+  legalHold: boolean;
+  lastReportedAt: string;
+};
+
+export type HeadlessSessionIndexPage = {
+  sessions: Array<HeadlessSessionIndexEntry>;
+  nextCursor: string | null;
 };
 
 export type OrganizationScimConnection = {
@@ -6669,6 +6757,7 @@ export type WorkbotSession = {
   computer?: boolean;
   calendar?: boolean;
   documents?: boolean;
+  documentEditing?: boolean;
   workspaceAssistant?: boolean;
   guidedNavigation?: boolean;
   teamLinks?: {
@@ -6681,6 +6770,7 @@ export type WorkbotSession = {
   verifyModel?: boolean;
   gatewayModels?: boolean;
   stepTurns: boolean;
+  sessionCells: boolean;
 };
 
 export type WorkbotRunToken = {
@@ -6692,6 +6782,7 @@ export type WorkbotRunToken = {
     apiKey: string;
     protocol: "anthropic" | "openai" | "openai-responses";
   };
+  indexCapability?: string;
 };
 
 export type DenAppVersionResponse = {
@@ -7149,7 +7240,7 @@ export type GetV1AdminServicesErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Platform admin access required.
+   * Deployment operator access required.
    */
   403: ForbiddenError;
   /**
@@ -7188,7 +7279,7 @@ export type PostV1AdminServicesCheckErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Platform admin access required.
+   * Deployment operator access required.
    */
   403: ForbiddenError;
   /**
@@ -7739,6 +7830,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbotFirstRun: boolean;
       workbotInlineConnect: boolean;
       workbotDocuments: boolean;
+      workbotDocumentEditing: boolean;
       workbotWorkspaceAssistant: boolean;
       workbotGuidedNavigation: boolean;
       automationCalendar: boolean;
@@ -7751,6 +7843,8 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
       headlessStepTurns: boolean;
+      headlessSessionCells: boolean;
+      headlessSessionIndex: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -7879,6 +7973,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      workbotDocumentEditing: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7979,6 +8082,24 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       headlessStepTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionCells: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionIndex: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8051,6 +8172,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbotFirstRun: boolean;
       workbotInlineConnect: boolean;
       workbotDocuments: boolean;
+      workbotDocumentEditing: boolean;
       workbotWorkspaceAssistant: boolean;
       workbotGuidedNavigation: boolean;
       automationCalendar: boolean;
@@ -8063,6 +8185,8 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
       headlessStepTurns: boolean;
+      headlessSessionCells: boolean;
+      headlessSessionIndex: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -8191,6 +8315,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      workbotDocumentEditing: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -8291,6 +8424,24 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       headlessStepTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionCells: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionIndex: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -11041,6 +11192,91 @@ export type GetV1OrgServiceReadinessResponses = {
 
 export type GetV1OrgServiceReadinessResponse =
   GetV1OrgServiceReadinessResponses[keyof GetV1OrgServiceReadinessResponses];
+
+export type GetV1OrgDeploymentServicesData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/deployment-services";
+};
+
+export type GetV1OrgDeploymentServicesErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Deployment operator access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Service readiness is disabled.
+   */
+  404: NotFoundError;
+  /**
+   * Diagnostic admission is unavailable; no upstream detail is exposed.
+   */
+  503: {
+    error: "service_readiness_unavailable";
+  };
+};
+
+export type GetV1OrgDeploymentServicesError = GetV1OrgDeploymentServicesErrors[keyof GetV1OrgDeploymentServicesErrors];
+
+export type GetV1OrgDeploymentServicesResponses = {
+  /**
+   * Cached deployment readiness.
+   */
+  200: DeploymentServiceReadiness;
+};
+
+export type GetV1OrgDeploymentServicesResponse =
+  GetV1OrgDeploymentServicesResponses[keyof GetV1OrgDeploymentServicesResponses];
+
+export type PostV1OrgDeploymentServicesCheckData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/deployment-services/check";
+};
+
+export type PostV1OrgDeploymentServicesCheckErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Deployment operator access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Service readiness is disabled.
+   */
+  404: NotFoundError;
+  /**
+   * No recent matching snapshot is available and another replica recently admitted a check; Retry-After indicates the admission window.
+   */
+  429: DeploymentServiceReadiness;
+  /**
+   * Diagnostic admission is unavailable; no upstream detail is exposed.
+   */
+  503: {
+    error: "service_readiness_unavailable";
+  };
+};
+
+export type PostV1OrgDeploymentServicesCheckError =
+  PostV1OrgDeploymentServicesCheckErrors[keyof PostV1OrgDeploymentServicesCheckErrors];
+
+export type PostV1OrgDeploymentServicesCheckResponses = {
+  /**
+   * Check queued, already in progress, or completed recently with matching configuration.
+   */
+  202: DeploymentServiceReadiness;
+};
+
+export type PostV1OrgDeploymentServicesCheckResponse =
+  PostV1OrgDeploymentServicesCheckResponses[keyof PostV1OrgDeploymentServicesCheckResponses];
 
 export type GetV1OrgActivityData = {
   body?: never;
@@ -16122,6 +16358,50 @@ export type GetV1LibraryUsageByKindResponses = {
 };
 
 export type GetV1LibraryUsageByKindResponse = GetV1LibraryUsageByKindResponses[keyof GetV1LibraryUsageByKindResponses];
+
+export type GetV1HeadlessSessionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    memberId?: string;
+    kind?: "workbot" | "slack" | "automation";
+    active?: "true" | "false";
+    deleted?: "exclude" | "include" | "only";
+    limit?: number;
+    cursor?: string;
+  };
+  url: "/v1/headless/sessions";
+};
+
+export type GetV1HeadlessSessionsErrors = {
+  /**
+   * Invalid filter or cursor.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * View usage analytics permission required.
+   */
+  403: ForbiddenError;
+  /**
+   * The session index is off for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1HeadlessSessionsError = GetV1HeadlessSessionsErrors[keyof GetV1HeadlessSessionsErrors];
+
+export type GetV1HeadlessSessionsResponses = {
+  /**
+   * One page of conversations.
+   */
+  200: HeadlessSessionIndexPage;
+};
+
+export type GetV1HeadlessSessionsResponse = GetV1HeadlessSessionsResponses[keyof GetV1HeadlessSessionsResponses];
 
 export type PostV1InferenceAnalyticsLangfuseTestData = {
   body: {

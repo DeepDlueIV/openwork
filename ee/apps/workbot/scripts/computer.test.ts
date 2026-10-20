@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Hono } from "hono"
-import { workbotOwner, workbotSessionId } from "@openwork-ee/workbot-server"
+import { workbotOwner, workbotSessionId, workbotCellSessionId } from "@openwork-ee/workbot-server"
 import { createHeadlessRunnerClient } from "@openwork-ee/headless-protocol"
 import { createDen, denSessionSchema } from "../src/server/den.js"
 import { loadConfig } from "../src/server/config.js"
@@ -71,4 +71,29 @@ test("Computer access uses the signed-in member's conversation and refuses a cal
   const revoked = await open({ view: "computer" })
   assert.equal(revoked.status, 403)
   assert.deepEqual(await revoked.json(), { error: "feature_disabled" })
+})
+
+test("Computer follows the member's existing session cell after chat storage migrates", async t => {
+  const signed = member("cell_member")
+  signed.den.sessionCells = true
+  const sessionId = workbotCellSessionId("org", "cell_member", null)
+  const calls: string[] = []
+  const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
+  t.mock.method(globalThis, "fetch", async (url: string | URL | Request, init?: RequestInit) => {
+    const parsed = new URL(url instanceof Request ? url.url : url)
+    calls.push(parsed.pathname)
+    if (parsed.pathname === "/v1/sessions") return json({ sessions: [{ id: sessionId, ref: "main", title: "Main chat", createdAt: 1, updatedAt: 1 }] })
+    if (parsed.pathname.endsWith("/desktop/viewer")) return json({ state: "paused" })
+    if (init?.method === "PUT") return json({ id: sessionId })
+    return json({ turns: [], messages: [], finalAssistantText: "" })
+  })
+  const app = new Hono<AppEnv>()
+  registerWorkbotRoutes(app, {
+    config, den: { ...createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl }), session: async () => signed.den },
+    member: async (c, next) => { c.set("member", signed); await next() }, sameOrigin: async (_c, next) => next(),
+  })
+  const response = await app.request("/v1/workbot/computer/viewer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ view: "computer" }) })
+  assert.equal(response.status, 200)
+  assert.ok(calls.includes(`/v1/sessions/${sessionId}/desktop/viewer`))
+  assert.ok(!calls.some(path => path.includes(workbotSessionId("org", "cell_member"))))
 })

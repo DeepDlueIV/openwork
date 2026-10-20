@@ -38,6 +38,7 @@ class DesktopPrivilegeBoundary(unittest.TestCase):
             root = Path(directory)
             (root / 'guest.mjs').write_text('trusted image guest')
             (root / 'start.sh').write_text('trusted image startup')
+            (root / 'guest.version').write_text('trusted image version')
             with patch.object(bridge, 'ROOT', root), patch.object(bridge.subprocess, 'run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'out of date'):
                     bridge.start('0' * 64)

@@ -47,8 +47,7 @@ def call(route, body):
 
 def version():
     digest = hashlib.sha256()
-    for name in ['guest.mjs', 'start.sh']:
-        digest.update((ROOT / name).read_bytes())
+    digest.update((ROOT / 'guest.version').read_bytes())
     # Diagnostics can only be configured by the image operator, never through sudo arguments.
     private = Path('/etc/openwork-desktop/private-browsing').is_file()
     if private:

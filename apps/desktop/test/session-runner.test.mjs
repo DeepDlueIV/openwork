@@ -39,9 +39,22 @@ async function eventually(predicate, message = "condition was not reached") {
   assert.fail(message)
 }
 
+const directoryRunners = new Map()
+
 async function privateDirectory(t) {
   const root = await mkdtemp(join(tmpdir(), "openwork-session-runner-"))
-  t.after(() => rm(root, { recursive: true, force: true }))
+  const runners = new Set()
+  directoryRunners.set(root, runners)
+  t.after(async () => {
+    // Hooks run in registration order: stop writers before removing their files.
+    for (const runner of runners) runner.stop()
+    try {
+      // Allow already-started Windows filesystem operations to release handles.
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 })
+    } finally {
+      directoryRunners.delete(root)
+    }
+  })
   return root
 }
 
@@ -138,13 +151,15 @@ function runnerFixture(native, assignment = command()) {
 }
 
 function desktopRunner(native, den, root) {
-  return createDesktopAutomationRunner({
+  const runner = createDesktopAutomationRunner({
     fetchImpl: den.fetchImpl, getLocalRuntime: native.getLocalRuntime, getJournalRoot: () => root,
     remoteSessionFirstTurnWindowMs: 0,
     remoteSessionWatch: { fastPollMs: 10, slowPollMs: 10 },
     remoteSessionRequestPoll: { pollMs: 10 },
     waitBeforeReconnect: (_ms, signal) => new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true })),
   })
+  directoryRunners.get(root).add(runner)
+  return runner
 }
 
 function configure(runner, capabilities, nonce = "first", selectedAccount = account) {
@@ -181,7 +196,8 @@ test("packaged runtime staging resolves and loads the compiled remote core insid
   assert.ok(staged.includes("@openwork/remote-sessions"))
   const requireFromRuntime = createRequire(join(root, "runtime-probe.cjs"))
   const entry = requireFromRuntime.resolve("@openwork/remote-sessions")
-  assert.equal(entry, await realpath(join(root, "node_modules", "@openwork", "remote-sessions", "dist", "index.js")))
+  // Windows module resolution may return an 8.3 alias for the same file.
+  assert.equal(await realpath(entry), await realpath(join(root, "node_modules", "@openwork", "remote-sessions", "dist", "index.js")))
   const built = await import(pathToFileURL(entry).href)
   assert.equal(typeof built.createSessionRunner, "function")
   assert.deepEqual(built.emptyJournal(), emptyJournal())
@@ -291,7 +307,6 @@ test("released credentials keep the legacy path and do not create a journal", as
   const native = nativeFixture()
   const den = runnerFixture(native)
   const runner = desktopRunner(native, den, root)
-  t.after(() => runner.stop())
   configure(runner, legacyCapabilities)
   await eventually(() => den.calls.some((call) => call.path.endsWith("/complete")))
   const prompt = native.calls.find((call) => call.path.endsWith("/prompt"))
@@ -304,7 +319,6 @@ test("modern desktop consumes the shared core and recovers reports through token
   const native = nativeFixture()
   const den = runnerFixture(native)
   const runner = desktopRunner(native, den, root)
-  t.after(() => runner.stop())
   configure(runner, recoveryCapabilities)
   await eventually(() => den.calls.some((call) => call.path.endsWith("/complete")))
   assert.equal(native.created, 1)
@@ -318,7 +332,6 @@ test("modern desktop consumes the shared core and recovers reports through token
   runner.stop()
   const before = den.calls.length
   const restarted = desktopRunner(native, den, root)
-  t.after(() => restarted.stop())
   configure(restarted, recoveryCapabilities, "restart")
   await eventually(() => den.calls.slice(before).some((call) => call.path === "/v1/automation-runner/work"))
   assert.equal(native.created, 1)
@@ -337,7 +350,6 @@ test("failed completion stays in the shared journal outbox and restart never dup
   await eventually(() => den.calls.some((call) => call.path.endsWith("/complete")))
   runner.stop()
   const restarted = desktopRunner(native, den, root)
-  t.after(() => restarted.stop())
   configure(restarted, recoveryCapabilities, "restart")
   await eventually(() => den.calls.filter((call) => call.path.endsWith("/complete")).length >= 2)
   assert.equal(native.created, 1)
@@ -349,7 +361,6 @@ test("modern request routing persists follow-up completion and reports only the 
   const native = nativeFixture()
   const den = runnerFixture(native)
   const runner = desktopRunner(native, den, root)
-  t.after(() => runner.stop())
   configure(runner, recoveryCapabilities)
   await eventually(() => den.calls.some((call) => call.path.endsWith("/complete")))
   native.active = false
@@ -445,7 +456,6 @@ test("decoded claims alone never unlock native journal replay before Den authent
     return new Response(JSON.stringify({ message: "invalid bearer" }), { status: 401 })
   } }
   const runner = desktopRunner(native, den, root)
-  t.after(() => runner.stop())
   configure(runner, recoveryCapabilities)
   await eventually(() => rejected)
   await new Promise((resolve) => setTimeout(resolve, 30))
@@ -468,7 +478,6 @@ test("scheduled Automation execution stays independent with a recovery-capable t
     ? new Response(JSON.stringify({ data: [{ providerID: "fixture", id: "fixture-model" }] }), { status: 200 })
     : originalFetch(input, init)
   const runner = desktopRunner(native, den, root)
-  t.after(() => runner.stop())
   configure(runner, recoveryCapabilities)
   await eventually(() => den.calls.some((call) => call.path === "/v1/automation-runs/run_fixture/complete"))
   const complete = den.calls.find((call) => call.path === "/v1/automation-runs/run_fixture/complete")

@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
-import { chmod, mkdir, open, rename, unlink } from "node:fs/promises"
+import { chmod, mkdir, open, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { emptyJournal, parseJournal } from "@openwork/remote-sessions"
+import { renameSessionJournal } from "./session-journal-rename.mjs"
 
 /** Account identity comes from Den's signed token claims, never a renderer-selected account or credential. */
 export function desktopSessionRunnerPartition(baseUrl, account) {
@@ -59,7 +60,7 @@ export function createDesktopSessionJournal(root, partition) {
         await handle.sync()
         await handle.close()
         handle = null
-        await rename(temporaryPath, filePath)
+        await renameSessionJournal(temporaryPath, filePath)
         // Persist the rename as well as the contents where directory fsync is
         // supported. Windows cannot open directories as file handles.
         if (process.platform !== "win32") {

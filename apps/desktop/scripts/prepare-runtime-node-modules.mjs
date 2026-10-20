@@ -76,7 +76,8 @@ export function stageRuntimeNodeModules(outdir) {
         return true;
       },
     });
-    staged.push(destination.slice(output.length + 1));
+    // Report portable package identifiers, not Windows filesystem separators.
+    staged.push(relative(output, destination).split(sep).join("/"));
     const dependencies = resolvedPackage.packageJson.dependencies ?? {};
     for (const dependencyName of Object.keys(dependencies)) {
       stagePackage(

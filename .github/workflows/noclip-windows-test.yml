@@ -68,7 +68,10 @@ jobs:
         run: pnpm --filter @openwork/desktop run build:electron
 
       - name: Run desktop session-runner tests
-        run: pnpm --filter @openwork/desktop run test:session-runner
+        run: >-
+          pnpm --dir apps/desktop exec node
+          --import ./test/session-runner-fs-diagnostics.mjs
+          --test ./test/session-runner.test.mjs
 
       # Baseline installer only: keep application behavior unchanged. Never publish.
       - name: Package unsigned Windows x64 installer

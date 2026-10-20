@@ -3,6 +3,27 @@ import type { Seed } from "@openwork/env";
 import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 /**
+ * The first chat. On CI the desktop can still be settling its workspace when the
+ * control rail first offers "create task", and creation then returns nothing.
+ * Give it a few more chances, and name what the desktop shows if it never works.
+ */
+async function firstSession(seed: Seed, app: Awaited<ReturnType<Seed["desktop"]>>, title: string) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await seed.session(app, { title });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt < 4 && /did not return a session ID|returned no session ID/i.test(message)) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        continue;
+      }
+      const visible = await seed.evalIn(app, () => document.body.innerText.replace(/\s+/g, " ").slice(0, 800)).catch(() => "unavailable");
+      throw new Error(`${message} The desktop showed: ${JSON.stringify(visible)}`);
+    }
+  }
+}
+
+/**
  * A signed-in desktop whose organization has one or more desktop chat
  * features switched on before the app starts, with one chat on screen.
  * Desktop features follow the active organization's features (`GET /v1/org`),
@@ -12,7 +33,7 @@ export async function featureDesktop(seed: Seed, name: string, capabilities: Rec
   const den = await seed.den({ org: { name: "Desktop features studio", admin: { name: "Workspace Owner" } } });
   const organizationId = await enableOrganizationCapabilities(seed, den.admin, capabilities);
   const app = await seed.desktop({ name, den, as: "admin" });
-  const session = await seed.session(app, { title });
+  const session = await firstSession(seed, app, title);
   const platform = await seed.evalIn(app, () => navigator.platform);
   const snapshot = () => seed.evalIn(app, browserScript((sessionId: string) => window.__OPENWORK_ELECTRON__.invokeDesktop("computerSnapshot", sessionId), [session.sessionId]), { awaitPromise: true });
   const setCapabilities = async (capabilities: Record<string, boolean>) => {

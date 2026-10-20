@@ -721,7 +721,7 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5">
                           {item.locked ? (
-                            <span className="flex shrink-0 text-gray-400" role="img" aria-label={item.locked} title={item.locked} data-testid="nav-locked">
+                            <span className="flex shrink-0 text-gray-500" role="img" aria-label={item.locked} title={item.locked} data-testid="nav-locked">
                               <LockKeyhole className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden />
                             </span>
                           ) : null}

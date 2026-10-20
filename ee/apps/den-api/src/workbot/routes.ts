@@ -60,6 +60,7 @@ const sessionSchema = z.object({
   calendar: z.boolean().optional(),
   /** Connected document browsing; off on older Dens. */
   documents: z.boolean().optional(),
+  documentEditing: z.boolean().optional(),
   workspaceAssistant: z.boolean().optional(),
   /** Offers to open mentioned documents and keeps the chat beside them; needs the workspace assistant. */
   guidedNavigation: z.boolean().optional(),
@@ -81,6 +82,12 @@ const sessionSchema = z.object({
    * over the runner's WebSocket, so a runner deploy doesn't cut a step off. Workbot reads it as off from older Dens.
    */
   stepTurns: z.boolean(),
+  /**
+   * Feature `headlessSessionCells`: Workbot creates new chats in their own session cells (`hs_c_…` ids, memory shared
+   * through the owner) and asks the runner to split the person's existing chats out. Workbot reads it as off from
+   * older Dens.
+   */
+  sessionCells: z.boolean(),
 }).meta({ ref: "WorkbotSession" })
 
 const runTokenSchema = z.object({
@@ -93,6 +100,11 @@ const runTokenSchema = z.object({
   resumeGrant: z.string().optional(),
   /** Server-to-server only; never returned in Workbot's browser session or transcript. */
   modelAccess: headlessModelAccessSchema.optional(),
+  /**
+   * Feature `headlessSessionIndex`, when the request names the session: a capability the headless runner presents to
+   * report that conversation's content-free sizes and state to Den's session index. Server-to-server only.
+   */
+  indexCapability: z.string().optional(),
 }).meta({ ref: "WorkbotRunToken" })
 const runTokenRequestSchema = z.object({
   ttlMs: z.number().int().min(60_000).max(DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS).optional(),
@@ -333,6 +345,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         canSchedule,
         calendar: true,
         documents: features.workbotDocuments,
+        documentEditing: features.workbotDocuments && features.workbotDocumentEditing,
         workspaceAssistant: features.workbotWorkspaceAssistant,
         guidedNavigation: features.workbotWorkspaceAssistant && features.workbotGuidedNavigation,
         sideChats: true,
@@ -341,6 +354,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         ...(verifyModel ? { verifyModel: true } : {}),
         ...(gatewayModels ? { gatewayModels: true } : {}),
         stepTurns: features.headlessStepTurns,
+        sessionCells: features.headlessSessionCells,
       })
     },
   )
@@ -509,6 +523,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       const features = await getOrganizationFeatures(resolved.organization.id)
       if (editor?.[1] === "metadata" && !features.workbotWorkspaceAssistant) return c.json({ error: "feature_disabled", message: "Opening document links is off for this workspace." }, 403)
       if (!features.workbotDocuments) return c.json({ error: "workbot_documents_not_enabled", message: "Documents is off for this workspace." }, 403)
+      if (!read && !inner.endsWith("/close") && !features.workbotDocumentEditing) return c.json({ error: "feature_disabled", message: "Document editing is off for this workspace." }, 403)
       if (!resolved.scopes.has(read ? DEN_MCP_READ_SCOPE : DEN_MCP_WRITE_SCOPE)) return c.json({ error: "insufficient_scope" }, 403)
       const url = new URL(c.req.url)
       const headers = new Headers({ accept: "application/json", "x-den-internal-mcp-principal": createInternalMcpPrincipalHeader({ userId: resolved.principal.userId, organizationId: resolved.principal.organizationId, credentialId: resolved.credentialId }) })
@@ -533,7 +548,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       "x-mcp": false,
       summary: "A short-lived token for one Workbot turn",
       description:
-        "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.",
+        "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With `sessionId` and where the session index is on for the workspace, also returns an index capability for that session. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.",
       responses: {
         200: jsonResponse("The token.", runTokenSchema),
         401: jsonResponse("The token is missing, expired or revoked, or the membership ended.", unauthorizedSchema),
@@ -568,8 +583,16 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
           const turn = snapshot.ok ? snapshot.value.turns.find((entry) => entry.messageId === messageId) : undefined
           if (!turn?.modelAccessRequired || turn.model !== model) return c.json({ error: "cloud_model_unavailable" }, 403)
         }
-        const { token, resumeGrant, modelAccess } = await mintHeadlessTurnCredentials({ ...principal, ttlMs, readOnly, sessionId, messageId, model, modelAccessRequired })
-        return c.json({ token, expiresAt: new Date(Date.now() + ttlMs).toISOString(), ...(resumeGrant ? { resumeGrant } : {}), ...(modelAccess ? { modelAccess } : {}) })
+        const { token, resumeGrant, modelAccess, indexCapability } = await mintHeadlessTurnCredentials({
+          ...principal, ttlMs, readOnly, sessionId, messageId, model, modelAccessRequired, indexKind: "workbot", memberId: resolved.memberId,
+        })
+        return c.json({
+          token,
+          expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+          ...(resumeGrant ? { resumeGrant } : {}),
+          ...(modelAccess ? { modelAccess } : {}),
+          ...(indexCapability ? { indexCapability } : {}),
+        })
       } catch (error) {
         if (!modelAccessRequired && !(await organizationFeatureEnabled(organization.id, "cloudAgentGateway"))) throw error
         return c.json({ error: "cloud_model_unavailable", message: "Your workspace model isn't available to you. Ask your model administrator to check your AI Gateway access." }, 403)

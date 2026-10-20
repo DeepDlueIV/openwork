@@ -26,7 +26,7 @@
                 true,
                 false
               ],
-              "description": "Deployment service readiness: Deployment administrators can verify optional services and see what is missing; organization screens share the same safe readiness status without blocking core work. Renders DEN_FEATURE_SERVICE_READINESS."
+              "description": "Deployment service readiness: Self-hosted installation operators can check optional services from Settings; internal platform diagnostics and minimal member readiness share the same checker without blocking core work. Renders DEN_FEATURE_SERVICE_READINESS."
             },
             "cloudAgentGateway": {
               "enum": [
@@ -148,6 +148,16 @@
               ],
               "description": "Workbot Documents: Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive. Renders DEN_FEATURE_WORKBOT_DOCUMENTS."
             },
+            "workbotDocumentEditing": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot Documents: editing: Members choose Edit from a document preview. Full Office editing starts their Cloud workspace only when requested. Requires Workbot Documents. Renders DEN_FEATURE_WORKBOT_DOCUMENT_EDITING."
+            },
             "workbotWorkspaceAssistant": {
               "enum": [
                 "",
@@ -267,6 +277,26 @@
                 false
               ],
               "description": "Workbot: answers aren't cut off by updates: Workbot, Slack and Automations answers keep going through OpenWork updates instead of restarting their current step. Renders DEN_FEATURE_HEADLESS_STEP_TURNS."
+            },
+            "headlessSessionCells": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: each chat in its own space: Each Workbot chat is stored on its own, so long histories stay fast to open and move during updates. Renders DEN_FEATURE_HEADLESS_SESSION_CELLS."
+            },
+            "headlessSessionIndex": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: chat overview for admins: OpenWork keeps a content-free list of Workbot, Slack and Automation chats (sizes, activity, state) for admin views and retention. Renders DEN_FEATURE_HEADLESS_SESSION_INDEX."
             },
             "gatewayDashboard": {
               "enum": [

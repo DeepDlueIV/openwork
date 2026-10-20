@@ -362,7 +362,7 @@ OpenWork Cloud. Don't change it on a customer install.
 <!-- BEGIN GENERATED features (pnpm features:sync) -->
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
-| `serviceReadiness` | `DEN_FEATURE_SERVICE_READINESS` | default off | Deployment administrators can verify optional services and see what is missing; organization screens share the same safe readiness status without blocking core work. |
+| `serviceReadiness` | `DEN_FEATURE_SERVICE_READINESS` | default off | Self-hosted installation operators can check optional services from Settings; internal platform diagnostics and minimal member readiness share the same checker without blocking core work. |
 | `cloudAgentGateway` | `DEN_FEATURE_CLOUD_AGENT_GATEWAY` | default off | Choose and run cloud-agent models through the organization's AI Gateway access instead of the runner's shared model credentials. |
 | `liveProviderSync` | `DEN_FEATURE_LIVE_PROVIDER_SYNC` | default off | Keep desktop OpenCode v2 models up to date with the organization's AI Gateway in real time. |
 | `offlineRecovery` | `DEN_FEATURE_OFFLINE_RECOVERY` | default off | Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations. |
@@ -375,6 +375,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `workbotFirstRun` | `DEN_FEATURE_WORKBOT_FIRST_RUN` | default off | People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable. |
 | `workbotInlineConnect` | `DEN_FEATURE_WORKBOT_INLINE_CONNECT` | default off | Members connect their assigned apps directly from Workbot and return to the same view after consent. |
 | `workbotDocuments` | `DEN_FEATURE_WORKBOT_DOCUMENTS` | default off | Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive. |
+| `workbotDocumentEditing` | `DEN_FEATURE_WORKBOT_DOCUMENT_EDITING` | default off | Members choose Edit from a document preview. Full Office editing starts their Cloud workspace only when requested. Requires Workbot Documents. |
 | `workbotWorkspaceAssistant` | `DEN_FEATURE_WORKBOT_WORKSPACE_ASSISTANT` | default off | Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar. |
 | `workbotGuidedNavigation` | `DEN_FEATURE_WORKBOT_GUIDED_NAVIGATION` | default off | Workbot offers to open the documents it mentions, and the conversation stays open beside the document. Needs the workspace assistant. |
 | `automationCalendar` | `DEN_FEATURE_AUTOMATION_CALENDAR` | default off | Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar. |
@@ -387,6 +388,8 @@ OpenWork Cloud. Don't change it on a customer install.
 | `remoteSessionSubagents` | `DEN_FEATURE_REMOTE_SESSION_SUBAGENTS` | default off | A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop. |
 | `headlessDurableTurns` | `DEN_FEATURE_HEADLESS_DURABLE_TURNS` | default off | Workbot, Slack and Automations answers keep going after a restart, deploy or server failure, without waiting for someone to reopen the chat. |
 | `headlessStepTurns` | `DEN_FEATURE_HEADLESS_STEP_TURNS` | default off | Workbot, Slack and Automations answers keep going through OpenWork updates instead of restarting their current step. |
+| `headlessSessionCells` | `DEN_FEATURE_HEADLESS_SESSION_CELLS` | default off | Each Workbot chat is stored on its own, so long histories stay fast to open and move during updates. |
+| `headlessSessionIndex` | `DEN_FEATURE_HEADLESS_SESSION_INDEX` | default off | OpenWork keeps a content-free list of Workbot, Slack and Automation chats (sizes, activity, state) for admin views and retention. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`

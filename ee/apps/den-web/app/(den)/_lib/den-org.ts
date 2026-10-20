@@ -336,6 +336,8 @@ export type DenOrgContext = {
   /** Effective on/off per registry feature (packages/features/src/registry.ts). Missing from older servers means off. */
   features: FeatureMap;
   deploymentCapabilities: DeploymentCapabilities;
+  /** Server-verified installation operator capability; never inferred from organization role. */
+  canManageDeploymentServices: boolean;
 };
 
 export type DenOrgAuthMethods = {
@@ -861,6 +863,10 @@ export function getDeploymentsRoute(orgSlug?: string | null): string {
   return `${getOrgDashboardRoute(orgSlug)}/deployments`;
 }
 
+export function getServicesRoute(orgSlug?: string | null): string {
+  return `${getOrgDashboardRoute(orgSlug)}/services`;
+}
+
 export function getDiagnosticsRoute(orgSlug?: string | null): string {
   return `${getOrgDashboardRoute(orgSlug)}/diagnostics`;
 }
@@ -1224,6 +1230,7 @@ export function parseOrgContextPayload(payload: unknown): DenOrgContext | null {
     capabilities: parseOrgCapabilities(payload.capabilities),
     features: parseOrgFeatures(payload.features),
     deploymentCapabilities: parseDeploymentCapabilities(payload.deploymentCapabilities),
+    canManageDeploymentServices: payload.canManageDeploymentServices === true,
   };
 }
 

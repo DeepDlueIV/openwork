@@ -56,6 +56,36 @@ In handlers, use `requirePermission(c, key)` / `hasPermission(c, key)` from
 `routes/org/shared.ts`; outside a request, `resolvePermissionsForMember(...)` from
 `permissions/resolve.ts`.
 
+## Self-hosted deployment services authority
+
+`/v1/org/deployment-services` and `/check` compose `userSessionRoute()` with
+`orgMemberRoute()` and `requireLocalDeploymentOperatorMiddleware`. They require
+both a genuine user session and a current membership, then independently require
+the deployment's administrator allowlist. Roles, permission grants, and ownership
+transfers cannot create operator authority. The authoritative deployment comes
+from `env.features.deployment`, never request headers; hosted deployments return
+false before querying the allowlist. Neither these routes nor the caller-specific
+`canManageDeploymentServices` hint widen `adminRoute()`.
+
+Initial administrator setup (`completeInitialAdminBootstrapSignup` in
+`initial-admin-bootstrap.ts`) persists the verified setup email in
+`AdminAllowlistTable` via `ensureBootstrappedPlatformAdmin`. Thus a setup-created
+operator works without `DEN_BOOTSTRAP_ADMIN_EMAILS`; that variable only seeds
+additional allowlist entries. Removing allowlist authority removes this access.
+`hasLocalDeploymentOperatorSessionAuthority` checks authority only; the routes
+separately apply organization and deployment `serviceReadiness` gates. The full
+`canManageDeploymentServices` hint is computed only by `GET /v1/org`, using the
+same authority, its already-resolved organization feature snapshot and the current
+deployment rollout. It is false for API keys, hosted deployments, either scope's
+disabled rollout, a killed feature, or lookup errors (which must not block core
+organization context). The existing minimal member-safe
+`/v1/org/service-readiness` projection is unchanged.
+
+Both full diagnostic entry points reuse `routes/deployment-services.ts` handlers
+and the `service-readiness-runtime.ts` singleton, including durable admission,
+in-flight checks, recent-result coalescing and cached snapshots. Turning the
+feature off blocks new access without cancelling in-flight read-only probes.
+
 ## Rule of thumb
 
 - If a value is broadly useful across multiple route areas, put it here

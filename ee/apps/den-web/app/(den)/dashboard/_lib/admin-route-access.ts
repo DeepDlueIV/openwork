@@ -9,6 +9,7 @@ import {
   getDeploymentsRoute,
   getDesktopPoliciesRoute,
   getDiagnosticsRoute,
+  getServicesRoute,
   getImportPluginRoute,
   getIntegrationsRoute,
   getMcpConnectionsRoute,
@@ -97,7 +98,8 @@ function ruleFor(pathname: string): AdminRouteRule | null {
 }
 
 /** Whether the member can open this admin-area page. */
-export function canOpenAdminRoute(pathname: string, access: DenOrgAccessFlags): boolean {
+export function canOpenAdminRoute(pathname: string, access: DenOrgAccessFlags, canManageDeploymentServices = false): boolean {
+  if (matchesPrefix(pathname, getServicesRoute())) return pathname === getServicesRoute() && canManageDeploymentServices === true;
   if (!access.canViewSettings) return false;
   const rule = ruleFor(pathname);
   return rule ? rule.allowed(access) : true;
@@ -105,6 +107,7 @@ export function canOpenAdminRoute(pathname: string, access: DenOrgAccessFlags): 
 
 /** Plain reason for a locked admin page (DESIGN.md P4). */
 export function adminRouteLockedMessage(pathname: string): string {
+  if (matchesPrefix(pathname, getServicesRoute())) return "Service checks require access from your installation operator.";
   const labels = (ruleFor(pathname)?.needs ?? []).map((key) => `“${getPermissionDefinition(key).label}”`);
   const needs = labels.length === 0
     ? "an organization permission"

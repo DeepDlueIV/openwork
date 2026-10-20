@@ -336,6 +336,8 @@ import type {
   GetV1GatewayUsageLimitsMembersErrors,
   GetV1GatewayUsageLimitsMembersResponses,
   GetV1GatewayUsageLimitsMeResponses,
+  GetV1HeadlessSessionsErrors,
+  GetV1HeadlessSessionsResponses,
   GetV1InferenceAccessErrors,
   GetV1InferenceAccessResponses,
   GetV1InferenceAnalyticsActivityErrors,
@@ -485,6 +487,8 @@ import type {
   GetV1OrgDefaultModelOptionsErrors,
   GetV1OrgDefaultModelOptionsResponses,
   GetV1OrgDefaultModelResponses,
+  GetV1OrgDeploymentServicesErrors,
+  GetV1OrgDeploymentServicesResponses,
   GetV1OrgErrors,
   GetV1OrgInventoryRevisionErrors,
   GetV1OrgInventoryRevisionResponses,
@@ -891,6 +895,8 @@ import type {
   PostV1OauthProvidersByProviderIdDisconnectResponses,
   PostV1OrgBrandAssetsErrors,
   PostV1OrgBrandAssetsResponses,
+  PostV1OrgDeploymentServicesCheckErrors,
+  PostV1OrgDeploymentServicesCheckResponses,
   PostV1OrgsByOrganizationIdInstallLinksErrors,
   PostV1OrgsByOrganizationIdInstallLinksResponses,
   PostV1OrgsInvitationsAcceptErrors,
@@ -3570,6 +3576,34 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Read local deployment service readiness
+   *
+   * Self-hosted deployment operators with an active organization membership only. Organization ownership and permissions do not grant access. Shares the platform diagnostics snapshot and bounded refresh admission.
+   */
+  public getV1OrgDeploymentServices<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgDeploymentServicesResponses,
+      GetV1OrgDeploymentServicesErrors,
+      ThrowOnError
+    >({ url: "/v1/org/deployment-services", ...options });
+  }
+
+  /**
+   * Queue a local deployment service readiness check
+   *
+   * Self-hosted deployment operators with an active organization membership only. Queues the same read-only, bounded probes as platform diagnostics; shares active checks, recent results and deployment-wide rate limits. Never sends email, calls a model or initiates Slack events.
+   */
+  public postV1OrgDeploymentServicesCheck<ThrowOnError extends boolean = false>(
+    options?: Options<never, ThrowOnError>,
+  ) {
+    return (options?.client ?? this.client).post<
+      PostV1OrgDeploymentServicesCheckResponses,
+      PostV1OrgDeploymentServicesCheckErrors,
+      ThrowOnError
+    >({ url: "/v1/org/deployment-services/check", ...options });
+  }
+
+  /**
    * Get recent dashboard activity
    *
    * Returns the organization's five newest additions for the admin dashboard, newest first (ties by event id): connections and model providers by their stored creation time, plugins added to an active marketplace (excluding the built-in catalog) by the attachment's creation time, and published versions of active skills in active plugins. A snapshot of existing resources, not an audit log: removed or archived resources do not contribute. Each source follows the permission of its own admin list (View all connections, View all providers, View Gateway providers on a Gateway-enabled deployment, Manage everything shared or the caller's plugin and marketplace access). Workspace owners and admins only.
@@ -5623,6 +5657,48 @@ export class DenClient extends HeyApiClient {
     );
     return (options?.client ?? this.client).get<GetV1LibraryUsageByKindResponses, unknown, ThrowOnError>({
       url: "/v1/library-usage/{kind}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * List the organization's Workbot, Slack and Automation conversations (content-free)
+   *
+   * The organization's conversations on the headless runner as Den's session index knows them, most recently updated first: the member (null when the conversation belongs to none), the kind (`workbot`, `slack` or `automation`), when it was created and last updated, its hot and total stored bytes and sealed segment count, when its running turn started (`activeTurnSince`, null when idle; a long-running value can mean a stuck turn), when it was deleted, and Den's retention class and legal hold. Never a title, a message or anything else a conversation contains. Filter by `memberId`, `kind`, `active` (`true`: a turn is running) and `deleted` (`exclude` by default, `include` or `only`). Paged: up to `limit` rows (default 50, at most 200), then pass `nextCursor` as `cursor`. Members with the View usage analytics permission only (owners and admins by default), while the session index is on for the organization.
+   */
+  public getV1HeadlessSessions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      memberId?: string;
+      kind?: "workbot" | "slack" | "automation";
+      active?: "true" | "false";
+      deleted?: "exclude" | "include" | "only";
+      limit?: number;
+      cursor?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "memberId" },
+            { in: "query", key: "kind" },
+            { in: "query", key: "active" },
+            { in: "query", key: "deleted" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "cursor" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1HeadlessSessionsResponses,
+      GetV1HeadlessSessionsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/headless/sessions",
       ...options,
       ...params,
     });
@@ -16648,7 +16724,7 @@ export class DenClient extends HeyApiClient {
   /**
    * A short-lived token for one Workbot turn
    *
-   * For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.
+   * For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With `sessionId` and where the session index is on for the workspace, also returns an index capability for that session. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.
    */
   public createWorkbotRunToken<ThrowOnError extends boolean = false>(
     parameters?: {

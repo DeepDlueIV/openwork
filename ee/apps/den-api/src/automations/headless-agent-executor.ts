@@ -111,7 +111,8 @@ async function ownerUserId(scope: OwnerScope) {
 }
 
 function defaultDeps(): HeadlessAgentExecutorDeps {
-  const runner = defaultHeadlessRunnerDeps()
+  // Each run's turn also carries an index capability where `headlessSessionIndex` is on.
+  const runner = defaultHeadlessRunnerDeps(process.env, { indexKind: "automation" })
   return {
     client: runner ? createHeadlessRunnerClient(runner) : null,
     ownerUserId,

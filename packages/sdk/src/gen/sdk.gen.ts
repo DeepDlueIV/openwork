@@ -221,6 +221,8 @@ import type {
   GetV1AdminOrganizationsResponses,
   GetV1AdminOverviewErrors,
   GetV1AdminOverviewResponses,
+  GetV1AdminServicesErrors,
+  GetV1AdminServicesResponses,
   GetV1AdminUsersByUserIdInferenceUsageErrors,
   GetV1AdminUsersByUserIdInferenceUsageResponses,
   GetV1AdminUsersErrors,
@@ -487,6 +489,8 @@ import type {
   GetV1OrgInventoryRevisionErrors,
   GetV1OrgInventoryRevisionResponses,
   GetV1OrgResponses,
+  GetV1OrgServiceReadinessErrors,
+  GetV1OrgServiceReadinessResponses,
   GetV1OrgsInvitationsPreviewErrors,
   GetV1OrgsInvitationsPreviewResponses,
   GetV1OrgWebOriginsErrors,
@@ -670,6 +674,8 @@ import type {
   PostRegisterResponses,
   PostV1AdminAdminsErrors,
   PostV1AdminAdminsResponses,
+  PostV1AdminServicesCheckErrors,
+  PostV1AdminServicesCheckResponses,
   PostV1AdminUsersByUserIdInferenceUsageResetErrors,
   PostV1AdminUsersByUserIdInferenceUsageResetResponses,
   PostV1ApiKeysErrors,
@@ -1330,6 +1336,31 @@ export class DenClient extends HeyApiClient {
       url: "/v1/admin/dashboard",
       ...options,
     });
+  }
+
+  /**
+   * Read cached deployment service readiness
+   *
+   * Fixed deployment diagnostics only, not inference or delivery verification. Never waits for an outbound health probe. A stale snapshot remains explicitly stale.
+   */
+  public getV1AdminServices<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GetV1AdminServicesResponses, GetV1AdminServicesErrors, ThrowOnError>({
+      url: "/v1/admin/services",
+      ...options,
+    });
+  }
+
+  /**
+   * Queue a deployment service readiness check
+   *
+   * Queues bounded, read-only service probes. Active checks and matching-configuration results completed within 30 seconds coalesce without changing timestamps or spending admission. Durable global admission limits new probes across replicas. Never sends email, calls a model, provisions credentials or initiates Slack events.
+   */
+  public postV1AdminServicesCheck<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      PostV1AdminServicesCheckResponses,
+      PostV1AdminServicesCheckErrors,
+      ThrowOnError
+    >({ url: "/v1/admin/services/check", ...options });
   }
 
   /**
@@ -3523,6 +3554,19 @@ export class DenClient extends HeyApiClient {
         ...params.headers,
       },
     });
+  }
+
+  /**
+   * Read minimal cached deployment service readiness
+   *
+   * Member-safe deployment facts only. Does not inspect organization or member credentials, start a probe, or alter access decisions. Missing deployment settings and required-service policy are withheld.
+   */
+  public getV1OrgServiceReadiness<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgServiceReadinessResponses,
+      GetV1OrgServiceReadinessErrors,
+      ThrowOnError
+    >({ url: "/v1/org/service-readiness", ...options });
   }
 
   /**

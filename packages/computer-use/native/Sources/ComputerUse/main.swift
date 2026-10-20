@@ -44,7 +44,7 @@ case "mcp", "mcp-embedded":
     // private openwork/ui channel. mcp: standalone, with native consent and controls.
     SessionControls.embedded = command == "mcp-embedded"
     if SessionControls.embedded && !HostTrust.embeddedHostIsTrusted() {
-        fputs("mcp-embedded requires the signed OpenWork desktop as its host.\n", stderr)
+        fputs("mcp-embedded requires the signed OpenWork desktop as its host. For local development, rebuild the helper with OPENWORK_COMPUTER_USE_UNSIGNED_DEV_HOST=1.\n", stderr)
         exit(1)
     }
     if SessionControls.embedded { MCPOutput.shared.enableNonblocking() }

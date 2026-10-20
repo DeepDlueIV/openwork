@@ -10,6 +10,7 @@ import { scopedCatalogResponse } from "../model-catalog.js"
 import { createRuntime, gatewayModelCatalog, type StepHost } from "../runtime.js"
 import { createModelProbe, modelProbeResponse, type ModelProbe } from "../model-probe.js"
 import { Store } from "../store.js"
+import { serviceHealthResponse } from "../service-health.js"
 import { durableObjectSql } from "./sql.js"
 
 /**
@@ -231,6 +232,7 @@ function forward(env: CellEnv, request: Request, cell: Cell, init: { method?: st
 const router = new Hono<{ Bindings: CellEnv }>()
 router.get("/health", (c) => c.json({ ok: true }))
 router.use("/v1/*", async (c, next) => {
+  if (c.req.path === "/v1/health") c.header("Cache-Control", "no-store")
   const expected = Buffer.from(configFor(c.env).apiToken)
   const actual = Buffer.from(/^Bearer\s+(\S+)$/i.exec(c.req.header("authorization") ?? "")?.[1] ?? "")
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return c.json({ error: "unauthorized" }, 401)
@@ -264,6 +266,8 @@ router.onError((error, c) => {
   reportRouterError(c, error)
   return c.json({ error: "internal_error" }, 500)
 })
+// Service-wide configuration facts stay in the router: no owner or conversation cell is touched.
+router.get("/v1/health", (c) => serviceHealthResponse(c.req.raw, configFor(c.env)))
 const catalogs = new WeakMap<Config, ReturnType<typeof gatewayModelCatalog>>()
 router.get("/v1/models", async (c) => {
   const config = configFor(c.env)

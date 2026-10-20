@@ -20,6 +20,7 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
   let busy = false;
   let closed = false;
   let verified = false;
+  let authoritySuspended = false;
   let framePending = null;
   let runningScript = null;
   const localMachine = machine ?? {
@@ -58,8 +59,13 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
     await control.setFeatureEnabled(allowed);
     await control.setRemoteEnabled(allowed);
     if (!allowed) {
+      authoritySuspended = true;
       generation++; current?.controller.abort(); browser.pause();
       throw failure("feature_disabled", "Cloud computer is unavailable for this organization.");
+    }
+    if (authoritySuspended && !paused && !busy) {
+      browser.resume(); browser.invalidate();
+      authoritySuspended = false;
     }
   }
   async function halt() {

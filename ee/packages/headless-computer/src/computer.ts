@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { posix } from "node:path"
-import { ensureRunning, isSandboxError, SCOPE_LABEL, withBlocks, type RunSpec, type SandboxHandle, type SandboxProvider, type SandboxSpec } from "@openwork/sandbox"
+import { ensureRunning, isSandboxError, shellQuote, SCOPE_LABEL, withBlocks, type RunSpec, type SandboxHandle, type SandboxProvider, type SandboxSpec } from "@openwork/sandbox"
 import { z } from "zod"
 import type { ComputerFile, ComputerFiles, FileReader, ToolResult, ToolSpec } from "./types.js"
 import { Desktop, type DesktopView } from "./desktop.js"
@@ -209,8 +209,12 @@ export class Computers {
   /** Recover before launching work; never retry an unknown command outcome. */
   private async exec(sessionId: string, command: string, timeoutSeconds: number) {
     const box = await this.vm(sessionId)
+    if (this.desktop) return this.execute(box, {
+      command: `printf %s ${shellQuote(JSON.stringify({ command }))} | sudo -n /usr/local/sbin/openwork-desktop-bridge command`,
+      timeoutMs: timeoutSeconds * 1000,
+    })
     return this.execute(box, {
-      command: `${this.desktop ? "umask 077; " : ""}cd ${WORKSPACE} 2>/dev/null || cd ~; exec bash -c "$WORKBOT_COMMAND"`,
+      command: `cd ${WORKSPACE} 2>/dev/null || cd ~; exec bash -c "$WORKBOT_COMMAND"`,
       env: { WORKBOT_COMMAND: command, PATH: GUEST_PATH, HOME: "/home/ubuntu", LANG: "C.UTF-8" },
       timeoutMs: timeoutSeconds * 1000,
     })
@@ -516,10 +520,10 @@ export const COMPUTER_TOOLS: ToolSpec[] = [
   {
     name: "bash",
     description: [
-      "Run a shell command on your Linux computer for this conversation (Ubuntu, internet access, sudo).",
+      "Run a shell command on your Linux computer for this conversation (Ubuntu, internet access; administrative commands depend on the image policy).",
       `The working directory is ${WORKSPACE}; everything there persists between messages.`,
       `Files the person sends are copied to ${FILES_DIR}. Anything you write to ${OUT_DIR} is added to their Files after the command.`,
-      "Installed: python3 (pandas, numpy, matplotlib, openpyxl, xlsxwriter, python-docx, python-pptx, pdfplumber, pypdf, pillow, opencv), ffmpeg, imagemagick, poppler-utils, qpdf, tesseract, pandoc, node, jq, ripgrep, sqlite3, git, curl. Install more with sudo apt-get or pip.",
+      "Installed: python3 (pandas, numpy, matplotlib, openpyxl, xlsxwriter, python-docx, python-pptx, pdfplumber, pypdf, pillow, opencv), ffmpeg, imagemagick, poppler-utils, qpdf, tesseract, pandoc, node, jq, ripgrep, sqlite3, git, curl. Desktop images do not grant administrative shell access; use a Python virtual environment for extra libraries.",
       `A command times out after timeout_seconds (at most ${MAX_COMMAND_SECONDS}). For longer work run \`background <name> '<command>'\` and check \`tail -n 20 ${WORKSPACE}/.jobs/<name>.log\`.`,
       "Always set description first: it is the progress update the person sees.",
     ].join(" "),

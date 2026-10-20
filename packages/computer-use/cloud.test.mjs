@@ -1,10 +1,42 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createCloudComputer } from "./cloud.mjs";
+
+test("renewed authority restores browser work without releasing a human takeover", async t => {
+  const original = globalThis.WebSocket;
+  class Wire extends EventTarget {
+    constructor() { super(); setImmediate(() => this.dispatchEvent(new Event("open"))); }
+    send(raw) { const { id } = JSON.parse(raw); setImmediate(() => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ id, result: {} }) }))); }
+    close() { this.dispatchEvent(new Event("close")); }
+  }
+  globalThis.WebSocket = Wire;
+  const directory = await mkdtemp(join(tmpdir(), "cloud-renewal-"));
+  const server = createServer((_request, response) => response.end(JSON.stringify([
+    { id: "owned", type: "page", url: "https://example.com/", title: "Fixture", webSocketDebuggerUrl: `ws://127.0.0.1:${server.address().port}/page` },
+  ])));
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  await writeFile(join(directory, "browser-tabs.json"), JSON.stringify([["owned", "chat"]]));
+  let allowed = true;
+  const computer = await createCloudComputer({ directory, enabled: async () => allowed, browserEndpoint: `http://127.0.0.1:${server.address().port}`,
+    machine: { run: async () => ({ exitCode: 0, stdout: "missing:\ndisplay:ok", stderr: "" }), read: async () => new Uint8Array() } });
+  t.after(async () => { await computer.close(); await new Promise(resolve => server.close(resolve)); globalThis.WebSocket = original; await rm(directory, { recursive: true, force: true }); });
+  const tabs = () => computer.task("/browser/task", { sessionId: "chat", operation: "tabs", args: {} });
+  assert.equal((await tabs()).tabs[0].status, "idle");
+  allowed = false; await assert.rejects(computer.snapshot(), { code: "feature_disabled" });
+  allowed = true; assert.equal((await tabs()).tabs[0].status, "idle");
+  await computer.interact({ action: "takeover" });
+  allowed = false; await assert.rejects(computer.snapshot(), { code: "feature_disabled" });
+  allowed = true;
+  await assert.rejects(tabs(), { code: "paused" });
+  assert.equal((await computer.snapshot()).paused, true);
+  await computer.interact({ action: "resume" });
+  assert.equal((await tabs()).tabs[0].status, "idle");
+});
 
 test("an unused cloud host loads before SDK build artifacts exist", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cloud-source-import-"));

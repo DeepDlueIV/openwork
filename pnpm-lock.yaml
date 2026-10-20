@@ -1050,6 +1050,9 @@ importers:
       '@openwork-ee/headless-protocol':
         specifier: workspace:*
         version: link:../../packages/headless-protocol
+      '@openwork/types':
+        specifier: workspace:*
+        version: link:../../../packages/types
       '@openwork/workbook':
         specifier: workspace:*
         version: link:../../../packages/workbook

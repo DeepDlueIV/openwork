@@ -92,7 +92,7 @@ export async function createRuntime(config: Config, store: Store, stepHost?: Ste
   })
   // Step-mode turns that startup recovery left going continue from their next step (never throws).
   const steps = runner.recoverSteps()
-  const app = createApp({ store, runner, apiToken: config.apiToken, models: gatewayModelCatalog(config), modelProbe: createModelProbe(config, modelFetch), events, files, computer, errors })
+  const app = createApp({ store, runner, apiToken: config.apiToken, healthConfig: config, models: gatewayModelCatalog(config), modelProbe: createModelProbe(config, modelFetch), events, files, computer, errors })
   return {
     app,
     runner,

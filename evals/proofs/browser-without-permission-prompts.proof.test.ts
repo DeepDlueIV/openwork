@@ -20,7 +20,12 @@ test("a conversation completes a changing application form and verifies one subm
     expect(seen.ok).toBe(true);
     const ref = seen.elements?.find(element => element.name === name)?.ref;
     if (!ref) throw new Error(`No observed form control named ${name}.`);
-    return task("act", { tabId, observationId: seen.observationId, action: { ...action, ref } });
+    const values = action.type === "select" ? action.values?.map(label => {
+      const option = seen.elements?.find(element => element.ref === ref)?.options?.find(option => option.label === label);
+      if (!option) throw new Error(`No observed option named ${label}.`);
+      return option.value;
+    }) : undefined;
+    return task("act", { tabId, observationId: seen.observationId, action: { ...action, ...(values ? { values } : {}), ref } });
   };
 
   await step("before: the application contains old values and has not been submitted", async () => {
@@ -30,8 +35,13 @@ test("a conversation completes a changing application form and verifies one subm
     tabId = opened.tabId;
     await user.see({ role: "button", label: "Take over" });
     const seen = await task("observe", { tabId });
-    expect(seen.elements?.find(element => element.name === "Company name")).toMatchObject({ value: "Old company", required: true });
-    expect(seen.elements?.find(element => element.name === "Country")?.options).toContainEqual({ value: "blocked", label: "Unavailable", selected: false, disabled: true });
+    // Values the page already held stay in the page; the agent sees only that the field is filled.
+    const company = seen.elements?.find(element => element.name === "Company name");
+    expect(company).toMatchObject({ filled: true, valueWithheld: true, required: true });
+    expect(company).not.toHaveProperty("value");
+    const options = seen.elements?.find(element => element.name === "Country")?.options;
+    expect(options).toContainEqual(expect.objectContaining({ label: "Unavailable", disabled: true }));
+    expect(options?.every(option => /^o\d+$/.test(option.value))).toBe(true);
     expect(seen.elements?.find(element => element.name === "Business account")?.checked).toBe(false);
     expect((await witness()).formSubmissions).toHaveLength(0);
     evidence.recordAssertionEvidence("The agent can inspect the existing form", "Accessible labels, old values, required fields, checked state and unavailable options are visible; submissions: 0", seen.ok);
@@ -54,9 +64,9 @@ test("a conversation completes a changing application form and verifies one subm
   });
 
   await step("the conversation selects options and sets controls without toggling them twice", async () => {
-    expect(await act("Country", { type: "select", values: ["blocked"] })).toMatchObject({ ok: false, code: "option_unavailable", dispatched: false });
-    expect(await act("Country", { type: "select", values: ["uk"] })).toMatchObject({ ok: true, control: { selectedValues: ["uk"] } });
-    expect(await act("Languages", { type: "select", values: ["en", "fr"] })).toMatchObject({ ok: true, control: { selectedValues: ["en", "fr"] } });
+    expect(await act("Country", { type: "select", values: ["Unavailable"] })).toMatchObject({ ok: false, code: "option_unavailable", dispatched: false });
+    expect(await act("Country", { type: "select", values: ["United Kingdom"] })).toMatchObject({ ok: true, control: { selectedValues: [expect.stringMatching(/^o\d+$/)] } });
+    expect(await act("Languages", { type: "select", values: ["English", "French"] })).toMatchObject({ ok: true, control: { selectedValues: [expect.stringMatching(/^o\d+$/), expect.stringMatching(/^o\d+$/)] } });
     expect(await act("Business account", { type: "set_checked", checked: true })).toMatchObject({ ok: true, dispatched: true, control: { checked: true } });
     expect(await act("Business account", { type: "set_checked", checked: true })).toMatchObject({ ok: true, dispatched: false, control: { checked: true } });
     expect(await act("Tax reference", { type: "fill", text: "EXAMPLE-42" })).toMatchObject({ ok: true });

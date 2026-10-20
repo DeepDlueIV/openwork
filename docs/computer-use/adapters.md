@@ -20,6 +20,14 @@ The broker never changes for a new computer. A new kind of machine needs a
 driver (`windows`, `screen`, `focus`, `screenshot`, `input`); a new provider for
 a Linux VM needs only a machine binding (`run`, `read`).
 
+## The Mac helper's host
+
+The helper takes approvals from the desktop over its private channel, so it
+serves that mode only to a parent signed by its own Apple team. A helper with no
+team (an ad-hoc local build) refuses it. To use computer use from a local
+desktop build, rebuild the helper for your own machine with
+`OPENWORK_COMPUTER_USE_UNSIGNED_DEV_HOST=1 node apps/desktop/scripts/prepare-computer-use-helper.mjs --force`.
+
 ## Feature flags
 
 Both are registry features (`packages/features/src/registry.ts`), off by default

@@ -814,7 +814,7 @@ function useDesktopEngineForcePolicy(features: EngineUpgradeFeatures) {
 
 type UpgradeCandidate = { client: EngineMigrationClient; status: EngineV2PreviewStatus };
 
-/** Reads engine status once the feature is on, and again whenever the engine changes. */
+/** Discovers engine status through startup, and again whenever the engine changes. */
 function useEngineUpgradeCandidate(enabled: boolean): UpgradeCandidate | null {
   const [candidate, setCandidate] = useState<UpgradeCandidate | null>(null);
   useEffect(() => {
@@ -823,10 +823,12 @@ function useEngineUpgradeCandidate(enabled: boolean): UpgradeCandidate | null {
       return;
     }
     let cancelled = false;
-    const load = async () => {
+    let timer: number | undefined;
+    const load = async (remaining: number) => {
       try {
         const connection = await resolveOpenworkConnection();
-        if (cancelled || !connection.normalizedBaseUrl || !connection.resolvedToken) return;
+        if (cancelled) return;
+        if (!connection.normalizedBaseUrl || !connection.resolvedToken) throw new Error("Local host is not ready");
         const client = createOpenworkServerClient({
           baseUrl: connection.normalizedBaseUrl,
           token: connection.resolvedToken,
@@ -834,14 +836,17 @@ function useEngineUpgradeCandidate(enabled: boolean): UpgradeCandidate | null {
         });
         const status = await client.getEngineV2PreviewStatus();
         if (!cancelled) setCandidate({ client, status });
+        return;
       } catch {
-        // No notice when the local server can't be read; Advanced settings still works.
+        // The organization can resolve before the local host starts. Keep the
+        // optional offer discoverable without asking the person to reload.
       }
+      if (!cancelled && remaining > 1) timer = window.setTimeout(() => void load(remaining - 1), DISCOVERY_RETRY_MS);
     };
-    void load();
-    const reload = () => { void load(); };
+    const reload = () => { window.clearTimeout(timer); void load(DISCOVERY_ATTEMPTS); };
+    reload();
     window.addEventListener("openwork-engine-changed", reload);
-    return () => { cancelled = true; window.removeEventListener("openwork-engine-changed", reload); };
+    return () => { cancelled = true; window.clearTimeout(timer); window.removeEventListener("openwork-engine-changed", reload); };
   }, [enabled]);
   return candidate;
 }

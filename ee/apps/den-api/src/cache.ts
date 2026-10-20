@@ -10,6 +10,7 @@ import { db } from "./db.js"
 import { env } from "./env.js"
 import { bumpGeneration, readManyThroughGeneration, readThroughGeneration, type GenerationCacheEntry } from "./generation-cache.js"
 import { roleIncludesOwner } from "./organization-member-guards.js"
+import { deploymentServiceReadinessSchema, type DeploymentServiceReadiness } from "@openwork/types/den/service-readiness"
 import { getDenSessionExpiresAt, getDenSessionRefreshCutoff } from "./session-lifetime.js"
 
 type OrgId = typeof OrganizationTable.$inferSelect.id
@@ -1051,6 +1052,23 @@ async function bumpInventoryRevisions(organizationIds: string[]) {
 }
 
 export const cache = {
+  // Optional shared diagnostics only, never authorization. No extra Redis client,
+  // infrastructure requirement or raw errors in this cache path.
+  serviceReadiness: {
+    async load(configurationFingerprint: string): Promise<DeploymentServiceReadiness | null> {
+      if (!activeRedisClient || !/^[a-f0-9]{64}$/.test(configurationFingerprint)) return null
+      try {
+        const raw = await activeRedisClient.get(`cache:service-readiness:v1:${configurationFingerprint}`)
+        if (!raw || raw.length > 32_768) return null
+        const parsed = deploymentServiceReadinessSchema.safeParse(JSON.parse(raw))
+        return parsed.success ? parsed.data : null
+      } catch { return null }
+    },
+    async save(configurationFingerprint: string, snapshot: DeploymentServiceReadiness): Promise<void> {
+      if (!activeRedisClient || !/^[a-f0-9]{64}$/.test(configurationFingerprint)) return
+      try { await activeRedisClient.set(`cache:service-readiness:v1:${configurationFingerprint}`, JSON.stringify(snapshot), "EX", 86_400) } catch { /* Best effort, no secrets in errors. */ }
+    },
+  },
   auth: {
     session: getAuthSession,
     sessionResult: getAuthSessionResult,

@@ -8,9 +8,14 @@ import Security
 enum HostTrust {
     static func embeddedHostIsTrusted() -> Bool {
         guard let team = teamIdentifier() else {
-            // Development builds carry no team. macOS attributes their
-            // Accessibility and Screen Recording access to the launching app.
+            // A helper without a team cannot authenticate its host, so it fails closed.
+            // Only a developer's explicit local build (OPENWORK_COMPUTER_USE_UNSIGNED_DEV_HOST=1
+            // with prepare-computer-use-helper) compiles in this exception.
+            #if OPENWORK_ADHOC_DEVELOPMENT_HOST
             return true
+            #else
+            return false
+            #endif
         }
         guard team.range(of: "^[A-Z0-9]{10}$", options: .regularExpression) != nil else { return false }
         let parent = getppid()

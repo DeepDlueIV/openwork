@@ -31,6 +31,8 @@ export async function publicDestination(value) {
 }
 
 export function createCloudBrowser({ statePath, assertActive, enabled, beforeInput, endpoint = "http://127.0.0.1:9222", privateBrowsing = false }) {
+  // privateBrowsing is only for operator diagnostics on a dedicated VM.
+  const allowedDestination = privateBrowsing ? async () => true : publicDestination;
   const tabs = new Map();
   const owners = new Map();
   let loaded = false;
@@ -63,7 +65,12 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
     socket.addEventListener("message", (event) => {
       let message;
       try { message = JSON.parse(String(event.data)); } catch { return; }
-      if (!message.id) { if (message.method === "Page.frameNavigated") tabChanged(); return; }
+      if (!message.id) {
+        if (message.method === "Page.frameNavigated") tabChanged();
+        // Every document request, redirect hops included, is checked before it loads.
+        if (message.method === "Fetch.requestPaused") void admitRequest(message.params);
+        return;
+      }
       const item = pending.get(message.id);
       if (!item) return;
       pending.delete(message.id); clearTimeout(item.timer);
@@ -71,6 +78,16 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
       else item.resolve(message.result);
     });
     let tabChanged = () => {};
+    const reply = (method, params) => { try { socket.send(JSON.stringify({ id: ++sequence, method, params })); } catch {} };
+    async function admitRequest({ requestId, request }) {
+      let allowed = false;
+      try {
+        const protocol = new URL(request.url).protocol;
+        allowed = !["http:", "https:"].includes(protocol) || await allowedDestination(request.url);
+      } catch { allowed = false; }
+      if (allowed) reply("Fetch.continueRequest", { requestId });
+      else reply("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" });
+    }
     socket.addEventListener("close", () => {
       for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error("Browser disconnected; inspect before retrying input.")); }
       pending.clear();
@@ -157,6 +174,8 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
     };
     wire.changed(() => { context = null; tab.webMcpRevision++; host.invalidate(tab.tabId); });
     void wire.send("Page.enable", {}, false).catch(() => {});
+    // Sent before any navigation on this socket, so redirects to private hosts never load.
+    void wire.send("Fetch.enable", { patterns: [{ resourceType: "Document", requestStage: "Request" }] }, false).catch(() => {});
     return tab;
   }
   async function refresh() {
@@ -182,8 +201,7 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
     // Prompt-injected pages must not steer the agent to this VM's worker, other
     // private hosts or cloud metadata. The VM firewall backs this up for pages
     // the person opens themselves and for redirects.
-    // privateBrowsing is only for operator diagnostics on a dedicated VM.
-    isVisible: () => true, enabled, allowed: privateBrowsing ? async () => true : publicDestination, changed: () => {},
+    isVisible: () => true, enabled, allowed: allowedDestination, changed: () => {},
     beforeInput: (tab) => tab.view.webContents.prepareInput(),
     async openTab(url, sessionId, signal, admit) {
       if (tabs.size >= 12) throw new Error("Close a browser tab before opening another.");

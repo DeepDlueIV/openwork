@@ -45,22 +45,23 @@ const provider = {
     return { url, expiresAt: new Date(Date.now() + 75_000), kind: "signed-expiring" as const }
   },
 }
-// The fixture page below is served on the VM's loopback, which agent browsing may not reach.
-const desktop = new Desktop(provider, { privateBrowsing: true })
+const desktop = new Desktop(provider)
 const box = await fake.create({ idempotencyKey: "desktop-proof", image: null, labels: {}, env: {}, storage: [], exposePorts: [] }, { timeoutMs: 1000 })
 await desktop.start(box)
 const fixture = `/tmp/openwork-vnc-proof-${randomUUID()}`
 const html = `<!doctype html><title>Workbot computer check</title><style>body{font:24px sans-serif;padding:60px}input,button{font:inherit;padding:12px}</style><h1>Workbot desktop</h1><label>Title <input id="entry"></label><button onclick="document.querySelector('#saved').textContent='Saved: '+document.querySelector('#entry').value">Save</button><p id="saved">Not saved</p>`
 // Keep the fixture program constant; HTML and paths are data rather than JS source.
-const fixtureSource = `const fs=require('node:fs'),path=require('node:path');const dir=process.argv[2];const server=require('node:http').createServer((_,res)=>res.end(fs.readFileSync(path.join(dir,'index.html'))));server.listen(0,'127.0.0.1',()=>fs.writeFileSync(path.join(dir,'port'),String(server.address().port)));fs.writeFileSync(path.join(dir,'pid'),String(process.pid));`
+const fixtureSource = `const fs=require('node:fs'),path=require('node:path');const dir=process.argv[2];const server=require('node:http').createServer((_,res)=>res.end(fs.readFileSync(path.join(dir,'index.html'))));server.listen(0,'0.0.0.0',()=>fs.writeFileSync(path.join(dir,'port'),String(server.address().port)));fs.writeFileSync(path.join(dir,'pid'),String(process.pid));`
 await remote(`mkdir -p ${fixture}; printf %s ${shellQuote(Buffer.from(html).toString("base64"))} | base64 -d > ${fixture}/index.html; printf %s ${shellQuote(Buffer.from(fixtureSource).toString("base64"))} | base64 -d > ${fixture}/server.cjs; setsid -f node ${fixture}/server.cjs ${shellQuote(fixture)} > ${fixture}/server.log 2>&1 < /dev/null; for n in 1 2 3 4 5 6 7 8 9 10; do test -s ${fixture}/port && break; sleep 0.1; done`)
 const port = Number((await remote(`cat ${fixture}/port`)).trim())
 assert.ok(Number.isInteger(port) && port > 0)
-// The desktop user's firewall refuses loopback; open only the fixture's port, and close it at the end.
-const fixtureRule = `OPENWORK_DESKTOP_EGRESS -p tcp -d 127.0.0.1 --dport ${port} -j RETURN`
-await remote(`sudo iptables -w -I ${fixtureRule.replace("OPENWORK_DESKTOP_EGRESS", "OPENWORK_DESKTOP_EGRESS 1")}`)
+// Use the private sandbox's signed public preview instead of granting a shell
+// administrative access or bypassing the desktop's private-network guard.
+const fixturePreview = await cli(["preview-url", sandbox, "--port", String(port), "--expires", "600"])
+const fixtureUrl = fixturePreview.match(/https:\/\/\S+/)?.[0]
+if (!fixtureUrl) throw new Error("Daytona returned no signed fixture URL.")
 const browser = (operation: string, args: Record<string, unknown>) => desktop.call(box, "/browser/task", { sessionId: "vnc-proof", operation, args })
-const opened = await browser("open", { url: `http://127.0.0.1:${port}/` })
+const opened = await browser("open", { url: fixtureUrl })
 assert.ok(typeof opened === "object" && opened !== null && "tabId" in opened)
 const tabId = Reflect.get(opened, "tabId")
 
@@ -143,5 +144,5 @@ const nativeProgram = z.object({ ok: z.literal(true), value: z.object({ width: z
 }))
 assert.equal(nativeProgram.value.width, 1280)
 assert.equal(nativeProgram.value.height, 800)
-await remote(`kill $(cat ${fixture}/pid); rm -r ${fixture}; sudo iptables -w -D ${fixtureRule}`)
+await remote(`kill $(cat ${fixture}/pid); rm -r ${fixture}`)
 console.log(JSON.stringify({ signedBrowserStream: true, signedDesktopStream: true, oneUseTickets: true, sharedBrowserTool: true, manualKeyboardSave: true, serverReadOnlyEnforced: true, takeoverPausesAgent: true, boundedBrowserProgram: true, stopCancelsProgram: true, boundedNativeProgram: true }))

@@ -9,8 +9,8 @@ enum HostTrust {
     static func embeddedHostIsTrusted() -> Bool {
         guard let team = teamIdentifier() else {
             // A helper without a team cannot authenticate its host, so it fails closed.
-            // Only a local ad-hoc build (prepare-computer-use-helper) compiles in this
-            // exception; macOS attributes that build's access to the launching app.
+            // Only a developer's explicit local build (OPENWORK_COMPUTER_USE_UNSIGNED_DEV_HOST=1
+            // with prepare-computer-use-helper) compiles in this exception.
             #if OPENWORK_ADHOC_DEVELOPMENT_HOST
             return true
             #else

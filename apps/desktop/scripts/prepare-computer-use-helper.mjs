@@ -134,9 +134,11 @@ hashSources(join(packagePath, "Sources"));
 for (const source of [join(packagePath, "Package.swift"), join(packagePath, "Package.resolved"), fileURLToPath(import.meta.url), iconPath]) {
   if (existsSync(source)) fingerprint.update(readFileSync(source));
 }
-// An ad-hoc helper cannot authenticate its parent; only this local build lets it
-// serve embedded mode. Team-signed helpers always require a same-team parent.
-const adHocDevelopmentHost = process.platform === "darwin" && signingIdentity() === "-";
+// An ad-hoc helper cannot authenticate its parent, so it refuses embedded mode.
+// A developer may opt in for their own machine; team-signed helpers always
+// require a same-team parent.
+const adHocDevelopmentHost = process.platform === "darwin" && signingIdentity() === "-"
+  && process.env.OPENWORK_COMPUTER_USE_UNSIGNED_DEV_HOST === "1";
 fingerprint.update(adHocDevelopmentHost ? "adhoc-development-host" : "signed-host");
 const sourceHash = fingerprint.digest("hex");
 const fingerprintPath = join(appPath, "Contents", "Resources", "source.sha256");

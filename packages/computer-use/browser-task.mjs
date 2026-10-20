@@ -41,6 +41,8 @@ function observePage(id, query = null) {
   // only whether a field is filled, unless the agent entered that exact value itself. In-page
   // staleness and verification checks read the real value (reveal).
   const entered = globalThis.__openworkAgentEntered ??= new WeakMap();
+  const isSensitive = element => element.matches('input[type="password"]') ||
+    (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).some(token => token === "one-time-code" || token.startsWith("cc-"));
   const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');
   const withheld = new Set();
   for (const element of candidates) {
@@ -49,8 +51,7 @@ function observePage(id, query = null) {
     const role = element.getAttribute("role");
     if (!input && !textarea && !select && !element.isContentEditable && !["textbox", "combobox"].includes(role)) continue;
     const value = input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "";
-    const autofill = (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
-    const sensitive = element.matches('input[type="password"]') || autofill.some(token => token === "one-time-code" || token.startsWith("cc-"));
+    const sensitive = isSensitive(element);
     if (value?.trim() && (sensitive || select || entered.get(element) !== value)) withheld.add(value);
     if (select) for (const option of element.options) if (option.value?.trim()) withheld.add(option.value);
   }
@@ -74,8 +75,7 @@ function observePage(id, query = null) {
     const textarea = element instanceof HTMLTextAreaElement;
     const select = element instanceof HTMLSelectElement;
     // One-time codes and payment-card fields (cc-number, cc-csc, cc-exp...) never leave the page.
-    const autofill = (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
-    const sensitive = element.matches('input[type="password"]') || autofill.some(token => token === "one-time-code" || token.startsWith("cc-"));
+    const sensitive = isSensitive(element);
     const role = element.getAttribute("role");
     const field = input || textarea || select || element.isContentEditable || ["textbox", "combobox"].includes(role);
     const value = field ? input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "" : "";
@@ -161,7 +161,7 @@ function observePage(id, query = null) {
   globalThis[key] = observation;
   return { truncated, scrollRegions, title: text(document.title, 300), text: text(document.body?.innerText, 16000), elements,
     viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...candidates].some((element) => {
-      if (!(element instanceof HTMLElement) || !describe(element).sensitive) return false;
+      if (!(element instanceof HTMLElement) || !isSensitive(element)) return false;
       const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0;
     }),
     webmcp: "modelContext" in document ? "available" : "check_site_tools",

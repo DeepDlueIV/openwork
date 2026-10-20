@@ -10,16 +10,20 @@ type Context = {
 const nativeMutations = new Set(["write", "edit", "apply_patch"]);
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
+function promptWorkspacePath(directory: string): string {
+  return directory.replace(/[\u0000-\u001f\u007f\u2028\u2029<>&]/g, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
 export function correctWorkspaceRoot(system: string[], directory: string): void {
   for (let index = 0; index < system.length; index++) {
     system[index] = system[index].replace(/<env>[\s\S]*?<\/env>/g, block => block.includes("Is directory a git repo: no")
-      ? block.replace(/(^[ \t]*Workspace root folder: )\/(\r?$)/m, (_match, prefix: string, suffix: string) => `${prefix}${directory}${suffix}`)
+      ? block.replace(/(^[ \t]*Workspace root folder: )\/(\r?$)/m, (_match, prefix: string, suffix: string) => `${prefix}${promptWorkspacePath(directory)}${suffix}`)
       : block);
   }
 }
 
 export function workspaceFileGuidance(directory: string): string {
-  return `The opened workspace directory is ${JSON.stringify(directory)}. For files requested in this workspace, prefer plain relative names such as report.html; native file tools save them inside this directory. Do not invent /workspace or a drive-root location. On Windows, drive-less rooted file paths such as /report.html or \\report.html are interpreted relative to this workspace, with the actual destination reported. Explicit full drive paths and UNC paths retain external-folder permissions. Do not bypass a denied path using another tool.`;
+  return `The opened workspace directory is ${JSON.stringify(promptWorkspacePath(directory))}. For files requested in this workspace, prefer plain relative names such as report.html; native file tools save them inside this directory. Do not invent /workspace or a drive-root location. On Windows, drive-less rooted file paths such as /report.html or \\report.html are interpreted relative to this workspace, with the actual destination reported. Explicit full drive paths and UNC paths retain external-folder permissions. Do not bypass a denied path using another tool.`;
 }
 
 /** Only drive-less rooted syntax changes. Fully qualified and shell-drive forms keep native semantics. */

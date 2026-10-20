@@ -41,6 +41,11 @@ function observePage(id, query = null) {
   // only whether a field is filled, unless the agent entered that exact value itself. In-page
   // staleness and verification checks read the real value (reveal).
   const entered = globalThis.__openworkAgentEntered ??= new WeakMap();
+  const isSensitive = element => element.matches('input[type="password"]') ||
+    (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).some(token => token === "one-time-code" || token.startsWith("cc-"));
+  const isTextValue = element => element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLInputElement && !["button", "submit", "reset", "checkbox", "radio", "hidden", "file", "range", "color"].includes(element.type) ||
+    element.isContentEditable || ["textbox", "combobox"].includes(element.getAttribute("role"));
   const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');
   const withheld = new Set();
   for (const element of candidates) {
@@ -49,10 +54,11 @@ function observePage(id, query = null) {
     const role = element.getAttribute("role");
     if (!input && !textarea && !select && !element.isContentEditable && !["textbox", "combobox"].includes(role)) continue;
     const value = input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "";
-    const autofill = (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
-    const sensitive = element.matches('input[type="password"]') || autofill.some(token => token === "one-time-code" || token.startsWith("cc-"));
-    if (value?.trim() && (sensitive || select || entered.get(element) !== value)) withheld.add(value);
-    if (select) for (const option of element.options) if (option.value?.trim()) withheld.add(option.value);
+    const sensitive = isSensitive(element);
+    if (value?.trim() && (sensitive || isTextValue(element) && entered.get(element) !== value)) withheld.add(value);
+    // A public option label can itself be its backing value ("Plan 1" / "1").
+    // Preserve that visible label; other backing identities remain private.
+    if (select) for (const option of element.options) if (option.value?.trim() && !option.label.includes(option.value)) withheld.add(option.value);
   }
   const privateValues = [...withheld].sort((a, b) => b.length - a.length);
   const privatePattern = privateValues.length ? new RegExp(privateValues.map(value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g") : null;
@@ -74,10 +80,11 @@ function observePage(id, query = null) {
     const textarea = element instanceof HTMLTextAreaElement;
     const select = element instanceof HTMLSelectElement;
     // One-time codes and payment-card fields (cc-number, cc-csc, cc-exp...) never leave the page.
-    const autofill = (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
-    const sensitive = element.matches('input[type="password"]') || autofill.some(token => token === "one-time-code" || token.startsWith("cc-"));
+    const sensitive = isSensitive(element);
     const role = element.getAttribute("role");
-    const field = input || textarea || select || element.isContentEditable || ["textbox", "combobox"].includes(role);
+    // Non-text backing values stay private, but still bind the internal
+    // staleness check to the identity the page exposed when observed.
+    const field = select || isTextValue(element) || reveal && input;
     const value = field ? input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "" : "";
     const name = referenced("aria-labelledby") || element.getAttribute("aria-label") ||
       (input || textarea || select ? [...(element.labels || [])].map(labelText).join(" ") : "") ||
@@ -160,7 +167,10 @@ function observePage(id, query = null) {
     used: false, createdAt: performance.now(), describe, optionRef, snapshots, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };
   globalThis[key] = observation;
   return { truncated, scrollRegions, title: text(document.title, 300), text: text(document.body?.innerText, 16000), elements,
-    viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...document.querySelectorAll('input[type="password"],input[autocomplete="one-time-code"]')].some((element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; }),
+    viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...candidates].some((element) => {
+      if (!(element instanceof HTMLElement) || !isSensitive(element)) return false;
+      const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0;
+    }),
     webmcp: "modelContext" in document ? "available" : "check_site_tools",
     limitations: ["DOM references cover the top document and open controls; use a fresh image for frames or canvas."] };
 }
@@ -428,7 +438,7 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
     const page = await isolated(tab.view.webContents, observePage, id, query);
     let image, digest;
     if (includeImage) {
-      if (page.hasPasswordField) fail("sign_in_required", "This page needs sign-in. Take over and sign in directly in the browser, then resume.");
+      if (page.hasPasswordField) fail("sign_in_required", "This page contains protected sign-in or payment fields. Take over and complete them directly in the browser, then resume.");
       const png = await captureObservation(tab.view.webContents, page.viewport);
       digest = imageDigest(png);
       image = { mimeType: "image/png", data: png.toString("base64"), width: page.viewport.width, height: page.viewport.height };

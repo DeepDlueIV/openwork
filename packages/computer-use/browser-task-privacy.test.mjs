@@ -20,10 +20,13 @@ test("withheld field values cannot escape through accessible labels", async () =
   password.type = "password";
   const long = new Input("long-secret-".repeat(60), {});
   long.attributes["aria-label"] = `Vault ${long.value}`;
-  const fields = [email, account, password, long];
-  const document = { title: `Profile ${account.value}`, body: { innerText: fields.map(field => field.value).join(" ") }, activeElement: email,
+  const privateFields = [email, account, password, long];
+  const submit = new Input("Continue", {}); submit.type = "submit";
+  const checkbox = new Input("on", { "aria-label": "Consent" }); checkbox.type = "checkbox";
+  const fields = [...privateFields, submit, checkbox];
+  const document = { title: `Profile ${account.value}`, body: { innerText: privateFields.map(field => field.value).join(" ") }, activeElement: email,
     getElementById: id => id === "account-caption" ? { textContent: `Account ${account.value}` } : null,
-    querySelectorAll: query => query.startsWith('input[type="password"]') ? [password] : fields };
+    querySelectorAll: query => query.startsWith('input[type="password"]') ? fields.filter(field => field.type === "password" || field.attributes.autocomplete === "one-time-code") : fields };
   const context = vm.createContext({ document, HTMLElement: Input, HTMLInputElement: Input,
     HTMLSelectElement: class {}, HTMLTextAreaElement: class {}, HTMLLabelElement: class {},
     getComputedStyle: () => ({ visibility: "visible", display: "block", overflowX: "visible", overflowY: "visible" }),
@@ -35,13 +38,23 @@ test("withheld field values cannot escape through accessible labels", async () =
   const observe = () => host.request({ sessionId: "chat", operation: "observe", args: { tabId: "tab" } });
   const seen = await observe();
   assert.equal(seen.ok, true, JSON.stringify(seen));
-  assert.deepEqual(Array.from(seen.elements, element => element.name), ["Email [withheld]", "Account [withheld]", "Password [withheld]", "Vault [withheld]"]);
-  for (const field of fields) assert.ok(!JSON.stringify(seen).includes(field.value), "The observation exposed a withheld value");
+  assert.deepEqual(Array.from(seen.elements, element => element.name), ["Email [withheld]", "Account [withheld]", "Password [withheld]", "Vault [withheld]", "Continue", "Consent"]);
+  for (const field of privateFields) assert.ok(!JSON.stringify(seen).includes(field.value), "The observation exposed a withheld value");
+  checkbox.value = "changed-private-reference";
+  const staleCheckbox = await host.request({ sessionId: "chat", operation: "act", args: { tabId: "tab", observationId: seen.observationId,
+    action: { type: "set_checked", ref: seen.elements[5].ref, checked: true } } });
+  assert.equal(staleCheckbox.code, "stale_observation");
+  assert.notEqual(checkbox.checked, true);
+  checkbox.value = "on";
   context.__openworkAgentEntered.set(email, email.value);
   const entered = await observe();
   assert.equal(entered.elements[0].name, `Email ${email.value}`);
   assert.equal(entered.elements[0].value, email.value);
   assert.ok(!JSON.stringify(entered).includes(password.value));
+  password.type = "text";
+  account.attributes.autocomplete = "section-checkout cc-number";
+  const protectedImage = await host.request({ sessionId: "chat", operation: "observe", args: { tabId: "tab", includeImage: true } });
+  assert.equal(protectedImage.code, "sign_in_required", "Payment fields must block capture even without a password field");
 });
 
 test("select options keep backing identities private and revalidate before choosing", async () => {
@@ -107,4 +120,8 @@ test("select options keep backing identities private and revalidate before choos
   assert.equal(select.value, "different-private-identity");
   assert.equal(inputChecks, 2);
   assert.ok(!JSON.stringify(program).includes("private-identity"));
+  options[0].value = "1"; options[0].label = "Plan 1";
+  const publicLabel = await observe();
+  assert.equal(publicLabel.elements[0].options[0].label, "Plan 1");
+  assert.notEqual(publicLabel.elements[0].options[0].value, "1");
 });

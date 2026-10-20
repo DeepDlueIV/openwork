@@ -288,7 +288,7 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
 
   const screen = choosing ? (
     <div className="space-y-3 px-4 py-4 text-xs" data-testid="session-computer-window-approval">
-      <p>{presentation.mode === "observe" ? "Read" : "Use"} one {presentation.appName || "app"} window for this task. Its content may be sent to your selected model provider.</p>
+      <p>{presentation.mode === "observe" ? "Read" : "Control"} one {presentation.appName || "app"} window for this task. Its content may be sent to your selected model provider.</p>
       {presentation.task ? <p className="text-muted-foreground">{presentation.task}</p> : null}
       <Select value={selectedWindow?.id ?? null} disabled={disabled} onValueChange={(value) => { if (typeof value === "number") setWindowChoice({ id: presentation.id, windowId: value }) }}>
         <SelectTrigger aria-label="Window to allow" className="w-full"><SelectValue>{selectedWindow?.title || "Untitled window"}</SelectValue></SelectTrigger>

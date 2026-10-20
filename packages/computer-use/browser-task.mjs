@@ -43,6 +43,9 @@ function observePage(id, query = null) {
   const entered = globalThis.__openworkAgentEntered ??= new WeakMap();
   const isSensitive = element => element.matches('input[type="password"]') ||
     (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).some(token => token === "one-time-code" || token.startsWith("cc-"));
+  const isTextValue = element => element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLInputElement && !["button", "submit", "reset", "checkbox", "radio", "hidden", "file", "range", "color"].includes(element.type) ||
+    element.isContentEditable || ["textbox", "combobox"].includes(element.getAttribute("role"));
   const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');
   const withheld = new Set();
   for (const element of candidates) {
@@ -52,8 +55,10 @@ function observePage(id, query = null) {
     if (!input && !textarea && !select && !element.isContentEditable && !["textbox", "combobox"].includes(role)) continue;
     const value = input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "";
     const sensitive = isSensitive(element);
-    if (value?.trim() && (sensitive || select || entered.get(element) !== value)) withheld.add(value);
-    if (select) for (const option of element.options) if (option.value?.trim()) withheld.add(option.value);
+    if (value?.trim() && (sensitive || isTextValue(element) && entered.get(element) !== value)) withheld.add(value);
+    // A public option label can itself be its backing value ("Plan 1" / "1").
+    // Preserve that visible label; other backing identities remain private.
+    if (select) for (const option of element.options) if (option.value?.trim() && !option.label.includes(option.value)) withheld.add(option.value);
   }
   const privateValues = [...withheld].sort((a, b) => b.length - a.length);
   const privatePattern = privateValues.length ? new RegExp(privateValues.map(value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g") : null;
@@ -77,7 +82,7 @@ function observePage(id, query = null) {
     // One-time codes and payment-card fields (cc-number, cc-csc, cc-exp...) never leave the page.
     const sensitive = isSensitive(element);
     const role = element.getAttribute("role");
-    const field = input || textarea || select || element.isContentEditable || ["textbox", "combobox"].includes(role);
+    const field = select || isTextValue(element);
     const value = field ? input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "" : "";
     const name = referenced("aria-labelledby") || element.getAttribute("aria-label") ||
       (input || textarea || select ? [...(element.labels || [])].map(labelText).join(" ") : "") ||

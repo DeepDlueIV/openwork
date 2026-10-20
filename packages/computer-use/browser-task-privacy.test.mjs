@@ -20,8 +20,11 @@ test("withheld field values cannot escape through accessible labels", async () =
   password.type = "password";
   const long = new Input("long-secret-".repeat(60), {});
   long.attributes["aria-label"] = `Vault ${long.value}`;
-  const fields = [email, account, password, long];
-  const document = { title: `Profile ${account.value}`, body: { innerText: fields.map(field => field.value).join(" ") }, activeElement: email,
+  const privateFields = [email, account, password, long];
+  const submit = new Input("Continue", {}); submit.type = "submit";
+  const checkbox = new Input("on", { "aria-label": "Consent" }); checkbox.type = "checkbox";
+  const fields = [...privateFields, submit, checkbox];
+  const document = { title: `Profile ${account.value}`, body: { innerText: privateFields.map(field => field.value).join(" ") }, activeElement: email,
     getElementById: id => id === "account-caption" ? { textContent: `Account ${account.value}` } : null,
     querySelectorAll: query => query.startsWith('input[type="password"]') ? fields.filter(field => field.type === "password" || field.attributes.autocomplete === "one-time-code") : fields };
   const context = vm.createContext({ document, HTMLElement: Input, HTMLInputElement: Input,
@@ -35,8 +38,8 @@ test("withheld field values cannot escape through accessible labels", async () =
   const observe = () => host.request({ sessionId: "chat", operation: "observe", args: { tabId: "tab" } });
   const seen = await observe();
   assert.equal(seen.ok, true, JSON.stringify(seen));
-  assert.deepEqual(Array.from(seen.elements, element => element.name), ["Email [withheld]", "Account [withheld]", "Password [withheld]", "Vault [withheld]"]);
-  for (const field of fields) assert.ok(!JSON.stringify(seen).includes(field.value), "The observation exposed a withheld value");
+  assert.deepEqual(Array.from(seen.elements, element => element.name), ["Email [withheld]", "Account [withheld]", "Password [withheld]", "Vault [withheld]", "Continue", "Consent"]);
+  for (const field of privateFields) assert.ok(!JSON.stringify(seen).includes(field.value), "The observation exposed a withheld value");
   context.__openworkAgentEntered.set(email, email.value);
   const entered = await observe();
   assert.equal(entered.elements[0].name, `Email ${email.value}`);
@@ -111,4 +114,8 @@ test("select options keep backing identities private and revalidate before choos
   assert.equal(select.value, "different-private-identity");
   assert.equal(inputChecks, 2);
   assert.ok(!JSON.stringify(program).includes("private-identity"));
+  options[0].value = "1"; options[0].label = "Plan 1";
+  const publicLabel = await observe();
+  assert.equal(publicLabel.elements[0].options[0].label, "Plan 1");
+  assert.notEqual(publicLabel.elements[0].options[0].value, "1");
 });

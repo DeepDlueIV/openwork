@@ -116,7 +116,9 @@ Uploads, Outputs and Downloads shortcuts point to these shared folders. Both
 the command user and GUI user can save outputs through a dedicated shared group
 and default directory ACLs. Homes and files elsewhere use private permissions;
 the GUI account is not a member of the command user's group. App profiles live
-in `/home/openwork-browser` and survive VM pause/resume.
+in `/home/openwork-app` and survive VM pause/resume. This account cannot read
+the Chromium profile or open network connections; use shared uploads and outputs
+to exchange files with native apps. Browser downloads also use the shared outputs.
 
 Workbot's `desktop` tool exposes `computer_apps {}` to discover app availability,
 package versions, supported formats, paths and environment guidance, and
@@ -151,11 +153,12 @@ passes `save: true`; a file with no open window is edited headlessly and saved.
 Cell strings are always stored as text, so content copied from a page or file
 is never evaluated. Formulas are explicit `{formula}` cells and are refused if
 they fetch or link outside the workbook (`WEBSERVICE`, `DDE`, `HYPERLINK`,
-`INDIRECT` or external references), because the desktop can reach public sites.
+`INDIRECT` or external references), to keep workbook content from becoming a request to outside services.
 
-Scripts keep the trust boundary of the apps and `bash`: they run as
-`openwork-browser` inside the same egress guard, behind the same `computerUse`
-and `remoteComputers` rollout, with no new consent prompt. They use the shared
+Scripts run as `openwork-app`, separated from the browser and command accounts.
+The private browser home is inaccessible and IPv4/IPv6 egress is denied, including
+DNS and loopback; app bridges use Unix sockets. The same `computerUse` and
+`remoteComputers` rollout applies, with no new consent prompt. They use the shared
 input rail. Stop requests cancellation and takeover waits for its acknowledgement.
 Blender checks at Python lines and between render/save phases; a native render
 may finish before cancellation is acknowledged, and no later save begins. Other

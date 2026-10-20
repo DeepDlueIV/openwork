@@ -31,7 +31,7 @@ COPY ee/packages/headless-computer/src/desktop-scripting.mjs /usr/local/share/op
 COPY ee/packages/headless-computer/scripts/configure-desktop-files.sh /usr/local/share/openwork-desktop/configure-files.sh
 COPY ee/packages/headless-computer/scripts/install-desktop-apps.sh /tmp/install-desktop-apps.sh
 RUN bash /tmp/install-desktop-apps.sh && rm /tmp/install-desktop-apps.sh
-# App scripting bridges run as the desktop user; see desktop-scripting.mjs.
+# App scripting bridges run as the isolated app user; see desktop-scripting.mjs.
 COPY ee/packages/headless-computer/src/scripting/ /usr/local/share/openwork-desktop/scripting/
 RUN chmod 0755 /usr/local/share/openwork-desktop/scripting && chmod 0644 /usr/local/share/openwork-desktop/scripting/*
 COPY --from=desktop-bridge-builder /src/ee/packages/headless-computer/dist/desktop-guest.mjs /usr/local/share/openwork-desktop/guest.mjs

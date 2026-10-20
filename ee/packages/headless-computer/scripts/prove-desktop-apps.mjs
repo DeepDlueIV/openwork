@@ -54,7 +54,7 @@ await execute("/usr/sbin/runuser", ["-u", "ubuntu", "--", "test", "-r", note]);
 
 // The GUI works without a GPU, and CPU rendering produces an inspectable artifact.
 const render = `${directory}/cube.png`;
-await execute("/usr/sbin/runuser", ["-u", "openwork-browser", "--", "blender", "--background", "--factory-startup", "--threads", "2", "--python-expr", `import bpy; s=bpy.context.scene; s.render.engine='CYCLES'; s.cycles.device='CPU'; s.cycles.use_denoising=False; s.cycles.samples=4; s.render.resolution_x=96; s.render.resolution_y=96; s.render.resolution_percentage=100; s.render.filepath=${JSON.stringify(render)}; bpy.ops.wm.save_as_mainfile(filepath=${JSON.stringify(`${directory}/cube.blend`)}); bpy.ops.render.render(write_still=True)`], { timeout: 120_000, maxBuffer: 1024 * 1024, env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/openwork-browser", LIBGL_ALWAYS_SOFTWARE: "1", GALLIUM_DRIVER: "llvmpipe" } });
+await execute("/usr/sbin/runuser", ["-u", "openwork-app", "--", "blender", "--background", "--factory-startup", "--threads", "2", "--python-expr", `import bpy; s=bpy.context.scene; s.render.engine='CYCLES'; s.cycles.device='CPU'; s.cycles.use_denoising=False; s.cycles.samples=4; s.render.resolution_x=96; s.render.resolution_y=96; s.render.resolution_percentage=100; s.render.filepath=${JSON.stringify(render)}; bpy.ops.wm.save_as_mainfile(filepath=${JSON.stringify(`${directory}/cube.blend`)}); bpy.ops.render.render(write_still=True)`], { timeout: 120_000, maxBuffer: 1024 * 1024, env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/openwork-app", LIBGL_ALWAYS_SOFTWARE: "1", GALLIUM_DRIVER: "llvmpipe" } });
 assert.ok((await stat(render)).size > 100);
 await execute("xdotool", ["windowactivate", "--sync", windows.blender]);
 await execute("import", ["-window", "root", `${directory}/desktop.png`], { timeout: 5000 });
@@ -63,8 +63,8 @@ await execute("import", ["-window", "root", `${directory}/desktop.png`], { timeo
 const share = path => execute("/usr/sbin/runuser", ["-u", "ubuntu", "--", "test", "-r", path]);
 const redPixels = async path => Number((await execute("python3", ["-c", "import sys; from PIL import Image; print(sum(1 for r, g, b, *_ in Image.open(sys.argv[1]).convert('RGB').getdata() if r > 120 and g < 50 and b < 50))", path])).stdout);
 const freshBlender = async () => {
-  await execute("pkill", ["-u", "openwork-browser", "-x", "blender"]).catch(() => {});
-  for (let n = 0; n < 40 && await execute("pgrep", ["-u", "openwork-browser", "-x", "blender"]).then(() => true, () => false); n++) await new Promise(resolve => setTimeout(resolve, 250));
+  await execute("pkill", ["-u", "openwork-app", "-x", "blender"]).catch(() => {});
+  for (let n = 0; n < 40 && await execute("pgrep", ["-u", "openwork-app", "-x", "blender"]).then(() => true, () => false); n++) await new Promise(resolve => setTimeout(resolve, 250));
   await applications.launch({ app: "blender" }, deadline);
   const id = await window("blender");
   // A launched instance must serve its own bridge before any scene edits are admitted.
@@ -151,7 +151,7 @@ assert.equal(alive.result, 2);
 // Office, GIMP and Inkscape lanes: what changed is reported, outputs are shared. The fixture is
 // converted with a private profile so it never goes through the open Writer.
 const sheet = `${directory}/budget.ods`;
-await execute("/usr/sbin/runuser", ["-u", "openwork-browser", "--", "sh", "-c", 'cd "$1" && printf "Item,Cost\\n" > budget.csv && soffice -env:UserInstallation=file:///tmp/openwork-proof-office --headless --convert-to ods budget.csv >/dev/null && convert -size 120x80 xc:steelblue photo.png && printf "<svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"100\\" height=\\"50\\"><rect width=\\"100\\" height=\\"50\\" fill=\\"red\\"/></svg>" > shape.svg', "_", directory], { timeout: 60_000 });
+await execute("/usr/sbin/runuser", ["-u", "openwork-app", "--", "sh", "-c", 'cd "$1" && printf "Item,Cost\\n" > budget.csv && soffice -env:UserInstallation=file:///tmp/openwork-proof-office --headless --convert-to ods budget.csv >/dev/null && convert -size 120x80 xc:steelblue photo.png && printf "<svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"100\\" height=\\"50\\"><rect width=\\"100\\" height=\\"50\\" fill=\\"red\\"/></svg>" > shape.svg', "_", directory], { timeout: 60_000 });
 const written = await applications.script({ app: "calc", operation: "write_range", path: sheet, range: "A2:B3", values: [["Paint", 12.5], ["Total", { formula: "=B2*2" }]] }, deadline);
 assert.deepEqual(written.changed.map(change => change.cell), ["A2", "B2", "A3", "B3"]);
 assert.equal(written.values[1][1], 25);

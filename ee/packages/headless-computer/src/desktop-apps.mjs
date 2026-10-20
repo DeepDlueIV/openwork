@@ -34,7 +34,7 @@ export function createDesktopApplications({ display = ":99", directory }) {
     return new Map(versions.trim().split("\n").map(line => line.split("\t")).filter(([, status]) => status === "installed").map(([pkg, , version]) => [pkg, version]));
   };
   const ready = async id => { const app = DESKTOP_APPS.find(app => app.id === id); return Boolean(app && (await installed()).has(app.package) && await available(app)); };
-  const scripting = createAppScripting({ display, authority, available: ready });
+  const scripting = createAppScripting({ display, available: ready });
   return {
     /** Runs an app's own scripting interface instead of GUI input; see desktop-scripting.mjs. */
     script: (args, signal) => scripting.run(args, signal),

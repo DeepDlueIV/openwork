@@ -7,7 +7,7 @@ import { isAbsolute } from "node:path";
 
 // Installed by the desktop image next to apps.mjs. Older snapshots report scripting unavailable.
 export const SCRIPTING_DIR = "/usr/local/share/openwork-desktop/scripting";
-const home = "/home/openwork-browser";
+const home = "/home/openwork-app";
 // Unix sockets, not loopback ports: the desktop egress guard refuses loopback for the desktop user.
 export const BLENDER_DIRECTORY = `${home}/.local/state/openwork-scripting`;
 export const OFFICE_ACCEPT = "--accept=pipe,name=openwork-office;urp;StarOffice.ComponentContext";
@@ -28,17 +28,17 @@ const stamp = () => new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/
 
 /**
  * Drives desktop apps through their own scripting interfaces. Every script runs as the desktop
- * user, inside the same egress guard as the apps, and a Stop or takeover cancels it.
+ * app account, without browser-profile or network access. Stop or takeover cancels it.
  */
-export function createAppScripting({ display, authority, available }) {
-  const env = { PATH: path, HOME: home, USER: "openwork-browser", LOGNAME: "openwork-browser", LANG: "C.UTF-8", DISPLAY: display, XAUTHORITY: authority ?? "", LIBGL_ALWAYS_SOFTWARE: "1", GALLIUM_DRIVER: "llvmpipe" };
+export function createAppScripting({ display, available }) {
+  const env = { PATH: path, HOME: home, USER: "openwork-app", LOGNAME: "openwork-app", LANG: "C.UTF-8", DISPLAY: display, XAUTHORITY: `${home}/.Xauthority`, LIBGL_ALWAYS_SOFTWARE: "1", GALLIUM_DRIVER: "llvmpipe" };
   const installed = () => access(`${SCRIPTING_DIR}/openwork_blender.py`, constants.R_OK).then(() => true, () => false);
 
   /** Runs a command as the desktop user; stdin is JSON. Abort kills its whole process group. */
   function runAs(command, argv, { input, timeoutMs, signal }) {
     signal?.throwIfAborted();
     const root = process.getuid?.() === 0;
-    const child = spawn(root ? "/usr/sbin/runuser" : command, root ? ["-u", "openwork-browser", "--", command, ...argv] : argv, { env, cwd: "/workspace", detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(root ? "/usr/sbin/runuser" : command, root ? ["-u", "openwork-app", "--", command, ...argv] : argv, { env, cwd: "/workspace", detached: true, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.on("data", chunk => { stdout = (stdout + chunk).slice(-400_000); });
     child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-20_000); });
@@ -70,7 +70,7 @@ export function createAppScripting({ display, authority, available }) {
     // A file path is edited in a background Blender so the open session is untouched.
     let socketPath = null;
     if (args.path === undefined) {
-      const processes = await runAs("/usr/bin/pgrep", ["-u", "openwork-browser", "-x", "blender"], { timeoutMs: 3000, signal });
+      const processes = await runAs("/usr/bin/pgrep", ["-u", "openwork-app", "-x", "blender"], { timeoutMs: 3000, signal });
       const pids = processes.stdout.trim().split(/\s+/).filter(value => /^[1-9]\d*$/.test(value));
       let pid = pids[0];
       if (pids.length > 1) {

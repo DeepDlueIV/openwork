@@ -28,7 +28,9 @@ export function DocumentEditorTab(props: Parameters<typeof BasicDocumentEditorTa
 function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, editingEnabled = false, editing = false, onEdit, showActions = true, active, scope, connectionsHref, renderConnect, onDirtyChange, onSavingChange, onControlsChange, onClose }: { toolbarHost?: HTMLElement | null; item: DocumentItem; editor: DocumentsEditor; enabled: boolean; editingEnabled?: boolean; editing?: boolean; onEdit?(): void; showActions?: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; renderConnect?(connectionId?: string, reconnect?: boolean): ReactNode; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onResourceChange?(tabId: string, resource: DocumentItem): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
   const [sheetId, setSheetId] = useState<string>()
   const [startRow, setStartRow] = useState(1)
-  const [connectionId, setConnectionId] = useState<string>()
+  // Pin the selected Drive account without changing the query identity after its first response.
+  const connection = useRef<string>(undefined)
+  const connectionId = connection.current
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [formulas, setFormulas] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
@@ -38,7 +40,7 @@ function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, editingEna
   const [closing, setClosing] = useState(false)
   const dirty = Object.keys(draft).length > 0
   const accessCheck = useRef<() => Promise<void>>(async () => { throw new Error("The document is not open.") })
-  accessCheck.current = async () => { await editor.open(item.id, { sheetId, startRow, connectionId }) }
+  accessCheck.current = async () => { await editor.open(item.id, { sheetId, startRow, connectionId: connection.current }) }
   const closeAction = useRef<() => void>(() => {})
   closeAction.current = () => { if (!saving) { if (dirty) setClosing(true); else onClose() } }
   useEffect(() => {
@@ -48,13 +50,16 @@ function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, editingEna
   useEffect(() => { onSavingChange?.(item.id, saving); return () => onSavingChange?.(item.id, false) }, [item.id, saving, onSavingChange])
   useEffect(() => { onDirtyChange?.(item.id, dirty); return () => onDirtyChange?.(item.id, false) }, [dirty, item.id, onDirtyChange])
   const query = useQuery({
-    queryKey: ["documents", ...scope, "editor", item.id, sheetId, startRow, connectionId, editingEnabled],
-    queryFn: ({ signal }) => editor.open(item.id, { sheetId, startRow, connectionId }, signal),
+    queryKey: ["documents", ...scope, "editor", item.id, sheetId, startRow, editingEnabled],
+    queryFn: async ({ signal }) => {
+      const document = await editor.open(item.id, { sheetId, startRow, connectionId: connection.current }, signal)
+      connection.current ??= document.connectionId
+      return document
+    },
     enabled: enabled && active,
     retry: false, gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false,
   })
   const data = query.data
-  useEffect(() => { if (data && !connectionId) setConnectionId(data.connectionId) }, [data, connectionId])
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
@@ -142,8 +147,18 @@ function RichDocument({ data, draft, readonly, change }: { data: TextDocument; d
 }
 function DocumentPreview({ data, editor, item }: { data: Extract<EditorDocument, { kind: "preview" }>; editor: DocumentsEditor; item: DocumentItem }) {
   const url = `${editor.contentUrl(item.id)}?connectionId=${encodeURIComponent(data.connectionId)}`
-  // Google Slides previews as a PDF export of the presentation.
-  if (data.mimeType === "application/pdf" || data.mimeType === "application/vnd.google-apps.presentation") return <iframe className="ow-editor-preview" src={url} title={item.name} sandbox="allow-same-origin" />
-  if (["image/png", "image/jpeg", "image/gif", "image/webp"].includes(data.mimeType)) return <div className="ow-editor-image"><img src={url} alt={item.name} /></div>
+  // Keep one mounted viewer while its protected file bytes load, including Slides' PDF export.
+  const pdf = data.mimeType === "application/pdf" || data.mimeType === "application/vnd.google-apps.presentation"
+  if (pdf || ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(data.mimeType)) return <BinaryPreview key={url} url={url} item={item} pdf={pdf} />
   return <div className="ow-documents-state"><p>No inline preview is available.</p>{item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer">Open in Drive</a>}</div>
+}
+
+function BinaryPreview({ url, item, pdf }: { url: string; item: DocumentItem; pdf: boolean }) {
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading")
+  return <div className="ow-editor-binary" aria-busy={state === "loading"}>
+    {state === "loading" && <div className="ow-editor-preview-loading" role="status">Loading {pdf ? "PDF" : "image"} preview…</div>}
+    {state === "error" ? <div className="ow-documents-state"><p>Couldn't load this preview.</p><button type="button" onClick={() => setState("loading")}>Try again</button>{item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer">Open in Drive</a>}</div>
+      : pdf ? <iframe className="ow-editor-preview" src={url} title={item.name} sandbox="allow-same-origin" onLoad={() => setState("ready")} onError={() => setState("error")} />
+      : <div className="ow-editor-image"><img src={url} alt={item.name} onLoad={() => setState("ready")} onError={() => setState("error")} /></div>}
+  </div>
 }

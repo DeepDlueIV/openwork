@@ -327,3 +327,55 @@ test("a member reads a document without editing notices and finds editing detail
     await user.see({ role: "textbox", label: "Document text" }, { value: "Project overview", editable: true });
   });
 });
+
+test("document previews avoid connection reloads and keep their viewer stable across file types", async ({ world, user, probe, step, evidence }) => {
+  await user.resizeViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
+  await step("before: a spreadsheet opens directly into its read-only preview", async () => {
+    await user.navigate(`${world.url}documents?assistant=off&editing=off&previews=on`);
+    await user.click({ role: "button", label: "Trigger phrases" });
+    await user.see({ role: "textbox", label: "A1" }, { value: "Trigger phrase", editable: false });
+    // notSee observes the interval, catching the old second-request loading flash.
+    await user.notSee({ label: "Opening document" });
+    // React development StrictMode may retry the initial request, but selecting
+    // its connection must never initiate another read with that connection.
+    expect(world.editorConnections().length).toBeGreaterThan(0);
+    expect(world.editorConnections().every(connection => connection === null)).toBe(true);
+    await user.screenshot();
+  });
+  await step("after: spreadsheets and documents avoid connection reloads and reuse open previews", async () => {
+    for (const name of ["Analysis.xlsx", "Project plan.docx", "Project plan"]) {
+      await user.click({ role: "button", label: /^Files$/ });
+      await user.click({ role: "button", label: name });
+      if (name === "Analysis.xlsx") await user.see({ role: "textbox", label: "A1" }, { value: "Trigger phrase", editable: false });
+      else await user.see({ text: "A readable project plan" });
+      await user.notSee({ label: "Opening document" });
+    }
+    const readsBeforeReturn = world.editorReads();
+    await user.click({ role: "button", label: "Trigger phrases" });
+    await user.see({ role: "textbox", label: "A1" }, { value: "Trigger phrase", editable: false });
+    await user.notSee({ label: "Opening document" });
+    expect(world.editorReads()).toEqual(readsBeforeReturn);
+    for (const id of ["file_sheet", "file_office", "file_docx", "file_doc"]) expect(world.editorReads().filter(read => read === id).length).toBeGreaterThan(0);
+    evidence.recordAssertionEvidence("Previews do not reopen after selecting a connection", "Sheets, XLSX, Docs and DOCX made no connection-triggered reload; returning to a tab sent no request", world.editorConnections().every(connection => connection === null));
+    await user.screenshot();
+  });
+  await step("after: PDF, Slides and images keep one mounted viewer while protected bytes arrive", async () => {
+    for (const [id, name, label] of [["file_pdf", "Project plan.pdf", "PDF"], ["file_slides", "Project slides", "PDF"], ["file_image", "Project image.png", "image"]]) {
+      world.holdPreviewContent();
+      await user.click({ role: "button", label: /^Files$/ });
+      await user.click({ role: "button", label: name });
+      await user.see({ text: `Loading ${label} preview…` });
+      await probe.eventually(() => world.contentReads(), { within: 5000, label: "the protected preview request has started", until: values => values.includes(id) });
+      expect((await probe.dom('.ow-editor-binary[aria-busy="true"]')).elements).toHaveLength(1);
+      await user.screenshot();
+      world.releasePreviewContent();
+      await probe.eventually(() => probe.dom('.ow-editor-binary[aria-busy="true"]'), { within: 10_000, label: "the preview viewer has finished loading", until: layout => layout.elements.length === 0 });
+      await user.notSee({ text: `Loading ${label} preview…` });
+      expect(await probe.text()).not.toContain("Couldn't load this preview.");
+      expect(world.editorReads().filter(read => read === id).length).toBeGreaterThan(0);
+      expect(world.contentReads().filter(read => read === id)).toHaveLength(1);
+    }
+    evidence.recordAssertionEvidence("Binary previews stay mounted during loading", "PDF, native Slides PDF export and PNG each used one content read; zero Office requests or writes", world.officeRequests().length === 0 && world.documentWrites().length === 0);
+    await user.screenshot();
+  });
+});

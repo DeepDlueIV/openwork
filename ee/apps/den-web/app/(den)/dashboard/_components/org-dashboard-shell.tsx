@@ -27,6 +27,7 @@ import {
   getBillingRoute,
   getCustomLlmProvidersRoute,
   getDiagnosticsRoute,
+  getServicesRoute,
   getDeploymentsRoute,
   getDesktopPoliciesRoute,
   getWorkbotSettingsRoute,
@@ -280,6 +281,7 @@ function getDashboardPageTitle(pathname: string, orgSlug: string | null) {
   if (pathname.startsWith(getDeploymentsRoute(orgSlug))) {
     return "Deployments";
   }
+  if (pathname === getServicesRoute(orgSlug)) return "Services";
   if (pathname.startsWith(getDiagnosticsRoute(orgSlug))) {
     return "Diagnostics";
   }
@@ -456,6 +458,7 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     runtimeConfigLoaded,
 
     managedDeployments: orgFeatureEnabled(orgContext, "managedDeployments"),
+    canManageDeploymentServices: orgContext?.canManageDeploymentServices === true,
 
     desktopPolicyScreenRemoved: desktopPolicyScreenRemoved(orgContext),
   });

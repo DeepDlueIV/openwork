@@ -158,6 +158,7 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
       runtimeConfigLoaded,
 
       desktopPolicyScreenRemoved: desktopPolicyScreenRemoved(orgContext),
+      canManageDeploymentServices: orgContext?.canManageDeploymentServices === true,
     });
     return flattenNavigationForSearch(sections)
       .filter((entry) => entry.href !== "#")

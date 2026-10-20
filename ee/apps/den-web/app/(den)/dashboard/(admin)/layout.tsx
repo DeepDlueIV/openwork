@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
-import { getOrgAccessFlags } from "../../_lib/den-org";
+import { getOrgAccessFlags, getServicesRoute } from "../../_lib/den-org";
 import { DenNotice } from "../../_components/ui/notice";
 import { adminRouteLockedMessage, canOpenAdminRoute } from "../_lib/admin-route-access";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
@@ -22,8 +22,8 @@ export default function AdminDashboardLayout({
     orgContext?.currentMember.permissions,
   );
   // Any organization permission opens the admin area; each page then needs its own.
-  const canUseAdminArea = access.canViewSettings;
-  const canUseAdminRoute = canOpenAdminRoute(pathname, access);
+  const canUseAdminArea = access.canViewSettings || (pathname === getServicesRoute() && orgContext?.canManageDeploymentServices === true);
+  const canUseAdminRoute = canOpenAdminRoute(pathname, access, orgContext?.canManageDeploymentServices === true);
 
   useEffect(() => {
     if (!orgBusy && !orgError && orgContext && !canUseAdminArea) {

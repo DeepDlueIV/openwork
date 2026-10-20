@@ -1,14 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DeploymentServiceReadiness } from "@openwork/types/den/service-readiness";
-import { requestAdmin, sendAdmin, type AdminResult } from "../admin-request";
 import {
-  CHECK_COOLDOWN_MS, finishServicesRun, parseServicesSnapshot, runServicesReadiness, SERVICES_PATH,
-  SERVICES_VERIFY_ERROR, waitForServicePoll, type ServicesViewState,
+  CHECK_COOLDOWN_MS, finishServicesRun, runServicesReadiness,
+  SERVICES_VERIFY_ERROR, waitForServicePoll, type ServicesViewState, type ServicesTransport,
 } from "./service-readiness-data";
 
-export function useServicesReadiness(enabled: boolean) {
+export function useServicesReadiness(enabled: boolean, transport: ServicesTransport) {
   const [state, setState] = useState<ServicesViewState>({ status: "checking", snapshot: null, pending: false });
   const [cooldown, setCooldown] = useState(false);
   const active = useRef<AbortController | null>(null);
@@ -31,17 +29,14 @@ export function useServicesReadiness(enabled: boolean) {
     try {
       const result = await runServicesReadiness({
         signal: controller.signal, check,
-        getSnapshot: () => requestAdmin(SERVICES_PATH, parseServicesSnapshot, controller.signal),
-        startCheck: async (): Promise<AdminResult<DeploymentServiceReadiness>> => {
-          // No body, browser-selected endpoint, or probe options are sent.
-          const response = await sendAdmin(`${SERVICES_PATH}/check`, "POST", undefined, controller.signal);
+        getSnapshot: () => transport.getSnapshot(controller.signal),
+        startCheck: async () => {
+          const result = await transport.startCheck(controller.signal);
           controller.signal.throwIfAborted();
-          if (!response.ok) {
-            if (response.status === 429 && response.retryAfterSeconds) startCooldown(response.retryAfterSeconds * 1_000);
-            return { access: "error", message: "", status: response.status, code: response.code };
+          if (result.access !== "ready" && result.status === 429 && result.retryAfterSeconds) {
+            startCooldown(Math.min(3_600, Math.max(1, result.retryAfterSeconds)) * 1_000);
           }
-          const snapshot = parseServicesSnapshot(response.payload);
-          return snapshot ? { access: "ready", data: snapshot } : { access: "error", message: "" };
+          return result;
         },
         wait: () => waitForServicePoll(controller.signal),
         onSnapshot: (snapshot) => setState({ status: "checking", snapshot, pending: true }),
@@ -53,7 +48,7 @@ export function useServicesReadiness(enabled: boolean) {
     } finally {
       if (active.current === controller) busy.current = false;
     }
-  }, [enabled, startCooldown]);
+  }, [enabled, startCooldown, transport]);
 
   useEffect(() => {
     setCooldown(false);

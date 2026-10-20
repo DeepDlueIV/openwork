@@ -55,7 +55,7 @@ const everywhere = ["cloud", "self_hosted"] as const
 export const FEATURES = defineFeatures({
   serviceReadiness: {
     label: "Deployment service readiness",
-    description: "Deployment administrators can verify optional services and see what is missing; organization screens share the same safe readiness status without blocking core work.",
+    description: "Self-hosted installation operators can check optional services from Settings; internal platform diagnostics and minimal member readiness share the same checker without blocking core work.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

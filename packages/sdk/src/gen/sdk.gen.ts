@@ -485,6 +485,8 @@ import type {
   GetV1OrgDefaultModelOptionsErrors,
   GetV1OrgDefaultModelOptionsResponses,
   GetV1OrgDefaultModelResponses,
+  GetV1OrgDeploymentServicesErrors,
+  GetV1OrgDeploymentServicesResponses,
   GetV1OrgErrors,
   GetV1OrgInventoryRevisionErrors,
   GetV1OrgInventoryRevisionResponses,
@@ -891,6 +893,8 @@ import type {
   PostV1OauthProvidersByProviderIdDisconnectResponses,
   PostV1OrgBrandAssetsErrors,
   PostV1OrgBrandAssetsResponses,
+  PostV1OrgDeploymentServicesCheckErrors,
+  PostV1OrgDeploymentServicesCheckResponses,
   PostV1OrgsByOrganizationIdInstallLinksErrors,
   PostV1OrgsByOrganizationIdInstallLinksResponses,
   PostV1OrgsInvitationsAcceptErrors,
@@ -3567,6 +3571,34 @@ export class DenClient extends HeyApiClient {
       GetV1OrgServiceReadinessErrors,
       ThrowOnError
     >({ url: "/v1/org/service-readiness", ...options });
+  }
+
+  /**
+   * Read local deployment service readiness
+   *
+   * Self-hosted deployment operators with an active organization membership only. Organization ownership and permissions do not grant access. Shares the platform diagnostics snapshot and bounded refresh admission.
+   */
+  public getV1OrgDeploymentServices<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgDeploymentServicesResponses,
+      GetV1OrgDeploymentServicesErrors,
+      ThrowOnError
+    >({ url: "/v1/org/deployment-services", ...options });
+  }
+
+  /**
+   * Queue a local deployment service readiness check
+   *
+   * Self-hosted deployment operators with an active organization membership only. Queues the same read-only, bounded probes as platform diagnostics; shares active checks, recent results and deployment-wide rate limits. Never sends email, calls a model or initiates Slack events.
+   */
+  public postV1OrgDeploymentServicesCheck<ThrowOnError extends boolean = false>(
+    options?: Options<never, ThrowOnError>,
+  ) {
+    return (options?.client ?? this.client).post<
+      PostV1OrgDeploymentServicesCheckResponses,
+      PostV1OrgDeploymentServicesCheckErrors,
+      ThrowOnError
+    >({ url: "/v1/org/deployment-services/check", ...options });
   }
 
   /**

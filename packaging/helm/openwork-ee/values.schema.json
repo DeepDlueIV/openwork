@@ -26,7 +26,7 @@
                 true,
                 false
               ],
-              "description": "Deployment service readiness: Deployment administrators can verify optional services and see what is missing; organization screens share the same safe readiness status without blocking core work. Renders DEN_FEATURE_SERVICE_READINESS."
+              "description": "Deployment service readiness: Self-hosted installation operators can check optional services from Settings; internal platform diagnostics and minimal member readiness share the same checker without blocking core work. Renders DEN_FEATURE_SERVICE_READINESS."
             },
             "cloudAgentGateway": {
               "enum": [

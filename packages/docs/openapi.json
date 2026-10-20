@@ -8908,6 +8908,10 @@
             },
             "description": "Effective on/off for every OpenWork feature in this organization. Treat a missing key as off."
           },
+          "canManageDeploymentServices": {
+            "type": "boolean",
+            "description": "Whether this signed-in caller may manage deployment services: an allowlisted self-hosted operator with serviceReadiness enabled for both this organization and the deployment. Organization ownership and permissions never grant it. False for API keys, hosted deployments, disabled or killed rollout, and capability lookup failures."
+          },
           "deploymentCapabilities": {
             "type": "object",
             "properties": {
@@ -8961,6 +8965,7 @@
           "currentMemberTeams",
           "capabilities",
           "features",
+          "canManageDeploymentServices",
           "deploymentCapabilities",
           "entitlements"
         ],
@@ -29132,7 +29137,7 @@
             }
           },
           "403": {
-            "description": "Platform admin access required.",
+            "description": "Deployment operator access required.",
             "content": {
               "application/json": {
                 "schema": {
@@ -29212,7 +29217,7 @@
             }
           },
           "403": {
-            "description": "Platform admin access required.",
+            "description": "Deployment operator access required.",
             "content": {
               "application/json": {
                 "schema": {
@@ -39439,6 +39444,176 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/org/deployment-services": {
+      "get": {
+        "operationId": "getV1OrgDeploymentServices",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Read local deployment service readiness",
+        "x-mcp": false,
+        "description": "Self-hosted deployment operators with an active organization membership only. Organization ownership and permissions do not grant access. Shares the platform diagnostics snapshot and bounded refresh admission.",
+        "responses": {
+          "200": {
+            "description": "Cached deployment readiness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentServiceReadiness"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Deployment operator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service readiness is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Diagnostic admission is unavailable; no upstream detail is exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "service_readiness_unavailable"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/org/deployment-services/check": {
+      "post": {
+        "operationId": "postV1OrgDeploymentServicesCheck",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Queue a local deployment service readiness check",
+        "x-mcp": false,
+        "description": "Self-hosted deployment operators with an active organization membership only. Queues the same read-only, bounded probes as platform diagnostics; shares active checks, recent results and deployment-wide rate limits. Never sends email, calls a model or initiates Slack events.",
+        "responses": {
+          "202": {
+            "description": "Check queued, already in progress, or completed recently with matching configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentServiceReadiness"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Deployment operator access required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service readiness is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "No recent matching snapshot is available and another replica recently admitted a check; Retry-After indicates the admission window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentServiceReadiness"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Diagnostic admission is unavailable; no upstream detail is exposed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "service_readiness_unavailable"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }

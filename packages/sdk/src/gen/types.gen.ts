@@ -2093,6 +2093,10 @@ export type OrganizationContextResponse = {
   features: {
     [key: string]: boolean;
   };
+  /**
+   * Whether this signed-in caller may manage deployment services: an allowlisted self-hosted operator with serviceReadiness enabled for both this organization and the deployment. Organization ownership and permissions never grant it. False for API keys, hosted deployments, disabled or killed rollout, and capability lookup failures.
+   */
+  canManageDeploymentServices: boolean;
   deploymentCapabilities: {
     version: 1;
     aiGateway: boolean;
@@ -7085,7 +7089,7 @@ export type GetV1AdminServicesErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Platform admin access required.
+   * Deployment operator access required.
    */
   403: ForbiddenError;
   /**
@@ -7124,7 +7128,7 @@ export type PostV1AdminServicesCheckErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Platform admin access required.
+   * Deployment operator access required.
    */
   403: ForbiddenError;
   /**
@@ -10917,6 +10921,91 @@ export type GetV1OrgServiceReadinessResponses = {
 
 export type GetV1OrgServiceReadinessResponse =
   GetV1OrgServiceReadinessResponses[keyof GetV1OrgServiceReadinessResponses];
+
+export type GetV1OrgDeploymentServicesData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/deployment-services";
+};
+
+export type GetV1OrgDeploymentServicesErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Deployment operator access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Service readiness is disabled.
+   */
+  404: NotFoundError;
+  /**
+   * Diagnostic admission is unavailable; no upstream detail is exposed.
+   */
+  503: {
+    error: "service_readiness_unavailable";
+  };
+};
+
+export type GetV1OrgDeploymentServicesError = GetV1OrgDeploymentServicesErrors[keyof GetV1OrgDeploymentServicesErrors];
+
+export type GetV1OrgDeploymentServicesResponses = {
+  /**
+   * Cached deployment readiness.
+   */
+  200: DeploymentServiceReadiness;
+};
+
+export type GetV1OrgDeploymentServicesResponse =
+  GetV1OrgDeploymentServicesResponses[keyof GetV1OrgDeploymentServicesResponses];
+
+export type PostV1OrgDeploymentServicesCheckData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/deployment-services/check";
+};
+
+export type PostV1OrgDeploymentServicesCheckErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Deployment operator access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Service readiness is disabled.
+   */
+  404: NotFoundError;
+  /**
+   * No recent matching snapshot is available and another replica recently admitted a check; Retry-After indicates the admission window.
+   */
+  429: DeploymentServiceReadiness;
+  /**
+   * Diagnostic admission is unavailable; no upstream detail is exposed.
+   */
+  503: {
+    error: "service_readiness_unavailable";
+  };
+};
+
+export type PostV1OrgDeploymentServicesCheckError =
+  PostV1OrgDeploymentServicesCheckErrors[keyof PostV1OrgDeploymentServicesCheckErrors];
+
+export type PostV1OrgDeploymentServicesCheckResponses = {
+  /**
+   * Check queued, already in progress, or completed recently with matching configuration.
+   */
+  202: DeploymentServiceReadiness;
+};
+
+export type PostV1OrgDeploymentServicesCheckResponse =
+  PostV1OrgDeploymentServicesCheckResponses[keyof PostV1OrgDeploymentServicesCheckResponses];
 
 export type GetV1OrgActivityData = {
   body?: never;

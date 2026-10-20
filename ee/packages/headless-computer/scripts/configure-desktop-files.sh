@@ -5,11 +5,12 @@ set -euo pipefail
 getent group openwork-workspace >/dev/null || groupadd openwork-workspace
 usermod -a -G openwork-workspace ubuntu
 usermod -a -G openwork-workspace openwork-browser
+usermod -a -G openwork-workspace openwork-app
 usermod -a -G openwork-workspace,ubuntu openwork-command
 if id -nG openwork-browser | tr ' ' '\n' | grep -qx ubuntu; then
   gpasswd -d openwork-browser ubuntu
 fi
-chmod 0700 /home/ubuntu /home/openwork-browser
+chmod 0700 /home/ubuntu /home/openwork-browser /home/openwork-app
 chmod 0700 /home/openwork-command
 # Provider file operations use ubuntu; model commands use a separate account
 # that cannot invoke the privileged bridge or inspect the GUI user's home.

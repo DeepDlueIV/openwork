@@ -23,11 +23,11 @@ export const DESKTOP_APPS = [
 ];
 
 const execute = promisify(execFile);
-const home = "/home/openwork-browser";
+const home = "/home/openwork-app";
 const path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const failure = (code, message) => Object.assign(new Error(message), { code });
 
-export function createDesktopApplications({ display = ":99", authority = process.env.XAUTHORITY, directory }) {
+export function createDesktopApplications({ display = ":99", directory }) {
   const available = async app => access(`/usr/bin/${app.command}`, constants.X_OK).then(() => true, () => false);
   const installed = async () => {
     const versions = await execute("dpkg-query", ["-W", "-f=${binary:Package}\t${db:Status-Status}\t${Version}\n", ...new Set(DESKTOP_APPS.map(app => app.package))], { timeout: 3000 }).then(result => result.stdout, error => String(error.stdout ?? ""));
@@ -66,9 +66,9 @@ export function createDesktopApplications({ display = ":99", authority = process
         // Blender loads its script bridge after the file; LibreOffice serves UNO on a named pipe.
         const argv = [...app.args, ...(bridge && SCRIPT_LANES[app.id] === "office" ? [OFFICE_ACCEPT] : []), ...(args.path || app.defaultPath ? [args.path ?? app.defaultPath] : []), ...(bridge && app.id === "blender" ? blenderBridgeArgs() : [])];
         // Never inherit model, provider or connected-app credentials into GUI processes.
-        const env = { PATH: path, HOME: home, USER: "openwork-browser", LOGNAME: "openwork-browser", LANG: "C.UTF-8", DISPLAY: display, XAUTHORITY: authority ?? "", LIBGL_ALWAYS_SOFTWARE: "1", GALLIUM_DRIVER: "llvmpipe" };
+        const env = { PATH: path, HOME: home, USER: "openwork-app", LOGNAME: "openwork-app", LANG: "C.UTF-8", DISPLAY: display, XAUTHORITY: `${home}/.Xauthority`, LIBGL_ALWAYS_SOFTWARE: "1", GALLIUM_DRIVER: "llvmpipe" };
         // Detached applications survive a completed tool call and VM pause/resume.
-        const child = spawn(process.getuid?.() === 0 ? "/usr/sbin/runuser" : command, process.getuid?.() === 0 ? ["-u", "openwork-browser", "--", command, ...argv] : argv, { env, cwd: "/workspace", detached: true, stdio: ["ignore", log.fd, log.fd] });
+        const child = spawn(process.getuid?.() === 0 ? "/usr/sbin/runuser" : command, process.getuid?.() === 0 ? ["-u", "openwork-app", "--", command, ...argv] : argv, { env, cwd: "/workspace", detached: true, stdio: ["ignore", log.fd, log.fd] });
         await new Promise((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
         child.unref();
         return { app: app.id, name: app.name, launched: true, guidance: "Launch requested. Observe the desktop to verify readiness; an existing app may reuse its window. Do not assume a file was opened or saved.", ...(app.hint && bridge ? { hint: app.hint } : {}) };

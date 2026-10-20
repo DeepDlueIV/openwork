@@ -9,12 +9,12 @@ apt-get install -y -qq --no-install-recommends $packages \
   libreoffice-gtk3 python3-uno libgl1-mesa-dri libglx-mesa0 mesa-utils tint2 adwaita-icon-theme fonts-noto-cjk fonts-noto-color-emoji acl
 
 bash /usr/local/share/openwork-desktop/configure-files.sh
-ln -sfn /workspace/files /home/openwork-browser/Uploads
-ln -sfn /workspace/out /home/openwork-browser/Outputs
-ln -sfn /workspace/out /home/openwork-browser/Downloads
+ln -sfn /workspace/files /home/openwork-app/Uploads
+ln -sfn /workspace/out /home/openwork-app/Outputs
+ln -sfn /workspace/out /home/openwork-app/Downloads
 # Prepare a normal persistent Blender profile without its first-run splash.
-env -i PATH=/usr/sbin:/usr/bin:/bin HOME=/home/openwork-browser LIBGL_ALWAYS_SOFTWARE=1 \
-  runuser -u openwork-browser -- blender --background --factory-startup --python-expr \
+env -i PATH=/usr/sbin:/usr/bin:/bin HOME=/home/openwork-app LIBGL_ALWAYS_SOFTWARE=1 \
+  runuser -u openwork-app -- blender --background --factory-startup --python-expr \
   'import bpy; bpy.context.preferences.view.show_splash = False; bpy.ops.wm.save_userpref(); s = bpy.context.scene; s.render.engine = "CYCLES"; s.cycles.device = "CPU"; s.cycles.use_denoising = False; bpy.ops.wm.save_homefile()'
 cat > /usr/local/bin/openwork-desktop-app <<'HELPER'
 #!/bin/sh

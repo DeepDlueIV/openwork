@@ -56,7 +56,7 @@ export function SessionDebugPanel(props: {
   const [dismissed, setDismissed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [bounds, setBounds] = useState(() => fitInViewport({
-    left: window.innerWidth - 396, top: window.innerHeight - 456, width: 380, height: 376,
+    left: window.innerWidth - 396, top: window.innerHeight - 416, width: 380, height: 336,
   }));
   const interaction = useRef<{ kind: "move" | "resize"; x: number; y: number; bounds: PanelBounds } | null>(null);
   const streamKey = workspaceSyncStreamKey({ workspaceId: props.workspaceId, baseUrl: props.opencodeBaseUrl });

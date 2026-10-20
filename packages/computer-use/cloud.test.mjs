@@ -68,8 +68,8 @@ async function fixture(t, applications) {
         requests.push(request);
         return { exitCode: 0, stderr: "", stdout: JSON.stringify(request.operation === "observe" ? {elements:[],capability:"unavailable"} : {completed:request.steps?.length ?? 0,attempted:true}) };
       }
-      if (command.includes("python3 -c")) return { exitCode: 0, stdout: "[]", stderr: "" };
       if (command.includes("identify -format")) return { exitCode: 0, stdout: "1280 800", stderr: "" };
+      if (command.includes("python3 -c")) return { exitCode: 0, stdout: "[]", stderr: "" };
       return { exitCode: 0, stdout: "done:0", stderr: "" };
     }, read: async () => new Uint8Array([137,80,78,71]),
   } });

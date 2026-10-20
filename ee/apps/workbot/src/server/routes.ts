@@ -186,7 +186,12 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     if (operation === "viewer" ? !viewer.success : !action.success) return c.json({ error: "invalid_request" }, 400)
     const workbot = workbotFor(member)
     const client = runnerClientFor(member)
+    const stillAllowed = async () => {
+      const fresh = await den.session(member.accessToken)
+      return fresh.enabled && fresh.computer && fresh.organization.id === member.den.organization.id && fresh.memberId === member.den.memberId
+    }
     try {
+      if (!await stillAllowed()) return c.json({ error: "feature_disabled" }, 403)
       let sessionId = await workbot.sessionIdOf(actorOf(member))
       const existing = await client.readSession(sessionId, { turns: 1, limit: 1, outputs: "none" })
       if (!existing.ok && existing.status === 404) sessionId = await workbot.ensureComputer(actorOf(member))
@@ -202,12 +207,12 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
         const result = await client.desktopViewer(sessionId, { ...body.data, origin: new URL(config.publicUrl).origin })
         if (!result.ok) return c.json({ error: "desktop_unavailable", message: "Your computer is unavailable. Try reconnecting." }, 409)
         // A cold VM may take longer than the membership cache: verify again before sharing its stream.
-        const fresh = await den.session(member.accessToken)
-        if (!fresh.enabled || !fresh.computer || fresh.organization.id !== member.den.organization.id || fresh.memberId !== member.den.memberId) return c.json({ error: "feature_disabled" }, 403)
+        if (!await stillAllowed()) return c.json({ error: "feature_disabled" }, 403)
         return c.json(result.value)
       }
       const body = action
       if (!body.success) return c.json({ error: "invalid_request" }, 400)
+      if (!await stillAllowed()) return c.json({ error: "feature_disabled" }, 403)
       if (body.data.action === "pause") await workbot.stop(actorOf(member))
       const result = await client.desktopAction(sessionId, body.data.action)
       return result.ok ? c.json({ ok: true }) : c.json({ error: "desktop_unavailable" }, 409)

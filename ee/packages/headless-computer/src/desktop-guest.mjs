@@ -1,8 +1,8 @@
 /** Private guest bridge. Bundled with the shared browser/computer implementation, never a provider credential. */
 import { createServer } from "node:http";
-import { connect } from "node:net";
+import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { WebSocketServer, WebSocket } from "ws";
 import { createCloudComputer } from "@openwork/computer-use/cloud";
 import { createDesktopApplications } from "./desktop-apps.mjs";
@@ -29,14 +29,7 @@ const authorized = request => {
   const expected = Buffer.from(`Bearer ${secret}`);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 };
-const listening = port => new Promise(resolve => {
-  const socket = connect({ host: "127.0.0.1", port });
-  socket.setTimeout(1000);
-  const done = ready => { socket.destroy(); resolve(ready); };
-  socket.once("connect", () => done(true));
-  socket.once("error", () => done(false));
-  socket.once("timeout", () => done(false));
-});
+const viewerScript = "/usr/local/share/openwork-desktop/vnc-stdio.py";
 const server = createServer(async (request, response) => {
   if (request.method !== "POST" || !authorized(request)) return json(response, 404, { error: "not_found" });
   try {
@@ -50,8 +43,8 @@ const server = createServer(async (request, response) => {
     until = Date.now() + 90_000;
     if (request.url === "/health") {
       const browser = await fetch("http://127.0.0.1:9222/json/version", { signal: AbortSignal.timeout(1500) }).then(async result => { await result.body?.cancel(); return result.ok; }).catch(() => false);
-      const ports = await Promise.all([5900, 5901, 5902, 5903].map(listening));
-      return json(response, browser && ports.every(Boolean) ? 200 : 503, { ok: browser && ports.every(Boolean), version: process.env.WORKBOT_DESKTOP_VERSION ?? "unknown" });
+      const viewer = await Promise.all([access(viewerScript), access(`${directory}/browser-window`)]).then(() => true, () => false);
+      return json(response, browser && viewer ? 200 : 503, { ok: browser && viewer, version: process.env.WORKBOT_DESKTOP_VERSION ?? "unknown" });
     }
     if (request.url === "/viewer") {
       if (!["browser", "computer"].includes(body.view) || typeof body.origin !== "string") return json(response, 400, { error: "invalid_view" });
@@ -88,20 +81,21 @@ server.on("upgrade", (request, socket, head) => {
   tickets.delete(token);
   if (!ticket || ticket.expiresAt <= Date.now() || request.headers.origin !== ticket.origin || sockets.size >= 4) return socket.destroy();
   websocket.handleUpgrade(request, socket, head, ws => {
-    // Read-only viewers use a separate x11vnc server that refuses input at the server, not only in noVNC.
-    const port = ticket.view === "browser" ? (ticket.control ? 5901 : 5903) : (ticket.control ? 5900 : 5902);
-    const tcp = connect({ host: "127.0.0.1", port });
+    // Private stdio cannot be pre-bound by the command account. The VNC
+    // process itself enforces view-only, independently of noVNC's controls.
+    const viewer = spawn("/usr/bin/python3", ["-I", viewerScript, ticket.view, ticket.control ? "control" : "view"], { stdio: ["pipe", "pipe", "ignore"] });
+    const transport = { destroy: () => { viewer.stdin.destroy(); viewer.stdout.destroy(); viewer.kill("SIGTERM"); } };
     sockets.add(ws);
-    transports.set(ws, tcp);
+    transports.set(ws, transport);
     const deadline = setTimeout(() => ws.close(1000, "Renew viewer access"), 60_000);
-    const close = () => { clearTimeout(deadline); sockets.delete(ws); transports.delete(ws); tcp.destroy(); ws.close(); };
-    tcp.on("data", data => { if (ws.readyState === WebSocket.OPEN) ws.send(data, { binary: true }); });
+    const close = () => { clearTimeout(deadline); sockets.delete(ws); transports.delete(ws); transport.destroy(); ws.close(); };
+    viewer.stdout.on("data", data => { if (ws.readyState === WebSocket.OPEN) ws.send(data, { binary: true }); });
     ws.on("message", (data, binary) => {
       if (!binary || Date.now() >= until) return close();
-      tcp.write(data);
-      if (tcp.writableLength > 2 * 1024 * 1024 || ws.bufferedAmount > 4 * 1024 * 1024) close();
+      viewer.stdin.write(data);
+      if (viewer.stdin.writableLength > 2 * 1024 * 1024 || ws.bufferedAmount > 4 * 1024 * 1024) close();
     });
-    tcp.on("error", close); tcp.on("close", close);
+    viewer.on("error", close); viewer.on("close", close); viewer.stdin.on("error", close); viewer.stdout.on("error", close);
     ws.on("error", close); ws.on("close", close);
   });
 });

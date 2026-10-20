@@ -41,8 +41,27 @@ function observePage(id, query = null) {
   // only whether a field is filled, unless the agent entered that exact value itself. In-page
   // staleness and verification checks read the real value (reveal).
   const entered = globalThis.__openworkAgentEntered ??= new WeakMap();
+  const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');
+  const withheld = new Set();
+  for (const element of candidates) {
+    const input = element instanceof HTMLInputElement, textarea = element instanceof HTMLTextAreaElement, select = element instanceof HTMLSelectElement;
+    const role = element.getAttribute("role");
+    if (!input && !textarea && !select && !element.isContentEditable && !["textbox", "combobox"].includes(role)) continue;
+    const value = input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "";
+    const autofill = (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
+    const sensitive = element.matches('input[type="password"]') || autofill.some(token => token === "one-time-code" || token.startsWith("cc-"));
+    if (value?.trim() && (sensitive || select || entered.get(element) !== value)) withheld.add(value);
+    if (select) for (const option of element.options) if (option.value?.trim()) withheld.add(option.value);
+  }
+  const privateValues = [...withheld].sort((a, b) => b.length - a.length);
+  const privatePattern = privateValues.length ? new RegExp(privateValues.map(value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g") : null;
+  const text = (value, limit = 200) => {
+    // Labels, referenced nodes, body text and titles can all echo a field's
+    // withheld content. Redact before truncation, throughout the observation.
+    const safe = privatePattern ? (value || "").replace(privatePattern, "[withheld]") : value || "";
+    return safe.trim().slice(0, limit);
+  };
   const describe = (element, reveal = false) => {
-    const text = (value, limit = 200) => (value || "").trim().slice(0, limit);
     const referenced = (attribute) => (element.getAttribute(attribute) || "").split(/\s+/)
       .map(id => document.getElementById(id)?.textContent || "").join(" ").trim();
     const labelText = (label) => {
@@ -57,6 +76,12 @@ function observePage(id, query = null) {
     const autofill = (element.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
     const sensitive = element.matches('input[type="password"]') || autofill.some(token => token === "one-time-code" || token.startsWith("cc-"));
     const role = element.getAttribute("role");
+    const field = input || textarea || select || element.isContentEditable || ["textbox", "combobox"].includes(role);
+    const value = field ? input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "" : "";
+    const name = referenced("aria-labelledby") || element.getAttribute("aria-label") ||
+      (input || textarea || select ? [...(element.labels || [])].map(labelText).join(" ") : "") ||
+      (input && ["submit", "button", "reset"].includes(element.type) ? element.value : "") ||
+      (!input && !textarea && !select ? element.innerText : "") || element.getAttribute("placeholder") || element.getAttribute("name") || "";
     /** @type {{ tag: string, role: string | null, name: string, disabled: boolean, sensitive: boolean, required: boolean, readOnly: boolean,
      * type?: string, value?: string, valueTruncated?: boolean, filled?: boolean, valueWithheld?: boolean, checked?: boolean | "mixed", expanded?: boolean, selected?: boolean,
      * multiple?: boolean, options?: { value: string, label: string, selected?: boolean, disabled: boolean }[], optionsTruncated?: boolean,
@@ -65,18 +90,14 @@ function observePage(id, query = null) {
       tag: element.tagName.toLowerCase(), role: role || (input ? ["checkbox", "radio"].includes(element.type) ? element.type : ["button", "submit", "reset"].includes(element.type) ? "button" : element.type === "search" ? "searchbox" : "textbox" :
         { BUTTON: "button", A: "link", TEXTAREA: "textbox", SELECT: "combobox", H1: "heading", H2: "heading", H3: "heading", H4: "heading", TR: "row", TABLE: "table" }[element.tagName]) ||
         (element.scrollHeight > element.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(element).overflowY) ? "region" : "text"),
-      name: text(referenced("aria-labelledby") || element.getAttribute("aria-label") ||
-        (input || textarea || select ? [...(element.labels || [])].map(labelText).join(" ") : "") ||
-        (input && ["submit", "button", "reset"].includes(element.type) ? element.value : "") ||
-        (!input && !textarea && !select ? element.innerText : "") || element.getAttribute("placeholder") || element.getAttribute("name")),
+      name: text(name),
       disabled: element.matches(":disabled") || element.getAttribute("aria-disabled") === "true" || !!element.closest("[inert]"),
       sensitive,
       required: element.required === true || element.getAttribute("aria-required") === "true",
       readOnly: element.readOnly === true || element.getAttribute("aria-readonly") === "true",
     };
     if (input) state.type = element.type;
-    if (!sensitive && (input || textarea || select || element.isContentEditable || ["textbox", "combobox"].includes(role))) {
-      const value = input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "";
+    if (!sensitive && field) {
       if (reveal || (!select && entered.get(element) === value)) { state.value = value.slice(0, 8000); state.valueTruncated = value.length > 8000; }
       else { state.filled = value.length > 0; state.valueWithheld = true; }
     }
@@ -103,7 +124,6 @@ function observePage(id, query = null) {
     if (description && !sensitive && !state.valueWithheld && !select) state.description = text(description, 1000);
     return state;
   };
-  const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');
   const scrollRegions = [];
   let scanned = 0, truncated = false;
   const snapshots = new Map();
@@ -118,7 +138,7 @@ function observePage(id, query = null) {
     if (!rect.width || !rect.height || style.visibility !== "visible" || style.display === "none") continue;
     const scrollable = element.scrollHeight > element.clientHeight + 4 && /auto|scroll/.test(style.overflowY);
     if (element.tagName === "DIV" && !element.hasAttribute("role") && !element.isContentEditable && !scrollable) continue;
-    if (scrollable) scrollRegions.push([element.getAttribute("aria-label") || element.id, element.scrollTop, element.scrollHeight, element.clientHeight]);
+    if (scrollable) scrollRegions.push([text(element.getAttribute("aria-label") || element.id), element.scrollTop, element.scrollHeight, element.clientHeight]);
     const ref = `e${elements.length + 1}`;
     const control = describe(element);
     if (query) {
@@ -138,7 +158,7 @@ function observePage(id, query = null) {
   const observation = { id, nodes, bounds: new Map(elements.map(({ ref, bounds }) => [ref, bounds])), activeElement: document.activeElement,
     used: false, createdAt: performance.now(), describe, optionRef, snapshots, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };
   globalThis[key] = observation;
-  return { truncated, scrollRegions, title: document.title.slice(0, 300), text: (document.body?.innerText || "").slice(0, 16000), elements,
+  return { truncated, scrollRegions, title: text(document.title, 300), text: text(document.body?.innerText, 16000), elements,
     viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...document.querySelectorAll('input[type="password"],input[autocomplete="one-time-code"]')].some((element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; }),
     webmcp: "modelContext" in document ? "available" : "check_site_tools",
     limitations: ["DOM references cover the top document and open controls; use a fresh image for frames or canvas."] };

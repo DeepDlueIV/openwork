@@ -1,9 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { execFile } from "node:child_process";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import { createX11Driver } from "@openwork/computer-use/computer-x11-driver";
 import { createRemoteComputerAdapter } from "@openwork/computer-use/computer-remote";
 
 const payload = (result) => JSON.parse(result.content.find((item) => item.type === "text").text);
+
+test("X11 screenshots are private from their first write under a permissive umask", async t => {
+  const bin = await mkdtemp(join(tmpdir(), "computer-capture-test-"));
+  t.after(() => rm(bin, { recursive: true, force: true }));
+  await writeFile(join(bin, "import"), '#!/usr/bin/env python3\nimport pathlib,sys\np=pathlib.Path(sys.argv[-1].removeprefix("png:"))\np.write_bytes(b"private pixels")\nassert p.stat().st_mode & 0o777 == 0o600\nassert p.parent.stat().st_mode & 0o777 == 0o700\n');
+  await writeFile(join(bin, "identify"), '#!/bin/sh\nprintf "100 80"\n');
+  await Promise.all([chmod(join(bin, "import"), 0o700), chmod(join(bin, "identify"), 0o700)]);
+  const execute = promisify(execFile);
+  const driver = createX11Driver({ machine: {
+    run: async (command, timeoutMs) => {
+      const result = await execute("/bin/sh", ["-c", `umask 022; ${command}`], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, timeout: timeoutMs });
+      return { exitCode: 0, stdout: result.stdout, stderr: result.stderr };
+    },
+    read: async file => {
+      t.after(() => rm(dirname(file), { recursive: true, force: true }));
+      assert.equal((await stat(dirname(file))).mode & 0o777, 0o700);
+      assert.equal((await stat(file)).mode & 0o777, 0o600);
+      return readFile(file);
+    },
+  } });
+  const screenshot = await driver.screenshot({ x: 0, y: 0, width: 100, height: 80 });
+  assert.equal(Buffer.from(screenshot.png).toString(), "private pixels");
+});
 const deferred = () => {
   let resolve = () => {};
   const promise = new Promise((done) => { resolve = () => done(undefined); });

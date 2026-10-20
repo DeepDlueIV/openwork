@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import vm from "node:vm";
+import { runComputerProgram } from "@openwork/computer-use/runtime";
 import { createBrowserTaskHost } from "./browser-task.mjs";
 
 test("select options keep backing identities private and revalidate before choosing", async () => {
@@ -54,4 +55,16 @@ test("select options keep backing identities private and revalidate before choos
   options[0].value = "different-private-identity";
   assert.equal((await act(stale, personal)).code, "stale_observation");
   assert.equal(select.value, "private-account-002");
+  let inputChecks = 0;
+  const resizingHost = createBrowserTaskHost({ getTab: () => tab, tabsFor: () => [tab], ownerOf: () => "chat", activeFor: () => "tab",
+    enabled: () => true, allowed: async () => true, changed: () => {}, isVisible: () => true,
+    beforeInput: async () => { if (++inputChecks === 1) context.innerWidth = 900; } });
+  const program = await runComputerProgram({ surface: "browser", code: 'return await tools.ui.select({target:{name:"Account"},option:"Personal"});' }, {
+    computer: async () => { throw new Error("Wrong surface"); },
+    browser: (operation, args, signal) => resizingHost.request({ sessionId: "chat", operation, args }, { signal }),
+  }, new AbortController().signal);
+  assert.equal(program.ok, true, JSON.stringify(program));
+  assert.equal(select.value, "different-private-identity");
+  assert.equal(inputChecks, 2);
+  assert.ok(!JSON.stringify(program).includes("private-identity"));
 });

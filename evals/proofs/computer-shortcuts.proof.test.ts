@@ -45,7 +45,7 @@ test("an agent fills a report, finds a project and saves once in one UI program"
       return {saved:true,project:60,initiallyOffscreen};
     `;
     const result = resultSchema.parse(await agent.computerProgram({ sessionId: world.session.sessionId, surface: "browser", code }));
-    expect(result.ok).toBe(true);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
     expect(result.value).toEqual({ saved: true, project: 60, initiallyOffscreen: true });
     const saved = await probe.eventually(witness, { within: 10_000, until: value => value.records.length === 1, label: "the requested report reaches the site exactly once" });
     expect(saved.inputValue).toBe("Weekly release notes");

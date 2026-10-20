@@ -44,6 +44,7 @@ function observePage(id, query = null) {
   const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');
   const withheld = new Set();
   for (const element of candidates) {
+    if (!(element instanceof HTMLElement)) continue;
     const input = element instanceof HTMLInputElement, textarea = element instanceof HTMLTextAreaElement, select = element instanceof HTMLSelectElement;
     const role = element.getAttribute("role");
     if (!input && !textarea && !select && !element.isContentEditable && !["textbox", "combobox"].includes(role)) continue;

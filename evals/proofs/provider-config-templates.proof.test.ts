@@ -31,8 +31,8 @@ test("a member's environment and file configured providers answer on V2 without 
     expect(JSON.stringify(status)).not.toContain("synthetic-process-private");
     expect(JSON.stringify(status)).not.toContain("synthetic-private-file");
     expect(JSON.stringify(status)).not.toContain("synthetic-unrelated-private");
-    for (const id of world.remoteBlocked) expect(status.skippedProviderIds).toContain(id);
-    evidence.recordAssertionEvidence("Missing references are actionable and remote definitions cannot export process values or files", String(status.lastError), !JSON.stringify(status).includes(world.key) && String(status.lastError).includes("MISSING_PROVIDER_ENDPOINT"));
+    for (const id of world.blocked) expect(status.skippedProviderIds).toContain(id);
+    evidence.recordAssertionEvidence("Missing references are actionable and remote or collaborator definitions cannot export host secrets", String(status.lastError), !JSON.stringify(status).includes(world.key) && String(status.lastError).includes("MISSING_PROVIDER_ENDPOINT"));
   });
   await step("environment and relative-file endpoints appear in the real model catalog", async () => {
     const catalog = await world.catalog();
@@ -41,7 +41,7 @@ test("a member's environment and file configured providers answer on V2 without 
       expect(rows).toEqual(expect.arrayContaining([expect.objectContaining({ providerID: providerId, id: world.model })]));
     }
     expect(JSON.stringify(catalog)).not.toContain("fixture-missing");
-    for (const id of world.remoteBlocked) expect(JSON.stringify(catalog)).not.toContain(id);
+    for (const id of world.blocked) expect(JSON.stringify(catalog)).not.toContain(id);
     evidence.recordAssertionEvidence("Each working provider has its own native model", world.ids.join(", ") + "; missing-variable provider absent", rows.length >= world.ids.length && !JSON.stringify(catalog).includes("fixture-missing"));
   });
   for (const id of world.legacyIds) {

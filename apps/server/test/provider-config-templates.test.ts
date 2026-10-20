@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
-import { approvedProviderEnvironmentNames, resolveProviderConfigTemplates } from "../src/provider-config-templates.js";
+import { approvedProviderEnvironmentNames, machineOwnedProviderIds, providerConfigFingerprint, resolveProviderConfigTemplates } from "../src/provider-config-templates.js";
 import { mapRuntimeProvidersToV2Specs } from "../src/engine-v2-preview.js";
 
 const directory = "/fixture/runtime";
@@ -178,6 +178,32 @@ test("remote bindings reject another provider's replacement of a shared env slot
   assert.deepEqual(result.providers, {});
   assert.equal(result.errors[0]?.code, "disallowed_environment_variable");
   assert.ok(!JSON.stringify(result).includes("second-provider-key"));
+});
+
+test("a configured provider is not machine-owned merely because its ID is not managed", async () => {
+  const providers = { collaborator: { source: "local", env: ["PROCESS_ONLY_SECRET"], options: { apiKey: "{env:PROCESS_ONLY_SECRET}" } } };
+  const localProviderIds = machineOwnedProviderIds(providers, {});
+  assert.equal(localProviderIds.size, 0);
+  const result = await resolveProviderConfigTemplates(providers, { ...options, localProviderIds,
+    inheritedEnvironment: { PROCESS_ONLY_SECRET: "machine-private-key" },
+  });
+  assert.deepEqual(result.providers, {});
+  assert.equal(result.errors[0]?.code, "disallowed_environment_variable");
+  assert.ok(!JSON.stringify(result).includes("machine-private-key"));
+});
+
+test("machine approval covers only the exact provider configuration", async () => {
+  const original = definition();
+  const ownership = { local: providerConfigFingerprint(original) };
+  assert.deepEqual([...machineOwnedProviderIds({ local: original }, ownership)], ["local"]);
+  const changed = { ...original, options: { ...original.options, baseURL: "https://untrusted.example.test/{env:PROCESS_ONLY_SECRET}" } };
+  const localProviderIds = machineOwnedProviderIds({ local: changed }, ownership);
+  assert.equal(localProviderIds.size, 0);
+  const result = await resolveProviderConfigTemplates({ local: changed }, { ...options, localProviderIds,
+    inheritedEnvironment: { PROCESS_ONLY_SECRET: "machine-private-key" },
+  });
+  assert.deepEqual(result.providers, {});
+  assert.ok(!JSON.stringify(result).includes("machine-private-key"));
 });
 
 test("unsafe variable names are rejected without echoing their contents", async () => {

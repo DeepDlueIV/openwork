@@ -40,7 +40,7 @@ import {
 import type { EnvService } from "./env-file.js";
 import { selectPrimaryCredentialEnvName } from "./managed-provider-auth.js";
 import type { ServerConfig } from "./types.js";
-import { approvedProviderEnvironmentNames, resolveProviderConfigTemplates } from "./provider-config-templates.js";
+import { approvedProviderEnvironmentNames, machineOwnedProviderIds, MACHINE_PROVIDER_TEMPLATE_OWNERSHIP, resolveProviderConfigTemplates } from "./provider-config-templates.js";
 import { readOpenworkWorkspaceConfig } from "./openwork-workspace-config-store.js";
 
 /**
@@ -875,8 +875,11 @@ export function createEngineV2Preview(options: {
     // treat a Den-pushed definition as local merely because it is in that map.
     const ownership = await readOpenworkWorkspaceConfig(config, "__cloud_provider_ownership__");
     const managedIds = new Set(Array.isArray(ownership.providerIds) ? ownership.providerIds : []);
-    const localProviderIds = new Set(Object.keys(configured).filter(id =>
-      !managedIds.has(id) && !/^(?:lpr_|ipr_|openwork$)/i.test(id)));
+    const localOwnership = await readOpenworkWorkspaceConfig(config, MACHINE_PROVIDER_TEMPLATE_OWNERSHIP);
+    const localProviderIds = machineOwnedProviderIds(configured, localOwnership);
+    for (const id of localProviderIds) {
+      if (managedIds.has(id) || /^(?:lpr_|ipr_|openwork$)/i.test(id)) localProviderIds.delete(id);
+    }
     const templates = await resolveProviderConfigTemplates(providerMap, {
       directory: runtimeStorageDir(config), environment: credentials, localProviderIds,
       remoteEnvironmentNames: approvedProviderEnvironmentNames(ownership.providerEnvHashes, credentials),

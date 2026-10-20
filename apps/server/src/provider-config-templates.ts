@@ -10,6 +10,23 @@ export interface ProviderConfigTemplateError {
   message: string;
 }
 
+export const MACHINE_PROVIDER_TEMPLATE_OWNERSHIP = "__machine_provider_template_ownership__";
+
+/** The approval covers the exact definition, not just its reusable provider ID. */
+export function providerConfigFingerprint(value: unknown): string {
+  const stable = (entry: unknown): unknown => {
+    if (Array.isArray(entry)) return entry.map(stable);
+    if (entry === null || typeof entry !== "object") return entry;
+    return Object.fromEntries(Object.entries(entry).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, stable(child)]));
+  };
+  return createHash("sha256").update(JSON.stringify(stable(value)) ?? "null").digest("hex");
+}
+
+export function machineOwnedProviderIds(providers: Record<string, unknown>, ownership: Record<string, unknown>): Set<string> {
+  return new Set(Object.entries(providers).filter(([id, provider]) =>
+    typeof ownership[id] === "string" && ownership[id] === providerConfigFingerprint(provider)).map(([id]) => id));
+}
+
 /** Only the value delivered by this provider is an approved remote binding.
  * A reused env name must not expose another provider's later replacement key. */
 export function approvedProviderEnvironmentNames(

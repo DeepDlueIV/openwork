@@ -78,9 +78,9 @@ export async function providerConfigTemplates(seed: Seed) {
     managed = await bootManagedOpenworkServer({ scratch, workspace, token, sink: () => undefined,
       env: { OPENWORK_ENGINE_V2_PREVIEW: "chat", OPENWORK_DISABLE_FREE_INFERENCE: "1", PROCESS_ONLY_PROVIDER_SECRET: "synthetic-process-private",
         ...(process.env.OPENWORK_TEST_OPENCODE2 ? { OPENWORK_OPENCODE2_BIN: process.env.OPENWORK_TEST_OPENCODE2 } : {}) } });
-    const call = async (path: string, method = "GET", body?: unknown) => {
+    const call = async (path: string, method = "GET", body?: unknown, host = true) => {
       const response = await fetch(`${managed?.base}${path}`, { method,
-        headers: { authorization: `Bearer ${token}`, "x-openwork-host-token": `${token}-host`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${token}`, ...(host ? { "x-openwork-host-token": `${token}-host` } : {}), "content-type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(90_000) });
       const text = await response.text();
       if (!response.ok) throw new Error(`Provider fixture ${method} ${path}: HTTP ${response.status}`);
@@ -106,6 +106,7 @@ export async function providerConfigTemplates(seed: Seed) {
       models: { [model]: { name: "Local model", tool_call: true, limit: { context: 32000, output: 1024 } } } });
     const patch = await call("/runtime-config/providers", "PATCH", { provider: {
       "fixture-env": local({ baseURL: "{env:TEMPLATE_PROVIDER_URL}", apiKey: "{env:TEMPLATE_PROVIDER_API_KEY}" }),
+      "fixture-mutated": local({ baseURL: `${origin}/v1`, apiKey: "{env:TEMPLATE_PROVIDER_API_KEY}" }),
       "fixture-missing": local({ baseURL: "{env:MISSING_PROVIDER_ENDPOINT}", apiKey: "{env:TEMPLATE_PROVIDER_API_KEY}" }),
     } });
     if (typeof patch.runtimeConfigPath !== "string") throw new Error("Missing runtime config path");
@@ -115,6 +116,13 @@ export async function providerConfigTemplates(seed: Seed) {
     await call("/runtime-config/providers", "PATCH", { provider: {
       "fixture-file": local({ baseURL: "{file:fixture-endpoint}", apiKey: "{file:fixture-key}" }),
     } });
+    // This collaborator-capable route can change global providers but must not
+    // grant machine ownership, including when it reuses an approved local ID.
+    const untrusted = local({ baseURL: `${origin}/v1/{env:PROCESS_ONLY_PROVIDER_SECRET}`, apiKey: "{env:TEMPLATE_PROVIDER_API_KEY}" });
+    await call(`/workspace/${managed.workspaceId}/config`, "PATCH", { opencode: { provider: {
+      "fixture-collaborator": untrusted, "fixture-mutated": untrusted,
+    } } }, false);
+    const blocked = [...remoteBlocked, "fixture-collaborator", "fixture-mutated"];
     const mount = `/workspace/${managed.workspaceId}/opencode2/api`;
     const ids = ["fixture-env", "fixture-file", "lpr_fixture_remote-stored", ...legacy().map(p => p.id)];
     const deadline = Date.now() + 90_000;
@@ -126,7 +134,7 @@ export async function providerConfigTemplates(seed: Seed) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     return {
-      ids, model, answer, key, remoteBlocked, legacyIds: legacy().map(provider => provider.id),
+      ids, model, answer, key, blocked, legacyIds: legacy().map(provider => provider.id),
       status: () => call("/experimental/engine-v2-preview/status"),
       catalog: () => call(`${mount}/model`),
       async chat(providerId: string) {

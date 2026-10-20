@@ -14,7 +14,20 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
   esac
 done
 
-node .github/scripts/warden-fast.mjs local
+# Run the reviewer from origin/dev, not from the branch being pushed, so a
+# branch can't change the code that handles your key.
+ref=origin/dev
+if ! git cat-file -e "$ref:.github/scripts/warden-fast.mjs" 2>/dev/null; then
+  echo "Warden quick review skipped: $ref doesn't have it yet."
+  exit 0
+fi
+tmp="$(mktemp -d)" || exit 0
+trap 'rm -rf "$tmp"' EXIT
+for file in warden-fast.mjs contributor-screen.mjs contributor-policy.mjs; do
+  git show "$ref:.github/scripts/$file" > "$tmp/$file" || exit 0
+done
+
+node "$tmp/warden-fast.mjs" local
 status=$?
 if [ "$status" -eq 1 ]; then
   echo "Push stopped: fix the findings above, or push anyway with git push --no-verify." >&2

@@ -16,8 +16,9 @@
 // was resolved inside it.
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseWardenJsonl, safe } from "./contributor-screen.mjs";
 
@@ -115,7 +116,7 @@ export function quickConfig(policy, files) {
 
 // --- Findings ---------------------------------------------------------------------
 
-const cleanText = (value, limit) => typeof value === "string" ? value.slice(0, limit) : "";
+const cleanText = (value, limit) => typeof value === "string" ? redact(value).slice(0, limit) : "";
 
 /** Security findings in the shared artifact shape, from a Warden JSONL parse. */
 export function securityFrom(parsed) {
@@ -149,8 +150,19 @@ export function validBaseline(artifact, run, expected) {
 
 // --- Rendering --------------------------------------------------------------------
 
+// Model text can be steered by the diff it reviews; never let it publish a
+// credential-shaped string. Same patterns as contributor-screen.mjs `safe`.
+export const redact = (value) => String(value).replace(/\b(sk|rk|pk)-[A-Za-z0-9_-]{16,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bAKIA[0-9A-Z]{16}\b|\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[redacted]");
+
+/** The environment Warden's agent sees: nothing that reaches GitHub. */
+export function wardenEnvironment(env) {
+  const out = { ...env };
+  for (const name of ["GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"]) delete out[name];
+  return out;
+}
+
 // GitHub workflow command escaping for annotation values and properties.
-const commandData = (value) => String(value).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+const commandData = (value) => redact(value).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 const commandProperty = (value) => commandData(value).replace(/:/g, "%3A").replace(/,/g, "%2C");
 
 /** Inline annotations on the PR diff; GitHub shows at most 10 warnings/errors per step. */
@@ -281,7 +293,7 @@ async function ci(env) {
   let parsed = { complete: true, findings: [] };
   if (plan.mode === "partial") {
     parsed = runWarden({ cwd, wardenBin: env.WARDEN_BIN, policy: readFileSync(env.POLICY_PATH, "utf8"), files: plan.moved,
-      base: mergeBase(cwd, env.BASE_SHA, env.HEAD_SHA), head: env.HEAD_SHA, env: process.env, outDir: env.OUT_DIR });
+      base: mergeBase(cwd, env.BASE_SHA, env.HEAD_SHA), head: env.HEAD_SHA, env: wardenEnvironment(process.env), outDir: env.OUT_DIR });
   }
   // If the re-review didn't finish, keep the earlier findings for the files it covered.
   const findings = mergeFindings(baseline.data.findings, securityFrom(parsed), parsed.complete ? plan : { moved: [], removed: plan.removed });
@@ -300,6 +312,11 @@ async function ci(env) {
 
 // --- Local ------------------------------------------------------------------------
 
+// The review's instructions never come from the branch under review: a branch
+// could otherwise rewrite the skills, or point the model catalog in
+// .warden/pi at another server and capture your key.
+const TRUSTED_POLICY = ["warden.toml", ".warden/skills", ".warden/pi"];
+
 /** Hash of the review policy, so a policy or skill change starts a fresh local review. */
 export function policyHash(root) {
   const hash = createHash("sha256");
@@ -315,6 +332,29 @@ export function policyHash(root) {
   if (existsSync(skills)) walk(skills);
   for (const file of files) hash.update(`${file}\0${readFileSync(join(root, file))}\0`);
   return hash.digest("hex");
+}
+
+/**
+ * A worktree of `head` with no files checked out except the review policy,
+ * skills and model catalog copied from `ref`. Warden reads the change under
+ * review from git objects and its instructions only from these copies.
+ */
+export function trustedWorkspace(root, ref, head) {
+  const files = git(root, ["ls-tree", "-r", "-z", "--name-only", ref, "--", ...TRUSTED_POLICY]).split("\0").filter(Boolean);
+  if (!files.includes("warden.toml")) throw new Error(`${ref} has no warden.toml`);
+  const dir = mkdtempSync(join(tmpdir(), "warden-quick-"));
+  git(root, ["worktree", "add", "--quiet", "--no-checkout", "--detach", dir, head]);
+  for (const file of files) {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), execFileSync("git", ["show", `${ref}:${file}`], { cwd: root, maxBuffer: 64 * 1024 * 1024 }));
+  }
+  return {
+    dir,
+    cleanup() {
+      spawnSync("git", ["worktree", "remove", "--force", dir], { cwd: root });
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
 }
 
 function localState(root) {
@@ -342,43 +382,48 @@ async function local(args, env) {
   if (!Object.keys(current).length) { console.log("Warden quick review: no changes against dev."); return 0; }
 
   const state = localState(root);
-  const policy = policyHash(root);
-  let saved = null;
-  if (!args.includes("--full") && existsSync(state.file)) {
-    try { saved = JSON.parse(readFileSync(state.file, "utf8")); } catch { saved = null; }
-    if (saved?.policy !== policy) saved = null;
-  }
-  // Locally every PR size benefits: there is no full review running in parallel.
-  const plan = planReview(saved?.fingerprints ?? null, current, { minFiles: 0, maxShare: 1 });
-  const files = plan.mode === "no-baseline" ? Object.keys(current).sort() : plan.moved;
-  if (plan.mode === "unsupported-path") { console.error("Warden quick review: a changed file name can't be filtered; run pnpm warden:check."); return 2; }
+  const workspace = trustedWorkspace(root, upstream, head);
+  try {
+    const policy = policyHash(workspace.dir);
+    let saved = null;
+    if (!args.includes("--full") && existsSync(state.file)) {
+      try { saved = JSON.parse(readFileSync(state.file, "utf8")); } catch { saved = null; }
+      if (saved?.policy !== policy) saved = null;
+    }
+    // Locally every PR size benefits: there is no full review running in parallel.
+    const plan = planReview(saved?.fingerprints ?? null, current, { minFiles: 0, maxShare: 1 });
+    const files = plan.mode === "no-baseline" ? Object.keys(current).sort() : plan.moved;
+    if (plan.mode === "unsupported-path") { console.error("Warden quick review: a changed file name can't be filtered; run pnpm warden:check."); return 2; }
 
-  let parsed = { complete: true, findings: [] };
-  if (files.length) {
-    console.log(`Warden quick review: reviewing ${files.length} of ${Object.keys(current).length} changed files${saved ? " that moved since your last review" : ""}.`);
-    mkdirSync(state.dir, { recursive: true });
-    parsed = runWarden({ cwd: root, wardenBin: env.WARDEN_BIN, policy: readFileSync(join(root, "warden.toml"), "utf8"), files, base, head,
-      env: { ...process.env, WARDEN_OPENAI_API_KEY: key, PI_CODING_AGENT_DIR: join(root, ".warden", "pi") }, outDir: state.dir });
-  } else console.log("Warden quick review: nothing moved since your last review.");
+    let parsed = { complete: true, findings: [] };
+    if (files.length) {
+      console.log(`Warden quick review: reviewing ${files.length} of ${Object.keys(current).length} changed files${saved ? " that moved since your last review" : ""}, with the policy from ${upstream}.`);
+      mkdirSync(state.dir, { recursive: true });
+      parsed = runWarden({ cwd: workspace.dir, wardenBin: env.WARDEN_BIN, policy: readFileSync(join(workspace.dir, "warden.toml"), "utf8"), files, base, head,
+        env: { ...wardenEnvironment(process.env), WARDEN_OPENAI_API_KEY: key, PI_CODING_AGENT_DIR: join(workspace.dir, ".warden", "pi") }, outDir: state.dir });
+    } else console.log("Warden quick review: nothing moved since your last review.");
 
-  // Locally, confidentiality findings stay on your machine, so they carry over too.
-  const fresh = parsed.findings.map((finding) => ({
-    skill: finding.skill, severity: finding.severity, title: cleanText(finding.title, 300), description: cleanText(finding.description, 2000),
-    path: typeof finding.location?.path === "string" ? finding.location.path : null,
-    line: Number.isSafeInteger(finding.location?.startLine) ? finding.location.startLine : null,
-  }));
-  const reviewedPlan = plan.mode === "no-baseline" ? { moved: files, removed: [] } : plan;
-  const findings = mergeFindings(saved?.findings ?? [], fresh, parsed.complete ? reviewedPlan : { moved: [], removed: reviewedPlan.removed });
-  for (const finding of findings) {
-    console.log(`\n[${finding.severity}] ${finding.skill === "confidentiality-review" ? "confidentiality: " : ""}${finding.title}`);
-    if (finding.path) console.log(`  ${finding.path}${finding.line ? `:${finding.line}` : ""}${finding.source === "carried" ? " (from your last review)" : ""}`);
-    console.log(`  ${finding.description.replace(/\n/g, "\n  ")}`);
+    // Locally, confidentiality findings stay on your machine, so they carry over too.
+    const fresh = parsed.findings.map((finding) => ({
+      skill: finding.skill, severity: finding.severity, title: cleanText(finding.title, 300), description: cleanText(finding.description, 2000),
+      path: typeof finding.location?.path === "string" ? finding.location.path : null,
+      line: Number.isSafeInteger(finding.location?.startLine) ? finding.location.startLine : null,
+    }));
+    const reviewedPlan = plan.mode === "no-baseline" ? { moved: files, removed: [] } : plan;
+    const findings = mergeFindings(saved?.findings ?? [], fresh, parsed.complete ? reviewedPlan : { moved: [], removed: reviewedPlan.removed });
+    for (const finding of findings) {
+      console.log(`\n[${finding.severity}] ${finding.skill === "confidentiality-review" ? "confidentiality: " : ""}${finding.title}`);
+      if (finding.path) console.log(`  ${finding.path}${finding.line ? `:${finding.line}` : ""}${finding.source === "carried" ? " (from your last review)" : ""}`);
+      console.log(`  ${finding.description.replace(/\n/g, "\n  ")}`);
+    }
+    if (!parsed.complete) { console.error(`\nWarden quick review incomplete (${parsed.reason}); nothing saved.`); return 2; }
+    writeFileSync(state.file, `${JSON.stringify({ head, policy, fingerprints: current, findings: findings.map(({ source, ...finding }) => finding) }, null, 2)}\n`);
+    const serious = findings.filter(blocking).length;
+    console.log(serious ? `\nWarden quick review: ${serious} finding(s) CI's Warden would block on.` : "\nWarden quick review: no high or medium security or confidentiality findings.");
+    return serious ? 1 : 0;
+  } finally {
+    workspace.cleanup();
   }
-  if (!parsed.complete) { console.error(`\nWarden quick review incomplete (${parsed.reason}); nothing saved.`); return 2; }
-  writeFileSync(state.file, `${JSON.stringify({ head, policy, fingerprints: current, findings: findings.map(({ source, ...finding }) => finding) }, null, 2)}\n`);
-  const serious = findings.filter(blocking).length;
-  console.log(serious ? `\nWarden quick review: ${serious} finding(s) CI's Warden would block on.` : "\nWarden quick review: no high or medium security or confidentiality findings.");
-  return serious ? 1 : 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

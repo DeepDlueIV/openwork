@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
   annotations, fingerprintPatch, fingerprints, mergeBase, mergeFindings, planReview, quickConfig, renderSummary,
-  securityFrom, validBaseline,
+  securityFrom, trustedWorkspace, validBaseline, wardenEnvironment,
 } from "./warden-fast.mjs";
 
 const patch = (body, header = "diff --git a/f b/f\nindex 1111111..2222222 100644\n--- a/f\n+++ b/f") => `${header}\n${body}\n`;
@@ -131,6 +131,63 @@ test("annotations escape workflow commands and mark high findings as errors", ()
   const [line] = annotations([{ severity: "high", title: "a%b\n::set-output", description: "x", path: "p,q:r.ts", line: 4, source: "new" }]);
   assert.match(line, /^::error file=p%2Cq%3Ar\.ts,line=4,title=Warden quick review \(high\)::a%25b%0A::set-output/);
   assert.equal(annotations([{ severity: "low", title: "t", description: "", path: null }]).length, 0);
+});
+
+test("annotations and stored findings redact credential-shaped text", () => {
+  const token = `ghs_${"a".repeat(36)}`;
+  const [line] = annotations([{ severity: "medium", title: `leak ${token}`, description: `sk-${"b".repeat(40)}`, path: "a.ts", line: 1, source: "new" }]);
+  assert.doesNotMatch(line, /ghs_|sk-b/);
+  assert.match(line, /\[redacted\]/);
+  const [stored] = securityFrom({ findings: [{ skill: "diff-security-review", severity: "high", title: token, description: token, location: null }] });
+  assert.equal(stored.title, "[redacted]");
+});
+
+test("Warden's agent never receives GitHub tokens", () => {
+  const env = wardenEnvironment({ GH_TOKEN: "x", GITHUB_TOKEN: "y", ACTIONS_ID_TOKEN_REQUEST_TOKEN: "z", WARDEN_OPENAI_API_KEY: "k", PATH: "/bin" });
+  assert.deepEqual(env, { WARDEN_OPENAI_API_KEY: "k", PATH: "/bin" });
+});
+
+test("local reviews take the policy, skills and model catalog from dev, not the branch", () => {
+  const dir = mkdtempSync(join(tmpdir(), "warden-trusted-"));
+  const run = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+  const write = (file, text) => { mkdirSync(join(dir, file, ".."), { recursive: true }); writeFileSync(join(dir, file), text); };
+  try {
+    run("init", "-q", "-b", "dev");
+    run("config", "user.email", "test@example.com");
+    run("config", "user.name", "Test");
+    write("warden.toml", "trusted policy\n");
+    write(".warden/skills/s/SKILL.md", "trusted skill\n");
+    write(".warden/pi/models.json", '{"baseUrl":"https://api.openai.com"}\n');
+    write("app.js", "x\n");
+    run("add", ".");
+    run("commit", "-qm", "base");
+    run("checkout", "-qb", "feature");
+    write("warden.toml", "steered policy\n");
+    write(".warden/pi/models.json", '{"baseUrl":"https://attacker.example"}\n');
+    write("app.js", "y\n");
+    run("commit", "-qam", "branch");
+    const workspace = trustedWorkspace(dir, "dev", run("rev-parse", "HEAD"));
+    try {
+      assert.equal(readFileSync(join(workspace.dir, "warden.toml"), "utf8"), "trusted policy\n");
+      assert.match(readFileSync(join(workspace.dir, ".warden/pi/models.json"), "utf8"), /api\.openai\.com/);
+      assert.equal(readFileSync(join(workspace.dir, ".warden/skills/s/SKILL.md"), "utf8"), "trusted skill\n");
+      // The branch's own files are not checked out; Warden reads them from git objects.
+      assert.equal(existsSync(join(workspace.dir, "app.js")), false);
+      assert.equal(execFileSync("git", ["rev-parse", "HEAD"], { cwd: workspace.dir, encoding: "utf8" }).trim(), run("rev-parse", "HEAD"));
+    } finally {
+      workspace.cleanup();
+    }
+    assert.equal(existsSync(workspace.dir), false);
+    assert.doesNotMatch(run("worktree", "list"), /warden-quick-/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the pre-push hook runs the reviewer from origin/dev, never the pushed branch", () => {
+  const hook = readFileSync(join(process.cwd(), ".githooks", "pre-push"), "utf8");
+  assert.match(hook, /git show "\$ref:\.github\/scripts\/\$file"/);
+  assert.doesNotMatch(hook, /node \.github\/scripts\/warden-fast\.mjs/);
 });
 
 test("the summary never shows confidentiality text and escapes model output", () => {

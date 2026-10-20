@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openbox xdotool x11vnc util-linux dbus-x11 iptables \
     && usermod -l ubuntu -d /home/ubuntu -m node && groupmod -n ubuntu node \
     && useradd --create-home --shell /bin/sh openwork-browser \
+    && useradd --create-home --shell /bin/sh openwork-app \
     && useradd --create-home --shell /bin/bash openwork-command \
     && printf 'ubuntu ALL=(root) NOPASSWD: /usr/local/sbin/openwork-desktop-bridge\n' > /etc/sudoers.d/ubuntu
 COPY ee/packages/headless-computer/src/image.ts /tmp/openwork-computer-image.ts

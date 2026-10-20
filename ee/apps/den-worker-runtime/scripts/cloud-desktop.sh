@@ -20,14 +20,28 @@ as_browser() {
     USER=openwork-browser LOGNAME=openwork-browser LANG=C.UTF-8 \
     DISPLAY="$display" XAUTHORITY="$XAUTHORITY" LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe runuser -u openwork-browser -- "$@"
 }
-# Agent-driven pages and desktop apps must not reach this VM's worker, other
-# private-network hosts or cloud metadata. Only new connections from the
-# desktop user are refused; replies on the worker's CDP and VNC links remain.
+as_app() {
+  env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/openwork-app \
+    USER=openwork-app LOGNAME=openwork-app LANG=C.UTF-8 \
+    DISPLAY="$display" XAUTHORITY=/home/openwork-app/.Xauthority LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe runuser -u openwork-app -- "$@"
+}
+# Agent-driven pages cannot reach private networks. Native apps cannot open
+# network connections at all; the browser's CDP and VNC replies still work.
 guard_desktop_egress() {
   uid=$(id -u openwork-browser)
   tools=iptables
   if command -v ip6tables >/dev/null && ip6tables -w -S OUTPUT >/dev/null 2>&1; then tools="iptables ip6tables"; fi
+  if id openwork-app >/dev/null 2>&1 && [ -s /proc/net/if_inet6 ]; then
+    case " $tools " in *" ip6tables "*) ;; *) echo "The app network guard needs IPv6 filtering" >&2; exit 1 ;; esac
+  fi
   for tool in $tools; do
+    # Native app code (including Blender Python and visible terminals) has no
+    # network access. Its Unix-domain app bridges and X display still work.
+    if id openwork-app >/dev/null 2>&1; then
+      app_uid=$(id -u openwork-app)
+      "$tool" -w -C OUTPUT -m owner --uid-owner "$app_uid" -j REJECT 2>/dev/null \
+        || "$tool" -w -I OUTPUT 1 -m owner --uid-owner "$app_uid" -j REJECT
+    fi
     "$tool" -w -N OPENWORK_DESKTOP_EGRESS 2>/dev/null || "$tool" -w -F OPENWORK_DESKTOP_EGRESS
     "$tool" -w -C OUTPUT -m owner --uid-owner "$uid" -j OPENWORK_DESKTOP_EGRESS 2>/dev/null \
       || "$tool" -w -I OUTPUT 1 -m owner --uid-owner "$uid" -j OPENWORK_DESKTOP_EGRESS
@@ -64,13 +78,26 @@ until xdotool getdisplaygeometry >/dev/null 2>&1; do
   [ "$attempt" -lt 50 ] || { echo "Cloud display did not start" >&2; exit 1; }
   sleep 0.1
 done
+if id openwork-app >/dev/null 2>&1; then
+  # Share display access, never the Chromium profile or browser home. The
+  # window manager launches menu/taskbar apps under the same isolated account.
+  install -o openwork-app -g openwork-app -m 0600 "$XAUTHORITY" /home/openwork-app/.Xauthority
+fi
 if ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; then
-  as_browser setsid -f openbox >"$state/window-manager.log" 2>&1 < /dev/null
+  if id openwork-app >/dev/null 2>&1; then
+    as_app setsid -f openbox >"$state/window-manager.log" 2>&1 < /dev/null
+  else
+    as_browser setsid -f openbox >"$state/window-manager.log" 2>&1 < /dev/null
+  fi
 fi
 # A taskbar and Applications menu are installed by the Workbot desktop image.
 # Older snapshots still open their browser without claiming extra apps exist.
-if command -v tint2 >/dev/null && ! pgrep -u openwork-browser -x tint2 >/dev/null; then
-  as_browser setsid -f tint2 >"$state/taskbar.log" 2>&1 < /dev/null
+if command -v tint2 >/dev/null; then
+  if id openwork-app >/dev/null 2>&1; then
+    if ! pgrep -u openwork-app -x tint2 >/dev/null; then as_app setsid -f tint2 >"$state/taskbar.log" 2>&1 < /dev/null; fi
+  elif ! pgrep -u openwork-browser -x tint2 >/dev/null; then
+    as_browser setsid -f tint2 >"$state/taskbar.log" 2>&1 < /dev/null
+  fi
 fi
 if ! curl --fail --silent --max-time 2 http://127.0.0.1:9222/json/version >/dev/null; then
   # The browser runs as an unprivileged user with Chromium's sandbox enabled.

@@ -1,0 +1,127 @@
+name: NoClip Windows test build
+run-name: Windows x64 test - noclip - ${{ github.sha }}
+
+on:
+  push:
+    branches: [noclip]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'ee/**'
+      - 'scripts/**'
+      - 'patches/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - 'constants.json'
+      - '.github/workflows/noclip-windows-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noclip-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    if: github.repository == 'DeepDlueIV/openwork' && github.ref == 'refs/heads/noclip'
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      OPENWORK_DESKTOP_SENTRY_DSN: ''
+      TEST_APP_VERSION: 0.18.58-noclip.${{ github.run_number }}.${{ github.run_attempt }}
+
+    steps:
+      - name: Check out the exact source commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Match the toolchain used by OpenWork v0.18.58. pnpm must precede setup-node.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '11.4.0'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build renderer, server, runtime and pinned OpenCode sidecars
+        run: pnpm --filter @openwork/desktop run build:electron
+
+      - name: Run desktop session-runner tests
+        run: pnpm --filter @openwork/desktop run test:session-runner
+
+      # Baseline installer only: keep application behavior unchanged. Never publish.
+      - name: Package unsigned Windows x64 installer
+        run: >-
+          pnpm --dir apps/desktop exec electron-builder
+          --config electron-builder.yml --win nsis --x64 --publish never
+          "--config.extraMetadata.version=$env:TEST_APP_VERSION"
+          '--config.artifactName=noclip-baseline-${os}-${arch}-${version}.${ext}'
+
+      - name: Verify installer and record provenance
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = 'apps/desktop/dist-electron'
+          $installers = @(Get-ChildItem -LiteralPath $output -Filter 'noclip-baseline-win-x64-*.exe' -File)
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one Windows x64 installer, found $($installers.Count)."
+          }
+          $installer = $installers[0]
+          if ($installer.Length -lt 1MB) { throw 'Installer is unexpectedly small.' }
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content -LiteralPath "$output/SHA256SUMS.txt" -Encoding utf8
+          @(
+            "Repository: $env:SOURCE_REPOSITORY"
+            "Commit: $env:SOURCE_COMMIT"
+            'Branch: noclip'
+            'Upstream baseline: OpenWork v0.18.58 (258218b9b69c91e3d5020488fe1d14ff767679e9)'
+            "Package version: $env:TEST_APP_VERSION"
+            'Target: Windows x64; unsigned NSIS installer; not a public release.'
+            'WARNING: Original OpenWork app identity, data paths and updater are unchanged.'
+            'Use a disposable Windows VM. Do not install over your personal OpenWork.'
+            'A successful build is not a GUI, installation or gateway integration test.'
+          ) | Set-Content -LiteralPath "$output/BUILD-INFO.txt" -Encoding utf8
+          @(
+            '## Windows x64 test artifact'
+            "Source commit: $env:SOURCE_COMMIT"
+            "Installer: $($installer.Name)"
+            "SHA256: $hash"
+            'Download the artifact below. It is retained for 7 days.'
+            'Unsigned baseline: use a disposable Windows VM, not your personal OpenWork installation.'
+            'Packaging and session-runner tests are not an end-to-end desktop/gateway test.'
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+      - name: Upload installer, checksum and build information
+        uses: actions/upload-artifact@v4
+        with:
+          name: noclip-windows-x64-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            apps/desktop/dist-electron/noclip-baseline-win-x64-*.exe
+            apps/desktop/dist-electron/SHA256SUMS.txt
+            apps/desktop/dist-electron/BUILD-INFO.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

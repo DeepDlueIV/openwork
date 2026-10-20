@@ -154,7 +154,7 @@ export async function workbotWorkspace(seed: Seed, { place }: { place: Place }) 
               if (file.id === "file_sheet" || file.id === "file_office") {
                 return json({ kind: "spreadsheet", source: file.id === "file_office" ? "xlsx" : "google", fileId: file.id, connectionId: "google-workspace", name: file.name, revision: "v1", canEdit: true, sheets: [{ id: "0", name: "Phrases", rows: 3, columns: 2 }], activeSheetId: "0", startRow: 1, endRow: 3, cells: [{ row: 1, column: 1, text: "Trigger phrase" }, { row: 2, column: 1, text: "book a demo" }] });
               }
-              return json({ kind: "text", fileId: file.id, connectionId: "google-workspace", name: file.name, revision: "v1", canEdit: true, text: file.id === "file_brief" ? "Project overview" : "Budget overview" });
+              return json({ kind: "text", fileId: file.id, connectionId: "google-workspace", name: file.name, revision: "v1", canEdit: true, ...(referring.searchParams.get("notice") === "on" ? { notice: "Text editing. Original document layout and other content are retained when you save." } : {}), text: file.id === "file_brief" ? "Project overview" : "Budget overview" });
             }
           }
           if (url.pathname.endsWith("/calendar/v1/automations")) return json({ items: [], nextCursor: null });

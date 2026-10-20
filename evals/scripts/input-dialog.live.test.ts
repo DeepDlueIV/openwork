@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { assertAbsent, locate } from "../packages/cdp/src/input.ts";
+import { evaluateOnSurface } from "../packages/cdp/src/surface.ts";
 import { chrome } from "../packages/hosts/src/browser.ts";
 import { createLocalHost } from "../packages/hosts/src/local.ts";
 
@@ -21,10 +22,10 @@ test("dialog targets find explicit and native dialogs without treating hidden di
     `)}`,
   });
   // Page.navigate can return before the new document's load completes.
-  await surface.client.send("Runtime.evaluate", {
-    expression: "new Promise(resolve => document.readyState === 'complete' ? resolve() : addEventListener('load', () => resolve(), { once: true }))",
-    awaitPromise: true,
-  });
+  await evaluateOnSurface(surface, () => new Promise<void>((resolve) => {
+    if (document.readyState === "complete") resolve();
+    else addEventListener("load", () => resolve(), { once: true });
+  }));
 
   const explicit = await locate(surface, { role: "dialog", label: "Explicit dialog" });
   expect(explicit).toMatchObject({ tag: "div", name: "Explicit dialog", visible: true });

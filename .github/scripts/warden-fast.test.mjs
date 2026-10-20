@@ -4,9 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { symlinkSync } from "node:fs";
 import {
-  annotations, fingerprintPatch, fingerprints, mergeBase, mergeFindings, planReview, quickConfig, renderSummary,
-  securityFrom, trustedWorkspace, validBaseline, wardenEnvironment,
+  annotations, filesToReview, fingerprintPatch, fingerprints, mergeBase, mergeFindings, planReview, quickConfig, renderSummary,
+  runWarden, securityFrom, trustedWorkspace, validBaseline, wardenEnvironment,
 } from "./warden-fast.mjs";
 
 const patch = (body, header = "diff --git a/f b/f\nindex 1111111..2222222 100644\n--- a/f\n+++ b/f") => `${header}\n${body}\n`;
@@ -107,6 +108,40 @@ test("findings for moved or removed files are replaced; the rest carry over", ()
   const fresh = [{ severity: "high", title: "new", description: "", path: "moved.ts", line: 9 }];
   const merged = mergeFindings(old, fresh, { moved: ["moved.ts"], removed: ["gone.ts"] });
   assert.deepEqual(merged.map((f) => [f.title, f.source]), [["new", "new"], ["pathless", "carried"], ["kept", "carried"]]);
+});
+
+test("files with open findings are rechecked whenever anything moved", () => {
+  const current = { "a.ts": "1", "b.yml": "1", "c.ts": "1" };
+  const previous = [
+    { severity: "high", title: "token", description: "", path: "b.yml", line: 1 },
+    { severity: "low", title: "nit", description: "", path: "c.ts", line: 1 },
+    { severity: "high", title: "gone", description: "", path: "deleted.ts", line: 1 },
+  ];
+  const open = (finding) => finding.severity !== "low";
+  assert.deepEqual(filesToReview({ moved: ["a.ts"] }, previous, current, open), ["a.ts", "b.yml"]);
+  assert.deepEqual(filesToReview({ moved: [] }, previous, current, open), []);
+});
+
+test("the quick config is written outside the analyzed checkout, so a symlink can't redirect it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "warden-config-"));
+  try {
+    const checkout = join(dir, "pr");
+    const outDir = join(dir, "out");
+    mkdirSync(checkout);
+    writeFileSync(join(dir, "victim"), "untouched\n");
+    symlinkSync(join(dir, "victim"), join(checkout, ".warden-quick.toml"));
+    // A stand-in CLI that records the config it was given.
+    const fake = join(dir, "warden.mjs");
+    writeFileSync(fake, `import { writeFileSync } from "node:fs"; const i = process.argv.indexOf("--config-path"); writeFileSync(${JSON.stringify(join(dir, "seen"))}, process.argv[i + 1]);`);
+    const policy = execFileSync("git", ["show", "HEAD:warden.toml"], { encoding: "utf8" });
+    const parsed = runWarden({ cwd: checkout, wardenBin: fake, policy, files: ["a.ts"], base: "a", head: "b", env: process.env, outDir });
+    assert.equal(parsed.complete, false);
+    assert.equal(readFileSync(join(dir, "victim"), "utf8"), "untouched\n");
+    assert.equal(readFileSync(join(dir, "seen"), "utf8"), join(outDir, "warden-quick.toml"));
+    assert.equal(readdirSync(outDir).includes("warden-quick.toml"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("security findings come only from the security skill", () => {

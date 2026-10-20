@@ -90,6 +90,18 @@ export function planReview(baseline, current, { minFiles = MIN_PR_FILES, maxShar
   return { mode: "partial", moved, removed };
 }
 
+/**
+ * Files to send to Warden: the moved ones, plus, when anything moved, files
+ * that still carry an open finding. A fix often lands in another file than
+ * the one a finding points at; rechecking lets it clear before the full review.
+ */
+export function filesToReview(plan, previous, current, isOpen) {
+  if (!plan.moved.length) return [];
+  const open = previous.filter((finding) => isOpen(finding) && finding.path && finding.path in current && literalPath(finding.path))
+    .map((finding) => finding.path);
+  return [...new Set([...plan.moved, ...open])].sort();
+}
+
 /** The trusted policy with each skill limited to `files`. Null if the policy isn't the expected shape. */
 export function quickConfig(policy, files) {
   const paths = `paths = [${files.map((file) => JSON.stringify(file)).join(", ")}]`;
@@ -183,16 +195,17 @@ const PLAN_TEXT = {
   "missing-baseline-commit": "The last reviewed commit is no longer available. The full Warden review covers this push.",
 };
 
-export function renderSummary({ plan, total, findings, omitted, baselineUrl, confidentiality, complete, reason }) {
+export function renderSummary({ plan, total, reviewed = plan.moved, findings, omitted, baselineUrl, confidentiality, complete, reason }) {
   const lines = ["### Warden quick review (advisory)", ""];
   if (PLAN_TEXT[plan.mode]) {
     lines.push(PLAN_TEXT[plan.mode], "");
     return lines.join("\n");
   }
-  const reviewed = plan.mode === "carry"
+  const rechecked = reviewed.length - plan.moved.length;
+  const what = plan.mode === "carry"
     ? "Nothing in the PR's own changes moved since the last complete review, so its findings carry over."
-    : `Re-reviewed ${plan.moved.length} of ${total} files whose own changes moved since the last complete review.`;
-  lines.push(reviewed, baselineUrl ? `Earlier findings come from [that review](${baselineUrl}).` : "", "");
+    : `Re-reviewed ${reviewed.length} of ${total} files: ${plan.moved.length} whose own changes moved since the last complete review${rechecked ? `, and ${rechecked} with an open finding` : ""}.`;
+  lines.push(what, baselineUrl ? `Earlier findings come from [that review](${baselineUrl}).` : "", "");
   if (!complete) lines.push(`**Incomplete** (${safe(reason, 80)}): findings below are partial. The full Warden review still runs.`, "");
   if (confidentiality) lines.push(`${confidentiality} confidentiality finding(s) in the re-reviewed files. Details are omitted here; check the added diff for outside identities.`, "");
   if (!findings.length) lines.push(complete ? "No security findings." : "No security findings so far.");
@@ -213,9 +226,12 @@ export function renderSummary({ plan, total, findings, omitted, baselineUrl, con
 export function runWarden({ cwd, wardenBin, policy, files, base, head, env, outDir }) {
   const config = quickConfig(policy, files);
   if (!config) return { complete: false, reason: "unexpected-policy", findings: [] };
-  const configPath = join(cwd, ".warden-quick.toml");
+  // Outside the analyzed checkout, so a PR can't redirect the write with a symlink.
+  const configPath = join(outDir, "warden-quick.toml");
   const jsonl = join(outDir, "warden-quick.jsonl");
-  writeFileSync(configPath, config);
+  mkdirSync(outDir, { recursive: true });
+  rmSync(configPath, { force: true });
+  writeFileSync(configPath, config, { flag: "wx" });
   rmSync(jsonl, { force: true });
   try {
     const command = wardenBin ? ["node", [wardenBin]] : ["pnpm", ["dlx", "@sentry/warden@0.43.0"]];
@@ -290,16 +306,17 @@ async function ci(env) {
   const plan = planReview(before, current);
   if (PLAN_TEXT[plan.mode]) return summary(renderSummary({ plan }));
 
+  const reviewed = filesToReview(plan, baseline.data.findings, current, (finding) => finding.severity !== "low");
   let parsed = { complete: true, findings: [] };
-  if (plan.mode === "partial") {
-    parsed = runWarden({ cwd, wardenBin: env.WARDEN_BIN, policy: readFileSync(env.POLICY_PATH, "utf8"), files: plan.moved,
+  if (reviewed.length) {
+    parsed = runWarden({ cwd, wardenBin: env.WARDEN_BIN, policy: readFileSync(env.POLICY_PATH, "utf8"), files: reviewed,
       base: mergeBase(cwd, env.BASE_SHA, env.HEAD_SHA), head: env.HEAD_SHA, env: wardenEnvironment(process.env), outDir: env.OUT_DIR });
   }
   // If the re-review didn't finish, keep the earlier findings for the files it covered.
-  const findings = mergeFindings(baseline.data.findings, securityFrom(parsed), parsed.complete ? plan : { moved: [], removed: plan.removed });
+  const findings = mergeFindings(baseline.data.findings, securityFrom(parsed), { moved: parsed.complete ? reviewed : [], removed: plan.removed });
   const omitted = Math.max(0, baseline.data.total - baseline.data.findings.length);
   const confidentiality = parsed.findings.filter((finding) => finding.skill === "confidentiality-review").length;
-  summary(renderSummary({ plan, total, findings, omitted, baselineUrl: baseline.url, confidentiality, complete: parsed.complete, reason: parsed.reason }));
+  summary(renderSummary({ plan, total, reviewed, findings, omitted, baselineUrl: baseline.url, confidentiality, complete: parsed.complete, reason: parsed.reason }));
   for (const line of annotations(findings)) console.log(line);
   // Only a complete review becomes the next push's baseline.
   if (parsed.complete) {
@@ -392,12 +409,13 @@ async function local(args, env) {
     }
     // Locally every PR size benefits: there is no full review running in parallel.
     const plan = planReview(saved?.fingerprints ?? null, current, { minFiles: 0, maxShare: 1 });
-    const files = plan.mode === "no-baseline" ? Object.keys(current).sort() : plan.moved;
+    const files = plan.mode === "no-baseline" ? Object.keys(current).sort() : filesToReview(plan, saved.findings ?? [], current, blocking);
     if (plan.mode === "unsupported-path") { console.error("Warden quick review: a changed file name can't be filtered; run pnpm warden:check."); return 2; }
 
     let parsed = { complete: true, findings: [] };
     if (files.length) {
-      console.log(`Warden quick review: reviewing ${files.length} of ${Object.keys(current).length} changed files${saved ? " that moved since your last review" : ""}, with the policy from ${upstream}.`);
+      const rechecked = saved ? files.length - plan.moved.length : 0;
+      console.log(`Warden quick review: reviewing ${files.length} of ${Object.keys(current).length} changed files${saved ? ` (${plan.moved.length} moved since your last review${rechecked ? `, ${rechecked} with an open finding` : ""})` : ""}, with the policy from ${upstream}.`);
       mkdirSync(state.dir, { recursive: true });
       parsed = runWarden({ cwd: workspace.dir, wardenBin: env.WARDEN_BIN, policy: readFileSync(join(workspace.dir, "warden.toml"), "utf8"), files, base, head,
         env: { ...wardenEnvironment(process.env), WARDEN_OPENAI_API_KEY: key, PI_CODING_AGENT_DIR: join(workspace.dir, ".warden", "pi") }, outDir: state.dir });
@@ -409,8 +427,7 @@ async function local(args, env) {
       path: typeof finding.location?.path === "string" ? finding.location.path : null,
       line: Number.isSafeInteger(finding.location?.startLine) ? finding.location.startLine : null,
     }));
-    const reviewedPlan = plan.mode === "no-baseline" ? { moved: files, removed: [] } : plan;
-    const findings = mergeFindings(saved?.findings ?? [], fresh, parsed.complete ? reviewedPlan : { moved: [], removed: reviewedPlan.removed });
+    const findings = mergeFindings(saved?.findings ?? [], fresh, { moved: parsed.complete ? files : [], removed: plan.removed });
     for (const finding of findings) {
       console.log(`\n[${finding.severity}] ${finding.skill === "confidentiality-review" ? "confidentiality: " : ""}${finding.title}`);
       if (finding.path) console.log(`  ${finding.path}${finding.line ? `:${finding.line}` : ""}${finding.source === "carried" ? " (from your last review)" : ""}`);

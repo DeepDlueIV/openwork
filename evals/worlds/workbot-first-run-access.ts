@@ -18,10 +18,9 @@ export async function workbotFirstRunAccess(_seed: Seed, { place }: { place: Pla
           const url = new URL(req.url ?? "/", "http://fixture");
           if (!url.pathname.startsWith("/v1/workbot")) return next();
           const params = new URL(req.headers.referer ?? "http://fixture").searchParams;
-          const enabled = params.get("enabled") === "true";
           const json = (body: unknown) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
-          if (url.pathname === "/v1/workbot/me") return json({ name: "Example", email: "member@example.test", userId: "user_example", organizationId: "org_example", organizationName: "Example workspace", enabled, firstRun: params.get("rollout") !== "off", canEnableWorkbot: params.get("admin") === "true", denUrl: "https://workspace.example.test" });
-          if (url.pathname === "/v1/workbot") return json(enabled ? { available: true, name: "Workbot", organizationName: "Example workspace", status: "idle", turns: [], hasEarlier: false, filesEnabled: false } : { available: false, reason: "workbot_not_enabled" });
+          if (url.pathname === "/v1/workbot/me") return json({ name: "Example", email: "member@example.test", userId: "user_example", organizationId: "org_example", organizationName: "Example workspace", enabled: true, firstRun: params.get("rollout") !== "off", canEnableWorkbot: params.get("admin") === "true", denUrl: "https://workspace.example.test" });
+          if (url.pathname === "/v1/workbot") return json({ available: true, name: "Workbot", organizationName: "Example workspace", status: "idle", turns: [], hasEarlier: false, filesEnabled: false });
           if (url.pathname.endsWith("/events")) { res.setHeader("content-type", "text/event-stream"); res.end(": fixture\n\n"); return; }
           if (url.pathname.endsWith("/connections")) return json({ connections: [] });
           if (url.pathname.endsWith("/hello")) return json({ started: false });

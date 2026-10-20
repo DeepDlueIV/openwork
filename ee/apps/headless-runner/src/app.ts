@@ -5,14 +5,17 @@ import { routePath } from "hono/route"
 import { streamSSE } from "hono/streaming"
 import type { ErrorReporter } from "./error-reporting.js"
 import type { SessionEvents } from "./events.js"
+import { serviceHealthResponse, type ServiceHealthConfig } from "./service-health.js"
 import { SavedFileLimitError, type SavedFiles } from "./saved-files.js"
 import { formatBytes } from "./tool-files.js"
 import { z } from "zod"
 import { normalizePath } from "./files.js"
 import type { Runner } from "./runner.js"
+import { scopedCatalogResponse } from "./model-catalog.js"
+import type { HeadlessModelAccess } from "@openwork-ee/headless-protocol"
 import { modelProbeResponse, type ModelProbe } from "./model-probe.js"
 import { CONVERSATION_TABLES, sqlRow, type StoredMessage, type Store } from "./store.js"
-import { ACTIVE, repeatLimitsSchema, turnCredentialsSchema, turnStatusSchema, type SessionComputer } from "./types.js"
+import { ACTIVE, executionSchema, repeatLimitsSchema, turnCredentialsSchema, turnStatusSchema, type SessionComputer } from "./types.js"
 
 const createSessionBody = z
   .object({
@@ -65,6 +68,8 @@ const sendBody = z
      * running otherwise), keeping what it wrote, and this message is answered next with all of that in view.
      */
     interrupt: z.boolean().optional(),
+    /** `steps`: the turn (and the tasks and reports it starts) runs one step at a time, surviving runner deploys. */
+    execution: executionSchema.optional(),
   })
   .strict()
   .refine((body) => body.prompt.trim().length > 0 || (body.attachments?.length ?? 0) > 0, "prompt or attachments is required")
@@ -74,6 +79,8 @@ export const DEFAULT_READ_TURNS = 30
 /** The most turns one session read returns; asking for more gets this many, and `before` pages further back. */
 export const MAX_READ_TURNS = 200
 const readQuery = z.object({
+  /** Explicit owner fence for trusted callers on Node, where the cell-routing header alone is not an isolation boundary. */
+  expectedOwner: z.string().min(1).max(200).optional(),
   /** One turn: its transcript, and the turn with the background tasks it started and their reports. */
   messageId: messageIdSchema.optional(),
   limit: z.coerce.number().int().min(1).max(5_000).default(100),
@@ -120,9 +127,11 @@ export function createApp(input: {
   store: Store
   runner: Runner
   apiToken: string
+  /** Validated deployment settings, used only for the authenticated configuration-presence check. */
+  healthConfig?: ServiceHealthConfig
   /** Models a caller may pick per turn; without it only the default is listed. */
-  models?: () => Promise<ModelCatalog>
-  /** Bounded, synthetic completion with the deployment model key; no conversation is created. */
+  models?: (modelAccess?: HeadlessModelAccess) => Promise<ModelCatalog>
+  /** Bounded synthetic completion with scoped access or the deployment key; no conversation is created. */
   modelProbe?: ModelProbe
   /** Live session events; without it the events route is not served. */
   events?: SessionEvents
@@ -145,6 +154,7 @@ export function createApp(input: {
   app.get("/health", (c) => c.json({ ok: true }))
 
   app.use("/v1/*", async (c, next) => {
+    if (c.req.path === "/v1/health") c.header("Cache-Control", "no-store")
     const match = /^Bearer\s+(\S+)$/i.exec(c.req.header("authorization") ?? "")
     if (!match || !tokenMatches(match[1])) return c.json({ error: "unauthorized" }, 401)
     await next()
@@ -156,8 +166,10 @@ export function createApp(input: {
     return c.json({ error: "internal_error" }, 500)
   })
 
+  app.get("/v1/health", (c) => serviceHealthResponse(c.req.raw, input.healthConfig))
   app.get("/v1/models", async (c) => c.json(input.models ? await input.models() : { defaultModel: "", models: [] }))
-  app.post("/v1/model-probe", bodyLimit({ maxSize: 512 }), (c) => modelProbeResponse(c.req.raw, input.modelProbe))
+  app.post("/v1/models", bodyLimit({ maxSize: 8192 }), (c) => scopedCatalogResponse(c.req.raw, input.models))
+  app.post("/v1/model-probe", bodyLimit({ maxSize: 8192 }), (c) => modelProbeResponse(c.req.raw, input.modelProbe))
 
   app.post("/v1/sessions", async (c) => {
     const body = createSessionBody.safeParse(await c.req.json().catch(() => ({})))
@@ -188,6 +200,7 @@ export function createApp(input: {
     if (!session) return c.json({ error: "unknown_session" }, 404)
     const query = readQuery.safeParse(c.req.query())
     if (!query.success) return c.json({ error: "invalid_request", issues: query.error.issues }, 400)
+    if (query.data.expectedOwner !== undefined && session.owner !== query.data.expectedOwner) return c.json({ error: "unknown_session" }, 404)
     const { messageId, limit } = query.data
     // Every read is bounded, however long the conversation: one turn (messageId), or a window of the newest turns
     // that `before` pages back through. Nothing here reads the whole transcript.
@@ -251,10 +264,17 @@ export function createApp(input: {
 
   // Live events for one session as server-sent events: `changed` (re-read the session) and `text` (model text
   // as it is written). A comment every 15 seconds keeps idle proxies from closing the stream.
+  // With `Upgrade: websocket`, a host that holds sockets (celld) answers with one instead: `{"type":"ready"}`, then
+  // each event as one JSON message, the same JSON as the `data:` lines. The Node host answers with the stream, which
+  // a WebSocket client takes as no upgrade and falls back to SSE.
   app.get("/v1/sessions/:id/events", (c) => {
     const events = input.events
     if (!events) return c.json({ error: "not_supported" }, 404)
     const sessionId = c.req.param("id")
+    if (c.req.header("upgrade")?.toLowerCase() === "websocket" && sessionIdSchema.safeParse(sessionId).success) {
+      const socket = events.acceptSocket(sessionId)
+      if (socket) return socket
+    }
     return streamSSE(c, async (stream) => {
       const queue: string[] = []
       let wake: (() => void) | null = null
@@ -431,7 +451,7 @@ export function createApp(input: {
     const body = sendBody.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return c.json({ error: "invalid_request", issues: body.error.issues }, 400)
     const result = runner.send({ sessionId: c.req.param("id"), ...body.data })
-    if (!result.ok) return c.json({ error: result.error }, result.error === "unknown_session" ? 404 : result.error === "unknown_file" ? 400 : 429)
+    if (!result.ok) return c.json({ error: result.error }, result.error === "unknown_session" ? 404 : result.error === "unknown_file" || result.error === "model_required" ? 400 : result.error === "model_mismatch" ? 409 : 429)
     return c.json({ state: result.state, turn: result.turn }, 202)
   })
 

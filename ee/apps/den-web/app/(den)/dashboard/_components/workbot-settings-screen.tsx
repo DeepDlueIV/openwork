@@ -7,10 +7,12 @@ import { WORKBOT_DEFAULT_MODEL_NAME, type WorkbotModelTest, type WorkbotSettings
 import {
   getBrandAppearanceRoute,
   getOrgAccessFlags,
+  orgFeatureEnabled,
   parseOrganizationMetadata,
   permissionLockReason,
 } from "../../_lib/den-org";
 import { DenButton } from "../../_components/ui/button";
+import { ServiceReadinessNotice } from "../../_components/service-readiness-notice";
 import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-template";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
@@ -28,8 +30,8 @@ function workbotName(metadata: string | null): string {
 }
 
 /** Runner model ids read "provider/model"; the provider part picks the logo. */
-function ModelMark({ id }: { id: string }) {
-  const provider = id.includes("/") ? id.slice(0, id.indexOf("/")) : id;
+function ModelMark({ id, provider: brand }: { id: string; provider?: string }) {
+  const provider = brand ?? (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
   return (
     <DenBrandMark
       name={provider}
@@ -43,12 +45,12 @@ function ModelMark({ id }: { id: string }) {
 /** The same searchable rows as the organization default model picker. */
 function modelOptions(settings: WorkbotSettings): DenComboboxOption[] {
   const missing = settings.model && !settings.models.some((entry) => entry.id === settings.model)
-    ? [{ value: settings.model, label: settings.model, description: "No longer available" }]
+    ? [{ value: settings.model, label: settings.gatewayModels ? "Unavailable model" : settings.model, description: settings.gatewayModels ? "Not available to you" : "No longer available" }]
     : [];
   return [
     { value: "", label: defaultLabel(settings) },
     ...missing,
-    ...settings.models.map((entry) => ({ value: entry.id, label: entry.name, keywords: [entry.id], icon: <ModelMark id={entry.id} /> })),
+    ...settings.models.map((entry) => ({ value: entry.id, label: entry.name, keywords: [entry.id], icon: <ModelMark id={entry.id} provider={entry.provider} /> })),
   ];
 }
 
@@ -149,6 +151,7 @@ export function WorkbotSettingsScreen() {
         description={null}
       >
         <div className="grid gap-4">
+          <ServiceReadinessNotice capabilities={orgContext?.deploymentCapabilities} enabled={orgFeatureEnabled(orgContext, "serviceReadiness")} />
           {settings && !settings.runnerReachable ? (
             <DenNotice
               tone="error"
@@ -163,7 +166,9 @@ export function WorkbotSettingsScreen() {
           {settings && settings.runnerReachable && !settings.modelAvailable && settings.model ? (
             <DenNotice
               tone="warning"
-              message={settings.defaultReadiness
+              message={settings.gatewayModels
+                ? "The organization's saved model isn't available to you. Ask your model administrator to check your AI Gateway access."
+                : settings.defaultReadiness
                 ? "The saved model isn't available. Workbot won't send new messages with another model. Choose an available model."
                 : `The saved model is no longer available. New messages use ${defaultModelName(settings)} until you choose another model.`}
             />

@@ -2379,10 +2379,11 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
         { token, hostToken, timeoutMs: timeouts.binary },
       ),
 
-    readWorkspaceFile: (workspaceId: string, path: string) =>
+    /** `sessionId` also finds files the conversation wrote after moving into a worktree. */
+    readWorkspaceFile: (workspaceId: string, path: string, options?: { sessionId?: string }) =>
       requestJson<OpenworkWorkspaceFileContent>(
         baseUrl,
-        `/workspace/${encodeURIComponent(workspaceId)}/files/content?path=${encodeURIComponent(path)}`,
+        `/workspace/${encodeURIComponent(workspaceId)}/files/content?path=${encodeURIComponent(path)}${options?.sessionId ? `&session=${encodeURIComponent(options.sessionId)}` : ""}`,
         { token, hostToken },
       ),
 
@@ -2417,7 +2418,7 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
 
     writeWorkspaceFile: (
       workspaceId: string,
-      payload: { path: string; content: string; baseUpdatedAt?: number | null; force?: boolean },
+      payload: { path: string; content: string; baseUpdatedAt?: number | null; force?: boolean; sessionId?: string },
     ) =>
       requestJson<OpenworkWorkspaceFileWriteResult>(
         baseUrl,
@@ -2474,7 +2475,7 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
 
     writeWorkspaceBinaryFile: (
       workspaceId: string,
-      payload: { path: string; data: ArrayBuffer; baseUpdatedAt?: number | null; force?: boolean },
+      payload: { path: string; data: ArrayBuffer; baseUpdatedAt?: number | null; force?: boolean; sessionId?: string },
     ) =>
       requestJson<OpenworkWorkspaceFileWriteResult>(
         baseUrl,
@@ -2488,6 +2489,7 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
             dataBase64: arrayBufferToBase64(payload.data),
             baseUpdatedAt: payload.baseUpdatedAt,
             force: payload.force,
+            sessionId: payload.sessionId,
           },
         },
       ),
@@ -2510,11 +2512,12 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
         confidence?: number;
         reason?: string;
       }>,
+      options?: { sessionId?: string },
     ) =>
       requestJson<{ items: OpenworkResolvedArtifactTarget[] }>(
         baseUrl,
         `/workspace/${encodeURIComponent(workspaceId)}/artifacts/resolve`,
-        { token, hostToken, method: "POST", body: { targets } },
+        { token, hostToken, method: "POST", body: { targets, sessionId: options?.sessionId } },
       ),
 
     // User-level env vars (host-auth only — desktop shell is the sole caller).

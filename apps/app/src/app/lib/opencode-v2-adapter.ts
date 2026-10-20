@@ -34,7 +34,6 @@ import {
   SHELL_EXITED_EVENT,
   backgroundShellIdFromToolMetadata,
   backgroundShellNoticeLabel,
-  backgroundShellTasksEnabled,
   readBackgroundShellCompletion,
   readEngineShell,
   type BackgroundShellNotice,
@@ -898,9 +897,9 @@ function mapV2Message(
   // Native instruction/catalog updates belong to the model context, not the
   // visible conversation. Filter by role so identical user text is preserved.
   // The one exception is a background command's completion notice, which the
-  // chat shows as a short row while `backgroundShellTasks` is on.
+  // chat shows as a short row.
   if (messageRole(value) === "system") {
-    const notice = backgroundShellTasksEnabled() ? readBackgroundShellCompletion(value) : null;
+    const notice = readBackgroundShellCompletion(value);
     const id = readString(value, "id") ?? readString(value, "messageID");
     if (!notice || !id) return null;
     const created = readNumber(readRecord(value, "time"), "created") ?? readNumber(value, "timestamp") ?? 0;
@@ -1480,7 +1479,7 @@ export function translateV2Event(
     const finished = readString(item, "type") === "synthetic" ? readBackgroundShellCompletion(payload) : null;
     if (sessionID && finished) {
       const created = readNumber(value, "created") ?? readNumber(properties, "timestamp") ?? Date.now();
-      const notice = messageID && backgroundShellTasksEnabled()
+      const notice = messageID
         ? backgroundShellNoticeMessage(messageID, sessionID, created, finished)
         : null;
       return [

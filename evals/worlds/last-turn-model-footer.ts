@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Seed } from "@openwork/env";
 import { denForAppWeb, signedInAppWeb } from "./signed-in-app-web.ts";
-import { seededOrganizationId } from "./organization-capabilities.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -23,15 +22,6 @@ export async function lastTurnModelFooter(seed: Seed) {
     { promptMarker: latest.prompt, latestUserTurn: true, finalReply: latest.reply, steps: [] },
   ] });
   const { den, webPort } = await denForAppWeb(seed, { mocks: { agent: mock } });
-  const organizationId = await seededOrganizationId(seed, den.admin);
-  if (!organizationId) throw new Error("The footer proof requires an organization.");
-  async function setRollout(enabled: boolean) {
-    const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { lastTurnModelFooter: enabled } }),
-    });
-    if (!result.response.ok) throw new Error(`Changing the footer rollout failed: ${result.response.status} ${result.text}`);
-  }
-  await setRollout(false);
   const token = randomUUID();
   const hostToken = randomUUID();
   const { app, workspace } = await signedInAppWeb(seed, {
@@ -89,12 +79,7 @@ export async function lastTurnModelFooter(seed: Seed) {
   const catalogModel = entries.filter(isRecord).find(model => model.providerID === providerId && model.id === modelId);
   if (catalogModel?.name !== modelName) throw new Error(`The native catalog did not preserve the configured human model name: ${JSON.stringify(catalogModel)}`);
   return {
-    app, den, session, modelName, older, latest, setRollout, repliesWithoutResolvedMetadata,
-    async featureEnabled() {
-      const result = await seed.api(den.admin, "/v1/org");
-      if (!result.response.ok || !isRecord(result.body) || !isRecord(result.body.features)) throw new Error("The organization feature response is missing.");
-      return result.body.features.lastTurnModelFooter === true;
-    },
+    app, den, session, modelName, older, latest, repliesWithoutResolvedMetadata,
     async touchInput() {
       // Chromium device emulation changes input capabilities, not application state.
       await app.client.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });

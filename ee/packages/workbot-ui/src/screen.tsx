@@ -27,7 +27,7 @@ import {
 import { AppMark, AttachButton, FileBadge, FilesButton, FilesPanel, ImageThumb, isImage, kindLabel, SentAttachments, UploadTray, useFileDrop, type Upload } from "./files";
 import { createComposerState, type ComposerState, type Pending } from "./composer-state";
 import { initials } from "./format";
-import { WorkbotMarkdown } from "./markdown";
+import { documentLinks, WorkbotMarkdown } from "./markdown";
 import { OpenFileContext } from "./open-file";
 import { PreviewPanel } from "./preview";
 import { Welcome } from "./welcome";
@@ -36,7 +36,7 @@ import { WorkbotCalendar } from "./calendar";
 import { WorkbotDocuments } from "./documents";
 import { readWorkbotCorrectionPrompt, workbotCorrectionPrompt, workbotViewContextSchema, type WorkbotViewContext } from "@openwork/types/workbot-context";
 import type { DocumentOpenRequest } from "@openwork/documents";
-import { SentContext, WorkspaceAssistant, WorkspaceMenu, WorkspaceNavigationContext } from "./workspace";
+import { DocumentOffers, OpenDocumentContext, SentContext, WorkspaceAssistant, WorkspaceMenu, WorkspaceNavigationContext } from "./workspace";
 import { useQueryClient } from "@tanstack/react-query";
 
 /**
@@ -132,10 +132,19 @@ function ChatScreen({ host, composerState, navigation, onDraftsChange }: { host:
   const [calendarVisited, setCalendarVisited] = useState(tab === "calendar");
   useEffect(() => { if (tab === "documents") setDocumentsVisited(true); if (tab === "calendar") setCalendarVisited(true); }, [tab]);
   const currentContext = tab === "documents" ? documentContext : tab === "calendar" ? calendarContext : null;
+  const guided = host.workspaceAssistant === true && host.guidedNavigation === true && host.documents === true;
+  const [revealChat, setRevealChat] = useState(0);
   const navigateDocument = (fileId: string) => {
     if (!host.workspaceAssistant || !host.documents) return;
     setOpenDocument({ fileId, requestId: newMessageId() });
     setTab("documents");
+  };
+  // Guided navigation from a conversation: the same chat stays open beside the document, sharing that view.
+  const navigateFromChat = (fileId: string) => {
+    navigateDocument(fileId);
+    if (!guided) return;
+    setIncludeContext(true);
+    setRevealChat(count => count + 1);
   };
   const [preview, setPreview] = useState<WorkbotAttachment | null>(null);
   // The welcome shows once, while there's no conversation yet; leaving it, Workbot starts the conversation itself.
@@ -243,7 +252,8 @@ function ChatScreen({ host, composerState, navigation, onDraftsChange }: { host:
       : empty && !starting ? <FirstOpen name={name} organizationName={data.organizationName} firstName={firstName} onSuggestion={text => submit(text)} error={start.isError ? <ErrorLine action={{ label: "Try again", onClick: () => { setGreetingAwaited(true); start.mutate(); } }}>{HELLO_FAILED}</ErrorLine> : null}>{composer}</FirstOpen>
       : <>{conversation}<div className="flex shrink-0 justify-center px-3 pb-4 pt-3"><div className={COLUMN}>{composer}</div></div></>;
     return <OpenFileContext.Provider value={setPreview}>
-      <WorkspaceNavigationContext.Provider value={host.workspaceAssistant && host.documents ? navigateDocument : null}>
+      <OpenDocumentContext.Provider value={tab === "documents" && documentContext?.kind === "document" ? documentContext.fileId : null}>
+      <WorkspaceNavigationContext.Provider value={host.workspaceAssistant && host.documents ? navigateFromChat : null}>
         <div className="workbot flex h-dvh flex-col bg-[var(--wb-bg)] antialiased" data-workbot-workspace>
           <WorkbotHeader name={name} organizationName={data?.organizationName ?? ""} userName={user?.name ?? null}
             files={filesEnabled ? <FilesButton open={filesOpen} onOpen={() => setFilesOpen(true)} /> : null}
@@ -265,10 +275,12 @@ function ChatScreen({ host, composerState, navigation, onDraftsChange }: { host:
           {previewFile && <PreviewPanel file={previewFile} onClose={() => setPreview(null)} />}
           </div>
           <div hidden={!host.workspaceAssistant || tab === "home"}><WorkspaceAssistant name={name} context={currentContext} includeContext={includeContext} onIncludeContext={setIncludeContext}
-            composer={composer} conversation={conversation} onDocument={navigateDocument} unavailable={!data} active={host.workspaceAssistant === true && tab !== "home"} /></div>
+            composer={composer} conversation={conversation} onDocument={navigateFromChat} unavailable={!data} active={host.workspaceAssistant === true && tab !== "home"}
+            reveal={revealChat} stayOpen={guided} /></div>
           {filesEnabled && <FilesPanel open={filesOpen} onClose={() => setFilesOpen(false)} assistantName={name} onOpenFile={file => { setFilesOpen(false); setPreview(file); }} />}
         </div>
       </WorkspaceNavigationContext.Provider>
+      </OpenDocumentContext.Provider>
     </OpenFileContext.Provider>;
   }
   if ((tab === "calendar" && host.calendar) || tab === "documents") {
@@ -1492,6 +1504,7 @@ function TurnView(props: {
   }, [dots, running, answering, liveText]);
   const slot = answering && !liveText && (dots || held || running);
   const copyText = parts.flatMap((part) => (part.kind === "text" ? [part.text] : [])).join("\n\n");
+  const offers = useMemo(() => (turn.status === "done" ? documentLinks(copyText) : []), [turn.status, copyText]);
   return (
     <>
       <SentAttachments attachments={turn.attachments} localUrls={props.previews} />
@@ -1516,6 +1529,7 @@ function TurnView(props: {
         {startingCard ? <StepsSegment steps={[{ label: "Using my computer", icon: "computer", status: "running", app: null, startedAt: null, finishedAt: null, updates: [] }]} live /> : null}
         {slot ? <WaitingSlot>{runningApps ? <StepsSegment steps={runningApps.steps} live /> : dots ? <TypingDots /> : null}</WaitingSlot> : null}
       </div>
+      <DocumentOffers links={offers} />
       {turn.outputs.length ? <OutputFiles files={turn.outputs} /> : null}
       {turn.tasks.length ? <TaskCards tasks={turn.tasks} canRetry={props.canChange} onRetry={(task) => props.onSuggestion(`Try the "${task.title}" background task again.`)} /> : null}
       {/* Workbot's hello offers what to ask next, only while it is still the latest message. */}

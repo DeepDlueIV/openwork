@@ -436,22 +436,27 @@ def tls_redeploy(force=True, cluster=None, expected=None):
                     or primary[0].get("rolloutState") != "COMPLETED"):
                 raise DeploymentPending("managed TLS deployment is not complete")
 
+    def wait_completed():
+        deadline = time.monotonic() + 120
+        while True:
+            try:
+                require_completed()
+                return
+            except DeploymentPending:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(3)
+
     if force:
-        require_completed()
+        # Provider steady-state can precede ECS's COMPLETED rollout marker.
+        # Wait before forcing too; wrong revisions/FAILED still fail immediately.
+        wait_completed()
         for name in names:
             aws("ecs", "update-service", "--cluster", cluster, "--service", name, "--force-new-deployment")
     # Failed waiters propagate. Also require the completed rollout state, not
     # merely runningCount==desiredCount while an old rollback target survives.
     aws("ecs", "wait", "services-stable", "--cluster", cluster, "--services", *names)
-    deadline = time.monotonic() + 120
-    while True:
-        try:
-            require_completed()
-            return
-        except DeploymentPending:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(3)
+    wait_completed()
 
 
 def verify_services(outputs):

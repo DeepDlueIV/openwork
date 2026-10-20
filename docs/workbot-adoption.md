@@ -27,9 +27,11 @@ organization filter.
 No production queries or customer data are needed to develop/test this report.
 The SQL below is a read-only operator example, not a request to run it.
 
-## Deploy before the rollout
+## Deploy the services together
 
-Deploy Den API, Workbot and the headless runner together before enabling `workbot`.
+Workbot is generally available on cloud and self-hosted deployments. Deploy Den
+API, Workbot and the headless runner together; the runner still needs real
+provider configuration.
 This is internal measurement, not a separate user-facing feature/flag. There is
 no database migration: `event_type` is already `varchar(64)`, not a database enum;
 the existing session-dimension JSON holds the bounded facts.

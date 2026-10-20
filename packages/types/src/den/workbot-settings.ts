@@ -22,11 +22,11 @@ export function workbotLunaAlias(catalog: { defaultModel: string; models: { id: 
   return candidates.length === 1 ? candidates[0]?.id ?? null : null
 }
 
-export const workbotModelOptionSchema = z.object({ id: z.string(), name: z.string() })
+export const workbotModelOptionSchema = z.object({ id: z.string(), name: z.string(), provider: z.string().optional() })
 export type WorkbotModelOption = z.infer<typeof workbotModelOptionSchema>
 
 export const workbotSettingsSchema = z.object({
-  /** The model the admin chose; null uses the default (explicit Luna for Workbot while workbotLunaDefault is on). */
+  /** The model the admin chose; null uses the explicit Luna default for Workbot. */
   model: z.string().nullable(),
   /** The effective default for Workbot; legacy mode returns the runner's default or null when unreachable. */
   defaultModel: z.string().nullable(),
@@ -36,6 +36,8 @@ export const workbotSettingsSchema = z.object({
   modelAvailable: z.boolean(),
   /** The runner answered; when false, the model list is unknown. */
   runnerReachable: z.boolean(),
+  /** The catalog is scoped to this member's usable AI Gateway assignments, not the deployment runner. */
+  gatewayModels: z.boolean().optional(),
   /** Present only during the explicit Luna rollout. Catalog readiness is not a paid completion probe. */
   defaultReadiness: z.enum(["available", "unavailable", "unverified"]).optional(),
 })

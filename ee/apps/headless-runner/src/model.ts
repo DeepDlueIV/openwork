@@ -1,5 +1,13 @@
 import { z } from "zod"
-import type { Message, ToolCall, ToolSpec } from "./types.js"
+import type { HeadlessModelAccess, Message, ToolCall, ToolSpec } from "./types.js"
+
+/** Constructed per run: never mutates the deployment adapter or retains another member's credentials. */
+export function createModelAdapter(access: HeadlessModelAccess, options: { maxOutputTokens: number; fetch?: typeof fetch }): ModelClient {
+  const config = { ...options, baseUrl: access.baseUrl }
+  return access.protocol === "anthropic" ? anthropicModel(config)
+    : access.protocol === "openai-responses" ? openAIResponsesModel(config)
+    : openAIModel(config)
+}
 
 export type ModelRequest = {
   system: string
@@ -19,6 +27,11 @@ export type ModelRequest = {
    * up to its last message. The system prompt is always a cache point, so at most three are used.
    */
   cacheAfter?: ReadonlySet<Message>
+  /**
+   * Text the model already wrote for this answer (a step cut off mid-call, see steps.ts): the call continues it, and
+   * the step's text starts with it. Only for clients with `continuesAnswers`.
+   */
+  continueFrom?: string
 }
 export type ModelStep = {
   /** Provider-reported answering model, when the gateway exposes it (may differ from a requested alias). */
@@ -29,7 +42,14 @@ export type ModelStep = {
   usage: Usage
 }
 export type Usage = { inputTokens: number; cachedInputTokens: number; outputTokens: number }
-export type ModelClient = { complete(request: ModelRequest): Promise<ModelStep> }
+export type ModelClient = {
+  complete(request: ModelRequest): Promise<ModelStep>
+  /**
+   * Accepts `continueFrom`: the provider takes a partial assistant message and continues it. Anthropic Messages does,
+   * without extended thinking (which this runner never turns on); OpenAI's APIs don't.
+   */
+  continuesAnswers?: boolean
+}
 
 export class ModelError extends Error {
   constructor(
@@ -460,32 +480,42 @@ export function anthropicModel(options: {
   sleep?: Sleep
 }): ModelClient {
   const sleep = options.sleep ?? defaultSleep
-  const call = (request: ModelRequest, stream: boolean) => ({
-    fetch: options.fetch ?? fetch,
-    sleep,
-    url: `${options.baseUrl}/messages`,
-    headers: { "x-api-key": request.apiKey, "anthropic-version": "2023-06-01" },
-    signal: request.signal,
-    body: {
-      model: request.model,
-      max_tokens: options.maxOutputTokens,
-      ...(stream ? { stream: true } : {}),
-      system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
-      messages: request.cacheAfter ? toAnthropicMessages(request.messages, request.cacheAfter) : withCacheBreakpoint(toAnthropicMessages(request.messages)),
-      ...(request.tools.length
-        ? { tools: request.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.inputSchema })) }
-        : {}),
-    },
-  })
+  const call = (request: ModelRequest, stream: boolean, continued: string) => {
+    const messages = request.cacheAfter ? toAnthropicMessages(request.messages, request.cacheAfter) : withCacheBreakpoint(toAnthropicMessages(request.messages))
+    return {
+      fetch: options.fetch ?? fetch,
+      sleep,
+      url: `${options.baseUrl}/messages`,
+      headers: { "x-api-key": request.apiKey, "anthropic-version": "2023-06-01" },
+      signal: request.signal,
+      body: {
+        model: request.model,
+        max_tokens: options.maxOutputTokens,
+        ...(stream ? { stream: true } : {}),
+        system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
+        // A partial answer goes last, as the assistant's: the model continues it.
+        messages: continued ? [...messages, { role: "assistant", content: [{ type: "text", text: continued }] }] : messages,
+        ...(request.tools.length
+          ? { tools: request.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.inputSchema })) }
+          : {}),
+      },
+    }
+  }
   return {
+    continuesAnswers: true,
     async complete(request) {
+      // Anthropic refuses a final assistant message that ends in whitespace. Continuing needs a request from the
+      // person or tool results before it.
+      const last = request.messages.at(-1)
+      const continued = last && last.role !== "assistant" ? (request.continueFrom ?? "").trimEnd() : ""
       if (request.onText) {
         const onText = request.onText
-        return withStreamRetries(request, sleep, async () =>
-          readAnthropicStream(await openResponse(call(request, true)), request.signal, onText, request.onTool),
+        const step = await withStreamRetries(request, sleep, async () =>
+          readAnthropicStream(await openResponse(call(request, true, continued)), request.signal, onText, request.onTool),
         )
+        return continued ? { ...step, text: continued + step.text } : step
       }
-      const json = await postJson(call(request, false))
+      const json = await postJson(call(request, false, continued))
       const parsed = anthropicResponse.safeParse(json)
       if (!parsed.success) throw new ModelError("model_bad_response", "Unexpected response from the AI gateway.", false)
       const text: string[] = []
@@ -503,7 +533,7 @@ export function anthropicModel(options: {
       }
       return {
         ...(reportedModel(parsed.data.model) ? { model: reportedModel(parsed.data.model) } : {}),
-        text: text.join(""),
+        text: continued + text.join(""),
         toolCalls,
         usage: {
           inputTokens:

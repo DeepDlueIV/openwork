@@ -56,7 +56,7 @@ test("catalog loss inside a correction send preserves history, correction and ne
   try {
     const runnerUrl = `http://127.0.0.1:${address.port}`
     const config = loadConfig({ WORKBOT_PUBLIC_URL: "http://localhost:3090", WORKBOT_DEN_API_URL: "http://localhost:3091", WORKBOT_RUNNER_URL: runnerUrl, WORKBOT_RUNNER_TOKEN: "r".repeat(32), WORKBOT_SESSION_SECRET: "s".repeat(32) })
-    const den = { ...createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl }), runToken: async () => "fixture-token" }
+    const den = { ...createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl }), runToken: async () => ({ token: "fixture-token" }) }
     const auth = createAuth({ config, den })
     const app = new Hono<AppEnv>()
     registerWorkbotRoutes(app, { config, den, sameOrigin: auth.sameOrigin, member: async (c, next) => {

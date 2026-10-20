@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect, mock, test } from "bun:test"
+import { afterAll, afterEach, expect, test } from "bun:test"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { act, createElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
@@ -8,11 +8,6 @@ import type { ModelOption } from "../src/app/types"
 GlobalRegistrator.register({ url: "https://web.example/" })
 const previousAct = Reflect.get(globalThis, "IS_REACT_ACT_ENVIRONMENT")
 Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true)
-let enabled = false
-mock.module("../src/react-app/domains/session/sync/use-last-turn-model-footer-feature", () => ({
-  useLastTurnModelFooterEnabled: () => enabled,
-  useLastTurnModelFooterFeature: () => {},
-}))
 const { PlatformProvider, createDefaultPlatform } = await import("../src/react-app/kernel/platform")
 const { MessageListProvider } = await import("../src/components/chat/message-list-provider")
 const { MessageList } = await import("../src/components/chat/message-list")
@@ -26,7 +21,6 @@ afterEach(async () => {
     container.remove()
     mounted = null
   }
-  enabled = false
   useModelPickerCatalogStore.setState({ bySession: {} })
 })
 afterAll(() => {
@@ -61,22 +55,17 @@ async function render(messages: UIMessage[], streaming = false, modelOptions?: r
   return container
 }
 
-test("flag off preserves the model in the top rail only", async () => {
-  const container = await render([answer("reply")])
-  const label = container.querySelector('[data-testid="reply-model"]')
-  expect(label?.closest('[data-testid="completed-work-rail"]')).not.toBeNull()
-  expect(container.textContent).not.toContain("Replied with")
-})
-
-test("latest completed reply has one accessible footer label and a fixed brand slot", async () => {
-  enabled = true
+test("completed reply model stays in the footer and reveals on hover", async () => {
   const container = await render([answer("reply")])
   const labels = container.querySelectorAll('[data-testid="reply-model"]')
   expect(labels.length).toBe(1)
   const label = labels[0]
   expect(label.textContent).toBe("Replied with Claude Sonnet")
   expect(label.closest('[data-testid="completed-work-rail"]')).toBeNull()
-  expect(label.className).toContain("opacity-100")
+  expect(label.className).toContain("opacity-0")
+  expect(label.className).toContain("group-hover/message-group:opacity-100")
+  expect(label.className).toContain("group-focus-within/message-group:opacity-100")
+  expect(label.className).not.toContain("max-lg:opacity-100")
   expect(label.querySelector('[aria-hidden="true"]')?.className).toContain("size-3")
   expect(label.querySelector("svg")).not.toBeNull()
   expect(container.querySelector('[data-testid="completed-work-rail"]')?.textContent).toBe("Worked for 7s")
@@ -87,7 +76,6 @@ test("latest completed reply has one accessible footer label and a fixed brand s
 })
 
 test("collapsed steps retain duration and count, never duplicate the footer model", async () => {
-  enabled = true
   const steps: UIMessage[] = Array.from({ length: 6 }, (_, index) => ({
     id: `step_${index}`, role: "assistant",
     parts: [{ type: "reasoning", text: `Checked section ${index + 1}.` }],
@@ -103,16 +91,16 @@ test("collapsed steps retain duration and count, never duplicate the footer mode
 })
 
 test("older turns keep their footer hover-only", async () => {
-  enabled = true
   const container = await render([answer("first"), { id: "user", role: "user", parts: [{ type: "text", text: "Check again." }] }, answer("last")])
   const labels = container.querySelectorAll('[data-testid="reply-model"]')
   expect(labels.length).toBe(2)
   expect(labels[0].className.split(" ")).toContain("opacity-0")
-  expect(labels[1].className.split(" ")).toContain("opacity-100")
+  expect(labels[1].className.split(" ")).toContain("opacity-0")
+  expect(labels[0].className).toContain("group-hover/message-group:opacity-100")
+  expect(labels[1].className).toContain("group-hover/message-group:opacity-100")
 })
 
 test("an Auto reply renders the OpenWork mark beside the routed name", async () => {
-  enabled = true
   const message = answer("reply")
   message.metadata = { opencode: { replyModel: {
     requestedProviderID: "openwork", providerID: "openai", modelID: "gpt-6", name: "GPT-6", resolved: true,
@@ -125,7 +113,6 @@ test("an Auto reply renders the OpenWork mark beside the routed name", async () 
 })
 
 test("a gateway reply uses the picker's human title without requesting an opaque provider logo", async () => {
-  enabled = true
   const message = answer("reply")
   message.metadata = { opencode: { replyModel: { providerID: "ipr_fixture", modelID: "gwm_fixture" } } }
   const container = await render([message], false, [{ providerID: "ipr_fixture", modelID: "gwm_fixture", title: "GPT-6 Luna", description: "OpenAI" }])
@@ -138,7 +125,6 @@ test("a gateway reply uses the picker's human title without requesting an opaque
 })
 
 test("the footer follows its own session picker's catalog when it arrives", async () => {
-  enabled = true
   const message = answer("reply")
   message.metadata = { opencode: { replyModel: { providerID: "ipr_fixture", modelID: "gwm_fixture" } } }
   const container = await render([message])
@@ -155,7 +141,6 @@ test("the footer follows its own session picker's catalog when it arrives", asyn
 })
 
 test("a metadata-free native completion marker keeps the answer's model footer", async () => {
-  enabled = true
   const message = answer("reply")
   message.metadata = { opencode: { replyModel: { providerID: "ipr_fixture", modelID: "gwm_fixture" } } }
   const container = await render([message, { id: "completion", role: "assistant", parts: [] }], false, [
@@ -165,7 +150,6 @@ test("a metadata-free native completion marker keeps the answer's model footer",
 })
 
 test("an unknown gateway identity stays hidden without a catalog title", async () => {
-  enabled = true
   const message = answer("reply")
   message.metadata = { opencode: { replyModel: { providerID: "ipr_fixture", modelID: "gwm_fixture", resolved: true } } }
   const container = await render([message], false, [{ providerID: "ipr_other", modelID: "gwm_fixture", title: "Another model", description: "OpenAI" }])
@@ -174,13 +158,11 @@ test("an unknown gateway identity stays hidden without a catalog title", async (
 })
 
 test("a streaming reply does not claim a completed model", async () => {
-  enabled = true
   const container = await render([answer("reply")], true)
   expect(container.querySelector('[data-testid="reply-model"]')).toBeNull()
 })
 
 test("missing model metadata never invents a footer", async () => {
-  enabled = true
   const container = await render([{ id: "reply", role: "assistant", parts: [{ type: "text", text: "Ready." }] }])
   expect(container.querySelector('[data-testid="reply-model"]')).toBeNull()
 })

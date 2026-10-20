@@ -27,6 +27,7 @@ import {
   getBillingRoute,
   getCustomLlmProvidersRoute,
   getDiagnosticsRoute,
+  getServicesRoute,
   getDeploymentsRoute,
   getDesktopPoliciesRoute,
   getWorkbotSettingsRoute,
@@ -280,6 +281,7 @@ function getDashboardPageTitle(pathname: string, orgSlug: string | null) {
   if (pathname.startsWith(getDeploymentsRoute(orgSlug))) {
     return "Deployments";
   }
+  if (pathname === getServicesRoute(orgSlug)) return "Services";
   if (pathname.startsWith(getDiagnosticsRoute(orgSlug))) {
     return "Diagnostics";
   }
@@ -428,8 +430,8 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
   );
 
   const basePageTitle = getDashboardPageTitle(pathname, activeOrg?.slug ?? null);
-  // teamRoles: the permission pages are role pages.
-  const pageTitle = basePageTitle === "Permissions" && orgFeatureEnabled(orgContext, "teamRoles") ? "Roles" : basePageTitle;
+  // the permission pages are role pages.
+  const pageTitle = basePageTitle === "Permissions" ? "Roles" : basePageTitle;
   const shouldShowProfilePrompt = Boolean(
     user &&
       !profilePromptDismissed &&
@@ -454,10 +456,10 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     },
     orgMode: runtimeConfig.orgMode,
     runtimeConfigLoaded,
-    permissionsEnabled: orgFeatureEnabled(orgContext, "permissions"),
-    teamRoles: orgFeatureEnabled(orgContext, "teamRoles"),
+
     managedDeployments: orgFeatureEnabled(orgContext, "managedDeployments"),
-    workbotSettings: orgContext?.capabilities.workbot === true,
+    canManageDeploymentServices: orgContext?.canManageDeploymentServices === true,
+
     desktopPolicyScreenRemoved: desktopPolicyScreenRemoved(orgContext),
   });
 

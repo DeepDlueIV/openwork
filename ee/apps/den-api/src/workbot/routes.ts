@@ -11,19 +11,21 @@ import { db } from "../db.js"
 import { attributeAuditRequest, auditUserPrincipalKey } from "../audit/request-capture.js"
 import { mcpPrincipalCredentialId, verifyMcpRequest } from "../mcp/auth.js"
 import { DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS } from "../mcp/headless-run-token.js"
-import { mintHeadlessRunMcpToken } from "../mcp/headless-run-token-mint.js"
+import { mintHeadlessTurnCredentials } from "../headless-runner/resume-grants.js"
 import { DEN_MCP_READ_SCOPE, DEN_MCP_WRITE_SCOPE } from "../mcp/scopes.js"
 import { jsonResponse, unauthorizedSchema } from "../openapi.js"
 import { getOrganizationFeatures, organizationFeatureEnabled } from "../features.js"
 import { jsonValidator, tokenRoute } from "../middleware/index.js"
-import { isPlatformAdminUserId } from "../middleware/admin.js"
 import { checkRateLimit } from "../utils/rate-limit.js"
 import { openworkYourConnectionsUrl } from "../mcp/connection-navigation.js"
 import { createInternalMcpPrincipalHeader } from "../session.js"
 import { getOrganizationContextForUser, listTeamsForMember } from "../orgs.js"
 import { listMemberUsableConnectionFacts } from "../routes/org/mcp-connections.js"
-import { readWorkbotModel } from "@openwork/types/den/workbot-settings"
-import { headlessModelCatalog, organizationDefaultModel } from "./model.js"
+import { readWorkbotModel, WORKBOT_DEFAULT_MODEL_ID } from "@openwork/types/den/workbot-settings"
+import { cloudAgentModelCatalog, headlessModelCatalog } from "./model.js"
+import { headlessModelAccessSchema, createHeadlessRunnerClient } from "@openwork-ee/headless-protocol"
+import { workbotOwner } from "@openwork-ee/headless-protocol/workbot-routing"
+import { defaultHeadlessRunnerDeps } from "../headless-runner/client.js"
 import { explicitWorkbotModel } from "./readiness.js"
 import { recordWorkbotTelemetry, workbotTelemetrySchema, workbotTelemetryServiceAuthorized } from "./telemetry.js"
 import { resolvePermissionsForMember } from "../permissions/resolve.js"
@@ -58,6 +60,8 @@ const sessionSchema = z.object({
   /** Connected document browsing; off on older Dens. */
   documents: z.boolean().optional(),
   workspaceAssistant: z.boolean().optional(),
+  /** Offers to open mentioned documents and keeps the chat beside them; needs the workspace assistant. */
+  guidedNavigation: z.boolean().optional(),
   /** Team controls are hints only; Den's destination routes still enforce permissions. */
   teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
   /** The person can start side chats next to their main chat (while Workbot is on). */
@@ -69,9 +73,36 @@ const sessionSchema = z.object({
   model: z.string().nullable().optional(),
   /** Require an authenticated runner catalog before new turns; older Dens omit this. Reads remain available. */
   verifyModel: z.boolean().optional(),
+  /** Den authorizes the member's AI Gateway model for every turn; no deployment catalog precheck. */
+  gatewayModels: z.boolean().optional(),
+  /**
+   * Feature `headlessStepTurns`: Workbot sends turns to run one step at a time (`execution: "steps"`) and follows them
+   * over the runner's WebSocket, so a runner deploy doesn't cut a step off. Workbot reads it as off from older Dens.
+   */
+  stepTurns: z.boolean(),
 }).meta({ ref: "WorkbotSession" })
 
-const runTokenSchema = z.object({ token: z.string(), expiresAt: z.iso.datetime() }).meta({ ref: "WorkbotRunToken" })
+const runTokenSchema = z.object({
+  token: z.string(),
+  expiresAt: z.iso.datetime(),
+  /**
+   * Feature `headlessDurableTurns`, when the request names the turn (`sessionId` and `messageId`): a resume grant the
+   * headless runner can exchange for fresh tokens for this turn, so it continues on its own after a restart.
+   */
+  resumeGrant: z.string().optional(),
+  /** Server-to-server only; never returned in Workbot's browser session or transcript. */
+  modelAccess: headlessModelAccessSchema.optional(),
+}).meta({ ref: "WorkbotRunToken" })
+const runTokenRequestSchema = z.object({
+  ttlMs: z.number().int().min(60_000).max(DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS).optional(),
+  readOnly: z.boolean().optional(),
+  /** The headless runner session and message the turn is sent as; both are needed for a resume grant. */
+  sessionId: z.string().min(1).max(128).optional(),
+  messageId: z.string().min(1).max(128).optional(),
+  /** A retry may name its original model. Den rechecks this member's current access to that exact alias. */
+  model: z.string().min(1).max(512).optional(),
+  modelAccessRequired: z.boolean().optional(),
+})
 const signedOutSchema = z.object({ error: z.string(), message: z.string().optional() })
 
 /** Plenty for one person's turns (each send and resume needs one); stops a runaway client minting in a loop. */
@@ -172,10 +203,6 @@ async function attributeWorkbot(c: Context, resolved: Resolved) {
   return audited.ok ? null : audited.response
 }
 
-async function workbotCalendarEnabled(organizationId: string) {
-  return await organizationFeatureEnabled(organizationId, "workbot")
-}
-
 const ID = "[A-Za-z0-9_-]{1,160}"
 /**
  * The Den routes Workbot's Calendar may reach, as the signed-in member: their own Automations and runs, the
@@ -243,7 +270,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       const auditBlocked = await attributeWorkbot(c, resolved)
       if (auditBlocked) return auditBlocked
       const event = c.req.valid("json")
-      // Completion still records if the owner kills Workbot while the greeting is running.
+      // Completion records even if the originating session has already ended.
       await recordWorkbotTelemetry({ organizationId: resolved.organization.id, memberId: resolved.memberId }, event, async () => {
         const organizationContext = await getOrganizationContextForUser({ userId: normalizeDenTypeId("user", resolved.principal.userId), organizationId: resolved.organization.id })
         if (!organizationContext) return null
@@ -263,7 +290,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       "x-mcp": false,
       summary: "Who is signed in to Workbot",
       description:
-        "For the Workbot app only. With the access token a person got by signing in to Workbot through Den, returns who they are, the workspace they chose, and whether Workbot is on for it.",
+        "For the Workbot app only. With the access token a person got by signing in to Workbot through Den, returns who they are, the workspace they chose, and their available Workbot tools.",
       responses: {
         200: jsonResponse("The signed-in person and their workspace.", sessionSchema),
         401: jsonResponse("The token is missing, expired or revoked, or the membership ended.", unauthorizedSchema),
@@ -278,38 +305,40 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       const { organization, user, memberId } = resolved
       const canSchedule = (await cloudAutomationRuntime(organization.id).catch(() => "web")) === "headless"
       const features = await getOrganizationFeatures(organization.id)
-      const permissions = features.workbot && resolved.scopes.has(DEN_MCP_READ_SCOPE)
+      const permissions = resolved.scopes.has(DEN_MCP_READ_SCOPE)
         ? await resolvePermissionsForMember({ organizationId: organization.id, memberId: normalizeDenTypeId("member", memberId) })
         : null
       const teamLinks = {
-        enabled: features.workbot && features.workbotTeamLinks,
+        enabled: features.workbotTeamLinks,
         settings: permissions?.has("inference.view") === true || permissions?.has("inference.manage") === true,
         // Den's management list requires View all connections as well as the write permission.
         apps: permissions?.has("connections.manage") === true && permissions.has("connections.view"),
       }
-      const verifyModel = features.workbot && features.workbotLunaDefault
-      // Explicit routing applies only to Workbot. Slack and Automations retain their existing policy.
-      const model = verifyModel
-        ? explicitWorkbotModel(readWorkbotModel(organization.metadata), await headlessModelCatalog())
-        : await organizationDefaultModel(organization.id, {
-          features: async () => features,
-          chosenModel: async () => readWorkbotModel(organization.metadata),
-        }).catch(() => null)
+      const gatewayModels = features.cloudAgentGateway
+      const verifyModel = !gatewayModels
+      // Keep history readable during access failures. Starting a turn reauthorizes the exact alias in Den.
+      // With Gateway off, explicit Luna routing applies only to Workbot, not Slack or Automations.
+      const model = gatewayModels
+        ? readWorkbotModel(organization.metadata) ?? (await cloudAgentModelCatalog({ organizationId: organization.id, userId: user.id }).catch(() => null))?.defaultModel ?? WORKBOT_DEFAULT_MODEL_ID
+        : explicitWorkbotModel(readWorkbotModel(organization.metadata), await headlessModelCatalog())
       return c.json({
         user,
         organization: { id: organization.id, name: organization.name, brandAppName: readBrandAppName(organization.metadata) },
         memberId,
-        enabled: features.workbot,
+        enabled: true,
         firstRun: features.workbotFirstRun,
-        canEnableWorkbot: features.workbotFirstRun && !features.workbot && await isPlatformAdminUserId(user.id),
+        canEnableWorkbot: false,
         canSchedule,
-        calendar: features.workbot,
-        documents: features.workbot && features.workbotDocuments,
-        workspaceAssistant: features.workbot && features.workbotWorkspaceAssistant,
-        sideChats: features.workbot,
+        calendar: true,
+        documents: features.workbotDocuments,
+        workspaceAssistant: features.workbotWorkspaceAssistant,
+        guidedNavigation: features.workbotWorkspaceAssistant && features.workbotGuidedNavigation,
+        sideChats: true,
         teamLinks,
         model,
         ...(verifyModel ? { verifyModel: true } : {}),
+        ...(gatewayModels ? { gatewayModels: true } : {}),
+        stepTurns: features.headlessStepTurns,
       })
     },
   )
@@ -333,9 +362,6 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
     async (c) => {
       const resolved = await resolve(c.req.raw.headers)
       if (resolved instanceof Response) return resolved
-      if (!(await organizationFeatureEnabled(resolved.organization.id, "workbot"))) {
-        return c.json({ error: "workbot_not_enabled", message: "Workbot is off for this workspace." }, 403)
-      }
       const organizationContext = await getOrganizationContextForUser({ userId: normalizeDenTypeId("user", resolved.principal.userId), organizationId: resolved.organization.id })
       if (!organizationContext) return c.json({ connections: [] })
       const memberTeams = await listTeamsForMember({ organizationId: resolved.organization.id, memberId: normalizeDenTypeId("member", resolved.memberId) })
@@ -378,7 +404,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       const auditBlocked = await attributeWorkbot(c, resolved)
       if (auditBlocked) return auditBlocked
       const features = await getOrganizationFeatures(resolved.organization.id)
-      if (!features.workbot || !features.workbotInlineConnect || !workbotOrigin()) return c.json({ error: "feature_disabled", message: "Connect from your workspace connections page instead." }, 404)
+      if (!features.workbotInlineConnect || !workbotOrigin()) return c.json({ error: "feature_disabled", message: "Connect from your workspace connections page instead." }, 404)
       if (!resolved.scopes.has(DEN_MCP_WRITE_SCOPE)) return c.json({ error: "insufficient_scope", message: "Sign in again with permission to connect accounts." }, 403)
       const input = c.req.valid("json")
       const connectionId = c.req.param("connectionId")
@@ -405,7 +431,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       "x-mcp": false,
       summary: "Workbot's Calendar: the member's Automations, runs and calendar meetings",
       description:
-        "For the Workbot app only. Forwards an allowlisted Den route, as the member behind the Workbot token: GET /v1/automations, GET /v1/automation-runs, GET /v1/automations/{id}/runs, GET /v1/automation-runs/{id}, GET /v1/capabilities/{google-workspace|microsoft-365}/calendar-events, GET /v1/llm-providers (names and model IDs only), GET /v1/org/workbot-settings (subject to the destination's feature and permission guards), POST /v1/automations/{id}/{activate|deactivate|run}, POST /v1/cloud-automations and a PATCH /v1/automations/{id} limited to name, schedule, instructions and model. Refused while Workbot or its Calendar is off.",
+        "For the Workbot app only. Forwards an allowlisted Den route, as the member behind the Workbot token: GET /v1/automations, GET /v1/automation-runs, GET /v1/automations/{id}/runs, GET /v1/automation-runs/{id}, GET /v1/capabilities/{google-workspace|microsoft-365}/calendar-events, GET /v1/llm-providers (names and model IDs only), GET /v1/org/workbot-settings (subject to the destination's feature and permission guards), POST /v1/automations/{id}/{activate|deactivate|run}, POST /v1/cloud-automations and a PATCH /v1/automations/{id} limited to name, schedule, instructions and model. The destination routes enforce their own permissions and remaining feature guards.",
       responses: {
         200: jsonResponse("The forwarded route's answer.", z.unknown()),
         401: jsonResponse("The token is missing, expired or revoked, or the membership ended.", unauthorizedSchema),
@@ -424,9 +450,6 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       const method = c.req.method
       const route = WORKBOT_CALENDAR_ROUTES.find((entry) => entry.method === method && entry.path.test(inner))
       if (!route) return c.json({ error: "not_found", message: "Workbot's Calendar cannot reach this route." }, 404)
-      if (!(await workbotCalendarEnabled(resolved.organization.id))) {
-        return c.json({ error: "workbot_calendar_not_enabled", message: "Workbot's Calendar is off for this workspace." }, 403)
-      }
       const scope = route.write ? DEN_MCP_WRITE_SCOPE : DEN_MCP_READ_SCOPE
       if (!resolved.scopes.has(scope)) return c.json({ error: "insufficient_scope", message: "The sign-in grant does not allow this." }, 403)
       let body: string | undefined
@@ -483,7 +506,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       if (!(read && inner === "/v1/capabilities/google-workspace/drive-files") && !(editor && (read || editor[1] === "editor")) && !(office && (read ? !office[1] && /\/[0-9a-f-]{36}$/.test(inner) : inner.endsWith("/office") || !!office[1]))) return c.json({ error: "not_found" }, 404)
       const features = await getOrganizationFeatures(resolved.organization.id)
       if (editor?.[1] === "metadata" && !features.workbotWorkspaceAssistant) return c.json({ error: "feature_disabled", message: "Opening document links is off for this workspace." }, 403)
-      if (!features.workbot || !features.workbotDocuments) return c.json({ error: "workbot_documents_not_enabled", message: "Documents is off for this workspace." }, 403)
+      if (!features.workbotDocuments) return c.json({ error: "workbot_documents_not_enabled", message: "Documents is off for this workspace." }, 403)
       if (!resolved.scopes.has(read ? DEN_MCP_READ_SCOPE : DEN_MCP_WRITE_SCOPE)) return c.json({ error: "insufficient_scope" }, 403)
       const url = new URL(c.req.url)
       const headers = new Headers({ accept: "application/json", "x-den-internal-mcp-principal": createInternalMcpPrincipalHeader({ userId: resolved.principal.userId, organizationId: resolved.principal.organizationId, credentialId: resolved.credentialId }) })
@@ -508,7 +531,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       "x-mcp": false,
       summary: "A short-lived token for one Workbot turn",
       description:
-        "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. Refused when Workbot is off for the workspace.",
+        "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.",
       responses: {
         200: jsonResponse("The token.", runTokenSchema),
         401: jsonResponse("The token is missing, expired or revoked, or the membership ended.", unauthorizedSchema),
@@ -517,7 +540,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       },
     }),
     tokenRoute,
-    jsonValidator(z.object({ ttlMs: z.number().int().min(60_000).max(DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS).optional(), readOnly: z.boolean().optional() })),
+    jsonValidator(runTokenRequestSchema),
     async (c) => {
       const resolved = await resolve(c.req.raw.headers)
       if (resolved instanceof Response) return resolved
@@ -529,14 +552,26 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       if (requiredScopes.some((scope) => !resolved.scopes.has(scope))) {
         return c.json({ error: "insufficient_scope", message: "The sign-in grant does not allow this Workbot turn." }, 403)
       }
-      if (!(await organizationFeatureEnabled(organization.id, "workbot"))) {
-        return c.json({ error: "workbot_not_enabled", message: "Workbot is off for this workspace." }, 403)
-      }
       const retryAfter = await checkRateLimit(`workbot-run-token:${principal.organizationId}:${principal.userId}`, RUN_TOKENS_PER_WINDOW, RUN_TOKEN_WINDOW_MS, Date.now())
       if (retryAfter !== null) return c.json({ error: "rate_limited" as const, retryAfter }, 429)
-      const ttlMs = c.req.valid("json").ttlMs ?? DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS
-      const { token } = await mintHeadlessRunMcpToken({ ...principal, ttlMs, readOnly })
-      return c.json({ token, expiresAt: new Date(Date.now() + ttlMs).toISOString() })
+      const { ttlMs = DEN_MCP_HEADLESS_RUN_TOKEN_MAX_TTL_MS, sessionId, messageId, model, modelAccessRequired } = c.req.valid("json")
+      try {
+        if (modelAccessRequired && !(await organizationFeatureEnabled(organization.id, "cloudAgentGateway"))) {
+          // OAuth callers cannot label new work as recovery to bypass a disabled rollout. Verify the actual
+          // persisted scoped turn, fenced to this member's owner on both cell and Node runners.
+          const runner = defaultHeadlessRunnerDeps()
+          if (!runner || !sessionId || !messageId || !model) return c.json({ error: "cloud_model_unavailable" }, 403)
+          const owner = workbotOwner(organization.id, resolved.memberId)
+          const snapshot = await createHeadlessRunnerClient({ ...runner, config: { ...runner.config, owner } }).readSession(sessionId, { messageId, expectedOwner: owner, limit: 1, outputs: "none" })
+          const turn = snapshot.ok ? snapshot.value.turns.find((entry) => entry.messageId === messageId) : undefined
+          if (!turn?.modelAccessRequired || turn.model !== model) return c.json({ error: "cloud_model_unavailable" }, 403)
+        }
+        const { token, resumeGrant, modelAccess } = await mintHeadlessTurnCredentials({ ...principal, ttlMs, readOnly, sessionId, messageId, model, modelAccessRequired })
+        return c.json({ token, expiresAt: new Date(Date.now() + ttlMs).toISOString(), ...(resumeGrant ? { resumeGrant } : {}), ...(modelAccess ? { modelAccess } : {}) })
+      } catch (error) {
+        if (!modelAccessRequired && !(await organizationFeatureEnabled(organization.id, "cloudAgentGateway"))) throw error
+        return c.json({ error: "cloud_model_unavailable", message: "Your workspace model isn't available to you. Ask your model administrator to check your AI Gateway access." }, 403)
+      }
     },
   )
 }

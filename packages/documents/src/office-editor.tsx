@@ -11,6 +11,10 @@ import type { DocumentTabControlsChange } from "./document-tabs"
 import { collaboraWorkspaceUrl, useCollaboraController } from "./collabora-controller"
 import { DocumentToolbar } from "./document-toolbar"
 
+/** Den reports `office_starting` while the person's own editor is waking. */
+function editorStarting(error: unknown): error is Error & { code: string } {
+  return error instanceof Error && "code" in error && error.code === "office_starting"
+}
 const messageSchema = z.object({ MessageId: z.string(), Values: z.object({ Status: z.string().optional(), Modified: z.boolean().optional(), success: z.boolean().optional(), result: z.string().optional() }).passthrough().optional() })
 export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarHost, onDirtyChange, onSavingChange, onResourceChange, onControlsChange, onClose }: { item: DocumentItem; editor: OfficeEditor; enabled: boolean; active: boolean; scope: readonly string[]; toolbarHost?: HTMLElement | null; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onResourceChange?(tabId: string, resource: DocumentItem): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
   const [dirty, setDirty] = useState(false)
@@ -34,8 +38,10 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
   const pending = useRef<{ resolve(): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>(undefined)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; if (pending.current) { clearTimeout(pending.current.timer); pending.current.reject(new Error("The editor was closed.")); pending.current = undefined } } }, [])
-  const query = useQuery({ queryKey: ["documents", ...scope, "office", item.id], queryFn: ({ signal }) => editor.open(item.id, signal), enabled: enabled && active, retry: false, gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false })
+  // A per-person editor may still be starting; keep retrying for about two minutes.
+  const query = useQuery({ queryKey: ["documents", ...scope, "office", item.id], queryFn: ({ signal }) => editor.open(item.id, signal), enabled: enabled && active, retry: (count, failure) => count < 24 && editorStarting(failure), retryDelay: 5_000, gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false })
   const session = query.data
+  const startingMessage = !session && !query.isError && editorStarting(query.failureReason) ? query.failureReason.message : undefined
   accessCheck.current = async () => {
     if (session) { await editor.status(item.id, session.id); return }
     // An initial open may have failed during auth. Rechecking must establish the
@@ -56,7 +62,19 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = "" }
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn)
   }, [dirty])
+  // The engine paints an empty frame, then an empty document, before the file
+  // arrives. Keep the opening skeleton over it until the document has loaded,
+  // or long enough that the engine's own progress is better than waiting.
+  const [loadingTooLong, setLoadingTooLong] = useState(false)
   useEffect(() => {
+    setLoadingTooLong(false)
+    if (!session) return
+    const timer = setTimeout(() => setLoadingTooLong(true), 30_000)
+    return () => clearTimeout(timer)
+  }, [session])
+  const showFrame = ready || loadingTooLong
+  useEffect(() => {
+    setReady(false)
     if (!session) return
     const origin = new URL(session.serverUrl).origin
     const receive = (event: MessageEvent) => {
@@ -120,11 +138,13 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
     {session?.saveAsCopy && <div className="ow-editor-message">{saved ? "Your copy is saved in My Drive. Further saves update that copy." : `You’re editing a ${formatLabel} copy. Save creates a new file in My Drive; the Google original stays unchanged.`}{saved && <a href={`https://drive.google.com/file/d/${encodeURIComponent(saved)}/view`} target="_blank" rel="noopener noreferrer">Open saved copy</a>}</div>}
     {!enabled && <div className="ow-editor-message">Documents is off for this workspace.</div>}
     {(error || query.isError || expired) && <div className="ow-editor-message" role="alert">{expired ? "This editing session expired. Download your changes from the editor before closing it." : error ?? (query.error instanceof Error ? query.error.message : "Couldn't open the full editor.")}{!session && item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer">Open in Drive</a>}</div>}
+    {startingMessage && <div className="ow-editor-message" role="status">{startingMessage}</div>}
     {!session && query.isPending && <div className="ow-documents-skeleton" aria-label="Opening full editor" aria-busy="true"><div/><div/><div/></div>}
     {session && <DocumentToolbar controller={controller}/>}
     {session && <div className="ow-office-canvas" inert={saving || !enabled} aria-busy={saving}>
       <form ref={form} method="post" action={collaboraWorkspaceUrl(session.editorUrl)} target={frameName} hidden><input type="hidden" name="access_token" value={session.accessToken}/><input type="hidden" name="access_token_ttl" value={Date.parse(session.expiresAt)}/></form>
-      <iframe ref={frame} name={frameName} title={`Edit ${item.name}`} className="ow-office-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals" allow="clipboard-read; clipboard-write" allowFullScreen referrerPolicy="no-referrer"/>
+      <iframe ref={frame} name={frameName} title={`Edit ${item.name}`} className="ow-office-frame" data-loading={showFrame ? undefined : ""} sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals" allow="clipboard-read; clipboard-write" allowFullScreen referrerPolicy="no-referrer"/>
+      {!showFrame && <div className="ow-documents-skeleton ow-office-loading" aria-label="Opening full editor" aria-busy="true"><div/><div/><div/></div>}
     </div>}
   </section>
 }

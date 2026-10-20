@@ -57,6 +57,9 @@ const SEAT_SYNC = "stripe (seat/web/inference quantity sync via runPostOrganizat
 const DOMAIN = (area: string) => `audit/domain/${area}.ts`
 
 export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
+  member("GET", "/v1/org/service-readiness", "tenant_read", "service_readiness.read", "service.readiness", "service_readiness", null, { notes: "Minimal cached deployment facts, never settings or tenant credentials. Does not initiate probes." }),
+  member("GET", "/v1/org/deployment-services", "tenant_read", "deployment_services.read", "service.readiness", "service_readiness", null, { notes: "Self-hosted allowlisted operator with genuine user session and active membership only; deployment diagnostics, not tenant credentials." }),
+  member("POST", "/v1/org/deployment-services/check", "tenant_external", "deployment_services.check", "service.readiness", "service_readiness", null, { external: "Bounded, read-only deployment health probes; shared durable admission with /v1/admin/services/check.", notes: "Self-hosted allowlisted operator with genuine user session and active membership only; no configuration mutation." }),
   // API keys
   member("GET", "/v1/api-keys", "tenant_read", "api_key.list", "api_key.management", "api_key", null),
   member("POST", "/v1/api-keys", "tenant_change", "api_key.create", "api_key.management", "api_key", null, { changeEvidence: DOMAIN("api-keys"), notes: "Legacy organization.api_key.created. better-auth createApiKey write: after-snapshot appended in a fresh tx; plaintext key only in the response, never captured." }),

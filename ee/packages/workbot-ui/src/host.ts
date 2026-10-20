@@ -27,6 +27,8 @@ export type WorkbotHost = {
   documents?: boolean
   /** Contextual chat and workspace navigation. Omitted means off. */
   workspaceAssistant?: boolean
+  /** Offers to open documents a reply mentions and keeps the chat open beside them. Needs workspaceAssistant. */
+  guidedNavigation?: boolean
   /** The organization runs Automations in the cloud, so the Calendar can create them. Off when unset. */
   canSchedule?: boolean
   /** Where the person connects their own Google or Microsoft account, for the Calendar's connect links. */

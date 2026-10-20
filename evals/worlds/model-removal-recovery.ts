@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { Seed } from "@openwork/env";
 import { denForAppWeb, signedInAppWeb } from "./signed-in-app-web.ts";
-import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
+import { seededOrganizationId } from "./organization-capabilities.ts";
 import { modelRemovalHttpFixture } from "./model-removal-cdp.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -16,7 +16,7 @@ type Scenario = "available" | "catalog-gap" | "removed" | "returned";
 export async function modelRemovalRecovery(seed: Seed) {
   await using setup = new AsyncDisposableStack();
   const { den, webPort } = await denForAppWeb(seed);
-  const organizationId = await enableOrganizationCapabilities(seed, den.admin, { modelRemovalRecovery: true });
+  const organizationId = await seededOrganizationId(seed, den.admin);
   const models = [
     { id: "openai/gpt-6-luna", name: "GPT-6 Luna" },
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
@@ -97,12 +97,6 @@ export async function modelRemovalRecovery(seed: Seed) {
     app, den, first, second, old, replacement, providerID, organizationId,
     scenario(next: Scenario) { fixture.check(); scenario = next; },
     reads() { fixture.check(); return [...reads]; },
-    async setRollout(enabled: boolean) {
-      const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
-        method: "PUT", body: JSON.stringify({ capabilities: { modelRemovalRecovery: enabled } }),
-      });
-      if (!result.response.ok) throw new Error(`Changing the model-recovery rollout failed: ${result.response.status}`);
-    },
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }

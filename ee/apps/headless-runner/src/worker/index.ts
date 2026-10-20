@@ -5,9 +5,12 @@ import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { loadConfig, type Config } from "../config.js"
 import { createErrorReporter, type ErrorReporter } from "../error-reporting.js"
-import { createRuntime, gatewayModelCatalog } from "../runtime.js"
+import { READY_MESSAGE } from "../events.js"
+import { scopedCatalogResponse } from "../model-catalog.js"
+import { createRuntime, gatewayModelCatalog, type StepHost } from "../runtime.js"
 import { createModelProbe, modelProbeResponse, type ModelProbe } from "../model-probe.js"
 import { Store } from "../store.js"
+import { serviceHealthResponse } from "../service-health.js"
 import { durableObjectSql } from "./sql.js"
 
 /**
@@ -51,19 +54,93 @@ function parseCell(name: string): Cell | null {
 }
 
 const json = (body: unknown, status: number) => Response.json(body, { status })
+/** Where a cell keeps its own name: an alarm has no request to read it from. */
+const CELL_NAME_KEY = "cell"
+/**
+ * How far ahead a cell's alarm is set while it has turns running or waiting to resume: after a crash, the node that
+ * takes the cell over wakes it within this, recovery marks its turns interrupted, and the alarm resumes them.
+ */
+const RESUME_ALARM_MS = 30_000
+
+type Runtime = Awaited<ReturnType<typeof createRuntime>>
+/** A live-event socket's keep-alive and its answer (headless-protocol's `openEventsSocket` sends it). */
+const SOCKET_PING = "ping"
+const SOCKET_PONG = "pong"
+
+/** Completes a live-event socket's close; a code an application may not send back is answered as a normal close. */
+function closeSocket(socket: WebSocket, code: number) {
+  try {
+    socket.close(code >= 3000 && code <= 4999 ? code : 1000)
+  } catch {
+    // Already closed.
+  }
+}
 
 export class HeadlessCell {
-  private readonly ready: ReturnType<typeof createRuntime>
+  private readonly ready: Promise<Runtime>
+  /** This cell's name, once a request addressed it by name (and it was stored for alarms). */
+  private name: string | null = null
 
   constructor(private readonly ctx: DurableObjectState, private readonly env: CellEnv) {
     const store = new Store(durableObjectSql(ctx.storage))
-    this.ready = ctx.blockConcurrencyWhile(() => createRuntime(configFor(env), store))
+    this.ready = ctx.blockConcurrencyWhile(async () => this.withEventSockets(await createRuntime(configFor(env), store, this.stepHost())))
+  }
+
+  /**
+   * Live events over hibernatable WebSockets (GET /v1/sessions/:id/events with `Upgrade: websocket`): each socket is
+   * tagged with its session id and found again through the cell's state, never an in-memory listener, so it keeps
+   * receiving events after the cell sleeps or switches to new code, and it never holds up that switch. Runs at every
+   * start of the cell, so events from whatever runs after a wake (a request, the alarm) reach the sockets.
+   */
+  private withEventSockets(runtime: Runtime) {
+    // A client's keep-alive is answered without waking the cell.
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(SOCKET_PING, SOCKET_PONG))
+    runtime.events.useSockets({
+      accept: (sessionId) => {
+        const pair = new WebSocketPair()
+        this.ctx.acceptWebSocket(pair[1], [sessionId])
+        pair[1].send(READY_MESSAGE)
+        return new Response(null, { status: 101, webSocket: pair[0] })
+      },
+      send: (sessionId, data) => {
+        for (const socket of this.ctx.getWebSockets(sessionId)) {
+          try {
+            socket.send(data)
+          } catch {
+            // A socket closing as this runs; the others still get the event.
+          }
+        }
+      },
+    })
+    return runtime
+  }
+
+  /** Live-event sockets carry nothing from the client but keep-alives (answered by the auto-response first). */
+  webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
+    if (message === SOCKET_PING) socket.send(SOCKET_PONG)
+  }
+
+  webSocketClose(socket: WebSocket, code: number) {
+    closeSocket(socket, code)
+  }
+
+  webSocketError(socket: WebSocket) {
+    closeSocket(socket, 1000)
+  }
+
+  /** The cell's name if it is this cell's: the same check a request gets, for one that names the cell. */
+  private isOwnName(name: string) {
+    return parseCell(name) !== null && this.ctx.id.equals(this.env.HEADLESS_CELL.idFromName(name))
   }
 
   async fetch(request: Request) {
     const name = request.headers.get(CELL_HEADER) ?? ""
     const cell = parseCell(name)
-    if (!cell || !this.ctx.id.equals(this.env.HEADLESS_CELL.idFromName(name))) return json({ error: "invalid_cell" }, 400)
+    if (!cell || !this.isOwnName(name)) return json({ error: "invalid_cell" }, 400)
+    if (this.name !== name) {
+      await this.ctx.storage.put(CELL_NAME_KEY, name)
+      this.name = name
+    }
     const url = new URL(request.url)
     const sessionId = SESSION_PATH.exec(url.pathname)?.[1]
 
@@ -90,8 +167,57 @@ export class HeadlessCell {
       // The caller may stop listening after admission; keep the turn running on either host.
       this.ctx.waitUntil(runtime.runner.idle())
     }
+    // A turn admitted or resumed, or turns found interrupted when this cell woke up: keep an alarm set for them.
+    await this.armResume(runtime, false)
     // Deleting a chat removes only its rows; the owner's other chats and memory stay.
     return response
+  }
+
+  /**
+   * The cell's one alarm, for two jobs, with no request:
+   *
+   * - Step-mode turns' due steps (see steps.ts): each runs to completion, lanes in parallel. Between alarms nothing
+   *   runs in the cell, so a celld deploy switches it to the new code there instead of cancelling a step.
+   * - Self-resume: after a crash or a deploy the alarm wakes the cell (startup recovery marks its turns interrupted),
+   *   and this resumes those with a resume grant and keeps them running.
+   *
+   * Then it is set again for the earliest of both.
+   */
+  async alarm() {
+    const name = await this.ctx.storage.get(CELL_NAME_KEY)
+    // A cell only arms alarms after a request named it; anything else is not this cell's to act on.
+    if (typeof name !== "string" || !this.isOwnName(name)) return
+    this.name = name
+    const runtime = await this.ready
+    // Never throws: a step's failure is its turn's alone.
+    await runtime.runner.runDueSteps()
+    if (runtime.selfResume) await runtime.selfResume.sweep()
+    // Turns run in one go that started here (resumed, or next in a lane a step-mode turn just gave back) keep running.
+    this.ctx.waitUntil(runtime.runner.idle())
+    await this.armResume(runtime, true)
+  }
+
+  /** What the runner needs from this cell to run step-mode turns from the alarm. */
+  private stepHost(): StepHost {
+    return {
+      stepAlarm: true,
+      // After the runtime exists: the runner can call this while it is being built (startup recovery).
+      wake: () => this.ctx.waitUntil(Promise.resolve().then(() => this.ready).then((runtime) => this.armResume(runtime, false))),
+    }
+  }
+
+  /**
+   * Sets the alarm for the earliest step due, and while any turn is queued, running or waiting to resume; `replace`
+   * even if one is set.
+   */
+  private async armResume(runtime: Runtime, replace: boolean) {
+    const sweep = runtime.selfResume?.nextSweepAt()
+    const step = runtime.runner.nextStepAt()
+    const due = [...(sweep === null || sweep === undefined ? [] : [Math.max(sweep, Date.now() + RESUME_ALARM_MS)]), ...(step === null ? [] : [step])]
+    if (due.length === 0) return
+    const at = Math.min(...due)
+    const current = replace ? null : await this.ctx.storage.getAlarm()
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at)
   }
 }
 
@@ -106,6 +232,7 @@ function forward(env: CellEnv, request: Request, cell: Cell, init: { method?: st
 const router = new Hono<{ Bindings: CellEnv }>()
 router.get("/health", (c) => c.json({ ok: true }))
 router.use("/v1/*", async (c, next) => {
+  if (c.req.path === "/v1/health") c.header("Cache-Control", "no-store")
   const expected = Buffer.from(configFor(c.env).apiToken)
   const actual = Buffer.from(/^Bearer\s+(\S+)$/i.exec(c.req.header("authorization") ?? "")?.[1] ?? "")
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return c.json({ error: "unauthorized" }, 401)
@@ -139,6 +266,8 @@ router.onError((error, c) => {
   reportRouterError(c, error)
   return c.json({ error: "internal_error" }, 500)
 })
+// Service-wide configuration facts stay in the router: no owner or conversation cell is touched.
+router.get("/v1/health", (c) => serviceHealthResponse(c.req.raw, configFor(c.env)))
 const catalogs = new WeakMap<Config, ReturnType<typeof gatewayModelCatalog>>()
 router.get("/v1/models", async (c) => {
   const config = configFor(c.env)
@@ -149,8 +278,17 @@ router.get("/v1/models", async (c) => {
   }
   return c.json(await catalog())
 })
+router.post("/v1/models", bodyLimit({ maxSize: 8192 }), (c) => {
+  const config = configFor(c.env)
+  let catalog = catalogs.get(config)
+  if (!catalog) {
+    catalog = gatewayModelCatalog(config)
+    catalogs.set(config, catalog)
+  }
+  return scopedCatalogResponse(c.req.raw, catalog)
+})
 const modelProbes = new WeakMap<Config, ModelProbe>()
-router.post("/v1/model-probe", bodyLimit({ maxSize: 512 }), (c) => {
+router.post("/v1/model-probe", bodyLimit({ maxSize: 8192 }), (c) => {
   const config = configFor(c.env)
   let probe = modelProbes.get(config)
   if (!probe) {

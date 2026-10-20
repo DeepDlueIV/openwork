@@ -11,15 +11,13 @@ export async function workbotSettingsRoles(seed: Seed) {
   try {
     const den = await seed.den({
       org: { name: "Settings roles", admin: { name: "Workspace Owner" }, members: { viewer: { name: "Model Viewer" }, manager: { name: "Model Manager" }, member: { name: "Workspace Member" } } },
-      env: { DEN_HEADLESS_RUNNER_URL: runner.url, DEN_HEADLESS_RUNNER_TOKEN: "r".repeat(32) },
+      env: { DEN_DEPLOYMENT: "self_hosted", DEN_HEADLESS_RUNNER_URL: runner.url, DEN_HEADLESS_RUNNER_TOKEN: "r".repeat(32) },
     });
     const initial = await seed.api(den.admin, "/v1/org");
     if (!isRecord(initial.body) || !isRecord(initial.body.organization) || typeof initial.body.organization.id !== "string" || !Array.isArray(initial.body.members)) throw new Error("Missing role fixture organization");
     const organizationId = initial.body.organization.id;
     const members = initial.body.members.filter(isRecord);
     const scope = { "x-openwork-org-id": organizationId };
-    const features = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, { method: "PUT", body: JSON.stringify({ capabilities: { workbot: true, workbotLunaDefault: true, permissions: true } }) });
-    if (!features.response.ok) throw new Error("Could not enable the role fixture features");
     const roles: { person: "viewer" | "manager"; key: "inference.view" | "inference.manage" }[] = [{ person: "viewer", key: "inference.view" }, { person: "manager", key: "inference.manage" }];
     for (const { person, key } of roles) {
       const memberId = members.find(member => isRecord(member.user) && member.user.email === den.members[person]?.email)?.id;
@@ -34,7 +32,6 @@ export async function workbotSettingsRoles(seed: Seed) {
     const web = await seed.web({ den, signedInAs: den.members.manager, startPath, headless: true, viewport });
     const viewer = await seed.web({ den, signedInAs: den.members.viewer, startPath, headless: true, viewport });
     const member = await seed.web({ den, signedInAs: den.members.member, startPath, headless: true, viewport });
-    const owner = await seed.web({ den, signedInAs: den.admin, startPath: `/admin/organizations/${organizationId}`, headless: true, viewport });
-    return { web, viewer, member, owner, settingsUrl: `${den.ref.webUrl}${startPath}`, completionCount: () => runner.calls().length, async [Symbol.asyncDispose]() { await runner.close(); } };
+    return { web, viewer, member, settingsUrl: `${den.ref.webUrl}${startPath}`, completionCount: () => runner.calls().length, async [Symbol.asyncDispose]() { await runner.close(); } };
   } catch (error) { await runner.close(); throw error; }
 }

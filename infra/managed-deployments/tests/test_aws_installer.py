@@ -305,6 +305,48 @@ class TlsLifecycleTests(unittest.TestCase):
             runner.tls_redeploy(force=False)
         self.assertEqual([call.args[:2] for call in aws.call_args_list], [("ecs", "wait"), ("ecs", "describe-services")])
 
+    def test_pre_force_waits_for_in_progress_then_completed(self):
+        pending = self.settled()
+        pending["services"][0]["deployments"][0]["rolloutState"] = "IN_PROGRESS"
+        descriptions = [pending, self.settled(), self.settled()]
+        def call(*args):
+            return descriptions.pop(0) if args[:2] == ("ecs", "describe-services") else {}
+        with patch.dict(os.environ, self.ENV), patch.object(runner, "aws", side_effect=call) as aws, patch.object(runner.time, "sleep") as poll:
+            runner.tls_redeploy()
+        poll.assert_called_once_with(3)
+        self.assertEqual([c.args[:2] for c in aws.call_args_list], [
+            ("ecs", "describe-services"), ("ecs", "describe-services"),
+            ("ecs", "update-service"), ("ecs", "update-service"),
+            ("ecs", "wait"), ("ecs", "describe-services")])
+
+    def test_pre_force_in_progress_then_failed_or_rollback_never_forces(self):
+        for outcome in ("FAILED", "rollback"):
+            pending = self.settled()
+            pending["services"][0]["deployments"][0]["rolloutState"] = "IN_PROGRESS"
+            terminal = self.settled()
+            if outcome == "FAILED":
+                terminal["services"][0]["deployments"][0]["rolloutState"] = "FAILED"
+            else:
+                terminal["services"][0]["taskDefinition"] = self.EXPECTED["den-api"].replace(":2", ":1")
+            descriptions = [pending, terminal]
+            def call(*args):
+                return descriptions.pop(0) if args[:2] == ("ecs", "describe-services") else {}
+            with self.subTest(outcome=outcome), patch.dict(os.environ, self.ENV), patch.object(runner, "aws", side_effect=call) as aws, patch.object(runner.time, "sleep") as poll:
+                with self.assertRaisesRegex(ValueError, "left its expected CA revision"):
+                    runner.tls_redeploy()
+            poll.assert_called_once_with(3)
+            self.assertEqual([c.args[:2] for c in aws.call_args_list], [("ecs", "describe-services"), ("ecs", "describe-services")])
+
+    def test_pre_force_pending_timeout_never_forces(self):
+        pending = self.settled()
+        pending["services"][0]["deployments"][0]["rolloutState"] = "IN_PROGRESS"
+        with patch.dict(os.environ, self.ENV), patch.object(runner, "aws", return_value=pending) as aws, \
+                patch.object(runner.time, "monotonic", side_effect=[0, 121]), patch.object(runner.time, "sleep") as poll:
+            with self.assertRaisesRegex(ValueError, "not complete"):
+                runner.tls_redeploy()
+        poll.assert_not_called()
+        self.assertEqual([c.args[:2] for c in aws.call_args_list], [("ecs", "describe-services")])
+
     def test_post_force_waits_for_completed_rollout_not_counts_alone(self):
         pending = self.settled()
         pending["services"][0]["deployments"][0]["rolloutState"] = "IN_PROGRESS"
@@ -332,7 +374,7 @@ class TlsLifecycleTests(unittest.TestCase):
         def call(*args):
             return descriptions.pop(0) if args[:2] == ("ecs", "describe-services") else {}
         with patch.dict(os.environ, self.ENV), patch.object(runner, "aws", side_effect=call), \
-                patch.object(runner.time, "monotonic", side_effect=[0, 121]), patch.object(runner.time, "sleep") as poll:
+                patch.object(runner.time, "monotonic", side_effect=[0, 0, 121]), patch.object(runner.time, "sleep") as poll:
             with self.assertRaises(ValueError):
                 runner.tls_redeploy()
         poll.assert_not_called()
@@ -348,7 +390,8 @@ class TlsLifecycleTests(unittest.TestCase):
                 state["services"][0]["deployments"][0]["rolloutState"] = "FAILED"
             else:
                 state["services"][0]["deployments"].append({"status": "ACTIVE"})
-            with self.subTest(mutation=mutation), patch.dict(os.environ, self.ENV), patch.object(runner, "aws", return_value=state) as aws:
+            with self.subTest(mutation=mutation), patch.dict(os.environ, self.ENV), patch.object(runner, "aws", return_value=state) as aws, \
+                    patch.object(runner.time, "monotonic", side_effect=[0, 121]):
                 with self.assertRaises(ValueError):
                     runner.tls_redeploy()
                 self.assertEqual(aws.call_count, 1)

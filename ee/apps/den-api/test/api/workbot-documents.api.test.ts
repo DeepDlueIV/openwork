@@ -5,15 +5,13 @@ import { bootDen, summary } from "./harness.js"
 const den = await bootDen()
 after(() => den.close())
 
-test("document reads require both feature flags, membership and a usable Drive connection", async () => {
+test("document reads require Documents, membership and a usable Drive connection", async () => {
   const member = await den.createOrg(await den.signUp("Alex Example"), "Document workspace")
   const outsider = await den.createOrg(await den.signUp("Robin Example"), "Another workspace")
   const path = "/v1/documents/google-drive/files/example_file/editor"
   const call = den.as(member.owner, member.orgId)
   assert.equal((await call("GET", path)).status, 403)
   assert.equal((await den.setFeature(member.orgId, "workbotDocuments", true)).status, 200)
-  assert.equal((await call("GET", path)).status, 403)
-  assert.equal((await den.setFeature(member.orgId, "workbot", true)).status, 200)
   const noDrive = await call("GET", path)
   assert.equal(noDrive.status, 409, summary(noDrive))
   assert.ok(noDrive.text.includes("needs_connection"), noDrive.text)

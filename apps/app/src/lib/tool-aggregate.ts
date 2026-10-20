@@ -182,7 +182,10 @@ export function getAggregateRowFile(part: AnyToolPart): { verb: string; path: st
   const path = filePathOf(part)
   if (!path) return null
   if (isEditToolPart(part)) return { verb: running ? "Editing" : "Edited", path }
-  if (isWriteToolPart(part)) return { verb: running ? "Writing" : "Wrote", path }
+  if (isWriteToolPart(part)) {
+    const failed = part.state === "output-error" || part.state === "output-denied"
+    return { verb: failed ? "Write failed:" : running ? "Writing" : "Wrote", path }
+  }
   if (isReadToolPart(part)) return { verb: running ? "Reading" : "Read", path }
   return null
 }

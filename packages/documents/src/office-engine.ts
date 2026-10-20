@@ -14,7 +14,12 @@ export const officeFormats: Record<OfficeFileType, { mimeType: string; kind: "do
 export const nativeOfficeFormats: Record<string, OfficeFileType> = {
   "application/vnd.google-apps.document": "docx", "application/vnd.google-apps.spreadsheet": "xlsx", "application/vnd.google-apps.presentation": "pptx",
 }
-export const officeMimeTypes = new Set([...Object.values(officeFormats).map(format => format.mimeType), ...Object.keys(nativeOfficeFormats)])
+/** Files the Office editor opens. Google Docs, Sheets and Slides stay in Google and are edited in place instead. */
+export const officeMimeTypes = new Set(Object.values(officeFormats).map(format => format.mimeType))
+/** The Google app that owns each native Drive file type. */
+export const googleAppNames: Record<string, string> = {
+  "application/vnd.google-apps.document": "Google Docs", "application/vnd.google-apps.spreadsheet": "Google Sheets", "application/vnd.google-apps.presentation": "Google Slides",
+}
 export const officeSessionSchema = z.object({
   id: z.string().uuid(), serverUrl: z.string().url(), editorUrl: z.string().url(), accessToken: z.string(), expiresAt: z.iso.datetime(),
   saveAsCopy: z.boolean(), canEdit: z.boolean(), fileType: officeFileTypeSchema,

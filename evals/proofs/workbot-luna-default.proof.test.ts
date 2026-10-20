@@ -9,24 +9,8 @@ const unauthorized = spec.world(workbotLunaDefaultWorld(true, true, "unauthorize
 const payment = spec.world(workbotLunaDefaultWorld(true, true, "payment_required"), { timeout: 600_000, needs: { placement: "local" }, resources: { surfaces: ["web"], services: ["den"] } });
 const unavailableProvider = spec.world(workbotLunaDefaultWorld(true, true, "unavailable"), { timeout: 600_000, needs: { placement: "local" }, resources: { surfaces: ["web"], services: ["den"] } });
 
-available("an owner enables the explicit Luna default and keeps their saved model through a rollback", async ({ world, user, probe, step, evidence }) => {
-  await step("before: Workbot leaves its default to the runner while the rollout is off", async () => {
-    await user.see({ role: "combobox", label: "Default model" }, { value: "Default (Another model)" });
-    await user.notSee({ testId: "workbot-default-readiness" });
-    evidence.recordAssertionEvidence("The rollout starts off", "The real settings page has the old runner default and no Luna readiness row", (await probe.dom('[data-testid="workbot-default-readiness"]')).elements.length === 0);
-    await user.screenshot();
-  });
-  await step("the owner enables the Luna rollout for this workspace", async () => {
-    await user.navigate(world.featureUrl);
-    await user.click({ role: "link", label: "Features" });
-    await user.click({ testId: "admin-capability-workbotLunaDefault" });
-    await user.see({ testId: "admin-capability-source-workbotLunaDefault" }, { text: "Set for this organization" });
-    const enabled = await probe.eventually(async () => (await probe.dom('[data-testid="admin-capability-workbotLunaDefault"][aria-checked="true"]:not([disabled])')).elements.length === 1, { within: 10_000, until: value => value, label: "saved Luna rollout" });
-    expect(enabled).toBe(true);
-    evidence.recordAssertionEvidence("The owner explicitly enables Luna", "The workspace feature switch is on", enabled);
-    await user.screenshot();
-  });
-  await step("after: the owner sees GPT-6 Luna as the available default", async () => {
+available("an owner gets the Luna default without a feature override and keeps their saved model", async ({ world, user, probe, step, evidence }) => {
+  await step("after: the owner sees GPT-6 Luna as the available default without enabling a rollout", async () => {
     await user.navigate(world.settingsUrl);
     await user.see({ role: "combobox", label: "Default model" }, { value: "Default: GPT-6 Luna" });
     await user.see({ testId: "workbot-default-readiness" }, { text: "GPT-6 Luna available" });
@@ -56,15 +40,12 @@ available("an owner enables the explicit Luna default and keeps their saved mode
     evidence.recordAssertionEvidence("An explicit model survives reload", "Another model remains selected with Luna still available", (await probe.dom('[data-testid="workbot-model-picker"] input[value="Another model"]')).elements.length === 1);
     await user.screenshot();
   });
-  await step("turning off the rollout keeps the organization's saved model", async () => {
-    await user.navigate(world.featureUrl);
-    await user.click({ role: "link", label: "Features" });
-    await user.click({ testId: "admin-capability-workbotLunaDefault" });
-    await probe.eventually(async () => (await probe.dom('[data-testid="admin-capability-workbotLunaDefault"][aria-checked="false"]:not([disabled])')).elements.length === 1, { within: 10_000, until: value => value, label: "saved rollout rollback" });
+  await step("reopening settings keeps the organization's saved model and readiness information", async () => {
     await user.navigate(world.settingsUrl);
+    await user.reload();
     await user.see({ role: "combobox", label: "Default model" }, { value: "Another model" });
-    await user.notSee({ testId: "workbot-default-readiness" });
-    evidence.recordAssertionEvidence("Rollback preserves the saved choice", "Another model remains selected; the new readiness row is absent", (await probe.dom('[data-testid="workbot-default-readiness"]')).elements.length === 0);
+    await user.see({ testId: "workbot-default-readiness" }, { text: "GPT-6 Luna available" });
+    evidence.recordAssertionEvidence("General availability preserves the saved choice", "Another model remains selected; Luna readiness remains available", (await probe.dom('[data-testid="workbot-model-picker"] input[value="Another model"]')).elements.length === 1);
     await user.screenshot();
   });
 });

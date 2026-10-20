@@ -209,7 +209,7 @@ export const AGENT_SKILL_INDEX_URI = "skill://index.json"
 export const AGENT_SKILL_INDEX_SCHEMA = "https://schemas.agentskills.io/discovery/0.2.0/schema.json"
 
 /**
- * The skill index. With `resolved` (the `nativeCloudSkills` rollout), the index
+ * The skill index. With `resolved`, the index
  * says `delivery: "native"` and each entry carries its SKILL.md digest and size,
  * or why it is withheld, so OpenWork can load skills as native ones and re-read
  * a skill only when its digest changes.
@@ -362,7 +362,7 @@ export function registerAgentSkillResources(input: {
   skills: RemoteSkillDescriptor[]
   organizationId: string
   member: Awaited<ReturnType<typeof resolveMcpMemberIdentity>>
-  /** Set during the `nativeCloudSkills` rollout: the index then carries digests for native delivery. */
+  /** Resolved skills carry digests for native delivery. */
   resolveSkills?: () => Promise<ResolvedSkill[]>
 }) {
   input.server.registerResource("agent-skills-index", AGENT_SKILL_INDEX_URI, {
@@ -465,7 +465,6 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     const member = await resolveMcpMember({
       userId: principal.userId,
       organizationId: principal.organizationId,
-      teamMembershipCache: organizationFeatures.teamMembershipCache,
     })
     const memberIdentity = member?.identity ?? null
     const notificationScope = `${principal.organizationId}\0${principal.userId}`
@@ -552,11 +551,11 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     const receiptScope = { organizationId, createdByUserId: normalizeDenTypeId("user", principal.userId) }
     const receiptStores = { commandStore: databaseRemoteSessionCommandStore, requestStore: databaseRemoteSessionRequestStore }
     const remoteSessionEventsEnabled = Boolean(memberIdentity && organizationFeatures.remoteSessionEvents)
-    // nativeCloudSkills: the skill index carries digests for OpenWork's native delivery.
-    // mcpSkillsExtension: the MCP Skills Extension is served and session
+    // Member skill indexes carry digests for OpenWork's native delivery.
+    // The MCP Skills Extension is served and session
     // instructions list the member's skills, for every MCP client.
-    const nativeSkills = Boolean(memberIdentity && organizationFeatures.nativeCloudSkills)
-    const skillsExtension = Boolean(memberIdentity && organizationFeatures.mcpSkillsExtension)
+    const nativeSkills = Boolean(memberIdentity)
+    const skillsExtension = Boolean(memberIdentity)
     let resolvedSkillsPromise: Promise<ResolvedSkill[]> | null = null
     const loadResolvedSkills = (): Promise<ResolvedSkill[]> => resolvedSkillsPromise ??= (async () => resolveAgentSkills({
       skills: await loadRemoteSkills(),

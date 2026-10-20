@@ -13,25 +13,19 @@ const test = spec.world(lastTurnModelFooter, {
 test("a member sees the requested model's human name even when the engine omits resolved identity", async ({ world, user, probe, step, evidence }) => {
   const labels = async () => (await probe.dom('[data-testid="reply-model"]')).elements;
   await user.resizeViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
-  await step("before: the disabled footer names the requested model above each answer", async () => {
+  await step("given: two completed replies have no resolved model identity", async () => {
     await user.reload();
     await user.see({ text: world.latest.reply });
     await user.see({ text: world.older.reply });
     await user.hover("composer");
     expect(world.repliesWithoutResolvedMetadata).toBe(2);
-    expect(await world.featureEnabled()).toBe(false);
     const found = await probe.eventually(labels, { within: 15_000, label: "both requested model names", until: values => values.length === 2 });
     expect(found.every(value => value.text.includes(world.modelName))).toBe(true);
-    evidence.recordAssertionEvidence("Both native replies name the requested model without resolved metadata", `replies without resolved metadata=${world.repliesWithoutResolvedMetadata}; rollout=false; labels=${found.length}; name=${world.modelName}`, world.repliesWithoutResolvedMetadata === 2 && found.length === 2);
+    evidence.recordAssertionEvidence("Both native replies retain the requested model without resolved metadata", `replies without resolved metadata=${world.repliesWithoutResolvedMetadata}; labels=${found.length}; name=${world.modelName}`, world.repliesWithoutResolvedMetadata === 2 && found.length === 2);
     await user.screenshot();
   });
 
-  await step("after: the latest reply shows its human model name below the answer", async () => {
-    await world.setRollout(true);
-    await user.reload();
-    await user.see({ text: world.latest.reply });
-    await user.hover("composer");
-    expect(await world.featureEnabled()).toBe(true);
+  await step("after: the latest reply shows its human model name below the answer without an organization override", async () => {
     await user.see({ testId: "reply-model", nth: 0 });
     const found = await labels();
     expect(found.map(value => value.text)).toEqual([`Replied with ${world.modelName}`, `Replied with ${world.modelName}`]);
@@ -52,20 +46,6 @@ test("a member sees the requested model's human name even when the engine omits 
     expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.elements.every(value => value.text === `Replied with ${world.modelName}`)).toBe(true);
     evidence.recordAssertionEvidence("The requested model footer fits a touch screen", `viewport=${layout.viewportWidth}; document=${layout.documentWidth}; model=${world.modelName}`, layout.documentWidth <= layout.viewportWidth);
-    await user.screenshot();
-  });
-
-  await step("turning the rollout off restores the requested model above the same conversation", async () => {
-    await world.setRollout(false);
-    await user.reload();
-    await user.see({ text: world.latest.reply });
-    await user.see({ text: world.older.reply });
-    expect(await world.featureEnabled()).toBe(false);
-    const top = await probe.eventually(() => probe.dom('[data-testid="completed-work-rail"] [data-testid="reply-model"]'), {
-      within: 15_000, label: "the restored requested model labels", until: value => value.elements.length === 2,
-    });
-    expect(top.elements.every(value => value.text.includes(world.modelName))).toBe(true);
-    evidence.recordAssertionEvidence("Rollback changes placement without losing the model name", `rollout=false; top labels=${top.elements.length}; model=${world.modelName}`, top.elements.length === 2);
     await user.screenshot();
   });
 });

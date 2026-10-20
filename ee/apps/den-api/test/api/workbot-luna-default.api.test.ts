@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import { after, test } from "node:test"
+import { OrganizationFeatureTable, FeatureRolloutTable } from "@openwork-ee/den-db/schema"
+import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { bootDen, field, startFakeHttpServer, summary } from "./harness.js"
 
 let reachable = true
@@ -14,21 +16,40 @@ const runner = await startFakeHttpServer((request, _body, response) => {
     ...(luna ? [{ id: "gateway/luna", name: "GPT-6 Luna" }] : []),
   ] }))
 })
-const den = await bootDen({ env: { DEN_HEADLESS_RUNNER_URL: runner.url, DEN_HEADLESS_RUNNER_TOKEN: "r".repeat(32) } })
+const den = await bootDen({ env: { DEN_DEPLOYMENT: "self_hosted", DEN_FEATURE_WORKBOT: "false", DEN_FEATURE_WORKBOT_LUNA_DEFAULT: "false", DEN_HEADLESS_RUNNER_URL: runner.url, DEN_HEADLESS_RUNNER_TOKEN: "r".repeat(32) } })
 after(async () => { await den.close(); await runner.close() })
 
-test("an owner sees explicit Luna readiness, keeps an isolated organization override, and can kill the rollout", async () => {
+test("guided navigation still requires both remaining rollouts after Workbot becomes generally available", async () => {
+  const workspace = await den.createOrg(await den.signUp("Navigation Owner"), "Navigation workspace")
+  const token = await den.mintMcpToken(workspace.owner, workspace.orgId)
+  const session = async () => {
+    const result = await den.request(token, "GET", "/v1/workbot/session")
+    assert.equal(result.status, 200, summary(result))
+    assert.equal(field(result.body, "enabled"), true)
+    return result.body
+  }
+  for (const [assistant, navigation] of [[false, false], [false, true], [true, false], [true, true]]) {
+    const assistantChanged = await den.setFeature(workspace.orgId, "workbotWorkspaceAssistant", assistant)
+    assert.equal(assistantChanged.status, 200, summary(assistantChanged))
+    const navigationChanged = await den.setFeature(workspace.orgId, "workbotGuidedNavigation", navigation)
+    assert.equal(navigationChanged.status, 200, summary(navigationChanged))
+    const body = await session()
+    assert.equal(field(body, "workspaceAssistant"), assistant)
+    assert.equal(field(body, "guidedNavigation"), assistant && navigation)
+  }
+})
+
+test("an owner always sees explicit Luna readiness and keeps an isolated organization model choice", async () => {
   const workspace = await den.createOrg(await den.signUp("Workspace Owner"), "Model workspace")
   const other = await den.createOrg(await den.signUp("Another Owner"), "Another workspace")
   const call = den.as(workspace.owner, workspace.orgId)
   const path = "/v1/org/workbot-settings"
-  assert.equal((await call("GET", path)).status, 404)
-  assert.equal((await den.setFeature(workspace.orgId, "workbot", true)).status, 200)
-  const legacy = await call("GET", path)
-  assert.equal(legacy.status, 200, summary(legacy))
-  assert.equal(field(legacy.body, "defaultReadiness"), undefined)
-  assert.equal(field(legacy.body, "defaultModel"), "gateway/other")
-  assert.equal((await den.setFeature(workspace.orgId, "workbotLunaDefault", true)).status, 200)
+  // Old database rows, operator locks and kill switches must not hide GA behavior on self-hosted installs.
+  const { db } = await import("../../src/db.js")
+  for (const feature_key of ["workbot", "workbotLunaDefault", "permissions"]) {
+    await db.insert(FeatureRolloutTable).values({ feature_key, enabled: false, killed: true })
+    await db.insert(OrganizationFeatureTable).values({ organization_id: normalizeDenTypeId("organization", workspace.orgId), feature_key, enabled: false, source: "platform" })
+  }
   const ready = await call("GET", path)
   assert.equal(ready.status, 200, summary(ready))
   assert.equal(field(ready.body, "defaultModel"), "gateway/luna")
@@ -48,8 +69,6 @@ test("an owner sees explicit Luna readiness, keeps an isolated organization over
   assert.equal((await den.as(other.owner, workspace.orgId)("GET", path)).status, 404)
   assert.equal((await den.as(other.owner, workspace.orgId)("PUT", path, { model: "gateway/luna" })).status, 404)
   assert.equal(field((await call("GET", path)).body, "model"), "gateway/other")
-  assert.equal((await den.setFeature(other.orgId, "workbot", true)).status, 200)
-  assert.equal((await den.setFeature(other.orgId, "workbotLunaDefault", true)).status, 200)
   const otherSettings = await den.as(other.owner, other.orgId)("GET", path)
   assert.equal(field(otherSettings.body, "model"), null)
   assert.equal(field(otherSettings.body, "defaultModel"), "gateway/luna")
@@ -73,11 +92,9 @@ test("an owner sees explicit Luna readiness, keeps an isolated organization over
   assert.equal(field(offline.body, "defaultReadiness"), "unverified")
   assert.equal(field(offline.body, "runnerReachable"), false)
 
-  assert.equal((await den.setFeature(workspace.orgId, "workbotLunaDefault", false)).status, 200)
-  const killed = await call("GET", path)
-  assert.equal(field(killed.body, "defaultReadiness"), undefined)
-  assert.equal(field(killed.body, "model"), "gateway/other")
-  const killedSession = await session()
-  assert.equal(field(killedSession.body, "verifyModel"), undefined)
-  assert.equal(field(killedSession.body, "model"), "gateway/other")
+  const stillAvailable = await call("GET", path)
+  assert.equal(stillAvailable.status, 200, summary(stillAvailable))
+  assert.equal(field(stillAvailable.body, "defaultReadiness"), "unverified")
+  assert.equal(field(stillAvailable.body, "model"), "gateway/other")
+  assert.equal(field((await session()).body, "verifyModel"), true)
 })

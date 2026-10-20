@@ -12,11 +12,9 @@ after(async () => { await den.close(); await runner.close() })
 const path = "/v1/org/workbot-settings"
 const probe = `${path}/test-default-model`
 
-test("view-only and manage-only members can read across Luna off/on; neither cannot, and writes/probes remain manage-only and fresh", async () => {
+test("view-only and manage-only members can always read; writes/probes remain manage-only and fresh", async () => {
   const workspace = await den.createOrg(await den.signUp("Permission Owner"), "Permission workspace")
   const owner = den.as(workspace.owner, workspace.orgId)
-  assert.equal((await den.setFeature(workspace.orgId, "permissions", true)).status, 200)
-  assert.equal((await den.setFeature(workspace.orgId, "workbot", true)).status, 200)
   const roles: { label: string; keys: PermissionKey[]; read: boolean; manage: boolean }[] = [
     { label: "View Only", keys: ["inference.view"], read: true, manage: false },
     { label: "Manage Only", keys: ["inference.manage"], read: true, manage: true },
@@ -36,26 +34,23 @@ test("view-only and manage-only members can read across Luna off/on; neither can
     people.push({ member, read: role.read, manage: role.manage })
   }
 
-  for (const luna of [false, true]) {
-    assert.equal((await den.setFeature(workspace.orgId, "workbotLunaDefault", luna)).status, 200)
-    for (const person of people) {
-      const call = den.as(person.member, workspace.orgId)
-      const read = await call("GET", path)
-      assert.equal(read.status, person.read ? 200 : 403, summary(read))
-      if (person.read) {
-        assert.equal(field(read.body, "defaultReadiness"), luna ? "available" : undefined)
-      } else {
-        assert.equal(field(read.body, "models"), undefined)
-        assert.equal(read.text.includes("gateway/luna"), false)
-      }
-      const saved = await call("PUT", path, { model: null })
-      assert.equal(saved.status, person.manage ? 200 : 403, summary(saved))
-      const checked = await call("POST", probe, {})
-      assert.equal(checked.status, !luna ? 404 : person.manage ? 200 : 403, summary(checked))
-      if (luna && person.manage) assert.equal(field(checked.body, "status"), "answered")
+  for (const person of people) {
+    const call = den.as(person.member, workspace.orgId)
+    const read = await call("GET", path)
+    assert.equal(read.status, person.read ? 200 : 403, summary(read))
+    if (person.read) {
+      assert.equal(field(read.body, "defaultReadiness"), "available")
+    } else {
+      assert.equal(field(read.body, "models"), undefined)
+      assert.equal(read.text.includes("gateway/luna"), false)
     }
+    const saved = await call("PUT", path, { model: null })
+    assert.equal(saved.status, person.manage ? 200 : 403, summary(saved))
+    const checked = await call("POST", probe, {})
+    assert.equal(checked.status, person.manage ? 200 : 403, summary(checked))
+    if (person.manage) assert.equal(field(checked.body, "status"), "answered")
   }
-  assert.equal(runner.calls().length, 1, "only the fresh manage-only member can trigger inference, and only while Luna is on")
+  assert.equal(runner.calls().length, 1, "only the fresh manage-only member can trigger inference")
 
   const manager = people.find(person => person.manage)?.member
   assert.ok(manager)
@@ -68,6 +63,4 @@ test("view-only and manage-only members can read across Luna off/on; neither can
     assert.equal(field(result.body, "reason"), "fresh_auth_required")
   }
   assert.equal(runner.calls().length, 1)
-  assert.equal((await den.setFeature(workspace.orgId, "workbot", false)).status, 200)
-  for (const person of people) assert.equal((await den.as(person.member, workspace.orgId)("GET", path)).status, 404)
 })

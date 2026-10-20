@@ -1,15 +1,16 @@
 import { z } from "zod"
 import type { Config } from "./config.js"
-import { anthropicModel, ModelError, openAIModel, openAIResponsesModel } from "./model.js"
+import { createModelAdapter, ModelError } from "./model.js"
+import { headlessModelAccessSchema, type HeadlessModelAccess } from "@openwork-ee/headless-protocol"
 
 export const MODEL_PROBE_TIMEOUT_MS = 8_000
 export const MODEL_PROBE_OUTPUT_TOKENS = 32
 const MAX_RESPONSE_BYTES = 16_384
 const modelId = z.string().min(1).max(255).regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]*$/)
-const bodySchema = z.strictObject({ model: modelId })
+const bodySchema = z.strictObject({ model: modelId, modelAccess: headlessModelAccessSchema.optional() })
 export type ModelProbeError = "credentials_unavailable" | "authentication_failed" | "payment_required" | "provider_unavailable" | "timed_out" | "invalid_response" | "busy"
 export type ModelProbeResult = { status: "answered" | "failed"; errorCode: ModelProbeError | null; requestedModel: string; reportedModel: string | null }
-export type ModelProbe = (model: string, signal: AbortSignal) => Promise<ModelProbeResult>
+export type ModelProbe = (model: string, signal: AbortSignal, modelAccess?: HeadlessModelAccess) => Promise<ModelProbeResult>
 
 /** Closed vocabulary only: neither a provider error type/code nor its text becomes a diagnostic result. */
 export function sanitizeModelError(error: unknown): ModelProbeError {
@@ -24,9 +25,9 @@ export function sanitizeModelError(error: unknown): ModelProbeError {
 /** The probe never uses a session, runner instructions, tools, files, MCP or member content. */
 export function createModelProbe(config: Config, transport: typeof fetch = fetch): ModelProbe {
   let active = false
-  return async (requestedModel, callerSignal) => {
+  return async (requestedModel, callerSignal, modelAccess) => {
     const failed = (errorCode: ModelProbeError): ModelProbeResult => ({ status: "failed", errorCode, requestedModel, reportedModel: null })
-    const apiKey = config.model.defaultApiKey
+    const apiKey = modelAccess?.apiKey ?? config.model.defaultApiKey
     if (!apiKey) return failed("credentials_unavailable")
     if (active) return failed("busy")
     active = true
@@ -65,10 +66,7 @@ export function createModelProbe(config: Config, transport: typeof fetch = fetch
       return new Response(raw, { status: response.status, headers })
     }
     try {
-      const options = { baseUrl: config.model.baseUrl, maxOutputTokens: MODEL_PROBE_OUTPUT_TOKENS, fetch: boundedFetch }
-      const adapter = config.model.protocol === "anthropic" ? anthropicModel(options)
-        : config.model.protocol === "openai-responses" ? openAIResponsesModel(options)
-        : openAIModel(options)
+      const adapter = createModelAdapter(modelAccess ?? { baseUrl: config.model.baseUrl, protocol: config.model.protocol, apiKey }, { maxOutputTokens: MODEL_PROBE_OUTPUT_TOKENS, fetch: boundedFetch })
       const answer = await adapter.complete({
         model: requestedModel,
         apiKey,
@@ -95,5 +93,5 @@ export async function modelProbeResponse(request: Request, probe: ModelProbe | u
   const body = bodySchema.safeParse(await request.json().catch(() => null))
   if (!body.success) return Response.json({ error: "invalid_request" }, { status: 400, headers })
   if (!probe) return Response.json({ error: "model_probe_unavailable" }, { status: 503, headers })
-  return Response.json(await probe(body.data.model, request.signal), { headers })
+  return Response.json(await probe(body.data.model, request.signal, body.data.modelAccess), { headers })
 }

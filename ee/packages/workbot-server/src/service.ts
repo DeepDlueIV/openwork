@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto"
+import { workbotOwner, workbotSessionId, workbotSideChatSessionId, WORKBOT_CHAT_ID } from "@openwork-ee/headless-protocol/workbot-routing"
+export { workbotOwner, workbotSessionId, workbotSideChatSessionId, WORKBOT_CHAT_ID } from "@openwork-ee/headless-protocol/workbot-routing"
 import type { HeadlessRunnerClient, RunnerSavedFile } from "@openwork-ee/headless-protocol"
 import { AUTOMATION_CLOUD_DEFAULT_MODEL } from "@openwork/types/automations"
 import { readWorkbotContextPrompt, readWorkbotCorrectionPrompt, workbotContextPrompt, workbotCorrectionPrompt, WORKBOT_MAX_MESSAGE_CHARS, type WorkbotViewContext } from "@openwork/types/workbot-context"
@@ -58,6 +59,16 @@ export type WorkbotDeps = {
   /** Explicit Luna rollout: refuse new turns unless this runner verifies the selected model. Never blocks reads. */
   verifyModel?: boolean
   workspaceAssistant?: (organizationId: string) => Promise<boolean>
+  /**
+   * Feature `headlessStepTurns` (Den's session `stepTurns`): turns go to the runner with `execution: "steps"`, so a
+   * runner deploy switches between steps instead of cutting one off. Unset: turns are sent exactly as without it.
+   */
+  stepTurns?: boolean
+}
+
+/** How a turn runs on the runner, as `sendTurn` takes it: nothing means continuous, as before step turns. */
+function executionFor(deps: WorkbotDeps): { execution?: "steps" } {
+  return deps.stepTurns ? { execution: "steps" } : {}
 }
 
 /** The model a new turn runs on, as `sendTurn` takes it: nothing means the runner's default. */
@@ -68,26 +79,6 @@ async function modelFor(actor: WorkbotActor, deps: WorkbotDeps): Promise<{ model
     if (!workbotModelReady(model, catalog)) throw new WorkbotUnavailableError("workbot_model_unavailable")
   }
   return model ? { model } : {}
-}
-
-const personKey = (organizationId: string, memberId: string) => createHash("sha256").update(`workbot:${organizationId}:${memberId}`).digest("hex").slice(0, 40)
-
-/** Derived, so each member has exactly one main chat and Den stores nothing to find it. */
-export function workbotSessionId(organizationId: string, memberId: string) {
-  return `hs_wb_${personKey(organizationId, memberId)}`
-}
-
-/** A side chat's id, made by the page when the person starts one. */
-export const WORKBOT_CHAT_ID = /^[a-z0-9]{16,40}$/
-
-/** The runner lists a person's chats by this key: derived from them, never their raw ids. */
-export function workbotOwner(organizationId: string, memberId: string) {
-  return `wb:${personKey(organizationId, memberId)}`
-}
-
-/** A side chat's conversation: derived from the person and the chat's id, so nobody can reach another person's chat. */
-export function workbotSideChatSessionId(organizationId: string, memberId: string, chatId: string) {
-  return `hs_wbs_${createHash("sha256").update(`workbot:${organizationId}:${memberId}:${chatId}`).digest("hex").slice(0, 40)}`
 }
 
 /** The runner's ref for the main chat in the person's list; side chats use their own id. */
@@ -267,7 +258,7 @@ export async function startWorkbotGreeting(actor: WorkbotActor, input: { timeZon
   await ensureSession(actor, timeZone, deps)
   const sent = await client.sendTurn(
     { userId: actor.userId, organizationId: actor.organizationId },
-    { sessionId, messageId: GREETING_RUNNER_ID, prompt: greetingPrompt({ firstName: actor.firstName, timeZone }), readOnly: true, ...(await modelFor(actor, deps)) },
+    { sessionId, messageId: GREETING_RUNNER_ID, prompt: greetingPrompt({ firstName: actor.firstName, timeZone }), readOnly: true, ...(await modelFor(actor, deps)), ...executionFor(deps) },
   )
   if (!sent.ok) throw new WorkbotUnavailableError("workbot_runner_unavailable")
   return { started: true }
@@ -291,7 +282,8 @@ export async function readWorkbotThread(
 
   // A runner restart, or a long task's token running out, pauses a turn; re-sending its id resumes it with a fresh token.
   for (const interrupted of interruptedTurnIds(read.value)) {
-    await client.sendTurn({ userId: actor.userId, organizationId: actor.organizationId }, { sessionId, messageId: interrupted, prompt: "resume", ...((interrupted === GREETING_RUNNER_ID || read.value.messages.some(message => message.role === "user" && message.messageId === interrupted && readWorkbotContextPrompt(message.text).context !== undefined)) ? { readOnly: true } : {}) }).catch(() => null)
+    const stored = read.value.turns.find((turn) => turn.messageId === interrupted)
+    await client.sendTurn({ userId: actor.userId, organizationId: actor.organizationId }, { sessionId, messageId: interrupted, prompt: "resume", ...executionFor(deps), ...(stored?.modelAccessRequired ? { modelAccessRequired: true, model: stored.model ?? undefined } : {}), ...((interrupted === GREETING_RUNNER_ID || read.value.messages.some(message => message.role === "user" && message.messageId === interrupted && readWorkbotContextPrompt(message.text).context !== undefined)) ? { readOnly: true } : {}) }).catch(() => null)
   }
 
   const filesEnabled = await client.filesEnabled()
@@ -348,7 +340,7 @@ export async function sendWorkbotMessage(
   // sent while Workbot answers interrupts that answer, which wraps up keeping what it said, and this one is answered next.
   const sent = await client.sendTurn(
     { userId: actor.userId, organizationId: actor.organizationId },
-    { sessionId, messageId: `${WORKBOT_MESSAGE_PREFIX}${input.id}`, prompt, attachments: input.attachments, readOnly: input.context !== undefined, interrupt: true, ...(await modelFor(actor, deps)) },
+    { sessionId, messageId: `${WORKBOT_MESSAGE_PREFIX}${input.id}`, prompt, attachments: input.attachments, readOnly: input.context !== undefined, interrupt: true, ...(await modelFor(actor, deps)), ...executionFor(deps) },
   )
   if (!sent.ok && sent.status === 400 && sent.error === "unknown_file") return { ok: false as const, code: "unknown_file" as const }
   if (!sent.ok && sent.status === 429) return { ok: false as const, code: "too_many_queued" as const }
@@ -380,7 +372,7 @@ export async function retryWorkbotMessage(actor: WorkbotActor, input: { id: stri
   const text = read.value.messages.find((message) => message.role === "user" && message.messageId === messageId)
   const sent = await client.sendTurn(
     { userId: actor.userId, organizationId: actor.organizationId },
-    { sessionId, messageId, prompt: text?.role === "user" && text.text.trim() ? text.text : "Try again.", readOnly: text?.role === "user" && readWorkbotContextPrompt(text.text).context !== undefined, ...(await modelFor(actor, deps)) },
+    { sessionId, messageId, prompt: text?.role === "user" && text.text.trim() ? text.text : "Try again.", readOnly: text?.role === "user" && readWorkbotContextPrompt(text.text).context !== undefined, ...(turn.modelAccessRequired ? { modelAccessRequired: true, model: turn.model ?? undefined } : await modelFor(actor, deps)), ...executionFor(deps) },
   )
   if (!sent.ok && sent.status === 429) return { ok: false as const, code: "too_many_queued" as const }
   if (!sent.ok) throw new WorkbotUnavailableError("workbot_runner_unavailable")

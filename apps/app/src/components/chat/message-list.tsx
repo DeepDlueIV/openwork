@@ -1,7 +1,6 @@
 "use memo";
 
 import { appBuildActivity, appBuildInProgress, appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
-import { useAppBuildProgressEnabled } from "@/react-app/domains/apps/use-app-build-progress-feature"
 import { BuiltAppPreviewSync } from "@/react-app/domains/apps/built-app-chat-preview"
 import { builtAppSummary } from "@/react-app/domains/apps/built-mcp-app-model"
 import { AppBuilderStep } from "./app-builder-step"
@@ -45,7 +44,6 @@ import { messageAutoAccessWall } from "@/app/lib/inference-access"
 import { AutoAccessNotice } from "@/react-app/domains/cloud/auto-access-ui"
 import { rejectedRecoveryFromMessage } from "@/react-app/domains/session/sync/rejected-turn"
 import { replyModelLabel, replyModelProvider } from "@/react-app/domains/session/sync/reply-model"
-import { useLastTurnModelFooterEnabled } from "@/react-app/domains/session/sync/use-last-turn-model-footer-feature"
 import { ProviderIcon } from "@/react-app/design-system/provider-icon"
 import { openAlternativeModelPicker } from "@/app/lib/inference-access"
 import { ApplyPatchTool } from "@/components/tools/apply-patch"
@@ -162,7 +160,7 @@ const COLLAPSED_STEP_RUN_MIN_ROWS = 4
 
 const AppCreationPartsContext = React.createContext<ReadonlySet<string>>(new Set())
 /**
- * While an App is being built (appBuildProgress), its panel is the one live
+ * While an App is being built, its panel is the one live
  * thing in the chat: thinking and plain tool rows fold away and the panel
  * shows the latest of them. Approvals, connection cards, questions and
  * sub-agents still show.
@@ -940,9 +938,8 @@ function renderUserText(text: string, highlightQuery: string | undefined, refere
 
 const UserMessage = React.memo(
   ({ message, isStreaming }: UserMessageProps) => {
-    const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, onEditUserMessage, highlightQuery, readOnly } = useMessageList()
+    const { onRevertToUserMessage, onEditUserMessage, highlightQuery, readOnly } = useMessageList()
     const references = useSessionReferencesMaybe()
-    const branching = forkingMessageId === message.id
     const wall = messageAutoAccessWall(message.metadata)
     const { sessionId, workspaceId } = useMessageList()
     const { onOpenTarget } = useOpenTargets()
@@ -960,13 +957,13 @@ const UserMessage = React.memo(
       [message.parts],
     )
     const hasContent = inlineParts.length > 0
+    // Same actions, in the same order, as the buttons below the bubble.
     const menuActions: MenuAction[] = []
     if (messageText) menuActions.push(
-      { type: "item", id: "edit", label: "Edit message", icon: <Pencil className="size-4" />, disabled: readOnly || Boolean(wall), onSelect: () => onEditUserMessage(message.id, messageText) },
       { type: "item", id: "copy", label: "Copy", icon: <Copy className="size-4" />, onSelect: () => navigator.clipboard.writeText(messageText) },
+      { type: "item", id: "edit", label: "Edit message", icon: <Pencil className="size-4" />, disabled: readOnly || Boolean(wall), onSelect: () => onEditUserMessage(message.id, messageText) },
     )
     if (!wall) menuActions.push(
-      { type: "item", id: "branch", label: branching ? "Branching..." : "Branch in new chat", icon: <Split className="size-4 rotate-90" />, disabled: Boolean(forkingMessageId), onSelect: () => onForkAtMessage(message.id) },
       { type: "item", id: "revert", label: "Revert", icon: <Undo2 className="size-4" />, disabled: readOnly, onSelect: () => onRevertToUserMessage(message.id) },
     )
 
@@ -1030,10 +1027,7 @@ const UserMessage = React.memo(
                 ) : null}
                 {!isStreaming && !wall && (
                   <MessageActions
-                    className={cn(
-                      "flex items-center gap-0 transition-opacity duration-150 group-hover:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100",
-                      branching ? "opacity-100" : "opacity-0"
-                    )}
+                    className="flex items-center gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100"
                   >
                     <MessageTimestamp message={message} className="mr-1.5" />
                     <CopyMessageButton messages={[message]} />
@@ -1050,19 +1044,6 @@ const UserMessage = React.memo(
                         </Button>
                       </MessageAction>
                     ) : null}
-                    <MessageAction tooltip={branching ? "Branching..." : "Branch in new chat"}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={branching ? "Branching..." : "Branch in new chat"}
-                        aria-busy={branching || undefined}
-                        disabled={Boolean(forkingMessageId)}
-                        onClick={() => onForkAtMessage(message.id)}
-                      >
-                        {branching ? <LoaderCircle className="motion-safe:animate-spin" /> : <Split className="rotate-90" />}
-                      </Button>
-                    </MessageAction>
-                    {branching ? <span role="status" className="sr-only">Branching...</span> : null}
                     <MessageAction tooltip="Revert">
                       <Button
                         variant="ghost"
@@ -1503,10 +1484,9 @@ function MessageGroup({
   isStreaming,
   newestAppCallIds,
 }: AssistantMessageGroupProps) {
-  const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision, resolveReplyModelTitle } = useMessageList()
+  const { onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision, resolveReplyModelTitle } = useMessageList()
   const connectionCardParts = React.useMemo(() => connectionCardPartIds(items, getConnectionDecision), [items, getConnectionDecision])
   const newestAppCalls = React.useMemo(() => new Set(newestAppCallIds.split("\n")), [newestAppCallIds])
-  const modelFooterEnabled = useLastTurnModelFooterEnabled()
   const lastItem = items[items.length - 1]
   // Branch/revert must target a real server-side message id. Synthetic
   // client-side messages (e.g. session errors) don't exist on the server and
@@ -1531,6 +1511,18 @@ function MessageGroup({
 
   const renderableItems = getRenderableMessages(items)
   const lastTextMessage = items.findLast(item => getLastTextPart(item.message))
+  // Same actions, in the same order, as the buttons below the reply, and only
+  // once those buttons show (a finished reply with text).
+  const replyText = getMessagesText(renderableItems.map((item) => item.message))
+  const replyMenuActions: MenuAction[] = []
+  if (lastTextMessage && !isStreaming) {
+    if (replyText) replyMenuActions.push(
+      { type: "item", id: "copy", label: "Copy", icon: <Copy className="size-4" />, onSelect: () => navigator.clipboard.writeText(replyText) },
+    )
+    if (lastRealItem) replyMenuActions.push(
+      { type: "item", id: "branch", label: forkingMessageId === lastRealItem.message.id ? "Branching..." : "Branch in new chat", icon: <Split className="size-4 rotate-90" />, disabled: Boolean(forkingMessageId), onSelect: () => onForkAtMessage(lastRealItem.message.id) },
+    )
+  }
   // Native turns can end with a metadata-free completion marker. Keep the
   // latest known model within this turn rather than losing the answer's name.
   const replyModelMessage = items.findLast(item => item.message.role === "assistant" && replyModelLabel(item.message, resolveReplyModelTitle))?.message
@@ -1689,16 +1681,22 @@ function MessageGroup({
       <AppPanelFoldContext.Provider value={panelLive}>
       <PinnedRemoteThreadsContext.Provider value={pinnedRemoteIds}>
       <ConnectionCardPartsContext.Provider value={connectionCardParts}>
-      <div className="flex flex-col gap-2 group/message-group">
+      <ActionContextMenu
+        actions={replyMenuActions}
+        contentClassName="w-56"
+        // Override Trigger's select-none so replies stay selectable and copyable.
+        className="!select-text"
+        render={<div className="flex flex-col gap-2 group/message-group !select-text" style={{ userSelect: "text" }} />}
+      >
       {/* The scroll area keeps the same 8px rhythm the parts inside a single
           message use, so a step row is spaced identically whether or not a
           message boundary happens to fall between it and the previous row. */}
-      {!isLiveGroup && resolvedReplyModel && !collapseSteps && (!modelFooterEnabled || replySummaryLabel) ? <div data-testid="completed-work-rail" className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1 px-2 text-sm text-muted-foreground md:px-10">
-        {modelFooterEnabled ? <span>{replySummaryLabel}</span> : <>{replySummaryLabel ? <span>{replySummaryLabel} · </span> : null}<span data-testid="reply-model">{resolvedReplyModel}</span></>}
+      {!isLiveGroup && resolvedReplyModel && !collapseSteps && replySummaryLabel ? <div data-testid="completed-work-rail" className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1 px-2 text-sm text-muted-foreground md:px-10">
+        <span>{replySummaryLabel}</span>
       </div> : null}
       {stepItems.length > 0 ? (
         collapseSteps ? (
-          <CompletedStepRun label={resolvedReplyModel ? replySummaryLabel : stepRunLabel} modelLabel={modelFooterEnabled ? null : resolvedReplyModel}>
+          <CompletedStepRun label={resolvedReplyModel ? replySummaryLabel : stepRunLabel} modelLabel={null}>
             <div className="flex flex-col gap-2">
               {renderItems(stepItems, 0)}
               {foldedReasoning}
@@ -1721,8 +1719,8 @@ function MessageGroup({
       ))}
       {renderItems(proseItems, stepItems.length, collapseSteps || panelLive)}
       {lastTextMessage && !isStreaming && (
-        <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 md:px-8", !modelFooterEnabled && "transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", !modelFooterEnabled && (forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0"))}>
-          <div className={cn(modelFooterEnabled ? "flex items-center gap-2" : "contents", modelFooterEnabled && "transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", modelFooterEnabled && (forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0"))}>
+        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 md:px-8">
+          <div className={cn("flex items-center gap-2 transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 pointer-coarse:opacity-100", forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0")}>
           <MessageActions data-testid="reply-actions" className="flex gap-0">
             <CopyMessageButton messages={renderableItems.map((item) => item.message)} />
             {lastRealItem ? (
@@ -1740,17 +1738,6 @@ function MessageGroup({
                   </Button>
                 </MessageAction>
                 {forkingMessageId === lastRealItem.message.id ? <span role="status" className="sr-only">Branching...</span> : null}
-                <MessageAction tooltip="Revert">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Revert"
-                    disabled={readOnly}
-                    onClick={() => onRevertToUserMessage(lastRealItem.message.id)}
-                  >
-                    <Undo2 />
-                  </Button>
-                </MessageAction>
               </>
             ) : null}
           </MessageActions>
@@ -1758,9 +1745,9 @@ function MessageGroup({
           </div>
           {/* Keep caption ink readable (DESIGN.md V1/V2); hierarchy comes from size,
               not compounded opacity. Hidden actions retain their layout slot. */}
-          {modelFooterEnabled && !isLiveGroup && resolvedReplyModel ? <span
+          {!isLiveGroup && resolvedReplyModel ? <span
             data-testid="reply-model"
-            className={cn("inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground dark:text-foreground/70 transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100", isLastGroup ? "opacity-100" : "opacity-0")}
+            className="inline-flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground dark:text-foreground/70 opacity-0 transition-opacity duration-150 ease-out motion-reduce:transition-none group-hover/message-group:opacity-100 group-focus-within/message-group:opacity-100 pointer-coarse:opacity-100"
           >
             <span className="sr-only">Replied with </span>
             <span aria-hidden="true" className="flex size-3 shrink-0 items-center justify-center">
@@ -1771,7 +1758,7 @@ function MessageGroup({
           {/* <MessageSources messages={items.map((item) => item.message)} /> */}
         </div>
       )}
-      </div>
+      </ActionContextMenu>
       </ConnectionCardPartsContext.Provider>
       </PinnedRemoteThreadsContext.Provider>
       </AppPanelFoldContext.Provider>
@@ -1841,21 +1828,12 @@ export function shouldShowRunReconnecting(status: ThreadStatus, syncDegraded: bo
   return status === "submitted" || status === "streaming" || status === "retrying"
 }
 
-export function MessageList({ messages: transcript, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
+export function MessageList({ messages, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
   const { workspaceId, sessionId, onStopSubagentSession } = useMessageList()
-  const backgroundTasksEnabled = useBackgroundShellStore((state) => state.enabled)
   const runningShells = useBackgroundShellStore((state) => state.booksByWorkspaceId[workspaceId]?.running)
   const backgroundShells = React.useMemo(
-    () => backgroundTasksEnabled ? sessionBackgroundShells(runningShells, sessionId) : [],
-    [backgroundTasksEnabled, runningShells, sessionId],
-  )
-  // With the feature off, completion rows cached earlier must not change the
-  // transcript's grouping either.
-  const messages = React.useMemo(
-    () => backgroundTasksEnabled || !transcript.some((message) => message.role === "system")
-      ? transcript
-      : transcript.filter((message) => !backgroundShellNoticeFromMessage(message)),
-    [backgroundTasksEnabled, transcript],
+    () => sessionBackgroundShells(runningShells, sessionId),
+    [runningShells, sessionId],
   )
   const [stoppingBackground, setStoppingBackground] = React.useState(false)
   const workspace = useWorkspaceMaybe()
@@ -1880,10 +1858,9 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
   }))
   const isStreaming = status === "streaming" || status === "retrying"
   const runActive = status === "streaming" || status === "retrying"
-  const appBuildStaged = useAppBuildProgressEnabled()
   const appRunActive = runActive || activityStatus === "thinking" || activityStatus === "responding" || activityStatus === "compacting" || activityStatus === "waiting"
   // The App panel replaces the Working line and the thinking rows while it builds.
-  const appPanelLive = React.useMemo(() => appBuildStaged && (appRunActive || status === "submitted") && appBuildInProgress(messages), [appBuildStaged, appRunActive, status, messages])
+  const appPanelLive = React.useMemo(() => (appRunActive || status === "submitted") && appBuildInProgress(messages), [appRunActive, status, messages])
   const syncDegraded = syncHealth?.degraded === true
   const activityActive = runActive || tasks.length > 0
   const runStartedAtRef = React.useRef<number | null>(null)

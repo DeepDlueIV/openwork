@@ -59,7 +59,7 @@ test("the agent is told to end its turn and never to ask for the key in chat", (
 
 test("agents are offered AI Gateway provider creation only while secure keys in chat is on", () => {
   const create = { method: "POST", path: "/v1/inference-providers" }
-  const base = { generatedArtifactViewsEnabled: true, managedDeploymentsMcpEnabled: false }
+  const base = { generatedArtifactViewsEnabled: true, managedDeploymentsEnabled: false }
   assert.equal(catalogOperationAvailableToCapabilities({ ...base, secureSecretFieldsEnabled: false }, create), false)
   assert.equal(catalogOperationAvailableToCapabilities(base, create), false)
   assert.equal(catalogOperationAvailableToCapabilities({ ...base, secureSecretFieldsEnabled: true }, create), true)

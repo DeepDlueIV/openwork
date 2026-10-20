@@ -16,6 +16,7 @@ export const meSchema = z.object({
   calendar: z.boolean().default(false),
   documents: z.boolean().default(false),
   workspaceAssistant: z.boolean().default(false),
+  guidedNavigation: z.boolean().default(false),
   teamLinks: z.object({ enabled: z.boolean(), settings: z.boolean(), apps: z.boolean() }).optional(),
   /** The organization runs Automations in the cloud, so the Calendar can create them. */
   canSchedule: z.boolean().default(false),
@@ -82,6 +83,7 @@ export function createHost(me: Me, recovery: { authorization?: WorkbotHost["docu
     calendar: me.calendar,
     documents: me.documents,
     workspaceAssistant: me.workspaceAssistant,
+    guidedNavigation: me.workspaceAssistant && me.guidedNavigation,
     teamLinks: me.enabled && me.teamLinks && me.denUrl && me.organizationId
       ? { ...me.teamLinks, denUrl: me.denUrl, organizationId: me.organizationId }
       : undefined,

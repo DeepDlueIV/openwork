@@ -134,7 +134,9 @@ of screenshot-and-click rounds. The GUI stays for looking at the result.
 | Inkscape | `inkscape --actions` (`transform`) | Exports, resizes and transforms drawings |
 
 Launching Blender loads a small bridge (`--python`) that listens on a Unix
-socket in the desktop user's home; LibreOffice launches with a named UNO pipe.
+socket for that process in the desktop user's home; with several Blender
+instances, scripting selects the focused Blender window and refuses an ambiguous
+target. LibreOffice launches with a named UNO pipe.
 Both are sockets, not loopback ports, because the desktop egress guard refuses
 loopback for that user. Each Blender script is one undo step, so the person can
 press Ctrl+Z. LibreOffice edits stay unsaved in the open window unless the call
@@ -147,8 +149,10 @@ they fetch or link outside the workbook (`WEBSERVICE`, `DDE`, `HYPERLINK`,
 Scripts keep the trust boundary of the apps and `bash`: they run as
 `openwork-browser` inside the same egress guard, behind the same `computerUse`
 and `remoteComputers` rollout, with no new consent prompt. They use the shared
-input rail, so Stop and takeover cancel a running script (Blender interrupts it
-at the next Python line; other lanes end the process). A stopped, timed-out or
+input rail. Stop requests cancellation and takeover waits for its acknowledgement.
+Blender checks at Python lines and between render/save phases; a native render
+may finish before cancellation is acknowledged, and no later save begins. Other
+lanes end their child process. A stopped, timed-out or
 interrupted script reports that its outcome is uncertain and is never retried.
 Launch receipts for scriptable apps include a one-line hint with the scripting
 route and a few shortcuts.

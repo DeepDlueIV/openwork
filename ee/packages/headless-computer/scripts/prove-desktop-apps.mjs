@@ -67,8 +67,14 @@ const freshBlender = async () => {
   for (let n = 0; n < 40 && await execute("pgrep", ["-u", "openwork-browser", "-x", "blender"]).then(() => true, () => false); n++) await new Promise(resolve => setTimeout(resolve, 250));
   await applications.launch({ app: "blender" }, deadline);
   const id = await window("blender");
-  // Until the new session's bridge listens, scripts fall back to a background Blender.
-  for (let n = 0; n < 60 && (await applications.script({ app: "blender", code: "result = 1" }, deadline)).mode !== "open session"; n++) await new Promise(resolve => setTimeout(resolve, 500));
+  // A launched instance must serve its own bridge before any scene edits are admitted.
+  let ready = false;
+  for (let n = 0; n < 60 && !ready; n++) {
+    try { ready = (await applications.script({ app: "blender", code: "result = 1" }, deadline)).mode === "open session"; }
+    catch (error) { if (error.code !== "script_not_ready") throw error; }
+    if (!ready) await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  assert.ok(ready, "The launched Blender instance serves its own bridge");
   await execute("xdotool", ["windowactivate", "--sync", id]);
   return id;
 };

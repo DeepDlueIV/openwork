@@ -132,13 +132,24 @@ def execute(job, should_stop):
     text = stdout.getvalue()
     if text:
         payload["output"] = text[-OUTPUT_LIMIT:]
+    def check_stopped():
+        if should_stop():
+            raise Cancelled()
+    # Native renders may not yield to Python tracing. Check each boundary and
+    # acknowledge cancellation only after the native operation has returned.
     if error is None and job.get("render"):
         try:
+            check_stopped()
             payload["render"] = _render(job["render"], job["output"])
+            check_stopped()
+        except Cancelled:
+            return {"ok": False, "error": "cancelled", "outcome": "uncertain", "scene": summary()}
         except Exception:
             payload["ok"] = False
             payload["error"] = "Render failed: " + traceback.format_exc(limit=2)[-2000:]
     if error is None and job.get("save"):
+        if should_stop():
+            return {"ok": False, "error": "cancelled", "outcome": "uncertain", "scene": summary()}
         if bpy.data.filepath:
             bpy.ops.wm.save_mainfile()
             payload["saved"] = bpy.data.filepath
@@ -146,6 +157,8 @@ def execute(job, should_stop):
         else:
             payload["saved"] = None
             payload["note"] = "This scene has no file yet; save with bpy.ops.wm.save_as_mainfile(filepath=...)."
+    if should_stop():
+        return {"ok": False, "error": "cancelled", "outcome": "uncertain", "scene": summary()}
     return payload
 
 
@@ -205,13 +218,26 @@ class Bridge:
             job["cancelled"] = False
             job["done"] = threading.Event()
             self.jobs.put(job)
-            # A closed connection is the caller's Stop: the running script is interrupted.
+            pending = data.split(b"\n", 1)[1]
+            # Keep the connection until completion: Stop is a message followed
+            # by an acknowledgement, not evidence that input has already ended.
             connection.settimeout(0.2)
             while not job["done"].is_set():
                 try:
-                    if connection.recv(1) == b"":
+                    chunk = connection.recv(4096)
+                    if chunk == b"":
                         job["cancelled"] = True
                         break
+                    pending += chunk
+                    while b"\n" in pending:
+                        line, pending = pending.split(b"\n", 1)
+                        try:
+                            cancel = json.loads(line)
+                        except ValueError:
+                            job["cancelled"] = True
+                            continue
+                        if cancel.get("cancel") == job.get("id"):
+                            job["cancelled"] = True
                 except socket.timeout:
                     continue
                 except OSError:
@@ -231,7 +257,10 @@ class Bridge:
             job["result"] = {"ok": False, "error": "cancelled", "outcome": "not_started"}
         else:
             self.finished = (self.finished + [job.get("id")])[-32:]
-            job["result"] = execute(job, should_stop)
+            try:
+                job["result"] = execute(job, should_stop)
+            except Exception:
+                job["result"] = {"ok": False, "error": traceback.format_exc(limit=3)[-2000:], "outcome": "uncertain"}
             # Reply after the next redraw, so a screenshot taken next shows the change.
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
@@ -245,7 +274,7 @@ class Bridge:
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if len(argv) == 2 and argv[0] == "serve":
-        Bridge(argv[1]).start()
+        Bridge(os.path.join(argv[1], f"blender-{os.getpid()}.sock")).start()
     elif argv == ["run"]:
         job = json.load(sys.stdin)
         deadline = time.monotonic() + float(job.get("timeout", 60))
@@ -255,4 +284,5 @@ def main():
         sys.stdout.flush()
 
 
-main()
+if __name__ == "__main__":
+    main()

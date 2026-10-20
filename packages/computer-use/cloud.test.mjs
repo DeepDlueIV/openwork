@@ -108,6 +108,34 @@ test("application launches respect rollout revocation and human takeover", async
   assert.deepEqual(launches, ["blender"]);
 });
 
+test("application script errors retain the tool error flag", async t => {
+  const f = await fixture(t, { script: async () => ({ ok: false, error: "No document is open" }) });
+  const result = await f.computer.task("/computer/task", { sessionId: "a", name: "computer_app_script", args: { app: "writer" } });
+  assert.equal(result.isError, true);
+  assert.equal(JSON.parse(result.content[0].text).ok, false);
+});
+
+test("takeover waits for the application to acknowledge stopping", async t => {
+  let arrived, aborted, finish;
+  const started = new Promise(resolve => { arrived = resolve; });
+  const cancelled = new Promise(resolve => { aborted = resolve; });
+  const done = new Promise(resolve => { finish = resolve; });
+  const f = await fixture(t, { script: async (_args, signal) => {
+    arrived(); signal.addEventListener("abort", aborted, { once: true });
+    await done; signal.throwIfAborted(); return { ok: true };
+  } });
+  const script = f.computer.task("/computer/task", { sessionId: "a", name: "computer_app_script", args: {} });
+  const rejected = assert.rejects(script);
+  await started;
+  let taken = false;
+  const takeover = f.computer.interact({ action: "takeover" }).then(() => { taken = true; });
+  await cancelled; await new Promise(resolve => setImmediate(resolve));
+  assert.equal(taken, false);
+  assert.equal((await f.computer.snapshot()).busy, true);
+  finish(); await takeover; await rejected;
+  assert.equal((await f.computer.snapshot()).busy, false);
+});
+
 test("taking control cancels an app launch waiting on discovery", async t => {
   let arrived;
   const checked = new Promise(resolve => { arrived = resolve; });

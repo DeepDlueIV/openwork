@@ -21,6 +21,7 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
   let closed = false;
   let verified = false;
   let framePending = null;
+  let runningScript = null;
   const localMachine = machine ?? {
     async run(command, timeout) {
       try {
@@ -112,11 +113,15 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
           if (body.name !== "computer_apps" && owner) await control.endTurn({ sessionId: owner });
           browser.invalidate();
           assertActive();
-          const result = body.name === "computer_apps" ? await applications.list()
+          const script = body.name === "computer_app_script" ? applications.script(body.args, current.signal) : null;
+          if (script) runningScript = script;
+          let result;
+          try { result = body.name === "computer_apps" ? await applications.list()
             : body.name === "computer_launch" ? await applications.launch(body.args, current.signal)
-            : await applications.script(body.args, current.signal);
+            : await script;
+          } finally { if (runningScript === script) runningScript = null; }
           assertActive();
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+          return { ...(result?.ok === false ? { isError: true } : {}), content: [{ type: "text", text: JSON.stringify(result) }] };
         }
         browser.invalidate();
         const result = await control.execute(body, { signal: current.signal });
@@ -146,6 +151,7 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
       if (input.action === "takeover" || input.action === "stop") {
         paused = true;
         await halt();
+        await runningScript?.catch(() => {});
         onActivity();
         return { ok: true, paused };
       }

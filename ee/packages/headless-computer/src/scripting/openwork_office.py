@@ -175,9 +175,13 @@ def main():
     desktop = connect(DESKTOP_PIPE)
     office = None
     profile = None
+    loaded_for_operation = False
     if desktop:
-        document = (find_open(desktop, path) or desktop.loadComponentFromURL(uno.systemPathToFileUrl(path), "_default", 0, ())) if path else desktop.getCurrentComponent()
-        target = "open window"
+        document = find_open(desktop, path) if path else desktop.getCurrentComponent()
+        if document is None and path:
+            document = desktop.loadComponentFromURL(uno.systemPathToFileUrl(path), "_blank", 0, (prop("Hidden", True),))
+            loaded_for_operation = True
+        target = "file" if loaded_for_operation else "open window"
     else:
         if not path:
             raise Failure("No LibreOffice window is open. Pass path to edit a file directly, or open it with computer_launch.")
@@ -205,6 +209,8 @@ def main():
         result["unsaved"] = document.isModified()
         return result
     finally:
+        if loaded_for_operation and document is not None:
+            document.close(True)
         if office:
             try:
                 document.close(True)
@@ -215,9 +221,10 @@ def main():
             subprocess.run(["rm", "-rf", profile], check=False)
 
 
-try:
-    print(json.dumps({"ok": True, **main()}))
-except Failure as error:
-    print(json.dumps({"ok": False, "error": str(error)}))
-except Exception as error:
-    print(json.dumps({"ok": False, "error": f"{type(error).__name__}: {error}"[:2000]}))
+if __name__ == "__main__":
+    try:
+        print(json.dumps({"ok": True, **main()}))
+    except Failure as error:
+        print(json.dumps({"ok": False, "error": str(error)}))
+    except Exception as error:
+        print(json.dumps({"ok": False, "error": f"{type(error).__name__}: {error}"[:2000]}))

@@ -9,10 +9,10 @@ import { isAbsolute } from "node:path";
 export const SCRIPTING_DIR = "/usr/local/share/openwork-desktop/scripting";
 const home = "/home/openwork-browser";
 // Unix sockets, not loopback ports: the desktop egress guard refuses loopback for the desktop user.
-export const BLENDER_SOCKET = `${home}/.local/state/openwork-scripting/blender.sock`;
+export const BLENDER_DIRECTORY = `${home}/.local/state/openwork-scripting`;
 export const OFFICE_ACCEPT = "--accept=pipe,name=openwork-office;urp;StarOffice.ComponentContext";
 export const SCRIPT_LANES = { blender: "blender", writer: "office", calc: "office", impress: "office", draw: "office", gimp: "gimp", inkscape: "inkscape" };
-export const blenderBridgeArgs = () => ["--python", `${SCRIPTING_DIR}/openwork_blender.py`, "--", "serve", BLENDER_SOCKET];
+export const blenderBridgeArgs = () => ["--python", `${SCRIPTING_DIR}/openwork_blender.py`, "--", "serve", BLENDER_DIRECTORY];
 
 const failure = (code, message) => Object.assign(new Error(message), { code });
 const path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
@@ -68,7 +68,22 @@ export function createAppScripting({ display, authority, available }) {
     const job = { id: randomUUID(), code: args.code, timeout: timeoutMs / 1000, save: args.save === true,
       ...(args.render ? { render: args.render, output: args.output ?? `/workspace/out/blender-${stamp()}.png` } : {}) };
     // A file path is edited in a background Blender so the open session is untouched.
-    const session = args.path === undefined ? await blenderSession(job, timeoutMs, signal) : null;
+    let socketPath = null;
+    if (args.path === undefined) {
+      const processes = await runAs("/usr/bin/pgrep", ["-u", "openwork-browser", "-x", "blender"], { timeoutMs: 3000, signal });
+      const pids = processes.stdout.trim().split(/\s+/).filter(value => /^[1-9]\d*$/.test(value));
+      let pid = pids[0];
+      if (pids.length > 1) {
+        const focused = await runAs("/usr/bin/xdotool", ["getactivewindow", "getwindowpid"], { timeoutMs: 3000, signal });
+        pid = focused.stdout.trim();
+        if (!pids.includes(pid)) throw failure("script_target_ambiguous", "Several Blender instances are open. Focus the intended Blender window, or pass a file path for a background edit.");
+      }
+      if (pid) {
+        socketPath = `${BLENDER_DIRECTORY}/blender-${pid}.sock`;
+        if (!await stat(socketPath).then(file => file.isSocket(), () => false)) throw failure("script_not_ready", "The selected Blender is not serving scripts yet. Wait for it to finish opening; older sessions need to be relaunched.");
+      }
+    }
+    const session = socketPath ? await blenderSession(socketPath, job, timeoutMs, signal) : null;
     if (session) return { mode: "open session", ...session };
     const result = await runAs("/usr/bin/blender", ["--background", ...(args.path ? [args.path] : []), "--python", `${SCRIPTING_DIR}/openwork_blender.py`, "--", "run"], { input: job, timeoutMs, signal });
     const line = result.stdout.split("\n").reverse().find(line => line.startsWith("OPENWORK_RESULT "));
@@ -77,30 +92,43 @@ export function createAppScripting({ display, authority, available }) {
       ...(args.path === undefined && args.save !== true ? { note: "No Blender window was open, so this ran on a fresh scene that is discarded unless the script saves it." } : {}) };
   }
 
-  /** Runs in the person's open Blender; null when no session serves scripts. Closing the socket cancels. */
-  function blenderSession(job, timeoutMs, signal) {
+  /** Stop requests cancellation, then waits for Blender to acknowledge it. */
+  function blenderSession(socketPath, job, timeoutMs, signal) {
     signal?.throwIfAborted();
     return new Promise((resolve, reject) => {
-      const socket = connect({ path: BLENDER_SOCKET });
-      let connected = false, data = "", settled = false;
+      const socket = connect({ path: socketPath });
+      let connected = false, data = "", settled = false, stopped = null;
       const finish = (error, value) => {
         if (settled) return; settled = true;
         clearTimeout(timer); signal?.removeEventListener("abort", abort); socket.destroy();
         error ? reject(error) : resolve(value);
       };
-      const abort = () => finish(failure("script_stopped", "Stopped while the script was running in Blender; part of it may have run. Inspect the scene before changing anything, and never rerun the script without checking."));
-      const timer = setTimeout(() => finish(failure("script_timeout", "Blender did not answer in time; part of the script may have run. Inspect the scene before rerunning anything.")), timeoutMs + 5000);
+      const cancel = reason => {
+        stopped ??= reason;
+        if (connected && !socket.destroyed) socket.write(`${JSON.stringify({ cancel: job.id })}\n`);
+      };
+      const abort = () => cancel("script_stopped");
+      const timer = setTimeout(() => cancel("script_timeout"), timeoutMs);
       signal?.addEventListener("abort", abort, { once: true });
-      socket.once("connect", () => { connected = true; socket.write(`${JSON.stringify(job)}\n`); });
+      socket.once("connect", () => {
+        if (stopped) return finish(failure(stopped, "Stopped before sending the script to Blender. Nothing was dispatched."));
+        connected = true; socket.write(`${JSON.stringify(job)}\n`);
+      });
       socket.on("data", chunk => {
         data += chunk;
         if (data.length > 2_000_000) return finish(failure("script_failed", "Blender's reply was too large."));
         const end = data.indexOf("\n");
-        if (end >= 0) { try { finish(null, JSON.parse(data.slice(0, end))); } catch { finish(failure("script_failed", "Blender sent an unreadable reply.")); } }
+        if (end >= 0) {
+          try {
+            const receipt = JSON.parse(data.slice(0, end));
+            if (stopped) finish(failure(stopped, "Blender has finished the interrupted operation. Part of it may have run; inspect the scene before making further changes."));
+            else finish(null, receipt);
+          } catch { finish(failure("script_uncertain", "Blender sent an unreadable reply. Inspect the scene before continuing.")); }
+        }
       });
       socket.once("error", error => connected
         ? finish(failure("script_uncertain", "The connection to Blender broke while the script ran; part of it may have run. Inspect the scene before rerunning anything."))
-        : ["ENOENT", "ECONNREFUSED"].includes(error.code) ? finish(null, null) : finish(error));
+        : finish(failure("script_not_ready", "The selected Blender bridge is unavailable. Reopen that instance before scripting it.")));
       socket.once("close", () => { if (connected) finish(failure("script_uncertain", "Blender closed the connection before reporting; inspect the scene before rerunning anything.")); });
     });
   }

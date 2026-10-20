@@ -42,8 +42,15 @@ daytona snapshot create workbot-desktop --image "$COMPUTER_IMAGE_DIGEST" \
 
 Daytona's image-to-VM conversion clears setuid bits. The image includes a root
 oneshot unit, ordered before Daytona's command daemon, to restore the packaged
-`sudo` and Chromium sandbox helpers on boot. The command and GUI users remain
-unprivileged; Chromium keeps its native sandbox enabled. Desktop startup also
+`sudo` and Chromium sandbox helpers on boot. The provider account can invoke only
+the fixed desktop bridge through sudo; it cannot run arbitrary administrative commands.
+The bridge runs the root-owned guest and startup script installed in the image,
+keeps its bearer under `/var/lib/openwork-desktop`, and refuses a mismatched
+runner version. A runner update that changes the guest requires a rebuilt snapshot.
+Model shell commands run as `openwork-command`, which has no sudo rule and cannot
+invoke the desktop bridge or read the browser profile. The provider account keeps
+access to shared files; neither desktop bearers nor GUI credentials enter a shell.
+The command and GUI users remain unprivileged; Chromium keeps its native sandbox enabled. Desktop startup also
 reapplies shared-folder default ACLs, which the image conversion does not retain.
 The image builds pinned x11vnc 0.9.17 with XComposite support so Browser view
 retains its pixels behind other desktop apps. The matching source archive and
@@ -220,7 +227,7 @@ test another compatible region/snapshot; it never provisions a warm pool.
 
 For image acceptance, copy `ee/packages/headless-computer/scripts/prove-desktop-apps.mjs`
 into a dedicated prepared test guest, start its desktop, then run it as root with
-`DISPLAY=:99 XAUTHORITY=/workspace/.openwork-desktop/cloud-desktop/.Xauthority node prove-desktop-apps.mjs --dedicated-guest`.
+`DISPLAY=:99 XAUTHORITY=/var/lib/openwork-desktop/cloud-desktop/.Xauthority node prove-desktop-apps.mjs --dedicated-guest`.
 It checks the installed catalog, launches four GUI apps, saves text through the
 editor and renders a small Blender scene on CPU. It leaves its outputs and
 desktop screenshot under `/workspace/out/desktop-apps-proof-…` for inspection.

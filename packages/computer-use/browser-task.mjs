@@ -27,6 +27,16 @@ function observePage(id, query = null) {
   const key = "__openworkBrowserObservation";
   const nodes = new Map();
   const elements = [];
+  const optionReferences = new WeakMap();
+  let optionSequence = 0;
+  const optionRef = option => {
+    let entry = optionReferences.get(option);
+    if (!entry || entry.value !== option.value) {
+      entry = { value: option.value, ref: `o${++optionSequence}` };
+      optionReferences.set(option, entry);
+    }
+    return entry.ref;
+  };
   // Values the page or person filled (autofill, a typed address) stay in the page: the model sees
   // only whether a field is filled, unless the agent entered that exact value itself. In-page
   // staleness and verification checks read the real value (reveal).
@@ -78,19 +88,19 @@ function observePage(id, query = null) {
       const chosen = [...element.selectedOptions].map(option => option.value);
       const shown = reveal || entered.get(element) === JSON.stringify(chosen);
       state.multiple = element.multiple;
-      state.options = [...element.options].slice(0, 200).map(option => ({ value: option.value, label: text(option.label),
+      state.options = [...element.options].slice(0, 200).map(option => ({ value: optionRef(option), label: text(option.label),
         ...(shown ? { selected: option.selected } : {}), disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) }));
       state.optionsTruncated = element.options.length > 200;
-      if (shown) { state.selectedValues = chosen.slice(0, 200); delete state.value; delete state.valueTruncated; delete state.filled; delete state.valueWithheld; }
+      if (shown) { state.selectedValues = [...element.selectedOptions].slice(0, 200).map(optionRef); delete state.value; delete state.valueTruncated; delete state.filled; delete state.valueWithheld; }
       else { delete state.value; delete state.valueTruncated; state.filled = chosen.length > 0; state.valueWithheld = true; }
     }
     if (element.validity || element.hasAttribute("aria-invalid")) {
       state.valid = (element.validity?.valid ?? true) && !["true", "grammar", "spelling"].includes(element.getAttribute("aria-invalid"));
       // A page can echo a field's value into its error or description text.
-      state.validationMessage = sensitive || state.valueWithheld ? "" : text(element.validationMessage || referenced("aria-errormessage"), 1000);
+      state.validationMessage = sensitive || state.valueWithheld || select ? "" : text(element.validationMessage || referenced("aria-errormessage"), 1000);
     }
     const description = referenced("aria-describedby");
-    if (description && !sensitive && !state.valueWithheld) state.description = text(description, 1000);
+    if (description && !sensitive && !state.valueWithheld && !select) state.description = text(description, 1000);
     return state;
   };
   const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');
@@ -126,7 +136,7 @@ function observePage(id, query = null) {
     elements.push({ ref, ...control, visible: right > left && bottom > top, needsReveal: left > rect.left || top > rect.top || right < rect.right || bottom < rect.bottom, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
   }
   const observation = { id, nodes, bounds: new Map(elements.map(({ ref, bounds }) => [ref, bounds])), activeElement: document.activeElement,
-    used: false, createdAt: performance.now(), describe, snapshots, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };
+    used: false, createdAt: performance.now(), describe, optionRef, snapshots, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };
   globalThis[key] = observation;
   return { truncated, scrollRegions, title: document.title.slice(0, 300), text: (document.body?.innerText || "").slice(0, 16000), elements,
     viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...document.querySelectorAll('input[type="password"],input[autocomplete="one-time-code"]')].some((element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; }),
@@ -168,7 +178,7 @@ function prepareAction(id, action) {
   if (action.type === "select") {
     if (!(element instanceof HTMLSelectElement) || (!element.multiple && action.values.length > 1)) throw new Error("not_selectable");
     for (const value of action.values) {
-      const option = [...element.options].find(option => option.value === value);
+      const option = [...element.options].find(option => state.optionRef(option) === value);
       if (!option || option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled)) throw new Error("option_unavailable");
     }
   }
@@ -193,12 +203,12 @@ function applyFormAction(id, action) {
   if (state.snapshots.get(element) !== JSON.stringify(state.describe(element, true))) throw new Error("stale_observation");
   // The agent may read back exactly what it entered.
   if (action.type === "fill" || action.type === "select") globalThis.__openworkAgentEntered?.set(element, action.type === "select"
-    ? JSON.stringify([...element.options].filter(option => action.values.includes(option.value)).map(option => option.value))
+    ? JSON.stringify([...element.options].filter(option => action.values.includes(state.optionRef(option))).map(option => option.value))
     : element instanceof HTMLTextAreaElement ? action.text.replace(/\r\n?/g, "\n") : action.text);
   element.focus();
   if (document.activeElement !== element || !element.isConnected) throw new Error("stale_element");
   if (action.type === "select") {
-    for (const option of element.options) option.selected = action.values.includes(option.value);
+    for (const option of element.options) option.selected = action.values.includes(state.optionRef(option));
     if (!action.values.length) element.selectedIndex = -1;
     element.dispatchEvent(new Event("input", { bubbles: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -234,7 +244,7 @@ async function verifyFormAction(id, action) {
   } while (performance.now() < deadline);
   // What the page made of the agent's own entry (formatting, normalizing) is still the agent's value.
   if (element.isConnected && action.type !== "set_checked") {
-    globalThis.__openworkAgentEntered?.set(element, action.type === "select" ? JSON.stringify(control.selectedValues ?? []) : control.value);
+    globalThis.__openworkAgentEntered?.set(element, action.type === "select" ? JSON.stringify([...element.selectedOptions].map(option => option.value)) : control.value);
   }
   return { verified: false, control: element.isConnected ? state.describe(element) : control };
 }

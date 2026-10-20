@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { shellQuote, type SandboxHandle, type SandboxProvider } from "@openwork/sandbox"
 import { z } from "zod"
 
-const STATE = "/workspace/.openwork-desktop"
+const BRIDGE = "/usr/local/sbin/openwork-desktop-bridge"
 const viewerSchema = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/), paused: z.boolean() })
 export type DesktopView = "browser" | "computer"
 
@@ -24,26 +24,21 @@ export class Desktop {
   }
 
   private async prepare(box: SandboxHandle) {
-    const { run, files } = this.provider.blocks ?? {}
-    if (!run || !files || this.provider.describe().platform?.os !== "linux") throw new Error("Desktop access needs a configured Linux computer.")
+    const { run } = this.provider.blocks ?? {}
+    if (!run || this.provider.describe().platform?.os !== "linux") throw new Error("Desktop access needs a configured Linux computer.")
     const [guest, helper] = await Promise.all([
       readFile(new URL("../dist/desktop-guest.mjs", import.meta.url)),
       readFile(new URL("../dist/cloud-desktop.sh", import.meta.url)),
     ])
     const privateBrowsing = this.options.privateBrowsing === true
     const version = createHash("sha256").update(guest).update(helper).update(privateBrowsing ? "private-browsing" : "").digest("hex")
-    const ready = await run(box, { command: `sudo test -s ${STATE}/token && sudo curl -sf --max-time 2 -X POST -H "Authorization: Bearer $(sudo cat ${STATE}/token)" -d '{}' http://127.0.0.1:6080/health`, timeoutMs: 5_000 }).catch(() => ({ exitCode: 1, stdout: "{}" }))
-    try { if (ready.exitCode === 0 && z.object({ version: z.literal(version) }).safeParse(JSON.parse(ready.stdout)).success) return }
-    catch { /* A stale or unavailable guest is replaced below. */ }
-    await run(box, { command: "sudo pkill -f '[/]workspace/.openwork-desktop/[g]uest.mjs' || true", timeoutMs: 5_000 })
-    await run(box, { command: `mkdir -p ${STATE} && chmod 711 ${STATE}`, timeoutMs: 10_000 })
-    await files.write(box, `${STATE}/guest.mjs`, guest, { timeoutMs: 15_000, mode: 0o600 })
-    await files.write(box, `${STATE}/start.sh`, helper, { timeoutMs: 15_000, mode: 0o700 })
+    const ready = await this.call(box, "/health", {}).catch(() => null)
+    if (z.object({ version: z.literal(version) }).safeParse(ready).success) return
     const result = await run(box, {
-      command: `sudo env WORKBOT_DESKTOP_VNC=1 sh ${STATE}/start.sh ${STATE} :99 && sudo env WORKBOT_DESKTOP_STATE=${STATE} WORKBOT_DESKTOP_VERSION=${version}${privateBrowsing ? " WORKBOT_DESKTOP_PRIVATE_BROWSING=1" : ""} DISPLAY=:99 XAUTHORITY=${STATE}/cloud-desktop/.Xauthority sh -c 'test -s ${STATE}/token || (umask 077; head -c 32 /dev/urandom | base64 > ${STATE}/token); setsid -f node ${STATE}/guest.mjs > ${STATE}/guest.log 2>&1 < /dev/null'`,
-      timeoutMs: 30_000,
+      command: `sudo -n ${BRIDGE} start ${version}`,
+      timeoutMs: 45_000,
     })
-    if (result.exitCode !== 0) throw new Error("The computer's snapshot needs Chromium, Xvfb, openbox, xdotool, ImageMagick, x11vnc and Node 22 or newer.")
+    if (result.exitCode !== 0) throw new Error("The computer needs a desktop snapshot built for this runner, including its restricted desktop helper.")
     for (let attempt = 0; attempt < 30; attempt++) {
       const probe = await this.call(box, "/health", {}).catch(() => null)
       if (probe) return
@@ -55,9 +50,9 @@ export class Desktop {
   async call(box: SandboxHandle, path: string, body: unknown): Promise<unknown> {
     const run = this.provider.blocks?.run
     if (!run) throw new Error("Desktop access is unavailable.")
-    const seconds = path === "/stop" ? 10 : 125
+    const seconds = path === "/health" ? 4 : path === "/stop" ? 10 : 125
     const result = await run(box, {
-      command: `sudo curl -sS --fail-with-body --max-time ${seconds} -X POST -H "Authorization: Bearer $(sudo cat ${STATE}/token)" -H 'Content-Type: application/json' --data ${shellQuote(JSON.stringify(body))} http://127.0.0.1:6080${path}`,
+      command: `printf %s ${shellQuote(JSON.stringify(body))} | sudo -n ${BRIDGE} call ${shellQuote(path)}`,
       timeoutMs: (seconds + 5) * 1000,
     })
     if (result.exitCode !== 0) throw new Error("The desktop operation didn't finish. Check the view before retrying.")

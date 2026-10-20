@@ -144,6 +144,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotDocumentEditing: {
+    label: "Workbot Documents: editing",
+    description: "Members choose Edit from a document preview. Full Office editing starts their Cloud workspace only when requested. Requires Workbot Documents.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   workbotWorkspaceAssistant: {
     label: "Workbot: workspace assistant",
     description: "Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar.",

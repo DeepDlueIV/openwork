@@ -59,6 +59,7 @@ const sessionSchema = z.object({
   calendar: z.boolean().optional(),
   /** Connected document browsing; off on older Dens. */
   documents: z.boolean().optional(),
+  documentEditing: z.boolean().optional(),
   workspaceAssistant: z.boolean().optional(),
   /** Offers to open mentioned documents and keeps the chat beside them; needs the workspace assistant. */
   guidedNavigation: z.boolean().optional(),
@@ -331,6 +332,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         canSchedule,
         calendar: true,
         documents: features.workbotDocuments,
+        documentEditing: features.workbotDocuments && features.workbotDocumentEditing,
         workspaceAssistant: features.workbotWorkspaceAssistant,
         guidedNavigation: features.workbotWorkspaceAssistant && features.workbotGuidedNavigation,
         sideChats: true,
@@ -507,6 +509,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       const features = await getOrganizationFeatures(resolved.organization.id)
       if (editor?.[1] === "metadata" && !features.workbotWorkspaceAssistant) return c.json({ error: "feature_disabled", message: "Opening document links is off for this workspace." }, 403)
       if (!features.workbotDocuments) return c.json({ error: "workbot_documents_not_enabled", message: "Documents is off for this workspace." }, 403)
+      if (!read && !inner.endsWith("/close") && !features.workbotDocumentEditing) return c.json({ error: "feature_disabled", message: "Document editing is off for this workspace." }, 403)
       if (!resolved.scopes.has(read ? DEN_MCP_READ_SCOPE : DEN_MCP_WRITE_SCOPE)) return c.json({ error: "insufficient_scope" }, 403)
       const url = new URL(c.req.url)
       const headers = new Headers({ accept: "application/json", "x-den-internal-mcp-principal": createInternalMcpPrincipalHeader({ userId: resolved.principal.userId, organizationId: resolved.principal.organizationId, credentialId: resolved.credentialId }) })

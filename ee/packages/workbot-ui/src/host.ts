@@ -25,6 +25,8 @@ export type WorkbotHost = {
   calendar?: boolean
   /** Documents browsing is enabled for this organization; omitted means off. */
   documents?: boolean
+  /** Explicit document editing is enabled; omitted means preview only. */
+  documentEditing?: boolean
   /** Contextual chat and workspace navigation. Omitted means off. */
   workspaceAssistant?: boolean
   /** Offers to open documents a reply mentions and keeps the chat open beside them. Needs workspaceAssistant. */

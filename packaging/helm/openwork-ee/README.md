@@ -375,6 +375,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `workbotFirstRun` | `DEN_FEATURE_WORKBOT_FIRST_RUN` | default off | People signing in to Workbot choose or create their workspace without leaving sign-in, with a clear next action when Workbot is unavailable. |
 | `workbotInlineConnect` | `DEN_FEATURE_WORKBOT_INLINE_CONNECT` | default off | Members connect their assigned apps directly from Workbot and return to the same view after consent. |
 | `workbotDocuments` | `DEN_FEATURE_WORKBOT_DOCUMENTS` | default off | Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive. |
+| `workbotDocumentEditing` | `DEN_FEATURE_WORKBOT_DOCUMENT_EDITING` | default off | Members choose Edit from a document preview. Full Office editing starts their Cloud workspace only when requested. Requires Workbot Documents. |
 | `workbotWorkspaceAssistant` | `DEN_FEATURE_WORKBOT_WORKSPACE_ASSISTANT` | default off | Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar. |
 | `workbotGuidedNavigation` | `DEN_FEATURE_WORKBOT_GUIDED_NAVIGATION` | default off | Workbot offers to open the documents it mentions, and the conversation stays open beside the document. Needs the workspace assistant. |
 | `automationCalendar` | `DEN_FEATURE_AUTOMATION_CALENDAR` | default off | Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar. |

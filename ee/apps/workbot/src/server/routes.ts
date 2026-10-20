@@ -161,6 +161,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       canEnableWorkbot: who.canEnableWorkbot === true,
       calendar: who.enabled && who.calendar === true,
       documents: who.enabled && who.documents === true,
+      documentEditing: who.enabled && who.documents === true && who.documentEditing,
       workspaceAssistant: who.enabled && who.workspaceAssistant,
       guidedNavigation: who.enabled && who.workspaceAssistant && who.guidedNavigation,
       teamLinks: who.enabled ? who.teamLinks : undefined,
@@ -200,6 +201,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const office = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/office(?:\/[0-9a-f-]{36}(?:\/(save|close))?)?$/.exec(path)
     const method = c.req.method === "POST" ? "POST" : "GET"
     if (!(method === "GET" && path === "/v1/capabilities/google-workspace/drive-files") && !(editor && (method === "GET" || editor[1] === "editor")) && !(office && (method === "GET" ? !office[1] && /\/[0-9a-f-]{36}$/.test(path) : path.endsWith("/office") || !!office[1]))) return c.json({ error: "not_found" }, 404)
+    if (method === "POST" && !path.endsWith("/close") && !member.den.documentEditing) return c.json({ error: "feature_disabled", message: "Document editing is off for this workspace." }, 403)
     if (editor?.[1] === "content") {
       const response = await den.documentContent(member.accessToken, `${path}${url.search}`)
       return new Response(response.body, { status: response.status, headers: { "content-type": response.headers.get("content-type") ?? "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" } })

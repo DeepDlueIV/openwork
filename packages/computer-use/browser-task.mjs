@@ -86,10 +86,11 @@ function observePage(id, query = null) {
     }
     if (element.validity || element.hasAttribute("aria-invalid")) {
       state.valid = (element.validity?.valid ?? true) && !["true", "grammar", "spelling"].includes(element.getAttribute("aria-invalid"));
-      state.validationMessage = sensitive ? "" : text(element.validationMessage || referenced("aria-errormessage"), 1000);
+      // A page can echo a field's value into its error or description text.
+      state.validationMessage = sensitive || state.valueWithheld ? "" : text(element.validationMessage || referenced("aria-errormessage"), 1000);
     }
     const description = referenced("aria-describedby");
-    if (description && !sensitive) state.description = text(description, 1000);
+    if (description && !sensitive && !state.valueWithheld) state.description = text(description, 1000);
     return state;
   };
   const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHmac } from "node:crypto"
 
 /**
  * Rate limits for the email sign-up, sign-in and code endpoints.
@@ -46,14 +46,17 @@ export type AuthRateLimitInput = {
   clientIpKey: string
   /** The invitation id or token of a sign-up already checked to be pending and addressed to this email. */
   invitation: string | null
+  /** Server secret the bucket keys are derived with. */
+  keySecret: string
 }
 
 export type AuthRateLimitCheck = (key: string, maxRequests: number, windowMs: number, now: number) => Promise<number | null>
 
 export type AuthRateLimitResult = { bucket: AuthRateLimitBucket; retryAfterSeconds: number }
 
-function hash(value: string) {
-  return createHash("sha256").update(value).digest("hex").slice(0, 32)
+/** Keyed so stored bucket keys cannot be matched against a list of emails or invitation tokens. */
+function bucketId(keySecret: string, value: string) {
+  return createHmac("sha256", keySecret).update(value).digest("base64url").slice(0, 32)
 }
 
 function scope(path: string) {
@@ -67,12 +70,12 @@ export function authRateLimitBuckets(input: AuthRateLimitInput) {
   const buckets: { bucket: AuthRateLimitBucket; key: string; max: number; windowMs: number }[] = []
   const email = input.email?.trim().toLowerCase() || null
   if (email) {
-    buckets.push({ bucket: "email", key: `${prefix}:email:${hash(email)}`, max: policy.emailMax, windowMs: policy.windowMs })
+    buckets.push({ bucket: "email", key: `${prefix}:email:${bucketId(input.keySecret, email)}`, max: policy.emailMax, windowMs: policy.windowMs })
   }
   if (input.invitation && policy.invitationMax !== undefined) {
-    buckets.push({ bucket: "invitation", key: `${prefix}:invite:${hash(input.invitation)}`, max: policy.invitationMax, windowMs: policy.windowMs })
+    buckets.push({ bucket: "invitation", key: `${prefix}:invite:${bucketId(input.keySecret, input.invitation)}`, max: policy.invitationMax, windowMs: policy.windowMs })
   } else {
-    buckets.push({ bucket: "ip", key: `${prefix}:ip:${hash(input.clientIpKey)}`, max: policy.ipMax, windowMs: policy.windowMs })
+    buckets.push({ bucket: "ip", key: `${prefix}:ip:${bucketId(input.keySecret, input.clientIpKey)}`, max: policy.ipMax, windowMs: policy.windowMs })
   }
   return buckets
 }

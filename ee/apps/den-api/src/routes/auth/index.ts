@@ -687,6 +687,7 @@ async function checkEmailAuthRateLimit(request: Request, invitationSignupAllowed
     email: email ? normalizeLoginEmail(email) : null,
     clientIpKey: requestClientIpKey(request.headers),
     invitation,
+    keySecret: env.betterAuthSecret,
   }, checkRateLimit)
   if (!result) {
     return null

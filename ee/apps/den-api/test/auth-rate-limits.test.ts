@@ -24,6 +24,7 @@ function memoryLimiter(): AuthRateLimitCheck {
 }
 
 const OFFICE_IP = "198.51.100.7"
+const KEY_SECRET = "auth-rate-limit-unit-test-secret-0123456789"
 const NOW = 1_800_000_000_000
 
 test("a whole office behind one address can sign up together", async () => {
@@ -34,6 +35,8 @@ test("a whole office behind one address can sign up together", async () => {
       email: `person${person}@acme.test`,
       clientIpKey: OFFICE_IP,
       invitation: null,
+    keySecret: KEY_SECRET,
+      keySecret: KEY_SECRET,
     }, check, NOW + person)
     assert.equal(result, null, `person ${person} should not be limited`)
     const otp = await checkAuthRateLimit({
@@ -41,6 +44,8 @@ test("a whole office behind one address can sign up together", async () => {
       email: `person${person}@acme.test`,
       clientIpKey: OFFICE_IP,
       invitation: null,
+    keySecret: KEY_SECRET,
+      keySecret: KEY_SECRET,
     }, check, NOW + person)
     assert.equal(otp, null, `person ${person}'s code should send`)
   }
@@ -55,6 +60,8 @@ test("one email is still limited tightly, independent of address", async () => {
       email: "target@acme.test",
       clientIpKey: `203.0.113.${attempt}`,
       invitation: null,
+    keySecret: KEY_SECRET,
+      keySecret: KEY_SECRET,
     }, check, NOW)
     assert.equal(result, null)
   }
@@ -63,6 +70,7 @@ test("one email is still limited tightly, independent of address", async () => {
     email: "Target@Acme.test",
     clientIpKey: "203.0.113.200",
     invitation: null,
+    keySecret: KEY_SECRET,
   }, check, NOW)
   assert.equal(blocked?.bucket, "email")
 })
@@ -77,6 +85,8 @@ test("one address spraying many emails hits the address ceiling", async () => {
       email: `spray${attempt}@example.test`,
       clientIpKey: OFFICE_IP,
       invitation: null,
+    keySecret: KEY_SECRET,
+      keySecret: KEY_SECRET,
     }, check, NOW)
   }
   assert.equal(blocked?.bucket, "ip")
@@ -86,22 +96,23 @@ test("an invited sign-up counts against its invitation, not the shared address",
   const check = memoryLimiter()
   const max = AUTH_RATE_LIMIT_POLICIES["/sign-up/email"]?.ipMax ?? 0
   for (let attempt = 0; attempt < max; attempt += 1) {
-    await checkAuthRateLimit({ path: "/sign-up/email", email: `spray${attempt}@example.test`, clientIpKey: OFFICE_IP, invitation: null }, check, NOW)
+    await checkAuthRateLimit({ path: "/sign-up/email", email: `spray${attempt}@example.test`, clientIpKey: OFFICE_IP, invitation: null, keySecret: KEY_SECRET }, check, NOW)
   }
   const invited = await checkAuthRateLimit({
     path: "/sign-up/email",
     email: "new.hire@acme.test",
     clientIpKey: OFFICE_IP,
     invitation: "inv_123",
+    keySecret: KEY_SECRET,
   }, check, NOW)
   assert.equal(invited, null)
 
-  const buckets = authRateLimitBuckets({ path: "/sign-up/email", email: "new.hire@acme.test", clientIpKey: OFFICE_IP, invitation: "inv_123" })
+  const buckets = authRateLimitBuckets({ path: "/sign-up/email", email: "new.hire@acme.test", clientIpKey: OFFICE_IP, invitation: "inv_123", keySecret: KEY_SECRET })
   assert.deepEqual(buckets.map((bucket) => bucket.bucket), ["email", "invitation"])
 })
 
 test("keys never contain the raw email, address or invitation", () => {
-  const buckets = authRateLimitBuckets({ path: "/sign-in/email", email: "a@acme.test", clientIpKey: OFFICE_IP, invitation: null })
+  const buckets = authRateLimitBuckets({ path: "/sign-in/email", email: "a@acme.test", clientIpKey: OFFICE_IP, invitation: null, keySecret: KEY_SECRET })
   for (const bucket of buckets) {
     assert.ok(!bucket.key.includes("acme"))
     assert.ok(!bucket.key.includes(OFFICE_IP))
@@ -109,7 +120,7 @@ test("keys never contain the raw email, address or invitation", () => {
 })
 
 test("other paths are not limited here", () => {
-  assert.deepEqual(authRateLimitBuckets({ path: "/get-session", email: null, clientIpKey: OFFICE_IP, invitation: null }), [])
+  assert.deepEqual(authRateLimitBuckets({ path: "/get-session", email: null, clientIpKey: OFFICE_IP, invitation: null, keySecret: KEY_SECRET }), [])
 })
 
 test("the 429 tells people how long to wait", async () => {

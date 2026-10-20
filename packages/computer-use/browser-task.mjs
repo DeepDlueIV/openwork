@@ -160,7 +160,10 @@ function observePage(id, query = null) {
     used: false, createdAt: performance.now(), describe, optionRef, snapshots, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };
   globalThis[key] = observation;
   return { truncated, scrollRegions, title: text(document.title, 300), text: text(document.body?.innerText, 16000), elements,
-    viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...document.querySelectorAll('input[type="password"],input[autocomplete="one-time-code"]')].some((element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; }),
+    viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...candidates].some((element) => {
+      if (!(element instanceof HTMLElement) || !describe(element).sensitive) return false;
+      const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0;
+    }),
     webmcp: "modelContext" in document ? "available" : "check_site_tools",
     limitations: ["DOM references cover the top document and open controls; use a fresh image for frames or canvas."] };
 }
@@ -428,7 +431,7 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
     const page = await isolated(tab.view.webContents, observePage, id, query);
     let image, digest;
     if (includeImage) {
-      if (page.hasPasswordField) fail("sign_in_required", "This page needs sign-in. Take over and sign in directly in the browser, then resume.");
+      if (page.hasPasswordField) fail("sign_in_required", "This page contains protected sign-in or payment fields. Take over and complete them directly in the browser, then resume.");
       const png = await captureObservation(tab.view.webContents, page.viewport);
       digest = imageDigest(png);
       image = { mimeType: "image/png", data: png.toString("base64"), width: page.viewport.width, height: page.viewport.height };

@@ -23,7 +23,7 @@ test("withheld field values cannot escape through accessible labels", async () =
   const fields = [email, account, password, long];
   const document = { title: `Profile ${account.value}`, body: { innerText: fields.map(field => field.value).join(" ") }, activeElement: email,
     getElementById: id => id === "account-caption" ? { textContent: `Account ${account.value}` } : null,
-    querySelectorAll: query => query.startsWith('input[type="password"]') ? [password] : fields };
+    querySelectorAll: query => query.startsWith('input[type="password"]') ? fields.filter(field => field.type === "password" || field.attributes.autocomplete === "one-time-code") : fields };
   const context = vm.createContext({ document, HTMLElement: Input, HTMLInputElement: Input,
     HTMLSelectElement: class {}, HTMLTextAreaElement: class {}, HTMLLabelElement: class {},
     getComputedStyle: () => ({ visibility: "visible", display: "block", overflowX: "visible", overflowY: "visible" }),
@@ -42,6 +42,10 @@ test("withheld field values cannot escape through accessible labels", async () =
   assert.equal(entered.elements[0].name, `Email ${email.value}`);
   assert.equal(entered.elements[0].value, email.value);
   assert.ok(!JSON.stringify(entered).includes(password.value));
+  password.type = "text";
+  account.attributes.autocomplete = "section-checkout cc-number";
+  const protectedImage = await host.request({ sessionId: "chat", operation: "observe", args: { tabId: "tab", includeImage: true } });
+  assert.equal(protectedImage.code, "sign_in_required", "Payment fields must block capture even without a password field");
 });
 
 test("select options keep backing identities private and revalidate before choosing", async () => {

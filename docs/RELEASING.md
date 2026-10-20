@@ -48,9 +48,12 @@ app-related push to `dev`. Each platform has its own rolling prerelease:
 | macOS arm64 | `alpha-macos-latest` | Signed/notarized DMG, ZIP, blockmaps | `latest-mac.yml` |
 | Windows x64 | `alpha-windows-latest` | Azure-signed NSIS EXE, blockmap | `latest.yml` |
 
-Versions use the next stable patch plus `-alpha.<run>+<sha>`, stamped only in
-the build workspace. Uploads put versioned assets first and the manifest last;
-each release retains the newest 100 builds. These prereleases do not replace
+Versions use the next stable patch plus `-alpha.<run>+<sha>` (Windows adds
+`.<attempt>` after the run number so reruns never overwrite signed installers),
+stamped only in the build workspace. Uploads put versioned assets first and the
+manifest last; each release retains the newest 100 builds. Windows skips
+publications older than an uploaded build and also protects the currently
+published run from pruning. These prereleases do not replace
 the stable Latest release. Windows requires the same `windows-signing`
 environment and Azure OIDC/signing configuration as stable, with no unsigned
 fallback.

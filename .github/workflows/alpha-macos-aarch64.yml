@@ -71,6 +71,9 @@ jobs:
     name: Build + Publish alpha (aarch64-apple-darwin)
     runs-on: macos-14
     timeout-minutes: 180
+    concurrency:
+      group: alpha-macos-${{ inputs.channel_tag || 'alpha-macos-latest' }}
+      cancel-in-progress: false
 
     env:
       ALPHA_RELEASE_NAME: OpenWork Alpha (macOS arm64)
@@ -343,7 +346,8 @@ jobs:
           set -euo pipefail
           base="$(node scripts/release/versions.mjs next --bump patch)"
           sha="$(printf '%.7s' "$GITHUB_SHA")"
-          echo "alpha_version=${base}-alpha.${GITHUB_RUN_NUMBER}+${sha}" >> "$GITHUB_OUTPUT"
+          # Reruns re-sign different bytes: never reuse a versioned asset name.
+          echo "alpha_version=${base}-alpha.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Write alpha Electron package version
         env:
@@ -446,6 +450,7 @@ jobs:
           retention-days: 7
 
       - name: Publish Windows alpha build to rolling release
+        id: publish-windows
         if: github.event_name == 'push' || inputs.publish == true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -459,7 +464,15 @@ jobs:
           for asset in "$installer" "$installer.blockmap" apps/desktop/dist-electron/latest.yml; do
             test -s "$asset" || { echo "Missing Windows alpha asset: $asset" >&2; exit 1; }
           done
-          if ! gh release view "$CHANNEL_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          published_assets="$(mktemp)"
+          trap 'rm -f "$published_assets"' EXIT
+          if gh release view "$CHANNEL_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > "$published_assets"; then
+            # Under the channel lock, do not move the feed behind any uploaded build.
+            if [ "$(node scripts/release/check-windows-alpha-version.mjs "$ALPHA_VERSION" "$published_assets")" != publish ]; then
+              echo "Skipping alpha $ALPHA_VERSION: an equal or newer build is already uploaded."
+              exit 0
+            fi
+          else
             gh release create "$CHANNEL_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$ALPHA_RELEASE_NAME" \
@@ -472,14 +485,16 @@ jobs:
           for asset in "$installer" "$installer.blockmap"; do
             labeled_assets+=("$asset#${asset##*/} (commit $ALPHA_COMMIT; build started $ALPHA_BUILD_STARTED_AT)")
           done
+          # Versioned installers are immutable; only the rolling manifest is replaced.
           gh release upload "$CHANNEL_TAG" "${labeled_assets[@]}" \
-            --repo "$GITHUB_REPOSITORY" --clobber
+            --repo "$GITHUB_REPOSITORY"
           # Publish last: never advertise bytes that have not been uploaded.
           gh release upload "$CHANNEL_TAG" apps/desktop/dist-electron/latest.yml \
             --repo "$GITHUB_REPOSITORY" --clobber
+          echo "published=true" >> "$GITHUB_OUTPUT"
 
       - name: Prune Windows alpha assets beyond retention window
-        if: github.event_name == 'push' || inputs.publish == true
+        if: (github.event_name == 'push' || inputs.publish == true) && steps.publish-windows.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/release/prune-alpha-assets.mjs --repo "$GITHUB_REPOSITORY" --tag "$CHANNEL_TAG" --keep 100
+        run: node scripts/release/prune-alpha-assets.mjs --repo "$GITHUB_REPOSITORY" --tag "$CHANNEL_TAG" --keep 100 --protect-run "$GITHUB_RUN_NUMBER"

@@ -40,6 +40,12 @@ test("withheld field values cannot escape through accessible labels", async () =
   assert.equal(seen.ok, true, JSON.stringify(seen));
   assert.deepEqual(Array.from(seen.elements, element => element.name), ["Email [withheld]", "Account [withheld]", "Password [withheld]", "Vault [withheld]", "Continue", "Consent"]);
   for (const field of privateFields) assert.ok(!JSON.stringify(seen).includes(field.value), "The observation exposed a withheld value");
+  checkbox.value = "changed-private-reference";
+  const staleCheckbox = await host.request({ sessionId: "chat", operation: "act", args: { tabId: "tab", observationId: seen.observationId,
+    action: { type: "set_checked", ref: seen.elements[5].ref, checked: true } } });
+  assert.equal(staleCheckbox.code, "stale_observation");
+  assert.notEqual(checkbox.checked, true);
+  checkbox.value = "on";
   context.__openworkAgentEntered.set(email, email.value);
   const entered = await observe();
   assert.equal(entered.elements[0].name, `Email ${email.value}`);

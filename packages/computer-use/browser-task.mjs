@@ -82,7 +82,9 @@ function observePage(id, query = null) {
     // One-time codes and payment-card fields (cc-number, cc-csc, cc-exp...) never leave the page.
     const sensitive = isSensitive(element);
     const role = element.getAttribute("role");
-    const field = select || isTextValue(element);
+    // Non-text backing values stay private, but still bind the internal
+    // staleness check to the identity the page exposed when observed.
+    const field = select || isTextValue(element) || reveal && input;
     const value = field ? input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "" : "";
     const name = referenced("aria-labelledby") || element.getAttribute("aria-label") ||
       (input || textarea || select ? [...(element.labels || [])].map(labelText).join(" ") : "") ||

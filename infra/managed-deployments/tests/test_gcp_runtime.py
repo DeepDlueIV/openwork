@@ -290,6 +290,53 @@ class TrafficAttributionTests(unittest.TestCase):
                 "latestCreatedRevision": revision, "latestReadyRevision": revision,
                 "trafficStatuses": [{"percent": 100, "revision": "ow-api-00002"}]}
 
+    def tagged_service(self):
+        # Neutralized selected live wire: the old tagged target omits its
+        # proto3 int32 default percent=0; this is not explicit null.
+        service = self.service()
+        current = "ow-api-expcurrent"
+        old = "ow-api-00001-old"
+        service.update(generation="3", observedGeneration="3", latestCreatedRevision=current, latestReadyRevision=current)
+        service["traffic"] = [
+            {"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "percent": 100},
+            {"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": old, "tag": "exp-test-old"},
+        ]
+        service["trafficStatuses"] = [
+            {"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": old, "tag": "exp-test-old"},
+            {"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "revision": current, "percent": 100},
+        ]
+        return service
+
+    def test_tagged_zero_percent_omitted_by_protojson_is_healthy(self):
+        service = self.tagged_service()
+        self.assertNotIn("percent", service["trafficStatuses"][0])
+        self.assertTrue(health.serving_expected_revision(service, "expected@sha256:abc"))
+        service["trafficStatuses"][0]["percent"] = 0
+        self.assertTrue(health.serving_expected_revision(service, "expected@sha256:abc"))
+
+    def test_explicit_malformed_traffic_percent_is_never_defaulted(self):
+        for percent in (None, True, False, "0", "100", 0.0, 100.0, -1, 101):
+            for target in (0, 1):
+                service = self.tagged_service()
+                service["trafficStatuses"][target]["percent"] = percent
+                with self.subTest(percent=percent, target=target):
+                    self.assertFalse(health.serving_expected_revision(service, "expected@sha256:abc"))
+
+    def test_omitted_zero_does_not_relax_totals_or_ready_revision_attribution(self):
+        for old_percent, current_percent in [(None, 99), (1, 100), (1, 99), (100, 0)]:
+            service = self.tagged_service()
+            if old_percent is not None:
+                service["trafficStatuses"][0]["percent"] = old_percent
+            service["trafficStatuses"][1]["percent"] = current_percent
+            with self.subTest(old=old_percent, current=current_percent):
+                self.assertFalse(health.serving_expected_revision(service, "expected@sha256:abc"))
+        service = self.tagged_service()
+        service["trafficStatuses"][1].pop("percent")
+        self.assertFalse(health.serving_expected_revision(service, "expected@sha256:abc"))
+        service = self.tagged_service()
+        service["trafficStatuses"][1]["revision"] = "ow-api-00001-old"
+        self.assertFalse(health.serving_expected_revision(service, "expected@sha256:abc"))
+
     def test_actual_latest_ready_revision_must_serve_all_traffic(self):
         good = self.service()
         self.assertTrue(health.serving_expected_revision(good, "expected@sha256:abc"))

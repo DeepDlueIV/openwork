@@ -238,7 +238,9 @@ invocation is needed behind the external load balancer; ingress is restricted to
 service-agent creation, IAM grants, or public IP Cloud SQL. Resolve those with
 customer administrators, never weaken policy automatically. Cloud SQL uses the
 authenticated connector and no authorized networks. DNS must already be
-authoritative, and CAA must allow Google's certificates. Certificate issuance
+authoritative. If your domain or a parent domain has CAA records, allow
+`pki.goog` (Google Trust Services) in the closest non-empty CAA record set,
+or the managed HTTPS certificate will not be issued. Certificate issuance
 can take 60 minutes; a failed run can be retried after correcting DNS/CAA.
 
 No cloud resources have been provisioned or releases published as part of

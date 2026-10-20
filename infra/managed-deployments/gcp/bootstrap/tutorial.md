@@ -41,6 +41,9 @@ If project IAM, service-account IAM, API enablement, public invocation or DNS is
 blocked by your organization's policy, ask your Google Cloud administrator to
 approve this installation. The installer does not weaken those policies
 automatically or repair operator access by broadening the runner's permissions.
+If your domain or a parent domain has CAA records, allow `pki.goog` (Google Trust
+Services) in the closest non-empty CAA record set, or the managed HTTPS
+certificate will not be issued.
 Certificate issuance may take up to an hour after DNS records are created.
 Keep Cloud Shell open until all six installation milestones finish. A failed
 or closed run can be retried with a fresh command; it reuses retained state.

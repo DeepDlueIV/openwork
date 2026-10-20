@@ -350,6 +350,22 @@
       "bun": "./src/den/agent-permissions.ts",
       "default": "./dist/den/agent-permissions.js"
     },
+    "./den/service-health": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/service-health.d.ts",
+        "default": "./src/den/service-health.ts"
+      },
+      "development": "./src/den/service-health.ts",
+      "default": "./src/den/service-health.ts"
+    },
+    "./den/service-readiness": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/service-readiness.d.ts",
+        "default": "./src/den/service-readiness.ts"
+      },
+      "development": "./src/den/service-readiness.ts",
+      "default": "./src/den/service-readiness.ts"
+    },
     "./den/admin-organization": {
       "types": {
         "openwork-build": "./dist/types/src/den/admin-organization.d.ts",

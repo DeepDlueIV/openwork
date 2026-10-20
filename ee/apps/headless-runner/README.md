@@ -32,6 +32,13 @@ headless-runner (one Node process, SQLite file)
 
 All `/v1` routes require `Authorization: Bearer $HEADLESS_API_TOKEN`.
 
+`GET /v1/health` is a versioned, authenticated deployment check on both Node and
+cells. It reports only whether model and resume settings are present, and can
+compare an `X-OpenWork-Den-Origin` header with the configured callback origin.
+It does not run inference, exchange grants, allocate a conversation cell, or
+return credentials or URLs. Public `/health` remains a liveness check. See
+[deployment service readiness](../../../docs/deployment-service-readiness.md).
+
 | Method | Path | Body / query | Result |
 |---|---|---|---|
 | `GET` | `/health` | | `{ ok: true }` |

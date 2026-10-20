@@ -730,8 +730,46 @@ export type AdminDashboard = {
   }>;
 };
 
+export type DeploymentServiceStatus = {
+  id: "database" | "gateway" | "headlessRunner" | "workbot" | "slack" | "durableTurns" | "email";
+  required: boolean;
+  configured: boolean;
+  state: "ready" | "not_configured" | "misconfigured" | "unreachable" | "unknown";
+  reason:
+    | "not_checked"
+    | "not_configured"
+    | "missing_configuration"
+    | "invalid_configuration"
+    | "health_verified"
+    | "database_verified"
+    | "authentication_failed"
+    | "unexpected_response"
+    | "request_failed"
+    | "timeout"
+    | "dependency_unavailable"
+    | "configuration_only"
+    | "provider_access_unverified"
+    | "organization_setup_required"
+    | "callback_unverified"
+    | "delivery_unverified"
+    | "incompatible_service";
+  missingSettings: Array<string>;
+  dependencies: Array<"database" | "gateway" | "headlessRunner" | "workbot" | "slack" | "durableTurns" | "email">;
+  checkedAt: string | null;
+  lastSuccessAt: string | null;
+  stale: boolean;
+};
+
+export type DeploymentServiceReadiness = {
+  version: 1;
+  checkedAt: string | null;
+  checking: boolean;
+  services: Array<DeploymentServiceStatus>;
+};
+
 export type AdminFeature = {
   key:
+    | "serviceReadiness"
     | "cloudAgentGateway"
     | "liveProviderSync"
     | "offlineRecovery"
@@ -794,6 +832,7 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities?: {
+      serviceReadiness: boolean;
       cloudAgentGateway: boolean;
       liveProviderSync: boolean;
       offlineRecovery: boolean;
@@ -829,6 +868,15 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates?: {
+      serviceReadiness: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       cloudAgentGateway: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1108,6 +1156,7 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      serviceReadiness: boolean;
       cloudAgentGateway: boolean;
       liveProviderSync: boolean;
       offlineRecovery: boolean;
@@ -1143,6 +1192,15 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      serviceReadiness: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       cloudAgentGateway: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1976,6 +2034,39 @@ export type OrganizationOwner = {
   image?: string | null;
 };
 
+export type OrganizationServiceReadiness = {
+  version: 1;
+  checkedAt: string | null;
+  checking: boolean;
+  services: Array<{
+    id: "database" | "gateway" | "headlessRunner" | "workbot" | "slack" | "durableTurns" | "email";
+    configured: boolean;
+    state: "ready" | "not_configured" | "misconfigured" | "unreachable" | "unknown";
+    reason:
+      | "not_checked"
+      | "not_configured"
+      | "missing_configuration"
+      | "invalid_configuration"
+      | "health_verified"
+      | "database_verified"
+      | "authentication_failed"
+      | "unexpected_response"
+      | "request_failed"
+      | "timeout"
+      | "dependency_unavailable"
+      | "configuration_only"
+      | "provider_access_unverified"
+      | "organization_setup_required"
+      | "callback_unverified"
+      | "delivery_unverified"
+      | "incompatible_service";
+    dependencies: Array<"database" | "gateway" | "headlessRunner" | "workbot" | "slack" | "durableTurns" | "email">;
+    checkedAt: string | null;
+    lastSuccessAt: string | null;
+    stale: boolean;
+  }>;
+};
+
 export type OrganizationContextResponse = {
   organization: {
     owner?: OrganizationOwner | null;
@@ -2068,6 +2159,7 @@ export type OrganizationContextResponse = {
   deploymentCapabilities: {
     version: 1;
     aiGateway: boolean;
+    serviceReadiness?: OrganizationServiceReadiness;
   };
   entitlements: {
     sso: boolean;
@@ -7044,6 +7136,89 @@ export type GetV1AdminDashboardResponses = {
 
 export type GetV1AdminDashboardResponse = GetV1AdminDashboardResponses[keyof GetV1AdminDashboardResponses];
 
+export type GetV1AdminServicesData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/admin/services";
+};
+
+export type GetV1AdminServicesErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Service readiness is disabled.
+   */
+  404: NotFoundError;
+  /**
+   * Diagnostic admission is unavailable; no upstream detail is exposed.
+   */
+  503: {
+    error: "service_readiness_unavailable";
+  };
+};
+
+export type GetV1AdminServicesError = GetV1AdminServicesErrors[keyof GetV1AdminServicesErrors];
+
+export type GetV1AdminServicesResponses = {
+  /**
+   * Cached deployment readiness.
+   */
+  200: DeploymentServiceReadiness;
+};
+
+export type GetV1AdminServicesResponse = GetV1AdminServicesResponses[keyof GetV1AdminServicesResponses];
+
+export type PostV1AdminServicesCheckData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/admin/services/check";
+};
+
+export type PostV1AdminServicesCheckErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Service readiness is disabled.
+   */
+  404: NotFoundError;
+  /**
+   * No recent matching snapshot is available and another replica recently admitted a check; Retry-After indicates the admission window.
+   */
+  429: DeploymentServiceReadiness;
+  /**
+   * Diagnostic admission is unavailable; no upstream detail is exposed.
+   */
+  503: {
+    error: "service_readiness_unavailable";
+  };
+};
+
+export type PostV1AdminServicesCheckError = PostV1AdminServicesCheckErrors[keyof PostV1AdminServicesCheckErrors];
+
+export type PostV1AdminServicesCheckResponses = {
+  /**
+   * Check queued, already in progress, or completed recently with matching configuration.
+   */
+  202: DeploymentServiceReadiness;
+};
+
+export type PostV1AdminServicesCheckResponse =
+  PostV1AdminServicesCheckResponses[keyof PostV1AdminServicesCheckResponses];
+
 export type PostV1AdminAdminsData = {
   body?: never;
   path?: never;
@@ -7551,6 +7726,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      serviceReadiness: boolean;
       cloudAgentGateway: boolean;
       liveProviderSync: boolean;
       offlineRecovery: boolean;
@@ -7586,6 +7762,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      serviceReadiness: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       cloudAgentGateway: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7853,6 +8038,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      serviceReadiness: boolean;
       cloudAgentGateway: boolean;
       liveProviderSync: boolean;
       offlineRecovery: boolean;
@@ -7888,6 +8074,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      serviceReadiness: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       cloudAgentGateway: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -10820,6 +11015,32 @@ export type PostV1OrgsInvitationsAcceptResponses = {
 
 export type PostV1OrgsInvitationsAcceptResponse =
   PostV1OrgsInvitationsAcceptResponses[keyof PostV1OrgsInvitationsAcceptResponses];
+
+export type GetV1OrgServiceReadinessData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/service-readiness";
+};
+
+export type GetV1OrgServiceReadinessErrors = {
+  /**
+   * Service readiness is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgServiceReadinessError = GetV1OrgServiceReadinessErrors[keyof GetV1OrgServiceReadinessErrors];
+
+export type GetV1OrgServiceReadinessResponses = {
+  /**
+   * Cached service readiness.
+   */
+  200: OrganizationServiceReadiness;
+};
+
+export type GetV1OrgServiceReadinessResponse =
+  GetV1OrgServiceReadinessResponses[keyof GetV1OrgServiceReadinessResponses];
 
 export type GetV1OrgActivityData = {
   body?: never;

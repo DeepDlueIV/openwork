@@ -104,6 +104,13 @@ jobs:
         run: |
           pnpm --filter @openwork-ee/headless-runner test:error-reporting
           pnpm --filter @openwork-ee/workbot test:error-reporting
+      - name: Test service health authentication and readiness presentation
+        run: |
+          pnpm --filter @openwork-ee/headless-runner test:service-health
+          pnpm --filter @openwork-ee/workbot test:service-readiness
+          # Den web does not install tsx in CI; keep its JSX config with the API-owned loader.
+          TSX_TSCONFIG_PATH=../den-web/tsconfig.json pnpm --filter @openwork-ee/den-api exec node --conditions=development --import tsx --test '../den-web/components/admin/services/*.test.ts' '../den-web/components/admin/services/*.test.tsx' '../den-web/app/(den)/_lib/service-readiness.test.ts'
+          bun test apps/app/tests/deployment-service-readiness.test.ts
       - name: Boot the app provider tree
         run: pnpm test:boot
       - name: Check desktop links open real Den pages
@@ -111,7 +118,7 @@ jobs:
       - name: Test the shared Calendar logic
         run: pnpm --filter @openwork/calendar test
       - name: Test fork authorization and free screening policy
-        run: node --test .github/scripts/contributor-pr.test.mjs .github/scripts/contributor-screen.test.mjs .github/scripts/warden-check.test.mjs .github/scripts/warden-report.test.mjs
+        run: node --test .github/scripts/contributor-pr.test.mjs .github/scripts/contributor-screen.test.mjs .github/scripts/warden-check.test.mjs .github/scripts/warden-report.test.mjs .github/scripts/warden-fast.test.mjs
       - name: Test on-demand PR proof review builds
         run: node --test .github/scripts/pr-proof-review-build.test.mjs
       - name: Test desktop and cloud computer access and interruption

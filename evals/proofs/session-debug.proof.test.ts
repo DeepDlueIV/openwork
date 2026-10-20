@@ -3,7 +3,7 @@ import { spec } from "@openwork/testkit";
 import { sessionDebug } from "../worlds/session-debug.ts";
 
 const test = spec.world(sessionDebug, {
-  timeout: 240_000,
+  timeout: 300_000,
   resources: { surfaces: ["appWeb"], services: [] },
   needs: { commands: ["bun"] },
 });

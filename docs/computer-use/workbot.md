@@ -116,7 +116,9 @@ Uploads, Outputs and Downloads shortcuts point to these shared folders. Both
 the command user and GUI user can save outputs through a dedicated shared group
 and default directory ACLs. Homes and files elsewhere use private permissions;
 the GUI account is not a member of the command user's group. App profiles live
-in `/home/openwork-browser` and survive VM pause/resume.
+in `/home/openwork-app` and survive VM pause/resume. This account cannot read
+the Chromium profile or open network connections; use shared uploads and outputs
+to exchange files with native apps. Browser downloads also use the shared outputs.
 
 Workbot's `desktop` tool exposes `computer_apps {}` to discover app availability,
 package versions, supported formats, paths and environment guidance, and

@@ -92,18 +92,41 @@ class AdoptionTests(unittest.TestCase):
         self.assertEqual(sum(command[1] == "apply" for command in calls), 1)
 
     def test_only_disabled_pinned_latest_ready_api_only_revisions_can_resume(self):
+        # Neutralized live v1/v2 shape: template name absent; Configuration owns
+        # the revision, and its UID is deliberately NOT the service UID.
         images = {"den_api": "api@sha256:" + "a" * 64, "den_web": "web@sha256:" + "b" * 64}
         def live(service):
             api = service.endswith("-api")
-            revision = service + "-new"
-            return {"metadata": {"name": service, "generation": 2, "annotations": {"run.googleapis.com/scalingMode": "manual", "run.googleapis.com/manualInstanceCount": "0"}},
-                    "status": {"observedGeneration": 2, "latestReadyRevisionName": revision, "latestCreatedRevisionName": revision,
+            revision = service + "-00001-abc"
+            container = {"image": images["den_api" if api else "den_web"]}
+            if api:
+                container.update(command=["node"], args=["/app/ee/apps/den-api/dist/main.js"])
+            return {"metadata": {"name": service, "uid": service + "-service-uid", "generation": 3, "annotations": {"run.googleapis.com/scalingMode": "manual", "run.googleapis.com/manualInstanceCount": "0"}},
+                    "status": {"observedGeneration": 3, "latestReadyRevisionName": revision, "latestCreatedRevisionName": revision,
                                "traffic": [{"revisionName": revision, "percent": 100}]},
-                    "spec": {"traffic": [{"percent": 100}], "template": {"metadata": {"name": revision}, "spec": {"containers": [{
-                        "image": images["den_api" if api else "den_web"], "command": ["node"] if api else [],
-                        "args": ["/app/ee/apps/den-api/dist/main.js"] if api else []}]}}}}
-        with patch.dict(os.environ, ENV), patch.object(runner, "service_status", side_effect=live):
-            runner.verify_maintained_revisions(images, timeout=0)
+                    "spec": {"traffic": [{"percent": 100}], "template": {"metadata": {}, "spec": {"containers": [container]}}}}
+        def verify(reader=live, timeout=0, mutate=None):
+            def response(url, **kwargs):
+                service = url.split("/services/", 1)[1].split("/revisions/", 1)[0]
+                snapshot = live(service)
+                revision = snapshot["status"]["latestReadyRevisionName"]
+                full_name = f'projects/{ENV["PROJECT_ID"]}/locations/{ENV["REGION"]}/services/{service}/revisions/{revision}'
+                self.assertEqual(url, "https://run.googleapis.com/v2/" + full_name)
+                v1 = {"metadata": {"name": revision, "uid": revision + "-uid", "ownerReferences": [{
+                    "apiVersion": "serving.knative.dev/v1", "blockOwnerDeletion": True, "controller": True,
+                    "kind": "Configuration", "name": service, "uid": service + "-configuration-uid"}]},
+                      "spec": snapshot["spec"]["template"]["spec"]}
+                self.assertNotEqual(v1["metadata"]["ownerReferences"][0]["uid"], snapshot["metadata"]["uid"])
+                actual = {"name": full_name, "service": service, "uid": v1["metadata"]["uid"],
+                          "containers": v1["spec"]["containers"],
+                          "conditions": [{"type": "Ready", "state": "CONDITION_SUCCEEDED"}]}
+                if mutate:
+                    mutate(actual)
+                return json.dumps(actual).encode()
+            with patch.dict(os.environ, ENV), patch.object(runner, "service_status", side_effect=reader), \
+                    patch.object(runner, "storage_headers", return_value={}), patch.object(runner, "request", side_effect=response):
+                runner.verify_maintained_revisions(images, timeout=timeout)
+        verify()
         reads = []
         def converging(service):
             result = live(service)
@@ -111,11 +134,12 @@ class AdoptionTests(unittest.TestCase):
                 result["status"]["latestReadyRevisionName"] = "old"
             reads.append(service)
             return result
-        with patch.dict(os.environ, ENV), patch.object(runner, "service_status", side_effect=converging), patch.object(runner.time, "sleep") as poll:
-            runner.verify_maintained_revisions(images, timeout=10)
-        self.assertEqual(len(reads), 3)
+        with patch.object(runner.time, "sleep") as poll:
+            verify(converging, timeout=10)
+        self.assertEqual(len(reads), 5)
         poll.assert_called_once_with(3)
-        for failure in ("old-ready", "split", "image", "command", "enabled"):
+        for failure in ("old-ready", "split", "image", "command", "enabled", "missing-service-uid", "unsafe-revision", "uid-race", "generation-race"):
+            calls = []
             def invalid(service):
                 result = live(service)
                 if failure == "old-ready":
@@ -126,12 +150,43 @@ class AdoptionTests(unittest.TestCase):
                     result["spec"]["template"]["spec"]["containers"][0]["image"] = "old"
                 elif failure == "command":
                     result["spec"]["template"]["spec"]["containers"][0]["args"] = ["bootstrap.js"]
-                else:
+                elif failure == "enabled":
                     result["metadata"]["annotations"]["run.googleapis.com/scalingMode"] = "automatic"
+                elif failure == "missing-service-uid":
+                    result["metadata"].pop("uid")
+                elif failure == "unsafe-revision":
+                    result["status"]["latestReadyRevisionName"] = "other/../revision"
+                    result["status"]["latestCreatedRevisionName"] = "other/../revision"
+                    result["status"]["traffic"][0]["revisionName"] = "other/../revision"
+                elif calls and failure == "uid-race":
+                    result["metadata"]["uid"] = "replacement-service-uid"
+                elif calls:
+                    result["metadata"]["generation"] = 4
+                    result["status"]["observedGeneration"] = 4
+                calls.append(service)
                 return result
-            with self.subTest(failure=failure), patch.dict(os.environ, ENV), patch.object(runner, "service_status", side_effect=invalid):
-                with self.assertRaises(ValueError):
-                    runner.verify_maintained_revisions(images, timeout=0)
+            with self.subTest(failure=failure), self.assertRaises(ValueError):
+                verify(invalid)
+        for failure in ("project", "region", "parent", "revision", "service", "uid", "ready", "image", "command", "extra-container"):
+            def wrong_revision(actual):
+                if failure in ("project", "region", "parent", "revision"):
+                    substitutions = {"project": (ENV["PROJECT_ID"], "other-project"), "region": (ENV["REGION"], "other-region"),
+                                     "parent": ("/services/", "/services/other-"), "revision": ("-00001-abc", "-old")}
+                    actual["name"] = actual["name"].replace(*substitutions[failure])
+                elif failure == "service":
+                    actual["service"] = "other-service"
+                elif failure == "uid":
+                    actual["uid"] = ""
+                elif failure == "ready":
+                    actual["conditions"][0]["state"] = "CONDITION_PENDING"
+                elif failure == "image":
+                    actual["containers"][0]["image"] = "wrong@sha256:" + "c" * 64
+                elif failure == "command":
+                    actual["containers"][0]["args"] = ["/app/ee/packages/den-db/dist/scripts/bootstrap.js"]
+                else:
+                    actual["containers"].append({"image": images["den_api"]})
+            with self.subTest(actual_revision_failure=failure), self.assertRaises(ValueError):
+                verify(mutate=wrong_revision)
 
     def test_custom_observer_role_is_one_read_permission_not_monitoring_viewer(self):
         source = (GCP / "runner/install.py").read_text()

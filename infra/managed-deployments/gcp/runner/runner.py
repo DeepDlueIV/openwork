@@ -238,12 +238,35 @@ def verify_maintained_revisions(images, timeout=600):
             traffic = status.get("traffic", [])
             template = live.get("spec", {}).get("template", {})
             containers = template.get("spec", {}).get("containers", [])
-            if (not disabled_service(live) or not revision or status.get("latestCreatedRevisionName") != revision
-                    or template.get("metadata", {}).get("name") != revision
+            service_uid = live.get("metadata", {}).get("uid")
+            if (not disabled_service(live) or not service_uid or not isinstance(revision, str)
+                    or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", revision) or status.get("latestCreatedRevisionName") != revision
                     or len(traffic) != 1 or traffic[0].get("revisionName") != revision or traffic[0].get("percent") != 100
                     or len(containers) != 1 or containers[0].get("image") != images[key]):
                 return False
             if key == "den_api" and (containers[0].get("command") != ["node"] or containers[0].get("args") != ["/app/ee/apps/den-api/dist/main.js"]):
+                return False
+            # v2-created services can omit template.metadata.name. A revision's
+            # v1 owner is Configuration, not Service: bind it through the scoped
+            # v2 resource instead of comparing unrelated Kubernetes owner UIDs.
+            full_name = ("projects/" + os.environ["PROJECT_ID"] + "/locations/" + os.environ["REGION"]
+                         + "/services/" + service + "/revisions/" + revision)
+            actual = json.loads(request("https://run.googleapis.com/v2/" + urllib.parse.quote(full_name, safe="/"),
+                                        headers=storage_headers(), limit=1024 * 1024))
+            actual_containers = actual.get("containers", [])
+            if (actual.get("name") != full_name or actual.get("service") != service or not actual.get("uid")
+                    or not any(condition.get("type") == "Ready" and condition.get("state") == "CONDITION_SUCCEEDED"
+                               for condition in actual.get("conditions", []))
+                    or len(actual_containers) != 1 or actual_containers[0].get("image") != images[key]):
+                return False
+            if key == "den_api" and (actual_containers[0].get("command") != ["node"] or actual_containers[0].get("args") != ["/app/ee/apps/den-api/dist/main.js"]):
+                return False
+            current = service_status(service)
+            if (not disabled_service(current) or current.get("metadata", {}).get("uid") != service_uid
+                    or current.get("metadata", {}).get("generation") != live["metadata"]["generation"]
+                    or current.get("status", {}).get("latestReadyRevisionName") != revision
+                    or current.get("status", {}).get("latestCreatedRevisionName") != revision
+                    or current.get("status", {}).get("traffic") != traffic):
                 return False
         return True
     wait_for_completion(ready, "API-only revision ownership not verified before deadline; maintenance retained", timeout)

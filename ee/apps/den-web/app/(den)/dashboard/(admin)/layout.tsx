@@ -21,15 +21,16 @@ export default function AdminDashboardLayout({
     orgContext?.currentMember.isOwner ?? false,
     orgContext?.currentMember.permissions,
   );
-  // Any organization permission opens the admin area; each page then needs its own.
-  const canUseAdminArea = access.canViewSettings || (pathname === getServicesRoute() && orgContext?.canManageDeploymentServices === true);
+  const isDeploymentServicesRoute = pathname === getServicesRoute();
+  // Any organization permission opens the admin area; Services has separate installation authority.
+  const canUseAdminArea = access.canViewSettings || (isDeploymentServicesRoute && orgContext?.canManageDeploymentServices === true);
   const canUseAdminRoute = canOpenAdminRoute(pathname, access, orgContext?.canManageDeploymentServices === true);
 
   useEffect(() => {
-    if (!orgBusy && !orgError && orgContext && !canUseAdminArea) {
+    if (!orgBusy && !orgError && orgContext && !canUseAdminArea && !isDeploymentServicesRoute) {
       router.replace("/dashboard");
     }
-  }, [canUseAdminArea, orgBusy, orgContext, orgError, router]);
+  }, [canUseAdminArea, isDeploymentServicesRoute, orgBusy, orgContext, orgError, router]);
 
   if (orgError && !orgBusy) {
     return <DenNotice tone="error" message={orgError} />;
@@ -53,7 +54,7 @@ export default function AdminDashboardLayout({
     );
   }
 
-  if (canUseAdminArea && !canUseAdminRoute) {
+  if ((canUseAdminArea || isDeploymentServicesRoute) && !canUseAdminRoute) {
     return (
       <div className="mx-auto w-full max-w-[960px] px-4 py-8 sm:px-6" data-testid="admin-access-state" data-access-state="locked">
         <DenNotice tone="neutral" icon={LockKeyhole} message={adminRouteLockedMessage(pathname)} />

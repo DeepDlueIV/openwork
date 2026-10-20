@@ -5,7 +5,7 @@ import type { Seed } from "@openwork/env";
 const TOKEN = "readiness-fixture-service-token-not-production";
 
 /** Only service health is mocked. Den authentication, routes, snapshots and UI are real. */
-async function healthFixture() {
+export async function healthFixture() {
   let calls = 0;
   let unauthorized = 0;
   let unexpected = 0;

@@ -790,7 +790,9 @@ export type AdminFeature = {
     | "remoteSessionEvents"
     | "remoteSessionSubagents"
     | "headlessDurableTurns"
-    | "headlessStepTurns";
+    | "headlessStepTurns"
+    | "headlessSessionCells"
+    | "headlessSessionIndex";
   label: string;
   description: string;
   since: string;
@@ -851,6 +853,8 @@ export type AdminOrganizationsPageResponse = {
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
       headlessStepTurns: boolean;
+      headlessSessionCells: boolean;
+      headlessSessionIndex: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -1060,6 +1064,24 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      headlessSessionCells: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionIndex: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
     };
     [key: string]: unknown;
   }>;
@@ -1145,6 +1167,8 @@ export type AdminOverviewResponse = {
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
       headlessStepTurns: boolean;
+      headlessSessionCells: boolean;
+      headlessSessionIndex: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -1346,6 +1370,24 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       headlessStepTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionCells: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionIndex: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -2554,6 +2596,27 @@ export type LibraryUsageReport = {
   days: number;
   trackingSince: string | null;
   items: Array<LibraryUsageRow>;
+};
+
+export type HeadlessSessionIndexEntry = {
+  sessionId: string;
+  memberId: string | null;
+  kind: "workbot" | "slack" | "automation";
+  createdAt: string;
+  updatedAt: string;
+  hotBytes: number;
+  segmentCount: number;
+  totalBytes: number;
+  activeTurnSince: string | null;
+  deletedAt: string | null;
+  retentionClass: string | null;
+  legalHold: boolean;
+  lastReportedAt: string;
+};
+
+export type HeadlessSessionIndexPage = {
+  sessions: Array<HeadlessSessionIndexEntry>;
+  nextCursor: string | null;
 };
 
 export type OrganizationScimConnection = {
@@ -6617,6 +6680,7 @@ export type WorkbotSession = {
   verifyModel?: boolean;
   gatewayModels?: boolean;
   stepTurns: boolean;
+  sessionCells: boolean;
 };
 
 export type WorkbotRunToken = {
@@ -6628,6 +6692,7 @@ export type WorkbotRunToken = {
     apiKey: string;
     protocol: "anthropic" | "openai" | "openai-responses";
   };
+  indexCapability?: string;
 };
 
 export type DenAppVersionResponse = {
@@ -7684,6 +7749,8 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
       headlessStepTurns: boolean;
+      headlessSessionCells: boolean;
+      headlessSessionIndex: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -7885,6 +7952,24 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       headlessStepTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionCells: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionIndex: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7966,6 +8051,8 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       remoteSessionSubagents: boolean;
       headlessDurableTurns: boolean;
       headlessStepTurns: boolean;
+      headlessSessionCells: boolean;
+      headlessSessionIndex: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -8167,6 +8254,24 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       headlessStepTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionCells: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessSessionIndex: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -15998,6 +16103,50 @@ export type GetV1LibraryUsageByKindResponses = {
 };
 
 export type GetV1LibraryUsageByKindResponse = GetV1LibraryUsageByKindResponses[keyof GetV1LibraryUsageByKindResponses];
+
+export type GetV1HeadlessSessionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    memberId?: string;
+    kind?: "workbot" | "slack" | "automation";
+    active?: "true" | "false";
+    deleted?: "exclude" | "include" | "only";
+    limit?: number;
+    cursor?: string;
+  };
+  url: "/v1/headless/sessions";
+};
+
+export type GetV1HeadlessSessionsErrors = {
+  /**
+   * Invalid filter or cursor.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign-in required.
+   */
+  401: UnauthorizedError;
+  /**
+   * View usage analytics permission required.
+   */
+  403: ForbiddenError;
+  /**
+   * The session index is off for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1HeadlessSessionsError = GetV1HeadlessSessionsErrors[keyof GetV1HeadlessSessionsErrors];
+
+export type GetV1HeadlessSessionsResponses = {
+  /**
+   * One page of conversations.
+   */
+  200: HeadlessSessionIndexPage;
+};
+
+export type GetV1HeadlessSessionsResponse = GetV1HeadlessSessionsResponses[keyof GetV1HeadlessSessionsResponses];
 
 export type PostV1InferenceAnalyticsLangfuseTestData = {
   body: {

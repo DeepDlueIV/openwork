@@ -336,6 +336,8 @@ import type {
   GetV1GatewayUsageLimitsMembersErrors,
   GetV1GatewayUsageLimitsMembersResponses,
   GetV1GatewayUsageLimitsMeResponses,
+  GetV1HeadlessSessionsErrors,
+  GetV1HeadlessSessionsResponses,
   GetV1InferenceAccessErrors,
   GetV1InferenceAccessResponses,
   GetV1InferenceAnalyticsActivityErrors,
@@ -5623,6 +5625,48 @@ export class DenClient extends HeyApiClient {
     );
     return (options?.client ?? this.client).get<GetV1LibraryUsageByKindResponses, unknown, ThrowOnError>({
       url: "/v1/library-usage/{kind}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * List the organization's Workbot, Slack and Automation conversations (content-free)
+   *
+   * The organization's conversations on the headless runner as Den's session index knows them, most recently updated first: the member (null when the conversation belongs to none), the kind (`workbot`, `slack` or `automation`), when it was created and last updated, its hot and total stored bytes and sealed segment count, when its running turn started (`activeTurnSince`, null when idle; a long-running value can mean a stuck turn), when it was deleted, and Den's retention class and legal hold. Never a title, a message or anything else a conversation contains. Filter by `memberId`, `kind`, `active` (`true`: a turn is running) and `deleted` (`exclude` by default, `include` or `only`). Paged: up to `limit` rows (default 50, at most 200), then pass `nextCursor` as `cursor`. Members with the View usage analytics permission only (owners and admins by default), while the session index is on for the organization.
+   */
+  public getV1HeadlessSessions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      memberId?: string;
+      kind?: "workbot" | "slack" | "automation";
+      active?: "true" | "false";
+      deleted?: "exclude" | "include" | "only";
+      limit?: number;
+      cursor?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "memberId" },
+            { in: "query", key: "kind" },
+            { in: "query", key: "active" },
+            { in: "query", key: "deleted" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "cursor" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1HeadlessSessionsResponses,
+      GetV1HeadlessSessionsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/headless/sessions",
       ...options,
       ...params,
     });
@@ -16648,7 +16692,7 @@ export class DenClient extends HeyApiClient {
   /**
    * A short-lived token for one Workbot turn
    *
-   * For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.
+   * For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With `sessionId` and where the session index is on for the workspace, also returns an index capability for that session. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.
    */
   public createWorkbotRunToken<ThrowOnError extends boolean = false>(
     parameters?: {

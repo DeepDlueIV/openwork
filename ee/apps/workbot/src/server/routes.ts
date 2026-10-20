@@ -3,8 +3,6 @@ import {
   createWorkbot,
   toWorkbotPageEvent,
   workbotOwner,
-  workbotSessionId,
-  workbotSideChatSessionId,
   WORKBOT_CHAT_ID,
   WorkbotFilesUnavailableError,
   WorkbotUnavailableError,
@@ -120,6 +118,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       workspaceAssistant: async () => member.den.workspaceAssistant,
       // `headlessStepTurns`: turns run one step at a time; off (or an older Den) sends them as before.
       stepTurns: member.den.stepTurns,
+      // `headlessSessionCells`: new chats in their own session cells; off (or an older Den) creates them as before.
+      sessionCells: member.den.sessionCells,
     })
 
   const enabled = (c: Context<AppEnv>) => c.get("member").den.enabled
@@ -425,9 +425,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const resting = socketRest.get(owner)
     if (resting !== undefined && resting > now) return null
     socketRest.delete(owner)
-    const { organization, memberId } = member.den
-    const sessionId = chat ? workbotSideChatSessionId(organization.id, memberId, chat) : workbotSessionId(organization.id, memberId)
-    const socket = await runnerClientFor(member).openEventsSocket(sessionId, signal).catch(() => null)
+    const sessionId = await workbotFor(member).sessionIdOf(actorOf(member), chat).catch(() => null)
+    const socket = sessionId ? await runnerClientFor(member).openEventsSocket(sessionId, signal).catch(() => null) : null
     if (!socket) rest(owner)
     return socket ? { owner, events: socket, openedAt: now } : null
   }

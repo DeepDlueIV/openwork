@@ -68,11 +68,12 @@ export type HeadlessRunnerDeps = {
   /**
    * `sessionId` and `messageId` are the turn the token is minted for, so a caller can remember which run it belongs
    * to. `resumeGrant` (feature `headlessDurableTurns`): a credential the runner can exchange with Den for a fresh token
-   * for this turn, so it can continue the turn on its own after a restart.
+   * for this turn, so it can continue the turn on its own after a restart. `indexCapability` (feature
+   * `headlessSessionIndex`): what the runner presents to report the session's content-free totals and state to Den.
    */
   mintToken: (
     input: HeadlessRunnerActor & { ttlMs?: number; sessionId?: string; messageId?: string; readOnly?: boolean; model?: string; modelAccessRequired?: boolean },
-  ) => Promise<{ token: string; resumeGrant?: string; modelAccess?: HeadlessModelAccess }>
+  ) => Promise<{ token: string; resumeGrant?: string; modelAccess?: HeadlessModelAccess; indexCapability?: string }>
   /** Resolve scoped turns' persisted model before minting, even when today's default is no longer accessible. */
   modelAccessRequired?: (actor: HeadlessRunnerActor) => Promise<boolean> | boolean
   /** Optional trusted caller hook for member-scoped turns when mintToken does not supply access. */
@@ -249,9 +250,10 @@ export type RunnerCapabilities = { files?: boolean; computer?: boolean; reaction
 /**
  * Who a conversation belongs to and how it is shown to the model: `owner` (the caller's key for one person) and `ref`
  * (the caller's id for the conversation) list a person's conversations; `timeZone` dates their messages; `autoTitle`
- * names it after its first answer; `memoryOf` shares memory/ with another of their conversations.
+ * names it after its first answer; `memoryOf` shares memory/ with another of their conversations (legacy chats);
+ * `memoryScope: "owner"` keeps memory/ with the owner, shared by all their chats (session cells, `headlessSessionCells`).
  */
-export type RunnerSessionSettings = { owner?: string; ref?: string; timeZone?: string; autoTitle?: boolean; memoryOf?: string }
+export type RunnerSessionSettings = { owner?: string; ref?: string; timeZone?: string; autoTitle?: boolean; memoryOf?: string; memoryScope?: "owner" }
 
 const capabilityFields = (input: RunnerCapabilities & RunnerSessionSettings) => ({
   ...(input.files !== undefined ? { files: input.files } : {}),
@@ -263,6 +265,7 @@ const capabilityFields = (input: RunnerCapabilities & RunnerSessionSettings) => 
   ...(input.timeZone ? { timeZone: input.timeZone } : {}),
   ...(input.autoTitle !== undefined ? { autoTitle: input.autoTitle } : {}),
   ...(input.memoryOf ? { memoryOf: input.memoryOf } : {}),
+  ...(input.memoryScope ? { memoryScope: input.memoryScope } : {}),
 })
 
 /** A runner older than a setting refuses it as an invalid request; any other refusal is real. */
@@ -294,7 +297,7 @@ const SOCKET_MAX_QUEUED = 10_000
 export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
   return {
     async createSession(
-      input: { title?: string; instructions?: string; repeats?: RunnerRepeatLimits } & RunnerCapabilities = {},
+      input: { title?: string; instructions?: string; repeats?: RunnerRepeatLimits; memoryScope?: "owner" } & RunnerCapabilities = {},
     ): Promise<RunnerResult<{ id: string }>> {
       const base = {
         ...(input.title ? { title: input.title.slice(0, 200) } : {}),
@@ -335,6 +338,19 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
       const saved = z.object({ id: z.string() }).safeParse(payload)
       if ((status !== 200 && status !== 201) || !saved.success) return { ok: false, status, error: errorCode(payload, `headless_put_${status}`) }
       return { ok: true, value: { id: saved.data.id, created: status === 201 } }
+    },
+
+    /**
+     * Asks the runner to move this owner's older conversations into their own session cells, in the background
+     * (`headlessSessionCells`). Owner-scoped: needs the client's `owner`. Idempotent; `not_needed` on a runner without
+     * cells. A runner from before session cells answers 404: reported as `unsupported`, never an error.
+     */
+    async splitOwner(): Promise<RunnerResult<{ split: string }>> {
+      const { status, payload } = await request(deps, "POST", "/v1/owner/split", {})
+      if (status === 404 || status === 405) return { ok: true, value: { split: "unsupported" } }
+      const parsed = z.object({ split: z.string() }).safeParse(payload)
+      if ((status !== 200 && status !== 202) || !parsed.success) return { ok: false, status, error: errorCode(payload, `headless_split_${status}`) }
+      return { ok: true, value: parsed.data }
     },
 
     /** One owner's conversations that have messages, most recently used first. */
@@ -441,7 +457,7 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
           if (!issued.modelAccess) return { ok: false, status: 503, error: "headless_model_access_unavailable" }
         }
       }
-      const { token, resumeGrant, modelAccess } = issued
+      const { token, resumeGrant, modelAccess, indexCapability } = issued
       const { status, payload } = await request(deps, "POST", `${sessionPath(input.sessionId)}/turns`, {
         messageId: input.messageId,
         prompt: input.prompt,
@@ -449,8 +465,15 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
         ...(input.attachments?.length ? { attachments: input.attachments } : {}),
         ...(input.interrupt ? { interrupt: true } : {}),
         ...(input.execution === "steps" ? { execution: "steps" } : {}),
-        // A grant is only minted where `headlessDurableTurns` is on; without one the body is exactly as before.
-        credentials: { mcpToken: token, ...(input.readOnly ? { readOnly: true } : {}), ...(resumeGrant ? { resumeGrant } : {}), ...(modelAccess ? { modelAccess } : {}) },
+        // A grant is only minted where `headlessDurableTurns` is on, an index capability only where `headlessSessionIndex`
+        // is; without them the body is exactly as before.
+        credentials: {
+          mcpToken: token,
+          ...(input.readOnly ? { readOnly: true } : {}),
+          ...(resumeGrant ? { resumeGrant } : {}),
+          ...(modelAccess ? { modelAccess } : {}),
+          ...(indexCapability ? { indexCapability } : {}),
+        },
       })
       if (status !== 202) return { ok: false, status, error: errorCode(payload, `headless_send_${status}`) }
       const accepted = z.object({ state: z.string() }).safeParse(payload)

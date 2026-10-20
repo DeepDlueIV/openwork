@@ -81,6 +81,9 @@ export const ACTIVE: ReadonlySet<TurnStatus> = new Set(["queued", "running"])
 export const executionSchema = z.enum(["steps"])
 export type Execution = z.infer<typeof executionSchema>
 
+/** Den's index capability: opaque, base64url parts joined by dots, at most 2 KiB. */
+export const INDEX_CAPABILITY = /^[A-Za-z0-9_.-]{1,2048}$/
+
 /** Den's resume grant for one turn: `hrg_` and 32 random bytes as base64url. */
 export const RESUME_GRANT = /^hrg_[A-Za-z0-9_-]{43}$/
 
@@ -101,6 +104,12 @@ export const turnCredentialsSchema = z
      * token in place and resumes the turn itself after a restart. Accepted always; ignored without self-resume.
      */
     resumeGrant: z.string().regex(RESUME_GRANT).optional(),
+    /**
+     * Den's index capability for this session (feature `headlessSessionIndex`): kept with the session
+     * (`store.setIndexCapability`) for the Den index flusher (den-index.ts), never held with the turn, logged or
+     * exported. Opaque to the runner: only its size and characters are checked.
+     */
+    indexCapability: z.string().regex(INDEX_CAPABILITY).optional(),
   })
   .strict()
 export type TurnCredentials = z.infer<typeof turnCredentialsSchema>

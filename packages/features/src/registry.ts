@@ -207,6 +207,20 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  headlessSessionCells: {
+    label: "Workbot: each chat in its own space",
+    description: "Each Workbot chat is stored on its own, so long histories stay fast to open and move during updates.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  headlessSessionIndex: {
+    label: "Workbot: chat overview for admins",
+    description: "OpenWork keeps a content-free list of Workbot, Slack and Automation chats (sizes, activity, state) for admin views and retention.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
 })
 
 export type FeatureKey = keyof typeof FEATURES

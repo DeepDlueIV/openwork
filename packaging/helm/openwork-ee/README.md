@@ -384,6 +384,8 @@ OpenWork Cloud. Don't change it on a customer install.
 | `remoteSessionSubagents` | `DEN_FEATURE_REMOTE_SESSION_SUBAGENTS` | default off | A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop. |
 | `headlessDurableTurns` | `DEN_FEATURE_HEADLESS_DURABLE_TURNS` | default off | Workbot, Slack and Automations answers keep going after a restart, deploy or server failure, without waiting for someone to reopen the chat. |
 | `headlessStepTurns` | `DEN_FEATURE_HEADLESS_STEP_TURNS` | default off | Workbot, Slack and Automations answers keep going through OpenWork updates instead of restarting their current step. |
+| `headlessSessionCells` | `DEN_FEATURE_HEADLESS_SESSION_CELLS` | default off | Each Workbot chat is stored on its own, so long histories stay fast to open and move during updates. |
+| `headlessSessionIndex` | `DEN_FEATURE_HEADLESS_SESSION_INDEX` | default off | OpenWork keeps a content-free list of Workbot, Slack and Automation chats (sizes, activity, state) for admin views and retention. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`

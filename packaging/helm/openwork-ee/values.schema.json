@@ -238,6 +238,26 @@
               ],
               "description": "Workbot: answers aren't cut off by updates: Workbot, Slack and Automations answers keep going through OpenWork updates instead of restarting their current step. Renders DEN_FEATURE_HEADLESS_STEP_TURNS."
             },
+            "headlessSessionCells": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: each chat in its own space: Each Workbot chat is stored on its own, so long histories stay fast to open and move during updates. Renders DEN_FEATURE_HEADLESS_SESSION_CELLS."
+            },
+            "headlessSessionIndex": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: chat overview for admins: OpenWork keeps a content-free list of Workbot, Slack and Automation chats (sizes, activity, state) for admin views and retention. Renders DEN_FEATURE_HEADLESS_SESSION_INDEX."
+            },
             "gatewayDashboard": {
               "enum": [
                 "",

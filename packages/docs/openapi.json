@@ -2613,7 +2613,9 @@
               "remoteSessionEvents",
               "remoteSessionSubagents",
               "headlessDurableTurns",
-              "headlessStepTurns"
+              "headlessStepTurns",
+              "headlessSessionCells",
+              "headlessSessionIndex"
             ]
           },
           "label": {
@@ -2854,6 +2856,12 @@
                     "headlessStepTurns": {
                       "type": "boolean"
                     },
+                    "headlessSessionCells": {
+                      "type": "boolean"
+                    },
+                    "headlessSessionIndex": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -2884,6 +2892,8 @@
                     "remoteSessionSubagents",
                     "headlessDurableTurns",
                     "headlessStepTurns",
+                    "headlessSessionCells",
+                    "headlessSessionIndex",
                     "gatewayDashboard"
                   ]
                 },
@@ -4121,6 +4131,118 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "headlessSessionCells": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "headlessSessionIndex": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -4145,7 +4267,9 @@
                     "remoteSessionEvents",
                     "remoteSessionSubagents",
                     "headlessDurableTurns",
-                    "headlessStepTurns"
+                    "headlessStepTurns",
+                    "headlessSessionCells",
+                    "headlessSessionIndex"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -4581,6 +4705,12 @@
                     "headlessStepTurns": {
                       "type": "boolean"
                     },
+                    "headlessSessionCells": {
+                      "type": "boolean"
+                    },
+                    "headlessSessionIndex": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -4611,6 +4741,8 @@
                     "remoteSessionSubagents",
                     "headlessDurableTurns",
                     "headlessStepTurns",
+                    "headlessSessionCells",
+                    "headlessSessionIndex",
                     "gatewayDashboard"
                   ]
                 },
@@ -5848,6 +5980,118 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "headlessSessionCells": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "headlessSessionIndex": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -5872,7 +6116,9 @@
                     "remoteSessionEvents",
                     "remoteSessionSubagents",
                     "headlessDurableTurns",
-                    "headlessStepTurns"
+                    "headlessStepTurns",
+                    "headlessSessionCells",
+                    "headlessSessionIndex"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -11073,6 +11319,139 @@
           "days",
           "trackingSince",
           "items"
+        ]
+      },
+      "HeadlessSessionIndexEntry": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "memberId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "workbot",
+              "slack",
+              "automation"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "hotBytes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "segmentCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "totalBytes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "activeTurnSince": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retentionClass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "legalHold": {
+            "type": "boolean"
+          },
+          "lastReportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "sessionId",
+          "memberId",
+          "kind",
+          "createdAt",
+          "updatedAt",
+          "hotBytes",
+          "segmentCount",
+          "totalBytes",
+          "activeTurnSince",
+          "deletedAt",
+          "retentionClass",
+          "legalHold",
+          "lastReportedAt"
+        ]
+      },
+      "HeadlessSessionIndexPage": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeadlessSessionIndexEntry"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sessions",
+          "nextCursor"
         ]
       },
       "OrganizationScimConnection": {
@@ -27728,6 +28107,9 @@
           },
           "stepTurns": {
             "type": "boolean"
+          },
+          "sessionCells": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -27737,7 +28119,8 @@
           "enabled",
           "canSchedule",
           "sideChats",
-          "stepTurns"
+          "stepTurns",
+          "sessionCells"
         ]
       },
       "WorkbotRunToken": {
@@ -27782,6 +28165,9 @@
               "protocol"
             ],
             "additionalProperties": false
+          },
+          "indexCapability": {
+            "type": "string"
           }
         },
         "required": [
@@ -30477,6 +30863,12 @@
                         "headlessStepTurns": {
                           "type": "boolean"
                         },
+                        "headlessSessionCells": {
+                          "type": "boolean"
+                        },
+                        "headlessSessionIndex": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -30507,6 +30899,8 @@
                         "remoteSessionSubagents",
                         "headlessDurableTurns",
                         "headlessStepTurns",
+                        "headlessSessionCells",
+                        "headlessSessionIndex",
                         "gatewayDashboard"
                       ]
                     },
@@ -31744,6 +32138,118 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "headlessSessionCells": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "headlessSessionIndex": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -31768,7 +32274,9 @@
                         "remoteSessionEvents",
                         "remoteSessionSubagents",
                         "headlessDurableTurns",
-                        "headlessStepTurns"
+                        "headlessStepTurns",
+                        "headlessSessionCells",
+                        "headlessSessionIndex"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -31953,6 +32461,12 @@
                         "headlessStepTurns": {
                           "type": "boolean"
                         },
+                        "headlessSessionCells": {
+                          "type": "boolean"
+                        },
+                        "headlessSessionIndex": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -31983,6 +32497,8 @@
                         "remoteSessionSubagents",
                         "headlessDurableTurns",
                         "headlessStepTurns",
+                        "headlessSessionCells",
+                        "headlessSessionIndex",
                         "gatewayDashboard"
                       ]
                     },
@@ -33220,6 +33736,118 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "headlessSessionCells": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "headlessSessionIndex": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -33244,7 +33872,9 @@
                         "remoteSessionEvents",
                         "remoteSessionSubagents",
                         "headlessDurableTurns",
-                        "headlessStepTurns"
+                        "headlessStepTurns",
+                        "headlessSessionCells",
+                        "headlessSessionIndex"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -57830,6 +58460,142 @@
                 "30",
                 "90"
               ]
+            }
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/headless/sessions": {
+      "get": {
+        "operationId": "getV1HeadlessSessions",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "List the organization's Workbot, Slack and Automation conversations (content-free)",
+        "description": "The organization's conversations on the headless runner as Den's session index knows them, most recently updated first: the member (null when the conversation belongs to none), the kind (`workbot`, `slack` or `automation`), when it was created and last updated, its hot and total stored bytes and sealed segment count, when its running turn started (`activeTurnSince`, null when idle; a long-running value can mean a stuck turn), when it was deleted, and Den's retention class and legal hold. Never a title, a message or anything else a conversation contains. Filter by `memberId`, `kind`, `active` (`true`: a turn is running) and `deleted` (`exclude` by default, `include` or `only`). Paged: up to `limit` rows (default 50, at most 200), then pass `nextCursor` as `cursor`. Members with the View usage analytics permission only (owners and admins by default), while the session index is on for the organization.",
+        "responses": {
+          "200": {
+            "description": "One page of conversations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeadlessSessionIndexPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter or cursor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "View usage analytics permission required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The session index is off for this organization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "memberId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "workbot",
+                "slack",
+                "automation"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "active",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "deleted",
+            "schema": {
+              "default": "exclude",
+              "type": "string",
+              "enum": [
+                "exclude",
+                "include",
+                "only"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
             }
           }
         ],
@@ -104610,7 +105376,7 @@
         ],
         "x-mcp": false,
         "summary": "A short-lived token for one Workbot turn",
-        "description": "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.",
+        "description": "For the Workbot app only. Mints the member-scoped MCP token a Workbot turn uses to reach the person's connected apps on the headless runner, for at most an hour. With `sessionId` and `messageId`, and where turns keep going on their own for the workspace, also returns a resume grant for that turn. With `sessionId` and where the session index is on for the workspace, also returns an index capability for that session. With cloudAgentGateway on, also returns the member's Gateway route and bearer credential for the selected model, rechecking access for every turn. This response is server-to-server only and must not be forwarded to a browser or logged. Refused when Workbot is off for the workspace.",
         "responses": {
           "200": {
             "description": "The token.",

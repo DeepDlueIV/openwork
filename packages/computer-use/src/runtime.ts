@@ -278,7 +278,7 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
     }, catch: (error) => error }),
   })
   const tools = { ui: {
-    open: add("Open a website or app on this program's surface. Access follows the enabled rollout; no application approval is requested.", z.object({ url: z.url().optional(), appId: z.string().max(256).optional(), mode: z.enum(["observe", "assist", "control"]).default("control"), purpose: z.string().max(500).default("Complete the requested task") }).strict(), async (args) => {
+    open: add("Open a website or app on this program's surface. Access follows the enabled rollout; a local app waits for the person's window approval.", z.object({ url: z.url().optional(), appId: z.string().max(256).optional(), mode: z.enum(["observe", "assist", "control"]).default("control"), purpose: z.string().max(500).default("Complete the requested task") }).strict(), async (args) => {
       const input = request.surface === "browser" ? { url: args.url ?? issue("invalid_url", "Provide a website URL.") } : { app_id: args.appId ?? issue("missing_app", "Provide an appId from discovery, or desktop for a Linux VM."), mode: args.mode, purpose: args.purpose }
       latest = null; images = []; mayHaveActed = true; actions++
       const receipt = { index: receipts.length, status: "unconfirmed" }

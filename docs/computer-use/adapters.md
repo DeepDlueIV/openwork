@@ -71,7 +71,7 @@ Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -auth "$HOME/.Xauthority"
 Run the desktop apps and remote commands as that same account, with access to
 its authority file. Display access control stays enabled and TCP listening is
 disabled. Existing Freestyle worlds use their configured display on `:99`.
-Readiness reports what is missing. The Computer popover lists configured VMs beside this Mac. Ask for the task; app windows are selected automatically without chat or window consent prompts. On Linux and Windows, an available VM is the default target when no computer was previously chosen.
+Readiness reports what is missing. The Computer popover lists configured VMs beside this Mac. Dedicated VM app windows are selected under the remote rollout. A local Mac app waits for the person to choose and allow a window before any observation or input. On Linux and Windows, an available VM is the default target when no computer was previously chosen.
 
 ## Differences from this Mac
 

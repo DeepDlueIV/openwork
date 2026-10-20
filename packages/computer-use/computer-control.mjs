@@ -291,9 +291,9 @@ export function createComputerControl({ adapters, runProgram, browserTask, readR
     if (current.presentation !== presentation || presentation.phase !== "approval"
       || !presentation.windows.some((window) => window.id === windowId)) throw new Error("The native window choice changed. Review it again.");
     await current.transport.notifyUi({ id: presentation.id, action: "approve", windowId });
-    // The person approved this app's window once in this chat; reopening it later does not ask again.
+    // Dedicated VMs can reuse the last window title; local requests always need a new explicit choice.
     const title = presentation.windows.find((window) => window.id === windowId)?.title;
-    if (title) current.grant.windows.set(opening.args.app_id, title);
+    if (title && current.grant.adapter.placement === "remote") current.grant.windows.set(opening.args.app_id, title);
   }
   function receiveUi(current, value) {
     try { assertUiActive(current); } catch { clearPresentation(current); return; }
@@ -335,8 +335,9 @@ export function createComputerControl({ adapters, runProgram, browserTask, readR
       }
       if (value.phase === "approval" && isDeepStrictEqual(presentation, next)) return;
       current.presentation = next;
-      // The rollout supplies access; select the app window automatically.
-      if (value.phase === "approval" && !current.opening?.decisionSent) {
+      // A dedicated remote VM is already scoped to this conversation. Local
+      // apps share the person's computer and require an explicit window choice.
+      if (value.phase === "approval" && current.grant.adapter.placement === "remote" && !current.opening?.decisionSent) {
         const previous = current.grant.windows.get(value.appID);
         const selected = next.windows.find((window) => window.title === previous) ?? next.windows[0];
         void approveWindow(current, next, selected.id).catch(() => { disable(current.grant); void cleanup(current); });

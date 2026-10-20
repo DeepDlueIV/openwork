@@ -13,6 +13,7 @@ function fixture(options = {}) {
   const calls = [];
   const requests = [];
   const selected = [];
+  const approvalReady = deferred();
   /** @type {import("@openwork/computer-use/computer-control").ComputerAdapter} */
   const adapter = {
     id: "local", label: "This computer", placement: "local",
@@ -28,13 +29,14 @@ function fixture(options = {}) {
           await options.beforeTool?.(name);
           if (name === "computer_open_session") {
             onUi({ kind: "state", id: "view", phase: "approval", appID: args.app_id, appName: "Editor", mode: args.mode, task: args.purpose, windows: [{ id: 17, title: "Draft" }, { id: 18, title: "Notes" }] });
+            approvalReady.resolve();
             await opened.promise;
             onUi({ kind: "state", id: "view", phase: "working", appName: "Editor", windowTitle: "Draft", mode: args.mode });
             return text({ ok: true, session_id: "native", state: "active" });
           }
           return text({ ok: true, ...(name === "computer_observe" ? { observation_id: "observation" } : {}) });
         },
-        notifyUi: async (value) => { selected.push(value); opened.resolve(); },
+        notifyUi: async (value) => { selected.push(value); if (["approve", "deny"].includes(value.action)) opened.resolve(); },
         close: async () => { calls.push("close"); opened.resolve(); onClose(); },
       };
     },
@@ -42,7 +44,7 @@ function fixture(options = {}) {
   /** @type {import("@openwork/computer-use/computer-control").ComputerAdapter} */
   const remote = { ...adapter, id: "vm", label: "VM", placement: "remote" };
   const control = createComputerControl({ adapters: options.remote ? [adapter, remote] : [adapter], readRemoteFeatureEnabled: options.authority, onRequest: (_sessionId, value) => { requests.push(value); } });
-  return { control, calls, requests, selected };
+  return { control, calls, requests, selected, approvalReady };
 }
 
 test("the rollout off blocks tools before connecting", async (t) => {
@@ -60,14 +62,31 @@ test("enabling the rollout gives a new chat access without a consent prompt", as
   assert.ok(f.calls.includes("computer_discover"));
 });
 
-test("opening an app selects its window automatically and returns a fresh observation", async (t) => {
+test("a local app stays unapproved until the person explicitly chooses a window", async (t) => {
   const f = fixture(); t.after(() => f.control.reset(true));
   await f.control.setFeatureEnabled(true);
-  const result = await f.control.execute({ sessionId: "chat", name: "computer_open", args: { app_id: "editor", mode: "control", purpose: "Edit the draft" } });
+  const opening = f.control.execute({ sessionId: "chat", name: "computer_open", args: { app_id: "editor", mode: "control", purpose: "Edit the draft" } });
+  await f.approvalReady.promise;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.selected, []);
+  assert.ok(!f.calls.includes("computer_observe"));
+  await assert.rejects(f.control.interact({ sessionId: "another-chat", id: "view", action: "approve", windowId: 17 }), /does not own/);
+  await f.control.interact({ sessionId: "chat", id: "view", action: "approve", windowId: 17 });
+  const result = await opening;
   assert.equal(payload(result).ok, true);
   assert.deepEqual(f.selected, [{ id: "view", action: "approve", windowId: 17 }]);
   assert.ok(f.calls.includes("computer_observe"));
   assert.deepEqual(f.requests, []);
+});
+
+test("a dedicated remote VM can open directly under its resolved rollout", async (t) => {
+  const f = fixture({ remote: true, authority: async () => true }); t.after(() => f.control.reset(true));
+  await f.control.setFeatureEnabled(true);
+  await f.control.setRemoteEnabled(true);
+  await f.control.choose({ sessionId: "chat", targetId: "vm" });
+  const result = await f.control.execute({ sessionId: "chat", name: "computer_open", args: { app_id: "editor", mode: "control", purpose: "Edit this VM's draft" } });
+  assert.equal(payload(result).ok, true);
+  assert.deepEqual(f.selected, [{ id: "view", action: "approve", windowId: 17 }]);
 });
 
 test("Stop ends the current task and the next turn works without asking again", async (t) => {

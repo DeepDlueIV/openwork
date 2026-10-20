@@ -29,6 +29,7 @@ for (const relative of [
   "pnpm-lock.yaml", "packages/computer-use/package.json", "packages/computer-use/src",
   "packages/codemode/package.json", "packages/codemode/src",
   "ee/packages/headless-computer/package.json", "ee/packages/headless-computer/Dockerfile.desktop",
+  "ee/packages/headless-computer/src/image.ts", "ee/packages/headless-computer/requirements-desktop.lock",
   "ee/packages/headless-computer/src/desktop.ts", "ee/packages/headless-computer/src/desktop-apps.mjs",
   "ee/packages/headless-computer/src/desktop-guest.mjs", "ee/packages/headless-computer/src/desktop-scripting.mjs",
   "ee/packages/headless-computer/src/scripting", "ee/packages/headless-computer/scripts/build-desktop.mjs",

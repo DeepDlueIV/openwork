@@ -10,8 +10,9 @@ test("a member's environment and file configured providers answer on V2 without 
   for (const id of ["fixture-env", "fixture-file"]) {
     await step(`${id === "fixture-env" ? "Environment" : "File"} configuration produces a reply through the intended authenticated endpoint`, async () => {
       const result = await world.chat(id);
-      evidence.recordAssertionEvidence("The selected configured provider answers, not a fallback", JSON.stringify({ answered: result.answered, requests: result.requests }), result.answered);
+      evidence.recordAssertionEvidence("The selected configured provider answers, not a fallback", JSON.stringify({ answered: result.answered, skipped: result.skipped, requests: result.requests }), result.answered && !result.skipped);
       expect(result.answered).toBe(true);
+      expect(result.skipped).toBe(false);
       expect(result.requests).toEqual(expect.arrayContaining([expect.objectContaining({ path: "/v1/chat/completions", bearer: true, azure: false, model: world.model })]));
     });
   }

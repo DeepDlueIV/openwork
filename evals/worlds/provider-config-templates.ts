@@ -30,6 +30,7 @@ export async function providerConfigTemplates(seed: Seed) {
     const provider = legacy().find(p => url.pathname === `/v1/llm-providers/${p.id}/connect`);
     if (provider) return sendJson(response, 200, { llmProvider: { ...provider, apiKey: key } });
     if (url.pathname === "/v1/inference-providers") return sendJson(response, 200, { inferenceProviders: [] });
+    if (!url.pathname.endsWith("/chat/completions") && !url.pathname.endsWith("/responses")) return sendJson(response, 404, { error: "not_found" });
     const raw = await readBody(request);
     const body: unknown = raw ? JSON.parse(raw) : {};
     const selectedModel = isRecord(body) ? body.model : undefined;
@@ -112,7 +113,9 @@ export async function providerConfigTemplates(seed: Seed) {
         while (Date.now() < until && !JSON.stringify(messages).includes(answer) && !JSON.stringify(messages).includes('"outcome":"failed"')) {
           await new Promise(resolve => setTimeout(resolve, 100)); messages = await call(`${mount}/session/${id}/message`);
         }
-        return { messages, requests: requests.slice(before), answered: JSON.stringify(messages).includes(answer) };
+        const status = await call("/experimental/engine-v2-preview/status");
+        const skipped = Array.isArray(status.skippedProviderIds) && status.skippedProviderIds.includes(providerId);
+        return { messages, requests: requests.slice(before), answered: JSON.stringify(messages).includes(answer), skipped };
       },
       async [Symbol.asyncDispose]() { await managed?.stop(); await close(mock); await rm(scratch, { recursive: true, force: true }); },
     };

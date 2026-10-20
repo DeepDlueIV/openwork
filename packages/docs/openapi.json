@@ -39417,7 +39417,7 @@
       "get": {
         "operationId": "getV1OrgServiceReadiness",
         "tags": [
-          "Organization"
+          "Organizations"
         ],
         "summary": "Read minimal cached deployment service readiness",
         "x-mcp": false,

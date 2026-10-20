@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronRight, Copy, Grip, GripHorizontal, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { appBuildInfo } from "@/app/lib/desktop";
 import { createClient, unwrap } from "@/app/lib/opencode";
 import { createClientV2, isOpencodeV2BaseUrl } from "@/app/lib/opencode-v2-adapter";
@@ -13,6 +14,7 @@ import { toast } from "@/components/ui/sonner";
 import type { OpenworkServerClient } from "@/app/lib/openwork-server";
 import { useWorkspaceSyncStreamStore, workspaceSyncStreamKey } from "../sync/session-sync";
 import type { SessionRenderModel } from "../sync/transition-controller";
+import { DebugResources, useDebugResources, type DebugActivity } from "./debug-resources";
 
 type PanelBounds = { left: number; top: number; width: number; height: number };
 
@@ -52,16 +54,20 @@ export function SessionDebugPanel(props: {
   todoCount: number;
   modelLabel: string;
   waitingOn: string;
+  activity: readonly DebugActivity[];
 }) {
   const [dismissed, setDismissed] = useState(false);
+  const [tab, setTab] = useState("overview");
   const [copied, setCopied] = useState(false);
   const [bounds, setBounds] = useState(() => fitInViewport({
-    left: window.innerWidth - 396, top: window.innerHeight - 432, width: 380, height: 352,
+    left: window.innerWidth - 396, top: window.innerHeight - 472, width: 380, height: 392,
   }));
   const interaction = useRef<{ kind: "move" | "resize"; x: number; y: number; bounds: PanelBounds } | null>(null);
   const streamKey = workspaceSyncStreamKey({ workspaceId: props.workspaceId, baseUrl: props.opencodeBaseUrl });
   const streamPhase = useWorkspaceSyncStreamStore(state => state.phasesByKey[streamKey]);
   const reconcileHealth = useWorkspaceSyncStreamStore(state => state.reconcileHealthByKey[streamKey]);
+  const resources = useDebugResources({ workspaceId: props.workspaceId, sessionId: props.model.intendedSessionId,
+    baseUrl: props.opencodeBaseUrl, enabled: !dismissed });
 
   const diagnostics = useQuery({
     queryKey: ["react-session-debug-health", props.client.baseUrl, props.workspaceId, props.opencodeBaseUrl],
@@ -165,6 +171,8 @@ export function SessionDebugPanel(props: {
       await navigator.clipboard.writeText([
         "React session debug", ...rows, ...details,
         ["Connection", connectionLabel], ["Health round trip", latency], ["Event stream", streamPhase ?? "Not started"],
+        ...props.activity.map(item => [item.label, item.state]),
+        ...resources.map(item => [item.label, `${item.state}${item.elapsedMs === null ? "" : ` (${(item.elapsedMs / 1_000).toFixed(1)}s)`}`]),
       ].map(row => typeof row === "string" ? row : `${row[0]}: ${row[1]}`).join("\n"));
       setCopied(true);
     } catch {
@@ -199,15 +207,24 @@ export function SessionDebugPanel(props: {
         </Button>
         <Button variant="ghost" size="icon-sm" aria-label="Dismiss session debug" title="Dismiss" onClick={() => setDismissed(true)}><X className="size-4" /></Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
-        <DiagnosticTable rows={rows} />
-        <Collapsible>
-          <CollapsibleTrigger render={<Button variant="ghost" size="sm" className="group w-full justify-start gap-1 px-0 text-xs" />}>
-            <ChevronRight className="size-3 transition-transform group-data-panel-open:rotate-90" /> More details
-          </CollapsibleTrigger>
-          <CollapsibleContent><DiagnosticTable rows={details} /></CollapsibleContent>
-        </Collapsible>
-      </div>
+      <Tabs value={tab} onValueChange={value => setTab(value === "resources" ? "resources" : "overview")} className="min-h-0 flex-1 gap-0 overflow-hidden">
+        <TabsList aria-label="Session debug views" variant="line" className="w-full shrink-0 justify-start border-b border-dls-border px-3">
+          <TabsTrigger value="overview" className="flex-none px-2 text-xs">Overview</TabsTrigger>
+          <TabsTrigger value="resources" className="flex-none px-2 text-xs">Resources</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview" className="min-h-0 overflow-y-auto px-3 py-1">
+          <DiagnosticTable rows={rows} />
+          <Collapsible>
+            <CollapsibleTrigger render={<Button variant="ghost" size="sm" className="group w-full justify-start gap-1 px-0 text-xs" />}>
+              <ChevronRight className="size-3 transition-transform group-data-panel-open:rotate-90" /> More details
+            </CollapsibleTrigger>
+            <CollapsibleContent><DiagnosticTable rows={details} /></CollapsibleContent>
+          </Collapsible>
+        </TabsContent>
+        <TabsContent value="resources" className="min-h-0 overflow-y-auto px-3 py-1 [overflow-anchor:none]">
+          <DebugResources resources={resources} activity={props.activity} waitingOn={props.waitingOn} />
+        </TabsContent>
+      </Tabs>
       <footer className="shrink-0 border-t border-dls-border px-3 py-2 text-[11px]">
         <div className="flex items-center gap-2">
           <span className={data && !connected ? "text-destructive" : "text-dls-text"}>{connectionLabel}</span>

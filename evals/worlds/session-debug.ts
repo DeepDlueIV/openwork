@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { eventually, type Seed } from "@openwork/env";
 import { browserScript } from "@openwork/cdp";
+import { modelRemovalHttpFixture } from "./model-removal-cdp.ts";
 
 export async function sessionDebug(seed: Seed) {
   const workspacePath = seed.tmpPath("session-debug");
   const token = randomUUID();
   const app = await seed.appWeb({ name: "session-debug", workspacePath, engine: "v2", mouse: true, headless: true,
-    env: { OPENWORK_TOKEN: token } });
+    env: { OPENWORK_TOKEN: token,
+      ...(process.env.OPENWORK_OPENCODE_BIN ? { OPENWORK_OPENCODE_BIN: process.env.OPENWORK_OPENCODE_BIN } : {}),
+      ...(process.env.OPENWORK_OPENCODE2_BIN ? { OPENWORK_OPENCODE2_BIN: process.env.OPENWORK_OPENCODE2_BIN } : {}),
+    } });
   // The native archive installer has a 180-second deadline. Settle that setup
   // before entering the control rail's shorter session-creation deadline.
   await eventually(async () => {
@@ -28,5 +32,21 @@ export async function sessionDebug(seed: Seed) {
   // surfaces. This only selects the native shortcut; it does not change app state.
   const paletteShortcut = await seed.evalIn(app, browserScript(() =>
     /Mac/i.test(navigator.platform) ? "Meta+K" : "Control+K", []));
-  return { app, workspace, session, paletteShortcut };
+  let healthReads = 0;
+  let holdNextHealthRead = false;
+  // Hold genuine HTTP reads long enough to witness a loading resource. The
+  // response still comes from the real engine; only the transport is delayed.
+  const health = await modelRemovalHttpFixture(app, [`${new URL(app.openworkUrl).origin}/workspace/*/opencode2/api/info*`], async () => {
+    healthReads += 1;
+    if (holdNextHealthRead) {
+      holdNextHealthRead = false;
+      await new Promise(resolve => setTimeout(resolve, 3_000));
+    }
+    return undefined;
+  });
+  return { app, workspace, session, paletteShortcut,
+    healthReads: () => { health.check(); return healthReads; },
+    holdNextHealthRead: () => { holdNextHealthRead = true; },
+    [Symbol.asyncDispose]: () => health[Symbol.asyncDispose](),
+  };
 }

@@ -28,14 +28,40 @@ test("a developer can inspect, move, resize and dismiss session diagnostics with
     await user.type({ role: "combobox" }, "Enable Developer Mode");
     await user.click({ text: "Enable Developer Mode" });
     await user.see({ testId: "session-debug-panel" });
-    await user.see({ text: /^Connected$/ }, { timeoutMs: 20_000 });
-    const text = (await probe.dom(panel)).elements[0]?.text ?? "";
+    const text = await probe.eventually(async () => (await probe.dom(panel)).elements[0]?.text ?? "", {
+      within: 20_000, label: "diagnostics receive real connection health", until: text => text.includes("Connected") && /Health RTT \d+ ms/.test(text),
+    });
     expect(text).toContain("Waiting on");
     expect(text).toContain("OpenCode");
     expect(text).toMatch(/Health RTT \d+ ms/);
     expect(text).not.toContain("Intended session");
     evidence.recordAssertionEvidence("Compact diagnostics use real health responses", text, /Health RTT \d+ ms/.test(text));
     await user.screenshot();
+  });
+
+  await step("Resources names the real pending load and shows it finish", async () => {
+    await user.click({ role: "tab", label: "Resources" });
+    await user.see({ testId: "session-debug-resources" });
+    const before = world.healthReads();
+    world.holdNextHealthRead();
+    await user.click({ role: "button", label: "Refresh diagnostics" });
+    await probe.eventually(() => world.healthReads(), { within: 5_000, label: "the real health read is held", until: count => count > before });
+    const loading = await probe.eventually(async () => (await probe.dom('[data-debug-resource="Connection health"]')).elements[0]?.text ?? "", {
+      within: 5_000, label: "the pending health resource has an elapsed time", until: text => /Loading/.test(text) && /[1-9]\d*\.\ds/.test(text),
+    });
+    expect(loading).toContain("Loading");
+    const loadingBounds = (await probe.dom('[data-debug-resource="Connection health"]')).elements[0]!.rect;
+    const panelBounds = await rect();
+    expect(loadingBounds.top).toBeGreaterThan(panelBounds.top);
+    expect(loadingBounds.bottom).toBeLessThan(panelBounds.bottom - 80);
+    evidence.recordAssertionEvidence("The Resources tab shows an actual in-flight load with elapsed time", `held reads=${world.healthReads() - before}; resource=${loading}`, world.healthReads() > before && /Loading/.test(loading));
+    await user.screenshot();
+    const loaded = await probe.eventually(async () => (await probe.dom('[data-debug-resource="Connection health"]')).elements[0]?.text ?? "", {
+      within: 10_000, label: "the same resource finishes loading", until: text => text.includes("Loaded"),
+    });
+    expect(loaded).toContain("Loaded");
+    await user.click({ role: "tab", label: "Overview" });
+    await user.see({ text: /^Connected$/ });
   });
 
   await step("the panel moves and resizes using its keyboard-accessible handles", async () => {

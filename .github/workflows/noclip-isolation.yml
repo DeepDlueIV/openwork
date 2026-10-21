@@ -1,0 +1,31 @@
+name: NoClip installation isolation
+on:
+  push:
+    branches: [noclip, noclip-install-isolation]
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/paths/**'
+      - '.github/workflows/noclip-isolation.yml'
+permissions:
+  contents: read
+concurrency:
+  group: noclip-isolation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolation:
+    if: github.repository == 'DeepDlueIV/openwork'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Verify separate identity, storage and disabled upstream updates
+        run: node --test --test-reporter=tap apps/desktop/test/noclip-isolation.test.mjs

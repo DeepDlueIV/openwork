@@ -7,7 +7,6 @@ import { pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { extractFile } = require("@electron/asar");
-const { parse } = require("yaml");
 const output = path.resolve("apps/desktop/dist-electron");
 const archive = path.join(output, "win-unpacked/resources/app.asar");
 const metadata = JSON.parse(extractFile(archive, "package.json").toString("utf8"));
@@ -16,7 +15,7 @@ assert.equal(metadata.productName, "NoClip");
 assert.equal(metadata.desktopName, "io.github.deepdlueiv.noclip");
 assert.equal(metadata.openworkDistribution, "noclip");
 assert.equal(metadata.main, "electron/noclip-main.mjs");
-const effective = parse(await readFile(path.join(output, "builder-effective-config.yaml"), "utf8"));
+const effective = JSON.parse(await readFile(path.join(output, "win-unpacked/noclip-build-config.json"), "utf8"));
 assert.equal(effective.appId, metadata.desktopName);
 assert.equal(effective.productName, "NoClip");
 assert.ok(effective.publish == null || (Array.isArray(effective.publish) && effective.publish.length === 0));

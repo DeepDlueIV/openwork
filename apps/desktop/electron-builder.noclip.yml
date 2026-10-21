@@ -2,6 +2,7 @@ extends: ./electron-builder.base.yml
 appId: io.github.deepdlueiv.noclip
 productName: NoClip
 artifactName: noclip-${os}-${arch}-${version}.${ext}
+afterPack: scripts/noclip-after-pack.cjs
 extraMetadata:
   name: noclip-desktop
   productName: NoClip

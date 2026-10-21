@@ -56,7 +56,7 @@ jobs:
           repository: DeepDlueIV/openwork
           run-id: '39620223488'
           github-token: ${{ github.token }}
-      - name: Verify payload and create the exact source tag
+      - name: Verify payload before any publication
         working-directory: release-files
         shell: bash
         run: |
@@ -73,11 +73,30 @@ jobs:
           assert f"Commit: {os.environ['SOURCE_SHA']}" in Path('BUILD-INFO.txt').read_text(encoding='utf-8-sig')
           print(json.dumps(e))
           PY
-          if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > tag.json 2>/dev/null; then
-            test "$(jq -r '.object.sha' tag.json)" = "$SOURCE_SHA"
+      # Fetch only verified source. Do not install dependencies or execute repo scripts
+      # in this write-scoped job. Git still enforces repository permissions/rules.
+      - name: Check out the verified source for its immutable release tag
+        uses: actions/checkout@v4
+        with:
+          ref: c01b6c2b4268dea8e121bdde9012855a8e796571
+          path: verified-source
+          fetch-depth: 1
+          persist-credentials: true
+      - name: Create the exact source tag without replacing an existing tag
+        working-directory: verified-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          remote=$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")
+          if test -n "$remote"; then
+            direct=$(printf '%s\n' "$remote" | awk '$2 !~ /\^\{\}$/ { print $1 }')
+            peeled=$(printf '%s\n' "$remote" | awk '$2 ~ /\^\{\}$/ { print $1 }')
+            test "${peeled:-$direct}" = "$SOURCE_SHA"
           else
-            gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$SOURCE_SHA" > tag.json
-            test "$(jq -r '.object.sha' tag.json)" = "$SOURCE_SHA"
+            git tag "$RELEASE_TAG" "$SOURCE_SHA"
+            git push origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           fi
       - name: Publish verified assets without retargeting a release
         working-directory: release-files

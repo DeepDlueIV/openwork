@@ -2,11 +2,11 @@ import { rename } from "node:fs/promises";
 import { setTimeout } from "node:timers/promises";
 
 const WINDOWS_RETRY_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
-const WINDOWS_RETRY_DELAYS_MS = [10, 20, 50, 100, 200];
+// CI reproduced sharing violations surviving the original 380 ms window.
+// Allow 1.58 s of bounded backoff for reader/scanner handles to close. This
+// retries only atomic rename; it never removes/truncates the old journal.
+const WINDOWS_RETRY_DELAYS_MS = [10, 20, 50, 100, 200, 400, 800];
 
-// Readers and scanners can briefly hold the destination open on Windows.
-// Retry the atomic replacement, never unlink/truncate the committed journal.
-// Persistent failures still reach the runner, which stops rather than replaying.
 export async function renameSessionJournal(from, to, options = {}) {
   const renameImpl = options.renameImpl ?? rename;
   const sleep = options.sleep ?? setTimeout;

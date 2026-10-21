@@ -22,6 +22,35 @@ The app consumes OpenWork server surfaces (self-hosted or hosted) rather than
 inventing parallel behavior. Anything OpenCode can do is available in OpenWork,
 even before a dedicated UI exists.
 
+## NoClip: continuity, recovery and reporting
+
+* Keep `docs/noclip/WORK-STATE.md` current at meaningful checkpoints: task,
+  repository/branch, exact source SHA, last verified stage and evidence URLs,
+  pending/failed operations, and the next safe action. Never include secrets.
+* After an interruption, failed response, context loss or a request to continue,
+  read that checkpoint and reconcile it with the live branch, recent commits,
+  working-tree changes, CI attempts, artifacts and releases before any write.
+  Chat history and UI activity labels are not proof that an action completed.
+* A missing tool response means the outcome is unknown, not that the operation
+  failed. Inspect remote state before retrying a commit, tag, upload or release.
+  Resume from the last verified checkpoint; rerun the interrupted stage and
+  its dependent checks if their completion or integrity cannot be established.
+* Repair or revert only identified incomplete/broken changes. Preserve verified
+  work and unrelated changes; never reset branches, force-push, move published
+  tags, delete user data or discard work merely because the conversation paused.
+* Re-discover and actually try the necessary connector capability before
+  claiming write access is unavailable. Stop and report a real permission block;
+  do not widen permissions or change repository protection as a workaround.
+* Give brief progress updates during long work and whenever a stage blocks.
+  Finish with verified results, remaining limitations and direct download/run
+  links. Distinguish compiled, installed, upgraded, GUI-tested and published.
+  Do not imply work continues between turns or promise later delivery without
+  an explicitly configured automation. Do not ask the user to read accessible
+  logs that the agent can investigate itself.
+* Once a recurring workflow is reliable and has repeatable successful evidence,
+  propose a reusable skill with its trigger, inputs, checks and recovery rules.
+  Do not create/install it without approval or codify an unstable process.
+
 ## Confidentiality (hard rule — this repo is public)
 
 Never let a branch name, commit, PR text, comment, fixture, or evidence identify

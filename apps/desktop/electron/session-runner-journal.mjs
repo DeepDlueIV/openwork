@@ -34,8 +34,6 @@ export function createDesktopSessionJournal(root, partition) {
     async load() {
       let handle
       try {
-        // Never follow a substituted journal symlink. O_NOFOLLOW is supported
-        // on the Unix desktops; Windows still uses its private profile ACL.
         handle = await open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
       } catch (error) {
         if (error?.code === "ENOENT") return emptyJournal()
@@ -54,19 +52,26 @@ export function createDesktopSessionJournal(root, partition) {
       await prepare()
       const temporaryPath = join(directory, `.journal-${randomUUID()}.tmp`)
       let handle
+      let stage = "open"
       try {
         handle = await open(temporaryPath, "wx", 0o600)
+        stage = "write"
         await handle.writeFile(serialized, "utf8")
+        stage = "sync"
         await handle.sync()
         await handle.close()
         handle = null
+        stage = "rename"
         await renameSessionJournal(temporaryPath, filePath)
-        // Persist the rename as well as the contents where directory fsync is
-        // supported. Windows cannot open directories as file handles.
         if (process.platform !== "win32") {
+          stage = "directory-sync"
           const directoryHandle = await open(directory, constants.O_RDONLY)
           try { await directoryHandle.sync() } finally { await directoryHandle.close() }
         }
+      } catch (error) {
+        // No contents, tokens, account identifiers or user paths in diagnostics.
+        console.error("[session-journal] durable write failed", JSON.stringify({ stage, code: error?.code ?? "unknown" }))
+        throw error
       } finally {
         await handle?.close()
         await unlink(temporaryPath).catch((error) => {

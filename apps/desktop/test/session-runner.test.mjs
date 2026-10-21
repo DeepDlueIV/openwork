@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
@@ -324,7 +325,10 @@ test("modern desktop consumes the shared core and recovers reports through token
   assert.equal(native.created, 1)
   assert.equal(native.calls.find((call) => call.path.endsWith("/prompt")).body.id, "msg_commandfixture")
   const path = join(root, desktopSessionRunnerPartition(denBaseUrl, account), "journal.json")
-  await eventually(async () => JSON.parse(await readFile(path, "utf8")).commands[0]?.completionAcknowledged)
+  // This external test observer must close its snapshot handle before yielding.
+  // The Windows reader probe reproduced async polling starving atomic rename;
+  // production journal operations are serialized. Keep the same disk assertion.
+  await eventually(() => JSON.parse(readFileSync(path, "utf8")).commands[0]?.completionAcknowledged)
   configure(runner, recoveryCapabilities, "rotated")
   native.active = false
   native.messages.push({ id: "msg_finalreply", role: "assistant", text: "durable final reply" })

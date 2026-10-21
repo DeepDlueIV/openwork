@@ -1,0 +1,24 @@
+extends: ./electron-builder.base.yml
+appId: io.github.deepdlueiv.noclip
+productName: NoClip
+artifactName: noclip-${os}-${arch}-${version}.${ext}
+extraMetadata:
+  name: noclip-desktop
+  productName: NoClip
+  desktopName: io.github.deepdlueiv.noclip
+  description: NoClip experimental desktop
+  main: electron/noclip-main.mjs
+  openworkDistribution: noclip
+publish: null
+protocols:
+  - name: NoClip
+    schemes:
+      - noclip
+linux:
+  executableName: noclip
+nsis:
+  include: build/noclip-installer.nsh
+  shortcutName: NoClip
+  uninstallDisplayName: NoClip
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false

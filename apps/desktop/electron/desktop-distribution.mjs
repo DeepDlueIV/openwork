@@ -25,9 +25,18 @@ export const ENTERPRISE_DESKTOP_DISTRIBUTION = Object.freeze({
   requireActivation: true,
 });
 
+// NoClip keeps the public renderer's existing capabilities, not Den's enterprise
+// activation flow. The build identity is separate from the capability flavor.
+export const NOCLIP_DESKTOP_DISTRIBUTION = Object.freeze({
+  ...PUBLIC_DESKTOP_DISTRIBUTION,
+  appName: "NoClip",
+  appIdentifier: "io.github.deepdlueiv.noclip",
+  protocolScheme: "noclip",
+});
+
 function normalizeFlavor(value) {
   const flavor = value?.trim().toLowerCase();
-  return flavor === "cloud" || flavor === "enterprise" ? flavor : "public";
+  return ["cloud", "enterprise", "noclip"].includes(flavor) ? flavor : "public";
 }
 
 /**
@@ -43,6 +52,7 @@ export function resolveDesktopDistribution({
   const flavor = normalizeFlavor(
     isPackaged ? packageFlavor : (environmentFlavor || packageFlavor),
   );
+  if (flavor === "noclip") return NOCLIP_DESKTOP_DISTRIBUTION;
   if (flavor === "cloud") return CLOUD_DESKTOP_DISTRIBUTION;
   if (flavor === "enterprise") return ENTERPRISE_DESKTOP_DISTRIBUTION;
   return PUBLIC_DESKTOP_DISTRIBUTION;

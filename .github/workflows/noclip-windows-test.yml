@@ -1,9 +1,9 @@
 name: NoClip Windows test build
-run-name: Windows x64 test - noclip - ${{ github.sha }}
+run-name: Windows x64 isolated - ${{ github.ref_name }} - ${{ github.sha }}
 
 on:
   push:
-    branches: [noclip]
+    branches: [noclip, noclip-install-isolation]
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   windows-x64:
-    if: github.repository == 'DeepDlueIV/openwork' && github.ref == 'refs/heads/noclip'
+    if: github.repository == 'DeepDlueIV/openwork' && (github.ref == 'refs/heads/noclip' || github.ref == 'refs/heads/noclip-install-isolation')
     runs-on: windows-2022
     timeout-minutes: 60
     defaults:
@@ -44,7 +44,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Match the toolchain used by OpenWork v0.18.58. pnpm must precede setup-node.
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -55,6 +54,9 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
+
+      - name: Check NoClip isolation before building
+        run: node --test --test-reporter=tap apps/desktop/test/noclip-isolation.test.mjs
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -74,25 +76,29 @@ jobs:
           node --test --test-reporter=tap --test-timeout=60000
           ./test/session-runner.test.mjs ./test/session-journal-rename.test.mjs
 
-      # Baseline installer only: keep application behavior unchanged. Never publish.
-      - name: Package unsigned Windows x64 installer
+      - name: Package unsigned isolated NoClip Windows x64 installer
         run: >-
           pnpm --dir apps/desktop exec electron-builder
-          --config electron-builder.yml --win nsis --x64 --publish never
+          --config electron-builder.noclip.yml --win nsis --x64 --publish never
           "--config.extraMetadata.version=$env:TEST_APP_VERSION"
-          '--config.artifactName=noclip-baseline-${os}-${arch}-${version}.${ext}'
+
+      - name: Verify identity and updater in the packaged application
+        run: node apps/desktop/scripts/verify-noclip-package.mjs
+
+      - name: Install and uninstall while preserving original OpenWork fixtures
+        timeout-minutes: 8
+        run: ./apps/desktop/scripts/noclip-install-smoke.ps1
 
       - name: Verify installer and record provenance
         env:
           SOURCE_COMMIT: ${{ github.sha }}
           SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
         run: |
           $ErrorActionPreference = 'Stop'
           $output = 'apps/desktop/dist-electron'
-          $installers = @(Get-ChildItem -LiteralPath $output -Filter 'noclip-baseline-win-x64-*.exe' -File)
-          if ($installers.Count -ne 1) {
-            throw "Expected exactly one Windows x64 installer, found $($installers.Count)."
-          }
+          $installers = @(Get-ChildItem -LiteralPath $output -Filter 'noclip-win-x64-*.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected one isolated NoClip installer, found $($installers.Count)." }
           $installer = $installers[0]
           if ($installer.Length -lt 1MB) { throw 'Installer is unexpectedly small.' }
           $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -100,32 +106,34 @@ jobs:
           @(
             "Repository: $env:SOURCE_REPOSITORY"
             "Commit: $env:SOURCE_COMMIT"
-            'Branch: noclip'
+            "Branch: $env:SOURCE_BRANCH"
             'Upstream baseline: OpenWork v0.18.58 (258218b9b69c91e3d5020488fe1d14ff767679e9)'
             "Package version: $env:TEST_APP_VERSION"
-            'Target: Windows x64; unsigned NSIS installer; not a public release.'
-            'WARNING: Original OpenWork app identity, data paths and updater are unchanged.'
-            'Use a disposable Windows VM. Do not install over your personal OpenWork.'
-            'A successful build is not a GUI, installation or gateway integration test.'
+            'Application: NoClip; appId: io.github.deepdlueiv.noclip; protocol: noclip'
+            'Profile: .noclip inside the OS account home; original profiles are not imported.'
+            'Updates and recovery downloads are disabled; profile is retained on uninstall.'
+            'Windows x64 unsigned test installer; not a public release.'
+            'Installation/uninstallation checked on disposable Windows against original-data fixtures.'
+            'GUI launch, Shluz integration and other operating-system installers are not certified by this build.'
           ) | Set-Content -LiteralPath "$output/BUILD-INFO.txt" -Encoding utf8
           @(
-            '## Windows x64 test artifact'
+            '## Isolated NoClip Windows x64 test artifact'
             "Source commit: $env:SOURCE_COMMIT"
             "Installer: $($installer.Name)"
             "SHA256: $hash"
-            'Download the artifact below. It is retained for 7 days.'
-            'Unsigned baseline: use a disposable Windows VM, not your personal OpenWork installation.'
-            'Packaging and session-runner tests are not an end-to-end desktop/gateway test.'
+            'Separate app identity/profile; upstream updates disabled; install/uninstall smoke passed.'
+            'The older noclip-baseline artifact is NOT an isolated installation.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
-      - name: Upload installer, checksum and build information
+      - name: Upload installer, checksum and verification information
         uses: actions/upload-artifact@v4
         with:
-          name: noclip-windows-x64-${{ github.run_number }}-${{ github.run_attempt }}
+          name: noclip-isolated-windows-x64-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
-            apps/desktop/dist-electron/noclip-baseline-win-x64-*.exe
+            apps/desktop/dist-electron/noclip-win-x64-*.exe
             apps/desktop/dist-electron/SHA256SUMS.txt
             apps/desktop/dist-electron/BUILD-INFO.txt
+            apps/desktop/dist-electron/INSTALL-SMOKE.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 7

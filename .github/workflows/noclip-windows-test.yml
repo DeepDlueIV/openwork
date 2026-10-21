@@ -1,5 +1,5 @@
 name: NoClip Windows test build
-run-name: Windows x64 isolated - ${{ github.ref_name }} - ${{ github.sha }}
+run-name: NoClip Windows preview - ${{ github.ref_name }} - ${{ github.sha }}
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
   windows-x64:
     if: github.repository == 'DeepDlueIV/openwork' && (github.ref == 'refs/heads/noclip' || github.ref == 'refs/heads/noclip-install-isolation')
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
@@ -37,6 +37,7 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       OPENWORK_DESKTOP_SENTRY_DSN: ''
       TEST_APP_VERSION: 0.18.58-noclip.${{ github.run_number }}.${{ github.run_attempt }}
+      UPGRADE_FROM_VERSION: 0.18.58-noclip.0.0
 
     steps:
       - name: Check out the exact source commit
@@ -58,6 +59,9 @@ jobs:
       - name: Check NoClip isolation before building
         run: node --test --test-reporter=tap apps/desktop/test/noclip-isolation.test.mjs
 
+      - name: Test asynchronous uninstaller completion checks
+        run: ./apps/desktop/test/noclip-wait-removal.test.ps1
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -76,6 +80,15 @@ jobs:
           node --test --test-reporter=tap --test-timeout=60000
           ./test/session-runner.test.mjs ./test/session-journal-rename.test.mjs
 
+      # Same source, lower version: tests installer upgrades, NOT DB migrations.
+      # This fixture is never uploaded or published.
+      - name: Package older-version upgrade fixture
+        run: >-
+          pnpm --dir apps/desktop exec electron-builder
+          --config electron-builder.noclip.yml --win nsis --x64 --publish never
+          --config.directories.output=dist-electron-upgrade-from
+          "--config.extraMetadata.version=$env:UPGRADE_FROM_VERSION"
+
       - name: Package unsigned isolated NoClip Windows x64 installer
         run: >-
           pnpm --dir apps/desktop exec electron-builder
@@ -85,8 +98,8 @@ jobs:
       - name: Verify identity and updater in the packaged application
         run: node apps/desktop/scripts/verify-noclip-package.mjs
 
-      - name: Install and uninstall while preserving original OpenWork fixtures
-        timeout-minutes: 8
+      - name: Verify upgrade, uninstall and reinstall preserve user data
+        timeout-minutes: 20
         run: ./apps/desktop/scripts/noclip-install-smoke.ps1
 
       - name: Verify installer and record provenance
@@ -98,11 +111,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $output = 'apps/desktop/dist-electron'
           $installers = @(Get-ChildItem -LiteralPath $output -Filter 'noclip-win-x64-*.exe' -File)
-          if ($installers.Count -ne 1) { throw "Expected one isolated NoClip installer, found $($installers.Count)." }
+          if ($installers.Count -ne 1) { throw "Expected one NoClip installer, found $($installers.Count)." }
           $installer = $installers[0]
           if ($installer.Length -lt 1MB) { throw 'Installer is unexpectedly small.' }
-          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $($installer.Name)" | Set-Content -LiteralPath "$output/SHA256SUMS.txt" -Encoding utf8
+          Copy-Item -LiteralPath $installer.FullName -Destination "$output/NoClip-Setup-x64.exe"
+          $hash = (Get-FileHash -LiteralPath "$output/NoClip-Setup-x64.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  NoClip-Setup-x64.exe" | Set-Content -LiteralPath "$output/SHA256SUMS.txt" -Encoding utf8
           @(
             "Repository: $env:SOURCE_REPOSITORY"
             "Commit: $env:SOURCE_COMMIT"
@@ -110,30 +124,97 @@ jobs:
             'Upstream baseline: OpenWork v0.18.58 (258218b9b69c91e3d5020488fe1d14ff767679e9)'
             "Package version: $env:TEST_APP_VERSION"
             'Application: NoClip; appId: io.github.deepdlueiv.noclip; protocol: noclip'
-            'Profile: .noclip inside the OS account home; original profiles are not imported.'
-            'Updates and recovery downloads are disabled; profile is retained on uninstall.'
-            'Windows x64 unsigned test installer; not a public release.'
-            'Installation/uninstallation checked on disposable Windows against original-data fixtures.'
+            'Profile: .noclip inside the OS account home; original OpenWork profiles are not imported.'
+            'Manual upgrade: close NoClip and run the new installer; no prior uninstall needed.'
+            'Normal uninstall preserves the profile, including settings, history and credentials.'
+            'Upstream auto-updates and recovery downloads remain disabled.'
+            'Windows x64 unsigned experimental pre-release.'
+            'CI checked version upgrade, uninstall and reinstall against profile/OpenWork fixtures.'
+            'Upgrade fixture uses the same source with an older package version; DB migrations are not tested.'
             'GUI launch, Shluz integration and other operating-system installers are not certified by this build.'
           ) | Set-Content -LiteralPath "$output/BUILD-INFO.txt" -Encoding utf8
           @(
-            '## Isolated NoClip Windows x64 test artifact'
+            '## NoClip Windows x64 preview'
             "Source commit: $env:SOURCE_COMMIT"
-            "Installer: $($installer.Name)"
+            "Version: $env:TEST_APP_VERSION"
+            'Installer: NoClip-Setup-x64.exe'
             "SHA256: $hash"
-            'Separate app identity/profile; upstream updates disabled; install/uninstall smoke passed.'
-            'The older noclip-baseline artifact is NOT an isolated installation.'
+            'Version upgrade, reinstall and data-preserving uninstall checks passed.'
+            'The publish job creates a pre-release only after all build checks pass.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
-      - name: Upload installer, checksum and verification information
+      - name: Upload verified installer and verification information
         uses: actions/upload-artifact@v4
         with:
           name: noclip-isolated-windows-x64-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
-            apps/desktop/dist-electron/noclip-win-x64-*.exe
+            apps/desktop/dist-electron/NoClip-Setup-x64.exe
             apps/desktop/dist-electron/SHA256SUMS.txt
             apps/desktop/dist-electron/BUILD-INFO.txt
             apps/desktop/dist-electron/INSTALL-SMOKE.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
+
+  publish-preview:
+    needs: windows-x64
+    if: github.repository == 'DeepDlueIV/openwork' && (github.ref == 'refs/heads/noclip' || github.ref == 'refs/heads/noclip-install-isolation')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      # No checkout or dependency scripts run in the job with release-write access.
+      - name: Download only this run's verified artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: noclip-isolated-windows-x64-${{ github.run_number }}-${{ github.run_attempt }}
+          path: release-files
+
+      - name: Verify checksums and publish an experimental release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          VERSION: 0.18.58-noclip.${{ github.run_number }}.${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          cd release-files
+          sha256sum --check SHA256SUMS.txt
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          evidence = json.loads(Path('INSTALL-SMOKE.json').read_text(encoding='utf-8-sig'))
+          for field in ('ok', 'inPlaceUpgrade', 'sameRegistryIdentity', 'reinstall', 'uninstalled'):
+              assert evidence.get(field) is True, f'Missing successful check: {field}'
+          assert evidence['upgradeTo'] == os.environ['VERSION']
+          assert evidence['profileFixturesPreserved'] == 4
+          assert evidence['originalFixturesPreserved'] == 5
+          assert f"Commit: {os.environ['SOURCE_SHA']}" in Path('BUILD-INFO.txt').read_text(encoding='utf-8-sig')
+          PY
+          tag="noclip-v${VERSION}"
+          cat > RELEASE-NOTES.md <<NOTES
+          ## Download for Windows x64
+          Download **[NoClip-Setup-x64.exe](https://github.com/${GH_REPO}/releases/download/${tag}/NoClip-Setup-x64.exe)** below. No compilation or GitHub Actions archive is needed.
+
+          ## Updating
+          Close NoClip, then run the new installer **over the existing version**. Do not uninstall first. The installer keeps the same application identity and location.
+
+          Settings, chat history and credentials live in **%USERPROFILE%\\.noclip**, separate from OpenWork. Normal uninstall intentionally keeps this profile, and reinstall reuses it. To erase all NoClip data, close NoClip, uninstall it, then deliberately remove only that folder. This also deletes saved credentials and chats; never delete OpenWork's folders.
+
+          ## Verification and limitations
+          - Built from commit **${SOURCE_SHA}**.
+          - Installation, lower-version upgrade, uninstall and reinstall tested with unchanged profile and original-OpenWork fixture hashes.
+          - The lower-version installer uses the same source: this is not a database-migration test.
+          - Upstream OpenWork auto-updates and recovery downloads are disabled. Updates are manual for now.
+          - **Experimental unsigned build.** GUI launch and Shluz integration are not yet verified. Do not disable Windows security protections.
+          - Checksums and build/test evidence are attached. Do not use the older non-isolated noclip-baseline build.
+          NOTES
+          gh release create "$tag" NoClip-Setup-x64.exe SHA256SUMS.txt BUILD-INFO.txt INSTALL-SMOKE.json \
+            --target "$SOURCE_SHA" --title "NoClip ${VERSION} — Windows x64 preview" \
+            --notes-file RELEASE-NOTES.md --draft --prerelease --latest=false
+          gh release edit "$tag" --draft=false --prerelease --latest=false
+          echo "## Download NoClip" >> "$GITHUB_STEP_SUMMARY"
+          echo "[NoClip-Setup-x64.exe](https://github.com/${GH_REPO}/releases/download/${tag}/NoClip-Setup-x64.exe)" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Release and instructions](https://github.com/${GH_REPO}/releases/tag/${tag})" >> "$GITHUB_STEP_SUMMARY"

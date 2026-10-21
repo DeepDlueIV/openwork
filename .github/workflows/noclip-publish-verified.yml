@@ -1,0 +1,114 @@
+name: NoClip publish verified preview
+on:
+  push:
+    branches: [noclip-install-isolation]
+    paths: ['.github/workflows/noclip-publish-verified.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: noclip-publish-verified-12-1
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'DeepDlueIV/openwork'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: DeepDlueIV/openwork
+      SOURCE_SHA: c01b6c2b4268dea8e121bdde9012855a8e796571
+      SOURCE_RUN: '39620223488'
+      ARTIFACT_ID: '12355531744'
+      VERSION: 0.18.58-noclip.12.1
+      RELEASE_TAG: noclip-v0.18.58-noclip.12.1
+    steps:
+      - name: Verify the immutable source and successful installer job
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/runs/$SOURCE_RUN" > run.json
+          gh api "repos/$GH_REPO/actions/runs/$SOURCE_RUN/jobs" > jobs.json
+          gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID" > artifact.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          run = json.loads(Path('run.json').read_text())
+          jobs = json.loads(Path('jobs.json').read_text())['jobs']
+          artifact = json.loads(Path('artifact.json').read_text())
+          assert run['head_sha'] == os.environ['SOURCE_SHA']
+          assert run['head_repository']['full_name'] == os.environ['GH_REPO']
+          assert run['path'] == '.github/workflows/noclip-windows-test.yml'
+          assert any(j['name'] == 'windows-x64' and j['conclusion'] == 'success' for j in jobs)
+          assert artifact['id'] == int(os.environ['ARTIFACT_ID']) and not artifact['expired']
+          assert artifact['workflow_run']['head_sha'] == os.environ['SOURCE_SHA']
+          assert artifact['workflow_run']['id'] == int(os.environ['SOURCE_RUN'])
+          assert artifact['digest'] == 'sha256:64e01c931989879ba24c1ed62a495376cb2b17d28d32973af2ef36cd62c2fc89'
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '12355531744'
+          path: release-files
+          merge-multiple: true
+          repository: DeepDlueIV/openwork
+          run-id: '39620223488'
+          github-token: ${{ github.token }}
+      - name: Verify payload and create the exact source tag
+        working-directory: release-files
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check SHA256SUMS.txt
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          e = json.loads(Path('INSTALL-SMOKE.json').read_text(encoding='utf-8-sig'))
+          for field in ('ok', 'inPlaceUpgrade', 'sameRegistryIdentity', 'installedPayloadVerified', 'reinstall', 'uninstalled'):
+              assert e.get(field) is True, field
+          assert e['upgradeTo'] == os.environ['VERSION']
+          assert e['profileFixturesPreserved'] == 4 and e['originalFixturesPreserved'] == 5
+          assert f"Commit: {os.environ['SOURCE_SHA']}" in Path('BUILD-INFO.txt').read_text(encoding='utf-8-sig')
+          print(json.dumps(e))
+          PY
+          if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > tag.json 2>/dev/null; then
+            test "$(jq -r '.object.sha' tag.json)" = "$SOURCE_SHA"
+          else
+            gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$SOURCE_SHA" > tag.json
+            test "$(jq -r '.object.sha' tag.json)" = "$SOURCE_SHA"
+          fi
+      - name: Publish verified assets without retargeting a release
+        working-directory: release-files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > RELEASE-NOTES.md <<NOTES
+          ## Скачать NoClip для Windows x64
+          **[Скачать NoClip-Setup-x64.exe](https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/NoClip-Setup-x64.exe)** — готовый установщик, исходный код скачивать не нужно.
+
+          ## Обновление и сохранение данных
+          Закройте NoClip и запустите новый установщик поверх старой версии. Предварительное удаление не требуется. Программа заменяется на месте; её профиль остаётся в **%USERPROFILE%\\.noclip**.
+
+          Обычное удаление намеренно сохраняет этот профиль: чаты, настройки и сохранённые ключи. Для полного удаления данных после закрытия и удаления программы отдельно удалите только свою папку .noclip, предварительно сохранив нужные данные. Папки OpenWork и рабочие проекты удалять не нужно.
+
+          ## Проверено
+          Сборка, тесты, установка младшей версии, обновление без ручного удаления, удаление и повторная установка. Сохранены контрольные файлы профиля NoClip и оригинального OpenWork; хеш установленного приложения соответствует сборке. Исходный коммит: **$SOURCE_SHA**. [Проверка Windows](https://github.com/$GH_REPO/actions/runs/$SOURCE_RUN).
+
+          **Это неподписанная экспериментальная сборка.** Запуск интерфейса и интеграция со Shluz ещё не проверены. Младший установщик использует тот же исходный код: это не проверка миграции реальных баз при изменении их формата. Автообновление и восстановление из OpenWork отключены; обновления NoClip пока ручные. Не отключайте защиту Windows. Старый noclip-baseline не использовать.
+          NOTES
+          if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' > existing.txt 2>/dev/null; then
+            if test "$(cat existing.txt)" != 'true'; then
+              echo 'The release is already published; refusing to overwrite it.'
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" NoClip-Setup-x64.exe SHA256SUMS.txt BUILD-INFO.txt INSTALL-SMOKE.json --clobber
+            gh release edit "$RELEASE_TAG" --notes-file RELEASE-NOTES.md
+          else
+            gh release create "$RELEASE_TAG" NoClip-Setup-x64.exe SHA256SUMS.txt BUILD-INFO.txt INSTALL-SMOKE.json \
+              --verify-tag --title "NoClip $VERSION — Windows x64 preview" \
+              --notes-file RELEASE-NOTES.md --draft --prerelease --latest=false
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          echo "[Скачать установщик](https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/NoClip-Setup-x64.exe)" >> "$GITHUB_STEP_SUMMARY"

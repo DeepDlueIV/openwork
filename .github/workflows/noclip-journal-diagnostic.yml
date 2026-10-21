@@ -1,0 +1,73 @@
+name: NoClip Windows journal diagnostic
+on:
+  push:
+    branches: [noclip-install-isolation]
+    paths: ['.github/workflows/noclip-journal-diagnostic.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  journal-readers:
+    if: github.repository == 'DeepDlueIV/openwork'
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Compare asynchronous and synchronous journal snapshots
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { mkdtemp, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
+          import { readFileSync } from 'node:fs';
+          import { tmpdir } from 'node:os';
+          import { join } from 'node:path';
+          import { setTimeout as sleep } from 'node:timers/promises';
+          import { renameSessionJournal } from './apps/desktop/electron/session-journal-rename.mjs';
+          for (const mode of ['none', 'async', 'sync']) {
+            const root = await mkdtemp(join(tmpdir(), 'noclip-journal-reader-probe-'));
+            const target = join(root, 'journal.json');
+            await writeFile(target, JSON.stringify({ version: 0 }));
+            let running = true;
+            const stats = { mode, writes: 0, reads: 0, renameRetries: 0, failures: 0, maxRenameMs: 0 };
+            const reader = (async () => {
+              while (running && mode !== 'none') {
+                const content = mode === 'sync' ? readFileSync(target, 'utf8') : await readFile(target, 'utf8');
+                assert.ok(Number.isInteger(JSON.parse(content).version));
+                stats.reads++;
+                await sleep(5);
+              }
+            })();
+            try {
+              for (let version = 1; version <= 80; version++) {
+                const source = join(root, `pending-${version}.tmp`);
+                const handle = await open(source, 'wx', 0o600);
+                try { await handle.writeFile(JSON.stringify({ version })); await handle.sync(); }
+                finally { await handle.close(); }
+                const started = Date.now();
+                try {
+                  await renameSessionJournal(source, target, { renameImpl: async (from, to) => {
+                    try { await rename(from, to); }
+                    catch (error) { stats.renameRetries++; throw error; }
+                  } });
+                  stats.writes++;
+                } catch (error) {
+                  stats.failures++;
+                  console.log(JSON.stringify({ mode, version, code: error.code, elapsedMs: Date.now() - started }));
+                }
+                stats.maxRenameMs = Math.max(stats.maxRenameMs, Date.now() - started);
+                await sleep(1);
+              }
+            } finally {
+              running = false;
+              await reader;
+              await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+              console.log(JSON.stringify(stats));
+            }
+          }
+          JS

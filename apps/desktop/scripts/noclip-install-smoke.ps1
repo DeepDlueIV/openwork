@@ -12,7 +12,10 @@ $destination = Join-Path $env:RUNNER_TEMP 'noclip install smoke'
 $executable = Join-Path $destination 'NoClip.exe'
 $registryRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
 function Get-NoClipEntries {
-  @(Get-ChildItem $registryRoot | Get-ItemProperty | Where-Object { $_.DisplayName -eq 'NoClip' })
+  # A fresh account has no per-user uninstall root until its first install.
+  # Missing is empty; access/enumeration errors must still fail the check.
+  if (-not (Test-Path -LiteralPath $registryRoot)) { return @() }
+  @(Get-ChildItem -LiteralPath $registryRoot | Get-ItemProperty | Where-Object { $_.DisplayName -eq 'NoClip' })
 }
 if ((Test-Path -LiteralPath $destination) -or @(Get-NoClipEntries).Count) { throw 'Refusing to overwrite an existing installation.' }
 $originalShortcut = Join-Path $env:RUNNER_TEMP 'original-openwork-shortcut.lnk'

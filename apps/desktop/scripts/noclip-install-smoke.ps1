@@ -48,18 +48,29 @@ function Assert-FixturesUnchanged($before, $stage) {
     if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $before[$file]) { throw "$stage changed fixture: $file" }
   }
 }
-function Assert-InstalledVersion($version) {
+function Assert-InstalledVersion($version, $packageOutput) {
   if (-not (Test-Path -LiteralPath $executable)) { throw 'NoClip.exe was not installed in the original location.' }
   $entries = @(Get-NoClipEntries)
   if ($entries.Count -ne 1) { throw "Expected one NoClip uninstall entry, found $($entries.Count)." }
   if ($entries[0].DisplayVersion -ne $version) { throw "Registry version $($entries[0].DisplayVersion) does not match $version." }
-  if ($entries[0].InstallLocation.TrimEnd('\') -ne $destination.TrimEnd('\')) { throw 'Installation location changed.' }
+  # electron-builder writes InstallLocation to its separate install key, NOT
+  # the Windows uninstall entry. Check the registered command and real payload.
+  $uninstaller = Join-Path $destination 'Uninstall NoClip.exe'
+  $expectedCommand = '"{0}" /currentuser' -f $uninstaller
+  if ([string]$entries[0].UninstallString -ne $expectedCommand) { throw 'Registered uninstaller does not match the original installation path and scope.' }
+  if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'Registered uninstaller is missing.' }
+  $installedArchive = Join-Path $destination 'resources/app.asar'
+  $expectedArchive = Join-Path $packageOutput 'win-unpacked/resources/app.asar'
+  if ((Get-FileHash -LiteralPath $installedArchive -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $expectedArchive -Algorithm SHA256).Hash) {
+    throw "Installed application payload does not match the package for $version."
+  }
   return $entries[0].PSPath
 }
 function Remove-TestInstallation($entryPath) {
   $uninstaller = Join-Path $destination 'Uninstall NoClip.exe'
   if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'NoClip uninstaller is missing.' }
-  Run-CheckedInstaller $uninstaller @('/S')
+  # Match Windows' registered quiet uninstall scope; never execute registry text.
+  Run-CheckedInstaller $uninstaller @('/currentuser', '/S')
   Wait-NoClipRemoval -ReadState {
     [pscustomobject]@{
       ExecutableExists = [bool](Test-Path -LiteralPath $executable)
@@ -70,7 +81,7 @@ function Remove-TestInstallation($entryPath) {
 }
 try {
   Run-CheckedInstaller $olderInstallers[0].FullName @('/S', "/D=$destination")
-  $initialEntry = Assert-InstalledVersion $env:UPGRADE_FROM_VERSION
+  $initialEntry = Assert-InstalledVersion $env:UPGRADE_FROM_VERSION $oldOutput
   # Fixture bytes stand in for settings, credentials and a database. The GUI
   # is not launched here; this checks preservation, not database migrations.
   foreach ($file in $fixtures) {
@@ -84,24 +95,24 @@ try {
   # No manual uninstall and no /D: the new installer must discover and replace
   # the existing application, keeping a single identity and its original path.
   Run-CheckedInstaller $installers[0].FullName @('/S')
-  $upgradedEntry = Assert-InstalledVersion $env:TEST_APP_VERSION
+  $upgradedEntry = Assert-InstalledVersion $env:TEST_APP_VERSION $output
   if ($upgradedEntry -ne $initialEntry) { throw 'Upgrade changed the application identity.' }
   Assert-FixturesUnchanged $before 'Upgrade'
 
   Remove-TestInstallation $upgradedEntry
   Assert-FixturesUnchanged $before 'Uninstall'
   Run-CheckedInstaller $installers[0].FullName @('/S', "/D=$destination")
-  $reinstalledEntry = Assert-InstalledVersion $env:TEST_APP_VERSION
+  $reinstalledEntry = Assert-InstalledVersion $env:TEST_APP_VERSION $output
   Assert-FixturesUnchanged $before 'Reinstall'
   Remove-TestInstallation $reinstalledEntry
   Assert-FixturesUnchanged $before 'Final uninstall'
   [ordered]@{
     ok = $true; upgradeFrom = $env:UPGRADE_FROM_VERSION; upgradeTo = $env:TEST_APP_VERSION
-    inPlaceUpgrade = $true; sameRegistryIdentity = $true; reinstall = $true; uninstalled = $true
+    inPlaceUpgrade = $true; sameRegistryIdentity = $true; installedPayloadVerified = $true; reinstall = $true; uninstalled = $true
     originalFixturesPreserved = $originalFixtures.Count; profileFixturesPreserved = $profileFixtures.Count
     olderInstallerUsesSameSource = $true; guiLaunchTested = $false; databaseMigrationTested = $false
   } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'INSTALL-SMOKE.json') -Encoding utf8
-  Write-Host 'Install, in-place version upgrade, uninstall and reinstall passed; all fixture hashes match.'
+  Write-Host 'Install, in-place version upgrade, uninstall and reinstall passed; all fixture and installed payload hashes match.'
 } finally {
   # Delete only the exact test fixtures, never a user's profile tree or registry.
   foreach ($file in $fixtures) { if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force } }

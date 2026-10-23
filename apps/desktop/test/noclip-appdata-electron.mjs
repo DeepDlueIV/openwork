@@ -18,38 +18,48 @@ if (process.env.GITHUB_ACTIONS !== "true" || !process.env.RUNNER_TEMP || !hostHo
   app.exit(1);
   throw new Error("This startup fixture requires a disposable CI directory.");
 }
+let stage = "profile";
 const timer = setTimeout(() => {
-  writeFileSync(reportPath, JSON.stringify({ ok: false, error: "Electron startup timeout" }));
+  writeFileSync(reportPath, JSON.stringify({ ok: false, stage, error: "Electron startup timeout" }));
   app.exit(1);
 }, 30000);
-try {
-  // Do not prime app.getPath('appData') before changing the environment.
-  const profile = applyNoClipProfile({ app, hostHome });
-  const appData = app.getPath("appData");
-  assert.equal(appData, profile.environment.APPDATA);
-  assert.equal(app.getPath("userData"), profile.userDataPath);
-  assert.equal(app.getPath("sessionData"), profile.userDataPath);
-  const sentinel = path.join(profile.userDataPath, "startup-fixture.txt");
-  const existed = existsSync(sentinel);
-  if (existed) assert.equal(readFileSync(sentinel, "utf8"), "persist across startup");
-  else writeFileSync(sentinel, "persist across startup");
-  await app.whenReady();
-  const window = new BrowserWindow({ show: false, webPreferences: {
-    sandbox: true, contextIsolation: true, nodeIntegration: false,
-  } });
-  await window.loadURL("data:text/html,<title>NoClip profile smoke</title><p>Profile ready</p>");
-  assert.equal(await window.webContents.executeJavaScript("document.body.textContent"), "Profile ready");
-  assert.equal(window.webContents.isCrashed(), false);
-  mkdirSync(path.dirname(reportPath), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ ok: true, electron: process.versions.electron,
-    appDataExplicit: true, profileIsolated: true, rendererLoaded: true,
-    existingProfilePreserved: existed, fullNoClipGuiTested: false }, null, 2));
-  window.destroy();
-  clearTimeout(timer);
-  app.exit(0);
-} catch (error) {
-  clearTimeout(timer);
-  writeFileSync(reportPath, JSON.stringify({ ok: false, error: error.message, stack: error.stack }, null, 2));
-  console.error(error);
-  app.exit(1);
+async function run() {
+  try {
+    // This synchronous section executes before the module's first event-loop tick.
+    // Do not prime app.getPath('appData') before changing the environment.
+    const profile = applyNoClipProfile({ app, hostHome });
+    const appData = app.getPath("appData");
+    assert.equal(appData, profile.environment.APPDATA);
+    assert.equal(app.getPath("userData"), profile.userDataPath);
+    assert.equal(app.getPath("sessionData"), profile.userDataPath);
+    const sentinel = path.join(profile.userDataPath, "startup-fixture.txt");
+    const existed = existsSync(sentinel);
+    if (existed) assert.equal(readFileSync(sentinel, "utf8"), "persist across startup");
+    else writeFileSync(sentinel, "persist across startup");
+    stage = "ready";
+    await app.whenReady();
+    stage = "window";
+    const window = new BrowserWindow({ show: false, webPreferences: {
+      sandbox: true, contextIsolation: true, nodeIntegration: false,
+    } });
+    stage = "renderer";
+    await window.loadURL("data:text/html,<title>NoClip profile smoke</title><p>Profile ready</p>");
+    assert.equal(await window.webContents.executeJavaScript("document.body.textContent"), "Profile ready");
+    assert.equal(window.webContents.isCrashed(), false);
+    mkdirSync(path.dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, JSON.stringify({ ok: true, electron: process.versions.electron,
+      appDataExplicit: true, profileIsolated: true, rendererLoaded: true,
+      existingProfilePreserved: existed, fullNoClipGuiTested: false }, null, 2));
+    window.destroy();
+    clearTimeout(timer);
+    app.exit(0);
+  } catch (error) {
+    clearTimeout(timer);
+    writeFileSync(reportPath, JSON.stringify({ ok: false, stage, error: error.message, stack: error.stack }, null, 2));
+    console.error(error);
+    app.exit(1);
+  }
 }
+// Electron waits for its ESM entry module to finish before emitting ready.
+// Top-level awaiting run() here would deadlock the lifecycle being tested.
+void run();

@@ -3,7 +3,7 @@ run-name: NoClip Windows preview - ${{ github.ref_name }} - ${{ github.sha }}
 
 on:
   push:
-    branches: [noclip, noclip-install-isolation]
+    branches: [noclip, noclip-install-isolation, noclip-fix-appdata]
     paths:
       - 'apps/**'
       - 'packages/**'
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   windows-x64:
-    if: github.repository == 'DeepDlueIV/openwork' && (github.ref == 'refs/heads/noclip' || github.ref == 'refs/heads/noclip-install-isolation')
+    if: github.repository == 'DeepDlueIV/openwork' && (github.ref == 'refs/heads/noclip' || github.ref == 'refs/heads/noclip-install-isolation' || github.ref == 'refs/heads/noclip-fix-appdata')
     runs-on: windows-2022
     timeout-minutes: 90
     defaults:
@@ -56,8 +56,8 @@ jobs:
           node-version: '24'
           cache: pnpm
 
-      - name: Check NoClip isolation before building
-        run: node --test --test-reporter=tap apps/desktop/test/noclip-isolation.test.mjs
+      - name: Check NoClip isolation and cold appData initialization
+        run: node --test --test-reporter=tap apps/desktop/test/noclip-isolation.test.mjs apps/desktop/test/noclip-appdata.test.mjs
 
       - name: Test asynchronous uninstaller completion checks
         run: ./apps/desktop/test/noclip-wait-removal.test.ps1
@@ -98,6 +98,19 @@ jobs:
       - name: Verify identity and updater in the packaged application
         run: node apps/desktop/scripts/verify-noclip-package.mjs
 
+      - name: Verify packaged GUI first startup and restart on disposable Windows
+        timeout-minutes: 5
+        run: node apps/desktop/scripts/noclip-packaged-startup-smoke.mjs
+
+      - name: Preserve packaged GUI evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: noclip-gui-evidence-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/noclip-packaged-gui/*
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Verify upgrade, uninstall and reinstall preserve user data
         timeout-minutes: 20
         run: ./apps/desktop/scripts/noclip-install-smoke.ps1
@@ -115,6 +128,9 @@ jobs:
           $installer = $installers[0]
           if ($installer.Length -lt 1MB) { throw 'Installer is unexpectedly small.' }
           Copy-Item -LiteralPath $installer.FullName -Destination "$output/NoClip-Setup-x64.exe"
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'noclip-packaged-gui/GUI-SMOKE.json') -Destination "$output/GUI-SMOKE.json"
+          $gui = Get-Content "$output/GUI-SMOKE.json" -Raw | ConvertFrom-Json
+          if ($gui.ok -ne $true) { throw 'Packaged GUI startup evidence is not successful.' }
           $hash = (Get-FileHash -LiteralPath "$output/NoClip-Setup-x64.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  NoClip-Setup-x64.exe" | Set-Content -LiteralPath "$output/SHA256SUMS.txt" -Encoding utf8
           @(
@@ -128,22 +144,24 @@ jobs:
             'Manual upgrade: close NoClip and run the new installer; no prior uninstall needed.'
             'Normal uninstall preserves the profile, including settings, history and credentials.'
             'Upstream auto-updates and recovery downloads remain disabled.'
-            'Windows x64 unsigned experimental pre-release.'
+            'Windows x64 unsigned diagnostic build; not a security-cleared public release.'
+            'CI checked packaged GUI first startup and restart; see GUI-SMOKE.json.'
             'CI checked version upgrade, uninstall and reinstall against profile/OpenWork fixtures.'
             'Upgrade fixture uses the same source with an older package version; DB migrations are not tested.'
-            'GUI launch, Shluz integration and other operating-system installers are not certified by this build.'
+            'Shluz integration and other operating-system installers are not verified.'
+            'The earlier browser malware warning is unresolved; functional checks are not malware certification.'
           ) | Set-Content -LiteralPath "$output/BUILD-INFO.txt" -Encoding utf8
           @(
-            '## NoClip Windows x64 preview'
+            '## NoClip Windows x64 diagnostic build'
             "Source commit: $env:SOURCE_COMMIT"
             "Version: $env:TEST_APP_VERSION"
             'Installer: NoClip-Setup-x64.exe'
             "SHA256: $hash"
-            'Version upgrade, reinstall and data-preserving uninstall checks passed.'
-            'The publish job creates a pre-release only after all build checks pass.'
+            'Packaged GUI startup/restart, upgrade, reinstall and data-preserving uninstall checks passed.'
+            'Release publication remains gated separately from functional build checks.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
-      - name: Upload verified installer and verification information
+      - name: Upload diagnostic installer and verification information
         uses: actions/upload-artifact@v4
         with:
           name: noclip-isolated-windows-x64-${{ github.run_number }}-${{ github.run_attempt }}
@@ -152,25 +170,25 @@ jobs:
             apps/desktop/dist-electron/SHA256SUMS.txt
             apps/desktop/dist-electron/BUILD-INFO.txt
             apps/desktop/dist-electron/INSTALL-SMOKE.json
+            apps/desktop/dist-electron/GUI-SMOKE.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
 
   publish-preview:
     needs: windows-x64
-    if: github.repository == 'DeepDlueIV/openwork' && (github.ref == 'refs/heads/noclip' || github.ref == 'refs/heads/noclip-install-isolation')
+    # Never publish a diagnostic feature branch or infer security approval from functional tests.
+    if: github.repository == 'DeepDlueIV/openwork' && vars.NOCLIP_RELEASE_APPROVED == 'true' && (github.ref == 'refs/heads/noclip' || github.ref == 'refs/heads/noclip-install-isolation')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
-      # No checkout or dependency scripts run in the job with release-write access.
       - name: Download only this run's verified artifact
         uses: actions/download-artifact@v4
         with:
           name: noclip-isolated-windows-x64-${{ github.run_number }}-${{ github.run_attempt }}
           path: release-files
-
       - name: Verify checksums and publish an experimental release
         shell: bash
         env:
@@ -191,30 +209,18 @@ jobs:
           assert evidence['upgradeTo'] == os.environ['VERSION']
           assert evidence['profileFixturesPreserved'] == 4
           assert evidence['originalFixturesPreserved'] == 5
+          assert json.loads(Path('GUI-SMOKE.json').read_text(encoding='utf-8-sig'))['ok'] is True
           assert f"Commit: {os.environ['SOURCE_SHA']}" in Path('BUILD-INFO.txt').read_text(encoding='utf-8-sig')
           PY
           tag="noclip-v${VERSION}"
           cat > RELEASE-NOTES.md <<NOTES
-          ## Download for Windows x64
-          Download **[NoClip-Setup-x64.exe](https://github.com/${GH_REPO}/releases/download/${tag}/NoClip-Setup-x64.exe)** below. No compilation or GitHub Actions archive is needed.
-
-          ## Updating
-          Close NoClip, then run the new installer **over the existing version**. Do not uninstall first. The installer keeps the same application identity and location.
-
-          Settings, chat history and credentials live in **%USERPROFILE%\\.noclip**, separate from OpenWork. Normal uninstall intentionally keeps this profile, and reinstall reuses it. To erase all NoClip data, close NoClip, uninstall it, then deliberately remove only that folder. This also deletes saved credentials and chats; never delete OpenWork's folders.
-
-          ## Verification and limitations
-          - Built from commit **${SOURCE_SHA}**.
-          - Installation, lower-version upgrade, uninstall and reinstall tested with unchanged profile and original-OpenWork fixture hashes.
-          - The lower-version installer uses the same source: this is not a database-migration test.
-          - Upstream OpenWork auto-updates and recovery downloads are disabled. Updates are manual for now.
-          - **Experimental unsigned build.** GUI launch and Shluz integration are not yet verified. Do not disable Windows security protections.
-          - Checksums and build/test evidence are attached. Do not use the older non-isolated noclip-baseline build.
+          ## Windows x64 diagnostic preview
+          [NoClip-Setup-x64.exe](https://github.com/${GH_REPO}/releases/download/${tag}/NoClip-Setup-x64.exe)
+          Source: ${SOURCE_SHA}. Close NoClip and run an approved newer installer over the existing version; no prior uninstall needed. The separate .noclip profile is retained.
+          Packaged GUI startup/restart and installer lifecycle checks passed. Shluz and database migrations are not verified. This is unsigned experimental software. Do not disable Windows security protections.
           NOTES
-          gh release create "$tag" NoClip-Setup-x64.exe SHA256SUMS.txt BUILD-INFO.txt INSTALL-SMOKE.json \
+          gh release create "$tag" NoClip-Setup-x64.exe SHA256SUMS.txt BUILD-INFO.txt INSTALL-SMOKE.json GUI-SMOKE.json \
             --target "$SOURCE_SHA" --title "NoClip ${VERSION} — Windows x64 preview" \
             --notes-file RELEASE-NOTES.md --draft --prerelease --latest=false
           gh release edit "$tag" --draft=false --prerelease --latest=false
-          echo "## Download NoClip" >> "$GITHUB_STEP_SUMMARY"
-          echo "[NoClip-Setup-x64.exe](https://github.com/${GH_REPO}/releases/download/${tag}/NoClip-Setup-x64.exe)" >> "$GITHUB_STEP_SUMMARY"
-          echo "[Release and instructions](https://github.com/${GH_REPO}/releases/tag/${tag})" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Release](https://github.com/${GH_REPO}/releases/tag/${tag})" >> "$GITHUB_STEP_SUMMARY"

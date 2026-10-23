@@ -1,65 +1,59 @@
 # NoClip work checkpoint
 
-Updated: 2026-10-22. Always reconcile this note with live GitHub state before resuming.
+Updated: 2026-10-23. Reconcile with live branches, CI attempts and artifacts before any write. No task is implicitly running between conversations.
 
-## SECURITY HOLD — highest priority
+## Current task: fix Windows first startup
 
-The user reported that the browser blocked `noclip-isolated-windows-x64-12-1.zip` with `This file contains a virus or malware.` The user allowed the download; execution was not confirmed. Do not recommend running this installer, bypassing download protection, adding antivirus exclusions, or publishing it while this warning is unresolved.
-
-Mozilla documents this exact Firefox warning as a potentially malicious download detected through Google Safe Browsing. It is distinct from `This file is not commonly downloaded`. The unsigned build is a fact, but is NOT an established explanation for this warning. Neither maliciousness nor a false positive has been confirmed.
-
-Reference: https://support.mozilla.org/en-US/kb/where-find-and-manage-downloaded-files-firefox
-
-No new antivirus result is available. The local container and Python inspection attempts failed with runtime ClientError. An attempted diagnostic workflow `.github/workflows/noclip-security-audit.yml` was blocked by the tool safety checks before execution; it was not created or run. Do not claim an antivirus scan is running or clean, and do not retry through alternate mechanisms to circumvent that tool block.
-
-Next permitted investigation: obtain an antivirus report for the exact downloaded archive/installer without executing it; record the actual detection name and affected file, and compare its SHA256 with the original CI artifact/manifest. A clean result from one scanner alone does not resolve the Safe Browsing warning. If a false positive is established, submit the relevant sample/URL through the vendor's legitimate review process. Do not promise that code signing, a different filename, or a GitHub Release eliminates all future warnings.
-
-The earlier suggestion to install build 12 is withdrawn pending this investigation. Existing successful installation tests remain valid only for their stated scope; they are not malware/security certification. The publication work below is deferred until the hold is resolved.
-
-## Task and branches
-
-Deliver a separately installed Windows x64 NoClip preview, preserve user data on upgrades/reinstall, and provide a convenient download through a GitHub pre-release. Do not integrate Shluz or change product UX in this task.
+The user ran installed build `0.18.58-noclip.12.1` and supplied a screenshot showing `Error: Failed to get 'appData' path`. Their local Codex report confirmed separate installations, archive/installer hashes, installed package metadata and disabled upstream updater; it did not run the GUI. Do not confuse static checks with successful startup. Do not record the user's local paths or personal files in this public repository.
 
 - Repository: `DeepDlueIV/openwork`.
-- Development branch: `noclip-install-isolation`.
-- Main NoClip branch: `noclip`; isolation has not yet been merged there.
-- Installer source: `c01b6c2b4268dea8e121bdde9012855a8e796571`.
-- Preserved source branch: `noclip-preview-source-12-1`, at that exact SHA; do not move it.
-- Recovery/reporting rules added to `AGENTS.md` in `d34dbc4bcd679c697b3ae9c8080a89cfe5027e60`.
-- Latest publication implementation: `3b5e46fb5f49a7c503508895787d4dbd0e7a259f` (Git tag creation, no force-push). This changes delivery only, not installer bytes.
+- Active fix branch: `noclip-fix-appdata`, based on `b68685bc9a6263c91cff30293cfbb85f9e26573d` from `noclip-install-isolation`.
+- Previous integration branch: `noclip-install-isolation`; main NoClip branch: `noclip`.
+- Actual startup fix: `f090a247473ed6788bf38bb50a88687127e3f5f7`.
+- Production change: create private directories, then call `app.setPath('appData', profile.environment.APPDATA)` BEFORE redirecting HOME/USERPROFILE/APPDATA and importing upstream modules. Keep userData/sessionData/runtime isolation and disabled updates unchanged. No user data is deleted or migrated.
 
-## Last verified build checkpoint — not security clearance
+## Evidence already verified
 
-Windows build job succeeded: compilation, isolation/session tests, package verification, installation, lower-version upgrade, uninstall and reinstall with original OpenWork/profile sentinel hashes preserved:
-https://github.com/DeepDlueIV/openwork/actions/runs/39620223488/job/119291401160
+1. Real Windows Electron 43.7.7 reproduced the exact `Failed to get 'appData' path` error before the fix. Three added unit regressions failed while the nine prior isolation checks passed:
+   https://github.com/DeepDlueIV/openwork/actions/runs/39920760810
+2. The fix made all twelve unit/isolation checks pass. The first native fixture then exposed a test-harness top-level-await/ready deadlock, not another appData failure. The fixture now allows the ESM entry module to finish before waiting for ready.
+3. Corrected native fixture and fix passed real Electron cold startup, renderer creation and a second startup with its profile marker preserved; the twelve unit/isolation checks also passed:
+   https://github.com/DeepDlueIV/openwork/actions/runs/39921077569
+   Source: `a82637329dadea360f6ca5f252deb122b56db5f2`.
+   This is a minimal native profile/renderer test, NOT the full NoClip application GUI.
 
-The overall run failed in its separate publication job. Do not confuse it with older failed build #11 or unnecessarily rebuild build #12.
+## Pending full packaged verification
 
-- Version: `0.18.58-noclip.12.1`.
-- Run: `39620223488`, attempt 1.
-- Artifact: `12355531744`, `noclip-isolated-windows-x64-12-1`.
-- Investigation-only artifact URL: https://github.com/DeepDlueIV/openwork/actions/runs/39620223488/artifacts/12355531744
-- Artifact ZIP SHA256: `64e01c931989879ba24c1ed62a495376cb2b17d28d32973af2ef36cd62c2fc89`.
-- Payload: `NoClip-Setup-x64.exe`, `SHA256SUMS.txt`, `BUILD-INFO.txt`, `INSTALL-SMOKE.json`.
-- Installer unsigned; GUI launch and Shluz NOT verified. Upgrade fixture uses identical source with a lower version; database migrations NOT tested.
-- Artifact availability was reconfirmed during this investigation, with expiry `2026-10-28T15:02:44Z`.
+- Full build source: `86cf5e4075c97ee53419920ad971c3c03f5cfa02`.
+- Build #14: https://github.com/DeepDlueIV/openwork/actions/runs/39921323220
+- Outcome was not yet known at this checkpoint. Do not call its installer ready.
+- The workflow now requires a real packaged NoClip GUI to mount beyond its static startup placeholder, creates screenshots, closes it and launches it again, and checks a profile marker before installer upgrade/uninstall/reinstall tests.
+- GUI evidence is uploaded even on failure. Installer is uploaded only after all functional checks succeed. No release is published from the fix branch.
 
-## Confirmed publication block — deferred, not running in the background
+Next safe action: read build #14 jobs and GUI evidence. If it fails, inspect that exact failed stage, preserve successful work, and repair only the demonstrated issue. If it passes, verify the artifact identity/checksums, preserve a concise handoff and present direct evidence links. Do not rebuild merely to update documentation. Do not change user's local installation or original OpenWork data remotely.
 
-Workflow https://github.com/DeepDlueIV/openwork/actions/runs/39623215438 failed on its first and second attempts after payload verification. REST tag creation returned HTTP 403.
+## Browser-warning investigation remains separate
 
-Creating the source-preservation branch did not resolve the restriction. A regular Git tag push was then tested in https://github.com/DeepDlueIV/openwork/actions/runs/39633959260/job/119339313514 . Archive/source/checksum/evidence verification succeeded; GitHub rejected the tag with: `Unable to determine if workflow can be created or updated due to timeout; workflows scope may be required.` No release was published. The releases collection was checked again during this investigation and was empty.
+The earlier build-12 ZIP was blocked by Firefox with `This file contains a virus or malware`. The user subsequently reported a Windows Defender scan with no threats. This is a user-reported scan, not an independently obtained malware report or proof of a false positive. Matching hashes establishes provenance, not safety.
 
-The connector can read and update files. Do not report that all GitHub writing is unavailable. Do not change repository protections, increase credential scopes, repeat equivalent publication attempts indefinitely, or treat the specific timeout/authorization error as proof of an unrestricted permissions problem.
+Do not recommend bypassing browser/antivirus protection, adding exclusions, distributing the flagged build, or disabling security checks. The known warning is unresolved. This does NOT forbid source-code fixes or functional diagnostics in disposable CI without personal files or credentials. Functional success must never be described as security clearance. `NOCLIP_RELEASE_APPROVED` is not set by this task; publication stays gated.
 
-After security clearance only: an authorized maintainer can create `noclip-v0.18.58-noclip.12.1` at exactly `c01b6c2b4268dea8e121bdde9012855a8e796571`, or securely provision an explicitly authorized release credential. Never ask for credentials in chat. Re-read tag and release state before retrying publication. Never retarget an existing tag or publish an installer under a different source SHA.
+A previous antivirus diagnostic workflow attempt was blocked before execution; it was not run. Do not retry the blocked scan through another mechanism. Permitted investigation remains obtaining the exact detection/file and vendor review through legitimate channels. No security-clearance claim is made for the new diagnostic build.
 
-## User data and delivery rules
+## Historical build and publication context
 
-Close NoClip and run a newer approved installer over the installed version; no prior uninstall is required. Profile: `.noclip` under the OS account home, separate from OpenWork. Normal uninstall intentionally preserves chats/settings/credentials. Full erasure is separate and requires explicit consent. Never delete original OpenWork data or projects during recovery.
+- Older build #12: `0.18.58-noclip.12.1`, source `c01b6c2b4268dea8e121bdde9012855a8e796571`, run `39620223488`.
+- Preserved branch: `noclip-preview-source-12-1`; do not move it.
+- Artifact `12355531744`, ZIP SHA256 `64e01c931989879ba24c1ed62a495376cb2b17d28d32973af2ef36cd62c2fc89`.
+- Installer SHA256 from the local report/manifest: `6436261bd00838e4fbc7f9c929ccafcba1c4c1da94483525d097200bf036e55f`.
+- Build-12 installation/upgrade/uninstall tests passed, but the real user GUI failed at appData. Do not direct the user back to that installer to test this fix.
+- Release publication previously failed creating its exact-source tag: REST HTTP 403, then Git error `Unable to determine if workflow can be created or updated due to timeout; workflows scope may be required.` General file-write access works. No repository protections or credential scopes were changed.
+- Do not resume publication or change a tag to an unrelated commit as part of the startup bugfix.
 
-For a future cleared build, first verify a clean NoClip launch and an empty test folder without real credentials; then test the gateway separately with its approved endpoint and a limited personal gateway token. Do not claim GUI, gateway integration, other-platform installers or automatic in-app updates are complete. Upstream updates remain disabled.
+## Data, reporting and future automation
 
-Give direct links for approved downloads. A pre-release is optional for running the application, but offers a more convenient release page and direct EXE asset; it is not an antivirus guarantee.
+Approved future installers update NoClip in place without prior uninstall. Profile `.noclip` under the OS account home is separate from original OpenWork; normal uninstall retains settings/history/credentials. Never erase profiles or projects to make a test pass. Full erasure requires explicit consent.
 
-Propose a reusable release/recovery skill only after the process is reliably repeatable. Do not create a skill now.
+Report actual evidence: compiled, unit-tested, native-profile-tested, packaged-GUI-tested, installed, security-reviewed and published are distinct states. The user delegates local checks to Codex; do not require them to read CI logs we can inspect. Give direct links and concise results. Shluz integration and real database migrations are out of scope here.
+
+Propose a reusable recovery/release skill only after the procedure is reliably repeatable; do not create a skill in this task.

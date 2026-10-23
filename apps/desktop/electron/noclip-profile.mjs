@@ -51,6 +51,11 @@ export function applyNoClipProfile({ app, env = process.env, hostHome, platform 
   const profile = resolveNoClipProfile({ hostHome, platform });
   const paths = platform === "win32" ? path.win32 : path.posix;
   for (const directory of profile.directories) createDirectory(directory);
+  // Electron resolves appData through native OS paths, not just env.APPDATA.
+  // Redirecting USERPROFILE first breaks cold Windows known-folder resolution.
+  // Register the existing private directory before mutating the environment or
+  // importing upstream modules; never fall back to OpenWork's shared appData.
+  app.setPath("appData", profile.environment.APPDATA);
   // Inherited OpenWork/OpenCode overrides must not reconnect this installation
   // to the original application's server, database, credentials or updater.
   for (const key of Object.keys(env)) {

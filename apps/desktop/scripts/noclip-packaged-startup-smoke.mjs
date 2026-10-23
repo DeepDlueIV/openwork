@@ -13,7 +13,9 @@ if (process.platform !== "win32" || process.env.GITHUB_ACTIONS !== "true" || !pr
 const exe = fileURLToPath(new URL("../dist-electron/win-unpacked/NoClip.exe", import.meta.url));
 const output = path.join(process.env.RUNNER_TEMP, "noclip-packaged-gui");
 const profile = path.join(userInfo().homedir, ".noclip");
-const retainedProfile = path.join(process.env.RUNNER_TEMP, "noclip-gui-retained-profile");
+// Hosted Windows uses C: for the account home and D: for RUNNER_TEMP. Keep
+// this retained CI-only profile beside its source so rename stays on one volume.
+const retainedProfile = path.join(path.dirname(profile), ".noclip-ci-retained-profile");
 assert.ok(existsSync(exe), "Packaged NoClip executable is missing");
 assert.equal(existsSync(profile), false, "Refusing to reuse or delete an existing NoClip profile");
 assert.equal(existsSync(retainedProfile), false, "Refusing to overwrite retained CI data");

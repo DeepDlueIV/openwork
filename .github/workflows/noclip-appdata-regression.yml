@@ -1,0 +1,77 @@
+name: NoClip appData startup regression
+on:
+  push:
+    branches: [noclip-fix-appdata]
+    paths:
+      - 'apps/desktop/electron/noclip-profile.mjs'
+      - 'apps/desktop/test/noclip-appdata*'
+      - '.github/workflows/noclip-appdata-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: noclip-appdata-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-startup:
+    if: github.repository == 'DeepDlueIV/openwork'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Get the same official Electron runtime as build 12
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '43.7.7'
+          $name = "electron-v$version-win32-x64.zip"
+          $base = "https://github.com/electron/electron/releases/download/v$version"
+          $zip = Join-Path $env:RUNNER_TEMP $name
+          $sums = Join-Path $env:RUNNER_TEMP 'electron-SHASUMS256.txt'
+          Invoke-WebRequest "$base/$name" -OutFile $zip
+          Invoke-WebRequest "$base/SHASUMS256.txt" -OutFile $sums
+          $line = @(Get-Content $sums | Where-Object { $_ -match ('^[a-fA-F0-9]{64}\s+\*?' + [regex]::Escape($name) + '$') })
+          if ($line.Count -ne 1) { throw 'Missing unique Electron checksum.' }
+          $expected = ($line[0] -split '\s+')[0].ToLowerInvariant()
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Electron checksum mismatch.' }
+          $runtime = Join-Path $env:RUNNER_TEMP 'noclip-electron-profile-runtime'
+          Expand-Archive -LiteralPath $zip -DestinationPath $runtime
+          "NOCLIP_ELECTRON_RUNTIME=$runtime" | Add-Content $env:GITHUB_ENV
+      - name: Real Electron cold profile and repeated startup
+        timeout-minutes: 3
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'noclip-startup-evidence'
+          New-Item -ItemType Directory -Path $root | Out-Null
+          $env:NOCLIP_STARTUP_TEST_HOME = Join-Path $root 'account'
+          New-Item -ItemType Directory -Path $env:NOCLIP_STARTUP_TEST_HOME | Out-Null
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          $script = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/test/noclip-appdata-electron.mjs'
+          foreach ($attempt in 1, 2) {
+            $env:NOCLIP_STARTUP_TEST_REPORT = Join-Path $root "startup-$attempt.json"
+            $process = Start-Process -FilePath (Join-Path $env:NOCLIP_ELECTRON_RUNTIME 'electron.exe') -ArgumentList @("`"$script`"") -PassThru -RedirectStandardOutput (Join-Path $root "stdout-$attempt.txt") -RedirectStandardError (Join-Path $root "stderr-$attempt.txt")
+            if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Electron startup did not finish.' }
+            if (-not (Test-Path $env:NOCLIP_STARTUP_TEST_REPORT)) { throw 'Missing startup evidence.' }
+            $report = Get-Content $env:NOCLIP_STARTUP_TEST_REPORT -Raw | ConvertFrom-Json
+            $report | ConvertTo-Json
+            if ($process.ExitCode -ne 0 -or $report.ok -ne $true) { throw 'Electron profile startup failed.' }
+            if ($attempt -eq 2 -and $report.existingProfilePreserved -ne $true) { throw 'Profile was not preserved.' }
+          }
+      - name: Unit regressions and existing isolation checks
+        if: ${{ !cancelled() }}
+        run: node --test --test-reporter=tap apps/desktop/test/noclip-appdata.test.mjs apps/desktop/test/noclip-isolation.test.mjs
+      - name: Preserve startup evidence even on failure
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: noclip-appdata-evidence-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/noclip-startup-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7

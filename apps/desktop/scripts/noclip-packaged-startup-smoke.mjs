@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { rename } from "node:fs/promises";
 import { userInfo } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,11 +13,16 @@ if (process.platform !== "win32" || process.env.GITHUB_ACTIONS !== "true" || !pr
 const exe = fileURLToPath(new URL("../dist-electron/win-unpacked/NoClip.exe", import.meta.url));
 const output = path.join(process.env.RUNNER_TEMP, "noclip-packaged-gui");
 const profile = path.join(userInfo().homedir, ".noclip");
+const retainedProfile = path.join(process.env.RUNNER_TEMP, "noclip-gui-retained-profile");
 assert.ok(existsSync(exe), "Packaged NoClip executable is missing");
 assert.equal(existsSync(profile), false, "Refusing to reuse or delete an existing NoClip profile");
+assert.equal(existsSync(retainedProfile), false, "Refusing to overwrite retained CI data");
 mkdirSync(output);
 const marker = path.join(profile, "desktop", "ci-startup-marker.txt");
 const observations = [];
+const redact = (text) => text.split(/\r?\n/).map((line) =>
+  /authorization|bearer\s|api.?key|token|password|secret/i.test(line) ? "[credential-like log line omitted]" : line
+).join("\n");
 
 async function connect(url) {
   assert.equal(new URL(url).hostname, "127.0.0.1", "Debugging must remain on loopback");
@@ -101,6 +107,7 @@ async function launch(attempt) {
     assert.ok(page?.mounted && page.controls > 0 && page.text.length > 0, "Application did not progress beyond its startup placeholder");
     assert.doesNotMatch(page.text, /something went wrong|a javascript error occurred|failed to get 'appData'/i);
     assert.ok(existsSync(path.join(profile, "desktop")), "Separate NoClip userData was not created");
+    assert.equal(existsSync(path.join(profile, "runtime", "home", ".noclip")), false, "Restart created a nested profile");
     if (attempt === 1) writeFileSync(marker, "keep profile across restarts");
     else assert.equal(readFileSync(marker, "utf8"), "keep profile across restarts");
     const image = await cdp.call("Page.captureScreenshot", { format: "png" });
@@ -110,9 +117,12 @@ async function launch(attempt) {
     const quitDeadline = Date.now() + 20000;
     while (child.exitCode === null && Date.now() < quitDeadline) await delay(200);
     assert.equal(child.exitCode, 0, "NoClip did not quit cleanly");
+  } catch (error) {
+    console.error(redact(log).slice(-5000));
+    throw error;
   } finally {
     cdp?.close();
-    writeFileSync(path.join(output, `startup-${attempt}.log`), log);
+    writeFileSync(path.join(output, `startup-${attempt}.log`), redact(log));
     if (child.exitCode === null && child.pid) {
       try { execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* already exited */ }
     }
@@ -121,6 +131,16 @@ async function launch(attempt) {
 try {
   await launch(1);
   await launch(2);
+  // This profile did not exist before this CI test. Preserve it outside the
+  // uploaded evidence, rather than deleting it or colliding with the subsequent
+  // installer-retention fixtures at runtime/config/server.json and opencode.db.
+  for (let attempt = 0; ; attempt++) {
+    try { await rename(profile, retainedProfile); break; }
+    catch (error) {
+      if (attempt >= 5 || !["EPERM", "EACCES", "EBUSY"].includes(error.code)) throw error;
+      await delay(400);
+    }
+  }
   const evidence = { ok: true, packagedGuiLoaded: true, repeatedStartup: true,
     profileMarkerPreserved: true, gatewayTested: false, securityClearance: false, observations };
   writeFileSync(path.join(output, "GUI-SMOKE.json"), JSON.stringify(evidence, null, 2));
